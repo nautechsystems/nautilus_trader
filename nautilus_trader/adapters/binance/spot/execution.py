@@ -168,9 +168,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     async def _get_binance_active_position_symbols(
         self,
         symbol: Optional[str] = None,
-    ) -> list[str]:
+    ) -> set[str]:
         # Never cash positions
-        return []
+        return set()
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 

@@ -228,8 +228,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         try:
             # Initialize instrument provider
             await self._instrument_provider.initialize()
+
             # Authenticate API key and update account(s)
             await self._update_account_state()
+
             # Get listen keys
             response: BinanceListenKey = await self._http_user.create_listen_key()
         except BinanceError as e:
@@ -243,7 +245,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         nautilus_time: int = self._clock.timestamp_ms()
         self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms).")
 
-        # Setup websocket listen key
+        # Setup WebSocket listen key
         self._listen_key = response.listenKey
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
@@ -368,15 +370,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.debug(f"Received {report}.")
         return report
 
-    def _get_cache_active_symbols(self) -> list[str]:
+    def _get_cache_active_symbols(self) -> set[str]:
         # Check cache for all active symbols
         open_orders: list[Order] = self._cache.orders_open(venue=self.venue)
         open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
-        active_symbols: list[str] = []
+        active_symbols: set[str] = set()
         for o in open_orders:
-            active_symbols.append(o.instrument_id.symbol.value)
+            active_symbols.add(BinanceSymbol(o.instrument_id.symbol.value))
         for p in open_positions:
-            active_symbols.append(p.instrument_id.symbol.value)
+            active_symbols.add(BinanceSymbol(p.instrument_id.symbol.value))
         return active_symbols
 
     async def _get_binance_position_status_reports(
@@ -389,7 +391,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def _get_binance_active_position_symbols(
         self,
         symbol: Optional[str] = None,
-    ) -> list[str]:
+    ) -> set[str]:
         # Implement in child class
         raise NotImplementedError
 
@@ -400,16 +402,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.info(f"Generating OrderStatusReports for {self.id}...")
+        self._log.info(f"Requesting OrderStatusReports for {self.id}...")
 
         try:
             # Check Binance for all order active symbols
             symbol = instrument_id.symbol.value if instrument_id is not None else None
             active_symbols = self._get_cache_active_symbols()
-            active_symbols.extend(await self._get_binance_active_position_symbols(symbol))
+            active_symbols.update(await self._get_binance_active_position_symbols(symbol))
             binance_open_orders = await self._http_account.query_open_orders(symbol)
             for order in binance_open_orders:
-                active_symbols.append(order.symbol)
+                active_symbols.add(order.symbol)
             # Get all orders for those active symbols
             binance_orders: list[BinanceOrder] = []
             for symbol in active_symbols:
@@ -425,14 +427,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         reports: list[OrderStatusReport] = []
         for order in binance_orders:
-            # Apply filter (always report open orders regardless of start, end filter)
-            # TODO(cs): Time filter is WIP
-            # timestamp = pd.to_datetime(data["time"], utc=True)
-            # if data["status"] not in ("NEW", "PARTIALLY_FILLED", "PENDING_CANCEL"):
-            #     if start is not None and timestamp < start:
-            #         continue
-            #     if end is not None and timestamp > end:
-            #         continue
             if order.origQty and Decimal(order.origQty) == 0:
                 continue  # Cannot parse zero quantity order (filter for Binance)
             report = order.parse_to_order_status_report(
@@ -447,7 +441,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Generated {len(reports)} OrderStatusReport{plural}.")
+        self._log.info(f"Received {len(reports)} OrderStatusReport{plural}.")
 
         return reports
 
@@ -458,13 +452,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
-        self._log.info(f"Generating TradeReports for {self.id}...")
+        self._log.info(f"Requesting TradeReports for {self.id}...")
 
         try:
             # Check Binance for all trades on active symbols
             symbol = instrument_id.symbol.value if instrument_id is not None else None
             active_symbols = self._get_cache_active_symbols()
-            active_symbols.extend(await self._get_binance_active_position_symbols(symbol))
+            active_symbols.update(await self._get_binance_active_position_symbols(symbol))
             binance_trades: list[BinanceUserTrade] = []
             for symbol in active_symbols:
                 response = await self._http_account.query_user_trades(
@@ -480,13 +474,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Parse all Binance trades
         reports: list[TradeReport] = []
         for trade in binance_trades:
-            # Apply filter
-            # TODO(cs): Time filter is WIP
-            # timestamp = pd.to_datetime(data["time"], utc=True)
-            # if start is not None and timestamp < start:
-            #     continue
-            # if end is not None and timestamp > end:
-            #     continue
             if trade.symbol is None:
                 self._log.warning(f"No symbol for trade {trade}.")
                 continue
@@ -505,7 +492,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Generated {len(reports)} TradeReport{plural}.")
+        self._log.info(f"Received {len(reports)} TradeReport{plural}.")
 
         return reports
 
@@ -515,7 +502,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
-        self._log.info(f"Generating PositionStatusReports for {self.id}...")
+        self._log.info(f"Requesting PositionStatusReports for {self.id}...")
 
         try:
             symbol = instrument_id.symbol.value if instrument_id is not None else None
@@ -526,7 +513,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
-        self._log.info(f"Generated {len(reports)} PositionStatusReport{plural}.")
+        self._log.info(f"Received {len(reports)} PositionStatusReport{plural}.")
 
         return reports
 
