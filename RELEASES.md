@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 
 ### Fixes
+- Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed race condition on `OrderFactory` order identifiers generation
 - Fixed `Currency` registration with core global map on creation
