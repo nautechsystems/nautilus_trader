@@ -195,16 +195,16 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     async def _get_binance_active_position_symbols(
         self,
         symbol: Optional[str] = None,
-    ) -> list[str]:
+    ) -> set[str]:
         # Check Binance for all active positions
-        active_symbols: list[str] = []
+        active_symbols: set[str] = set()
         binance_positions: list[BinanceFuturesPositionRisk]
         binance_positions = await self._futures_http_account.query_futures_position_risk(symbol)
         for position in binance_positions:
             if Decimal(position.positionAmt) == 0:
                 continue  # Flat position
             # Add active symbol
-            active_symbols.append(position.symbol)
+            active_symbols.add(position.symbol)
         return active_symbols
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
