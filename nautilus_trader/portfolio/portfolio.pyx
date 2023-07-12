@@ -1005,17 +1005,11 @@ cdef class Portfolio(PortfolioFacade):
         return self._net_positions.get(instrument_id, Decimal(0))
 
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open):
-        cdef Instrument instrument = self._cache.instrument(instrument_id)
-        if instrument is None:
-            self._log.error(f"Cannot calculate net position: no instrument for {instrument_id}.")
-            return  # Cannot calculate
-
         net_position = Decimal(0)
 
         cdef Position position
         for position in positions_open:
-            # Using strings for decimal precision correctness for now (will optimize in Rust)
-            net_position += Decimal(f"{position.signed_qty:.{instrument.size_precision}f}")
+            net_position += position.signed_decimal_qty()
 
         existing_position: Decimal = self._net_positions.get(instrument_id, Decimal(0))
         if existing_position != net_position:
