@@ -302,6 +302,17 @@ cdef class ExecutionEngine(Component):
 
         return self._external_order_claims.get(instrument_id)
 
+    cpdef set get_external_order_claims_instruments(self):
+        """
+        Get all external order claims instrument IDs.
+
+        Returns
+        -------
+        set[InstrumentId]
+
+        """
+        return set(self._external_order_claims.keys())
+
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_client(self, ExecutionClient client):
