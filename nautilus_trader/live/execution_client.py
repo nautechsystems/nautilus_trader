@@ -409,7 +409,7 @@ class LiveExecutionClient(ExecutionClient):
         ExecutionMassStatus or ``None``
 
         """
-        self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
+        self._log.info("Generating ExecutionMassStatus...")
 
         self.reconciliation_active = True
 
@@ -446,7 +446,7 @@ class LiveExecutionClient(ExecutionClient):
     async def _query_order(self, command: QueryOrder) -> None:
         self._log.debug(f"Synchronizing order status {command}.")
 
-        report: OrderStatusReport = await self.generate_order_status_report(
+        report: OrderStatusReport | None = await self.generate_order_status_report(
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,
