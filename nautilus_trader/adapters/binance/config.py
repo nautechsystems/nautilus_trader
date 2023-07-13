@@ -84,8 +84,6 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
-    warn_gtd_to_gtc : bool, default True
-        If log warning for GTD time in force transformed to GTC.
     use_position_ids: bool, default True
         If Binance Futures hedging position IDs should be used.
         If False then order event `position_id`(s) from the execution client will be `None`, which
@@ -105,6 +103,5 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     us: bool = False
     testnet: bool = False
     clock_sync_interval_secs: int = 0
-    warn_gtd_to_gtc: bool = True
     use_position_ids: bool = True
     treat_expired_as_canceled: bool = False

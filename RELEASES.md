@@ -13,12 +13,14 @@ Released on TBD (UTC).
 - Added `Actor.is_pending_request(...)` convenience method
 - Added `Actor.has_pending_requests()` convenience method
 - Added `Actor.pending_requests()` convenience method
-- Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
 - Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
+- Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
+- Improved `Binance` live clients logging
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
+- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an info log)
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors

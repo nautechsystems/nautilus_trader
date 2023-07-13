@@ -150,11 +150,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         self._binance_account_type = account_type
-        self._warn_gtd_to_gtc = config.warn_gtd_to_gtc
         self._use_position_ids = config.use_position_ids
         self._treat_expired_as_canceled = config.treat_expired_as_canceled
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
-        self._log.info(f"{config.warn_gtd_to_gtc=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
 
@@ -569,11 +567,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
-        if (
-            order.time_in_force == TimeInForce.GTD
-            and time_in_force == BinanceTimeInForce.GTC
-            and self._warn_gtd_to_gtc
-        ):
+        if order.time_in_force == TimeInForce.GTD and time_in_force == BinanceTimeInForce.GTC:
             self._log.info(
                 f"Converted GTD `time_in_force` to GTC for {order.client_order_id}.",
                 LogColor.BLUE,

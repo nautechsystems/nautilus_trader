@@ -18,6 +18,7 @@ from typing import Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
@@ -108,13 +109,13 @@ class BinanceWebSocketClient:
         """
         ws_url = self._base_url + f"/streams?streams={stream}"
 
-        self._log.info(f"Connecting to {ws_url}")
+        self._log.debug(f"Connecting to {ws_url}...")
         client = await WebSocketClient.connect(
             url=ws_url,
             handler=self._handler,
             heartbeat=60,
         )
-        self._log.info("Connected.")
+        self._log.info(f"Connected to {ws_url}.", LogColor.BLUE)
 
         self._streams[stream] = client
         self._streams_connecting.discard(stream)
