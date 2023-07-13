@@ -214,7 +214,8 @@ cdef class Order:
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}"  # Can be None (no whitespace before contingency_str)
+            f"venue_order_id={self.venue_order_id}, "  # Can be None (no whitespace before contingency_str)
+            f"position_id={self.position_id}"  # Can be None (no whitespace before contingency_str)
             f"{contingency_str}"
             f"{linked_order_ids_str}"
             f"{parent_order_id_str}"
