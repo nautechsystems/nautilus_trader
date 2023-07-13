@@ -404,7 +404,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.info(f"Requesting OrderStatusReports for {self.id}...")
+        self._log.info("Requesting OrderStatusReports...")
 
         try:
             # Check Binance for all order active symbols
@@ -454,7 +454,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
-        self._log.info(f"Requesting TradeReports for {self.id}...")
+        self._log.info("Requesting TradeReports...")
 
         try:
             # Check Binance for all trades on active symbols
@@ -504,7 +504,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
-        self._log.info(f"Requesting PositionStatusReports for {self.id}...")
+        self._log.info("Requesting PositionStatusReports...")
 
         try:
             symbol = instrument_id.symbol.value if instrument_id is not None else None
