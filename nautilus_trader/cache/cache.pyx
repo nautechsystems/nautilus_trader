@@ -880,6 +880,8 @@ cdef class Cache(CacheFacade):
                 continue
             if contingent_order.position_id is None:
                 # Assign the parents position ID
+                contingent_order.position_id = order.position_id
+
                 self.add_position_id(
                     order.position_id,
                     order.instrument_id.venue,
