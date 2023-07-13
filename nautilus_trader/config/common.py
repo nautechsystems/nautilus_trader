@@ -118,6 +118,7 @@ class CacheConfig(NautilusConfig, frozen=True):
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt
         The maximum length for internal bar dequeues.
+
     """
 
     tick_capacity: PositiveInt = 1000
@@ -146,6 +147,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should be flushed before start.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
+
     """
 
     type: str = "in-memory"
@@ -175,6 +177,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
+
     """
 
     def __eq__(self, other):
@@ -209,6 +212,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     time_bars_build_with_no_updates: bool = True
@@ -234,6 +238,7 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
         The value should be a valid decimal format.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     bypass: bool = False
@@ -255,6 +260,7 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If unleveraged spot/cash assets should generate positions.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     load_cache: bool = True
@@ -540,7 +546,8 @@ class ExecAlgorithmFactory:
 
 class LoggingConfig(NautilusConfig, frozen=True):
     """
-    Configuration for standard output and file logging for a ``NautilusKernel`` instance.
+    Configuration for standard output and file logging for a ``NautilusKernel``
+    instance.
 
     Parameters
     ----------
@@ -563,6 +570,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
         IDs (e.g. actor/strategy IDs) and values are log levels.
     bypass_logging : bool, default False
         If all logging should be bypassed.
+
     """
 
     log_level: str = "INFO"
@@ -618,6 +626,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The timeout for all engine clients to disconnect.
     timeout_post_stop : PositiveFloat (seconds)
         The timeout after stopping the node to await residual events before final shutdown.
+
     """
 
     environment: Environment

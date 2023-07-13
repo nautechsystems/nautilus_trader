@@ -87,6 +87,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             Client ID used to connect TWS/Gateway.
         config : InteractiveBrokersDataClientConfig
             Configuration for the client.
+
         """
         super().__init__(
             loop=loop,

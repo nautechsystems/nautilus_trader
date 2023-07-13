@@ -309,12 +309,12 @@ class InteractiveBrokersClient(Component, EWrapper):
     ##########################################################################
     # Connectivity
     ##########################################################################
-    def error(  # noqa: too complex, Override the EWrapper
+    def error(  # noqa: C901 too complex
         self,
-        req_id,
-        error_code,
-        error_string,
-        advanced_order_reject_json="",
+        req_id: int,
+        error_code: int,
+        error_string: str,
+        advanced_order_reject_json: str = "",
     ) -> None:
         warning_codes = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
         is_warning = error_code in warning_codes or 2100 <= error_code < 2200

@@ -16,6 +16,7 @@
 The `config` subpackage groups all configuration classes and factories.
 
 All configurations inherit from :class:`msgspec.Struct`.
+
 """
 
 from nautilus_trader.config.backtest import BacktestDataConfig

@@ -257,7 +257,7 @@ def parse_filters_expr(s: Optional[str]):
         for name in code.co_names:
             if name not in allowed_names:
                 raise NameError(f"Use of {name} not allowed")
-        return eval(code, {}, allowed_names)
+        return eval(code, {}, allowed_names)  # noqa
 
     return safer_eval(s)  # Only allow use of the field object
 

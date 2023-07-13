@@ -47,6 +47,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
+
     """
 
     api_key: Optional[str] = None
@@ -93,6 +94,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If the `EXPIRED` execution type is semantically treated as `CANCELED`.
         Binance treats cancels with certain combinations of order type and time in force as expired
         events. This config option allows you to treat these uniformally as cancels.
+
     """
 
     api_key: Optional[str] = None

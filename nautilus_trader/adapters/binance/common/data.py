@@ -94,6 +94,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(

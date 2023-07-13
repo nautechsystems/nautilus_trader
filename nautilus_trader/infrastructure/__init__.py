@@ -13,7 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The `infrastructure` subpackage provides technology specific infrastructure implementations.
+The `infrastructure` subpackage provides technology specific infrastructure
+implementations.
 
 Out of the box a `Redis <https://redis.io/>`_ backed cache is implemented.
+
 """

@@ -44,6 +44,7 @@ class TWAPExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
     ----------
     exec_algorithm_id : InstrumentId
         The execution algorithm ID (will override default which is the class name).
+
     """
 
     exec_algorithm_id: Optional[str] = "TWAP"

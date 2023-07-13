@@ -18,6 +18,7 @@ Defines `Binance` Futures specific enums.
 References
 ----------
 https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
+
 """
 
 

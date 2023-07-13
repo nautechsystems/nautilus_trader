@@ -45,6 +45,7 @@ class BinanceHttpClient:
     secret : str
         The Binance API secret for signed requests.
     base_url : str, optional
+
     """
 
     def __init__(

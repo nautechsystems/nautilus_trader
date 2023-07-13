@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 import msgspec
 import pandas as pd
 import pytest
@@ -125,7 +126,7 @@ class TestPersistenceParsers:
             for k, v in replacements.items():
                 line = line.replace(k, v)
 
-            yield eval(line)
+            yield eval(line)  # noqa
 
         reader = TextReader(line_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-instrument.txt")[0]

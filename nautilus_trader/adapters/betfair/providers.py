@@ -54,6 +54,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         The logger for the provider.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
+
     """
 
     def __init__(

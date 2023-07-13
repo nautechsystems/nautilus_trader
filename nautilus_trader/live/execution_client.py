@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The `LiveExecutionClient` class is responsible for interfacing with a particular
-API which may be presented directly by an exchange, or broker intermediary.
+The `LiveExecutionClient` class is responsible for interfacing with a particular API
+which may be presented directly by an exchange, or broker intermediary.
 """
 
 from __future__ import annotations

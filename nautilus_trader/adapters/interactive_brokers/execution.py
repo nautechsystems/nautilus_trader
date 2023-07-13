@@ -213,8 +213,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
         """
-        Generate an `OrderStatusReport` for the given order identifier parameter(s).
-        If the order is not found, or an error occurs, then logs and returns ``None``.
+        Generate an `OrderStatusReport` for the given order identifier parameter(s). If
+        the order is not found, or an error occurs, then logs and returns ``None``.
 
         Parameters
         ----------
@@ -233,6 +233,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         ------
         ValueError
             If both the `client_order_id` and `venue_order_id` are ``None``.
+
         """
         PyCondition.type_or_none(client_order_id, ClientOrderId, "client_order_id")
         PyCondition.type_or_none(venue_order_id, VenueOrderId, "venue_order_id")
@@ -327,8 +328,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         """
-        Generate a list of `OrderStatusReport`s with optional query filters.
-        The returned list may be empty if no orders match the given parameters.
+        Generate a list of `OrderStatusReport`s with optional query filters. The
+        returned list may be empty if no orders match the given parameters.
 
         Parameters
         ----------
@@ -344,6 +345,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         list[OrderStatusReport]
+
         """
         report = []
         # Create the Filled OrderStatusReport from Open Positions
@@ -401,8 +403,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         """
-        Generate a list of `TradeReport`s with optional query filters.
-        The returned list may be empty if no trades match the given parameters.
+        Generate a list of `TradeReport`s with optional query filters. The returned list
+        may be empty if no trades match the given parameters.
 
         Parameters
         ----------
@@ -418,6 +420,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         list[TradeReport]
+
         """
         self._log.warning("Cannot generate `list[TradeReport]`: not yet implemented.")
 
@@ -430,8 +433,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         """
-        Generate a list of `PositionStatusReport`s with optional query filters.
-        The returned list may be empty if no positions match the given parameters.
+        Generate a list of `PositionStatusReport`s with optional query filters. The
+        returned list may be empty if no positions match the given parameters.
 
         Parameters
         ----------
@@ -445,6 +448,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         list[PositionStatusReport]
+
         """
         report = []
         positions: list[IBPosition] = await self._client.get_positions(self.account_id.get_id())

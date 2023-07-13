@@ -34,6 +34,7 @@ class LiveDataEngineConfig(DataEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 10_000
         The queue size for the engines internal queue buffers.
+
     """
 
     qsize: PositiveInt = 10_000
@@ -47,6 +48,7 @@ class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 10_000
         The queue size for the engines internal queue buffers.
+
     """
 
     qsize: PositiveInt = 10_000
@@ -84,6 +86,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         are colocated with the venue (to avoid the potential for race conditions).
     qsize : PositiveInt, default 10_000
         The queue size for the engines internal queue buffers.
+
     """
 
     reconciliation: bool = True
@@ -125,6 +128,7 @@ class LiveDataClientConfig(NautilusConfig, frozen=True):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+
     """
 
     handle_revised_bars: bool = False
@@ -142,6 +146,7 @@ class LiveExecClientConfig(NautilusConfig, frozen=True):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
@@ -172,6 +177,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
+
     """
 
     environment: Environment = Environment.LIVE
