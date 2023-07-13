@@ -53,7 +53,8 @@ from nautilus_trader.serialization.arrow.util import maybe_list
 
 class RawFile:
     """
-    Provides a wrapper of `fsspec.OpenFile` that processes a raw file and writes to parquet.
+    Provides a wrapper of `fsspec.OpenFile` that processes a raw file and writes to
+    parquet.
 
     Parameters
     ----------
@@ -63,6 +64,7 @@ class RawFile:
         The max block (chunk) size in bytes to read from the file.
     progress: bool, default False
         If a progress bar should be shown when processing this individual file.
+
     """
 
     def __init__(
@@ -160,7 +162,8 @@ def scan_files(glob_path, compression="infer", **kw) -> list[OpenFile]:
 
 def split_and_serialize(objs: list) -> dict[type, dict[Optional[str], list]]:
     """
-    Given a list of Nautilus `objs`; serialize and split into dictionaries per type / instrument ID.
+    Given a list of Nautilus `objs`; serialize and split into dictionaries per type /
+    instrument ID.
     """
     # Split objects into their respective tables
     values: dict[type, dict[str, list]] = {}

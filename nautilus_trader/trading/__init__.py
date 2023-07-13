@@ -18,4 +18,5 @@ The `trading` subpackage groups all trading domain specific components and tooli
 This is a top-level package where the majority of users will interface with the
 framework. Custom trading strategies can be implemented by inheriting from the
 `Strategy` base class.
+
 """

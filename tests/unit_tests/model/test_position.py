@@ -64,7 +64,9 @@ class TestPosition:
         )
 
     def test_side_from_order_side_given_invalid_value(self) -> None:
-        """Test raises `ValueError`."""
+        """
+        Test raises `ValueError`.
+        """
         # Arrange, Act
         with pytest.raises(ValueError):
             Position.side_from_order_side(0)

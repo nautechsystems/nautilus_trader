@@ -44,6 +44,7 @@ class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
         Read only; no execution. Set read_only_api=False to allow executing live orders.
     timeout: int, optional
         The timeout for trying to start gateway
+
     """
 
     username: Optional[str] = None
@@ -76,6 +77,7 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
         Example: value set to 1, InstrumentProvider will make fresh pull every day even if TradingNode is not restarted.
     pickle_path: str (default: None)
         If provided valid path, will store the ContractDetails as pickle, and use during cache_validity period.
+
     """
 
     def __eq__(self, other):
@@ -130,6 +132,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     market_data_type : bool, default REALTIME
         Set which IBMarketDataTypeEnum to be used by InteractiveBrokersClient.
         Configure `IBMarketDataTypeEnum.DELAYED_FROZEN` to use with account without data subscription.
+
     """
 
     instrument_provider: InteractiveBrokersInstrumentProviderConfig = (
@@ -159,6 +162,7 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     ibg_account_id : str
         The Interactive Brokers account id to which TWS/Gateway is logged on.
         If ``None`` then will source the `TWS_ACCOUNT`.
+
     """
 
     instrument_provider: InteractiveBrokersInstrumentProviderConfig = (

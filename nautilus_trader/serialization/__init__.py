@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The `serialization` subpackage groups all serialization components and serializer implementations.
+The `serialization` subpackage groups all serialization components and serializer
+implementations.
 
-Base classes are defined which can allow for other serialization implementations
-beside the built-in specification serializers.
+Base classes are defined which can allow for other serialization implementations beside
+the built-in specification serializers.
+
 """

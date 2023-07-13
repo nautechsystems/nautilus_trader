@@ -32,8 +32,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class TemplateInstrumentProvider(InstrumentProvider):
     """
-    An example template of an ``InstrumentProvider`` showing the minimal methods
-    which must be implemented for an integration to be complete.
+    An example template of an ``InstrumentProvider`` showing the minimal methods which
+    must be implemented for an integration to be complete.
     """
 
     async def load_all_async(self, filters: Optional[dict] = None) -> None:

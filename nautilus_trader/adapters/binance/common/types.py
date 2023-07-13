@@ -61,6 +61,7 @@ class BinanceBar(Bar):
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#kline-candlestick-data
     https://binance-docs.github.io/apidocs/futures/en/#kline-candlestick-data
+
     """
 
     def __init__(
@@ -251,6 +252,7 @@ class BinanceTicker(Ticker):
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#24hr-ticker-price-change-statistics
     https://binance-docs.github.io/apidocs/futures/en/#24hr-ticker-price-change-statistics
+
     """
 
     def __init__(

@@ -147,7 +147,8 @@ def load_product_list(
     debug: bool = False,
 ):
     """
-    Load all instruments for a given `exchange` and `product_class` via the Interactive Brokers web interface
+    Load all instruments for a given `exchange` and `product_class` via the Interactive
+    Brokers web interface.
 
     >>> products = load_product_list(exchange=Exchange.NYSE, product_class=ProductClass.STOCKS)
 

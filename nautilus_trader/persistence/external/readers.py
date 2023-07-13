@@ -27,8 +27,8 @@ from nautilus_trader.model.instruments import Instrument
 
 class LinePreprocessor:
     """
-    Provides pre-processing lines before they are passed to a `Reader` class
-    (currently only `TextReader`).
+    Provides pre-processing lines before they are passed to a `Reader` class (currently
+    only `TextReader`).
 
     Used if the input data requires any pre-processing that may also be required
     as attributes on the resulting Nautilus objects that are created.
@@ -53,6 +53,7 @@ class LinePreprocessor:
     >>>    def post_process(obj: Any, state: dict):
     >>>        obj.ts_init = state['ts_init']
     >>>        return obj
+
     """
 
     def __init__(self):
@@ -123,8 +124,8 @@ class Reader:
 
 class ByteReader(Reader):
     """
-    A Reader subclass for reading blocks of raw bytes; `byte_parser` will be
-    passed a blocks of raw bytes.
+    A Reader subclass for reading blocks of raw bytes; `byte_parser` will be passed a
+    blocks of raw bytes.
 
     Parameters
     ----------
@@ -135,6 +136,7 @@ class ByteReader(Reader):
     instrument_provider_update : Callable , optional
         An optional hook/callable to update instrument provider before data is passed to `byte_parser`
         (in many cases instruments need to be known ahead of parsing).
+
     """
 
     def __init__(
@@ -159,8 +161,8 @@ class ByteReader(Reader):
 
 class TextReader(ByteReader):
     """
-    A Reader subclass for reading lines of a text-like file; `line_parser` will
-    be passed a single row of bytes.
+    A Reader subclass for reading lines of a text-like file; `line_parser` will be
+    passed a single row of bytes.
 
     Parameters
     ----------
@@ -179,6 +181,7 @@ class TextReader(ByteReader):
         be known ahead of parsing).
     newline : bytes
         The newline char value.
+
     """
 
     def __init__(

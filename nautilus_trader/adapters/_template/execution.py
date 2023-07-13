@@ -47,30 +47,31 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     """
     An example of a ``LiveExecutionClient`` highlighting the method requirements.
 
-    +----------------------------------+-------------+
-    | Method                           | Requirement |
-    +----------------------------------+-------------+
-    | _connect                         | required    |
-    | _disconnect                      | required    |
-    | reset                            | optional    |
-    | dispose                          | optional    |
-    +------------------------------------------------+
-    | _submit_order                    | required    |
-    | _submit_order_list               | required    |
-    | _modify_order                    | required    |
-    | _cancel_order                    | required    |
-    | _cancel_all_orders               | required    |
-    | generate_order_status_report     | required    |
-    | generate_order_status_reports    | required    |
-    | generate_trade_reports           | required    |
-    | generate_position_status_reports | required    |
-    +------------------------------------------------+
+    +--------------------------------------------+-------------+
+    | Method                                     | Requirement |
+    +--------------------------------------------+-------------+
+    | _connect                                   | required    |
+    | _disconnect                                | required    |
+    | reset                                      | optional    |
+    | dispose                                    | optional    |
+    +--------------------------------------------+-------------+
+    | _submit_order                              | required    |
+    | _submit_order_list                         | required    |
+    | _modify_order                              | required    |
+    | _cancel_order                              | required    |
+    | _cancel_all_orders                         | required    |
+    | generate_order_status_report               | required    |
+    | generate_order_status_reports              | required    |
+    | generate_trade_reports                     | required    |
+    | generate_position_status_reports           | required    |
+    +--------------------------------------------+-------------+
+
     """
 
-    def _connect(self) -> None:
+    async def _connect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    def _disconnect(self) -> None:
+    async def _disconnect(self) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     def reset(self) -> None:

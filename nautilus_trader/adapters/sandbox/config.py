@@ -28,6 +28,7 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True):
         The currency for this venue
     balance : int
         The starting balance for this venue
+
     """
 
     venue: str  # type: ignore

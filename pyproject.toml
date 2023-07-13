@@ -33,7 +33,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.6.1",
-    "numpy>=1.25.0",
+    "numpy>=1.25.1",
     "Cython==3.0.0b3",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -49,7 +49,7 @@ click = "^8.1.4"
 frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
 msgspec = "^0.16.0"
-numpy = "^1.25.0"
+numpy = "^1.25.1"
 pandas = "^2.0.3"
 psutil = "^5.9.5"
 pyarrow = "^12.0.1"
@@ -74,11 +74,11 @@ redis = ["hiredis", "redis"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.3.0"
-docformatter = "^1.7.3"
+black = "^23.7.0"
+docformatter = "^1.7.5"
 mypy = "^1.4.1"
 pre-commit = "^3.3.3"
-ruff = "^0.0.276"
+ruff = "^0.0.278"
 types-pytz = "^2023.3.0"
 types-redis = "^4.6.0"
 types-requests = "^2.29.0"
@@ -91,7 +91,7 @@ optional = true
 coverage = "^7.2.7"
 pytest = "^7.4.0"
 pytest-aiohttp = "^1.0.4"
-pytest-asyncio = "^0.21.0"
+pytest-asyncio = "^0.21.1"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.11.1"
