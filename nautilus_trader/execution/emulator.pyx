@@ -287,11 +287,11 @@ cdef class OrderEmulator(Actor):
 
         if emulation_trigger not in SUPPORTED_TRIGGERS:
             self._log.error(
-                f"Cannot emulate order: `TriggerType` {trigger_type_to_str(emulation_trigger)} "
-                f"not supported.",
-            )
+                f"Cannot emulate order: `TriggerType` {trigger_type_to_str(emulation_trigger)} not supported.")
             self._cancel_order(matching_core=None, order=order)
             return
+
+        self._check_monitoring(command.strategy_id, command.position_id)
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -354,16 +354,7 @@ cdef class OrderEmulator(Actor):
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
-        # Setup event monitoring
-        if command.strategy_id not in self._subscribed_strategies:
-            # Subscribe to all strategy events
-            self._log.info(f"Subscribing to strategy {command.strategy_id.to_str()} order and position events.", LogColor.BLUE)
-            self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self.on_event)
-            self._msgbus.subscribe(topic=f"events.position.{command.strategy_id.to_str()}", handler=self.on_event)
-            self._subscribed_strategies.add(command.strategy_id)
-
-        if command.position_id is not None:
-            self._monitored_positions.add(command.position_id)
+        self._check_monitoring(command.strategy_id, command.position_id)
 
         cdef Order order
         for order in command.order_list.orders:
@@ -463,6 +454,17 @@ cdef class OrderEmulator(Actor):
         cdef Order order
         for order in orders:
             self._cancel_order(matching_core, order)
+
+    cdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id):
+        if strategy_id not in self._subscribed_strategies:
+            # Subscribe to all strategy events
+            self._msgbus.subscribe(topic=f"events.order.{strategy_id.to_str()}", handler=self.on_event)
+            self._msgbus.subscribe(topic=f"events.position.{strategy_id.to_str()}", handler=self.on_event)
+            self._subscribed_strategies.add(strategy_id)
+            self._log.info(f"Subscribed to strategy {strategy_id.to_str()} order and position events.", LogColor.BLUE)
+
+        if position_id is not None and position_id not in self._monitored_positions:
+            self._monitored_positions.add(position_id)
 
     cdef void _create_new_submit_order(
         self,
