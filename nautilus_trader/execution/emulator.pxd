@@ -31,6 +31,7 @@ from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
@@ -53,6 +54,7 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_cancel_order(self, CancelOrder command)
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
+    cdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id)
     cdef void _create_new_submit_order(self, Order order, PositionId position_id, ClientId client_id)
     cdef void _cancel_order(self, MatchingCore matching_core, Order order)
 
