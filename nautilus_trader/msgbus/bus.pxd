@@ -17,6 +17,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.subscription cimport Subscription
 
@@ -45,6 +46,7 @@ cdef class MessageBus:
     cpdef list subscriptions(self, str pattern=*)
     cpdef bint has_subscribers(self, str pattern=*)
     cpdef bint is_subscribed(self, str topic, handler)
+    cpdef bint is_pending_request(self, UUID4 request_id)
 
     cpdef void register(self, str endpoint, handler)
     cpdef void deregister(self, str endpoint, handler)

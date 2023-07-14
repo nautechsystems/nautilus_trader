@@ -111,10 +111,11 @@ cdef class Strategy(Actor):
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*)
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*)
     cpdef void query_order(self, Order order, ClientId client_id=*)
+    cpdef void cancel_gtd_expiry(self, Order order)
 
+    cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id)
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
     cdef void _set_gtd_expiry(self, Order order)
-    cdef void _cancel_gtd_expiry(self, Order order)
     cpdef void _expire_gtd_order(self, TimeEvent event)
 
 # -- HANDLERS -------------------------------------------------------------------------------------

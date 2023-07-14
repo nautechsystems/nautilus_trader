@@ -83,11 +83,11 @@ cdef class CacheDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict load_submit_order_commands(self):
+    cpdef dict load_index_order_position(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef dict load_submit_order_list_commands(self):
+    cpdef dict load_index_order_client(self):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -131,22 +131,6 @@ cdef class CacheDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void add_submit_order_command(self, SubmitOrder command):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     cpdef void add(self, str key, bytes value):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -167,7 +151,7 @@ cdef class CacheDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void add_order(self, Order order):
+    cpdef void add_order(self, Order order, PositionId position_id = None, ClientId client_id = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

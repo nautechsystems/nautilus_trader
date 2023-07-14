@@ -121,10 +121,7 @@ class TestExecutionEngine:
             logger=self.logger,
         )
 
-        config = ExecEngineConfig(
-            debug=True,
-            filter_unclaimed_external_orders=True,
-        )
+        config = ExecEngineConfig(debug=True)
         self.exec_engine = ExecutionEngine(
             msgbus=self.msgbus,
             cache=self.cache,
@@ -231,10 +228,10 @@ class TestExecutionEngine:
 
         # Act
         self.exec_engine.register_external_order_claims(strategy)
-        claim = self.exec_engine.get_external_order_claim(expected_instrument_id)
 
         # Assert
-        assert claim == strategy.id
+        assert self.exec_engine.get_external_order_claim(expected_instrument_id) == strategy.id
+        assert self.exec_engine.get_external_order_claims_instruments() == {expected_instrument_id}
 
     def test_register_strategy_with_external_order_claims_when_no_claim(self) -> None:
         # Arrange
@@ -252,10 +249,10 @@ class TestExecutionEngine:
 
         # Act
         self.exec_engine.register_external_order_claims(strategy)
-        claim = self.exec_engine.get_external_order_claim(instrument_id)
 
         # Assert
-        assert claim is None
+        assert self.exec_engine.get_external_order_claim(instrument_id) is None
+        assert self.exec_engine.get_external_order_claims_instruments() == set()
 
     def test_register_external_order_claims_conflict(self) -> None:
         # Arrange

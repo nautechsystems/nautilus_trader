@@ -15,7 +15,11 @@
 
 #![allow(dead_code)] // Allow for development
 
+use std::hash::{Hash, Hasher};
+
+use pyo3::prelude::*;
 use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 
 use super::Instrument;
 use crate::{
@@ -24,6 +28,9 @@ use crate::{
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
+#[repr(C)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[pyclass]
 pub struct Equity {
     pub id: InstrumentId,
     pub native_symbol: Symbol,
@@ -86,6 +93,20 @@ impl Equity {
     }
 }
 
+impl PartialEq<Self> for Equity {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for Equity {}
+
+impl Hash for Equity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
+}
+
 impl Instrument for Equity {
     fn id(&self) -> &InstrumentId {
         &self.id
@@ -111,7 +132,7 @@ impl Instrument for Equity {
         None
     }
 
-    fn cost_currency(&self) -> &Currency {
+    fn settlement_currency(&self) -> &Currency {
         &self.currency
     }
 

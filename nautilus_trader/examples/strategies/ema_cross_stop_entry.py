@@ -79,6 +79,7 @@ class EMACrossStopEntryConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     instrument_id: str
@@ -96,8 +97,8 @@ class EMACrossStopEntryConfig(StrategyConfig, frozen=True):
 
 class EMACrossStopEntry(Strategy):
     """
-    A simple moving average cross example strategy with a `MARKET_IF_TOUCHED`
-    entry and `TRAILING_STOP_MARKET` stop.
+    A simple moving average cross example strategy with a `MARKET_IF_TOUCHED` entry and
+    `TRAILING_STOP_MARKET` stop.
 
     When the fast EMA crosses the slow EMA then submits a `MARKET_IF_TOUCHED` order
     one tick above the current bar for BUY, or one tick below the current bar
@@ -117,6 +118,7 @@ class EMACrossStopEntry(Strategy):
     ------
     ValueError
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
+
     """
 
     def __init__(self, config: EMACrossStopEntryConfig) -> None:

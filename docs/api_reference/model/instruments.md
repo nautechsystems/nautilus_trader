@@ -61,6 +61,14 @@
 ```
 
 ```{eval-rst}
+.. automodule:: nautilus_trader.model.instruments.synthetic
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
 .. automodule:: nautilus_trader.model.instruments.base
    :show-inheritance:
    :inherited-members:

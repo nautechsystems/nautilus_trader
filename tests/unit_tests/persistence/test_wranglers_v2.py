@@ -13,11 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import polars as pl
+import pandas as pd
 from fsspec.utils import pathlib
 
-from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
-from nautilus_trader.persistence.loaders_v2 import TradeTickDataFrameLoader
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -32,30 +30,28 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def test_quote_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
-    tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(path)
-
-    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
+    df: pd.DataFrame = pd.read_csv(path)
 
     # Act
-    ticks = wrangler.process(tick_data)
+    wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+    ticks = wrangler.from_pandas(df)
 
     # Assert
     assert len(ticks) == 100_000
-    assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000"
-    assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000"
+    assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000000"
+    assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000000"
 
 
 def test_trade_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "binance-ethusdt-trades.csv"
-    tick_data: pl.DataFrame = TradeTickDataFrameLoader.read_csv(path)
-
-    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+    df: pd.DataFrame = pd.read_csv(path)
 
     # Act
-    ticks = wrangler.process(tick_data)
+    wrangler = TradeTickDataWrangler(ETHUSDT_BINANCE)
+    ticks = wrangler.from_pandas(df)
 
     # Assert
     assert len(ticks) == 69806
-    assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000"
-    assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000"
+    assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000000"
+    assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000000"

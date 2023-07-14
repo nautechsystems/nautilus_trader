@@ -34,6 +34,7 @@ class LiveDataEngineConfig(DataEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 10_000
         The queue size for the engines internal queue buffers.
+
     """
 
     qsize: PositiveInt = 10_000
@@ -47,6 +48,7 @@ class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
     ----------
     qsize : PositiveInt, default 10_000
         The queue size for the engines internal queue buffers.
+
     """
 
     qsize: PositiveInt = 10_000
@@ -67,6 +69,12 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     reconciliation_lookback_mins : NonNegativeInt, optional
         The maximum lookback minutes to reconcile state for.
         If ``None`` or 0 then will use the maximum lookback available from the venues.
+    filter_unclaimed_external_orders : bool, default False
+        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
+    filter_position_reports : bool, default False
+        If `PositionStatusReport`s are filtered from reconciliation.
+        This may be applicable when other nodes are trading the same instrument(s), on the same
+        account - which could cause conflicts in position status.
     inflight_check_interval_ms : NonNegativeInt, default 2_000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
@@ -78,10 +86,13 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         are colocated with the venue (to avoid the potential for race conditions).
     qsize : PositiveInt, default 10_000
         The queue size for the engines internal queue buffers.
+
     """
 
     reconciliation: bool = True
     reconciliation_lookback_mins: Optional[NonNegativeInt] = None
+    filter_unclaimed_external_orders: bool = False
+    filter_position_reports: bool = False
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     qsize: PositiveInt = 10_000
@@ -117,6 +128,7 @@ class LiveDataClientConfig(NautilusConfig, frozen=True):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+
     """
 
     handle_revised_bars: bool = False
@@ -134,6 +146,7 @@ class LiveExecClientConfig(NautilusConfig, frozen=True):
         The clients instrument provider configuration.
     routing : RoutingConfig
         The clients message routing config.
+
     """
 
     instrument_provider: InstrumentProviderConfig = InstrumentProviderConfig()
@@ -164,6 +177,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
+
     """
 
     environment: Environment = Environment.LIVE

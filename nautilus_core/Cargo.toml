@@ -23,19 +23,17 @@ documentation = "https://docs.nautilustrader.io"
 anyhow = "1.0.71"
 chrono = "0.4.26"
 futures = "0.3.28"
-pyo3 = "0.19.0"
+pyo3 = "0.19.1"
 pyo3-asyncio = { git = "https://github.com/nautechsystems/pyo3-asyncio.git", features = ["tokio-runtime", "tokio", "attributes"] }
-pyo3-macros = "0.19.0"
+pyo3-macros = "0.19.1"
 rand = "0.8.5"
 rmp-serde = "1.1.1"
 rust_decimal = "1.30.0"
 rust_decimal_macros = "1.29.1"
-serde = { version = "1.0.164", features = ["derive"] }
-serde_json = "1.0.99"
-# Pinned strum due derive(FromRepr) broken in 0.25.0 which we use heavily
-# https://github.com/Peternator7/strum/issues/275
-strum = { version = "=0.24.1", features = ["derive"] }
-thiserror = "1.0.40"
+serde = { version = "1.0.171", features = ["derive"] }
+serde_json = "1.0.102"
+strum = { version = "0.25.0", features = ["derive"] }
+thiserror = "1.0.43"
 tracing = "0.1.37"
 tokio = { version = "1.29.1", features = ["full"] }
 uuid = { version = "1.4.0", features = ["v4"] }

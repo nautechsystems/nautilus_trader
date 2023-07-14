@@ -27,7 +27,8 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use super::DecodeDataFromRecordBatch;
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: HashMap<String, String>) -> SchemaRef {
@@ -121,7 +122,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
 }
 
 impl DecodeFromRecordBatch for OrderBookDelta {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
         // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
 
@@ -167,11 +168,20 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                         ts_event: ts_event.unwrap(),
                         ts_init: ts_init.unwrap(),
                     }
-                    .into()
                 },
             );
 
         values.collect()
+    }
+}
+
+impl DecodeDataFromRecordBatch for OrderBookDelta {
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Vec<Data> {
+        let deltas: Vec<OrderBookDelta> = OrderBookDelta::decode_batch(metadata, record_batch);
+        deltas.into_iter().map(Data::from).collect()
     }
 }
 

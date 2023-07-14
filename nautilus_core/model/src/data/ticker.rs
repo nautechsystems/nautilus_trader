@@ -32,6 +32,7 @@ use crate::{
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type")]
 #[pyclass]
 pub struct Ticker {
     /// The quotes instrument ID.
@@ -82,6 +83,12 @@ impl Ticker {
         }
     }
 
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -106,50 +113,49 @@ impl Ticker {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn as_dict(&self) -> Py<PyDict> {
-        Python::with_gil(|py| {
-            let dict = PyDict::new(py);
+    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str = serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("decode", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
+    }
 
-            dict.set_item("type", stringify!(Ticker)).unwrap();
-            dict.set_item("instrument_id", self.instrument_id.to_string());
-            dict.set_item("ts_event", self.ts_event).unwrap();
-            dict.set_item("ts_init", self.ts_init).unwrap();
-
-            dict.into_py(py)
-        })
+    /// Return a new object from the given dictionary representation.
+    #[staticmethod]
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Serialize to JSON bytes
+        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("encode", (values,), None)?
+            .extract()?;
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_json_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize JSON: {}",
-                err
-            ))),
-        }
+        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_msgpack_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize MsgPack: {}",
-                err
-            ))),
-        }
+        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self) -> Py<PyAny> {
+    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+        self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self) -> Py<PyAny> {
+    fn as_msgpack(&self,py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
+        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }

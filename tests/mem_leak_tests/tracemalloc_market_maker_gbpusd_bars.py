@@ -14,17 +14,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import tracemalloc
 from datetime import datetime
 from decimal import Decimal
 
-import pandas as pd
+from tracemalloc_snapshot_fixture import snapshot_memory
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.model.currencies import USD
@@ -37,10 +37,12 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-def run_single_backtest():
+@snapshot_memory(5)
+def run():
     # Configure backtest engine
     config = BacktestEngineConfig(
         trader_id="BACKTESTER-001",
+        logging=LoggingConfig(log_level="INFO", bypass_logging=True),
     )
 
     # Build the backtest engine
@@ -107,17 +109,17 @@ def run_single_backtest():
     engine.run(end=datetime(2012, 2, 10))
 
     # Optionally view reports
-    with pd.option_context(
-        "display.max_rows",
-        100,
-        "display.max_columns",
-        None,
-        "display.width",
-        300,
-    ):
-        print(engine.trader.generate_account_report(SIM))
-        print(engine.trader.generate_order_fills_report())
-        print(engine.trader.generate_positions_report())
+    # with pd.option_context(
+    #     "display.max_rows",
+    #     100,
+    #     "display.max_columns",
+    #     None,
+    #     "display.width",
+    #     300,
+    # ):
+    #     print(engine.trader.generate_account_report(SIM))
+    #     print(engine.trader.generate_order_fills_report())
+    #     print(engine.trader.generate_positions_report())
 
     # For repeated backtest runs make sure to reset the engine
     engine.reset()
@@ -126,33 +128,5 @@ def run_single_backtest():
     engine.dispose()
 
 
-def run_n_backtests(n: int):
-    for _ in range(n):
-        run_single_backtest()
-
-
 if __name__ == "__main__":
-    # Start tracemalloc
-    tracemalloc.start()
-
-    # Take initial snapshot of memory
-    initial_memory_snapshot = tracemalloc.take_snapshot()
-
-    # Run n backtests
-    n = 100
-    run_n_backtests(n)
-
-    # Take final snapshot of memory
-    final_memory_snapshot = tracemalloc.take_snapshot()
-
-    # Compute difference and display statistics
-    top_stats = final_memory_snapshot.compare_to(initial_memory_snapshot, "lineno")
-    print("[ Top 10 differences ]")
-    for stat in top_stats[:10]:
-        print(stat)
-
-    # Find and display largest memory block
-    stat = top_stats[0]
-    print(f"{stat.count} memory blocks: {stat.size / 1024:.1f} KiB")
-    for line in stat.traceback.format():
-        print(line)
+    run()

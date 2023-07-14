@@ -29,8 +29,10 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
@@ -38,7 +40,6 @@ from nautilus_trader.model.orders.base cimport Order
 cdef class OrderEmulator(Actor):
     cdef dict _matching_cores
     cdef dict _commands_submit_order
-    cdef dict _commands_submit_order_list
 
     cdef set _subscribed_quotes
     cdef set _subscribed_trades
@@ -46,13 +47,14 @@ cdef class OrderEmulator(Actor):
     cdef set _monitored_positions
 
     cpdef void execute(self, TradingCommand command)
-    cpdef MatchingCore create_matching_core(self, Instrument instrument)
+    cpdef MatchingCore create_matching_core(self, InstrumentId instrument_id, Price price_increment)
     cdef void _handle_submit_order(self, SubmitOrder command)
     cdef void _handle_submit_order_list(self, SubmitOrderList command)
     cdef void _handle_modify_order(self, ModifyOrder command)
     cdef void _handle_cancel_order(self, CancelOrder command)
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
+    cdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id)
     cdef void _create_new_submit_order(self, Order order, PositionId position_id, ClientId client_id)
     cdef void _cancel_order(self, MatchingCore matching_core, Order order)
 

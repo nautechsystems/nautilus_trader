@@ -18,9 +18,11 @@ Defines `Binance` Futures specific enums.
 References
 ----------
 https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
+
 """
 
 
+from decimal import Decimal
 from enum import Enum
 from enum import unique
 
@@ -150,15 +152,9 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
             b: a for a, b in self.futures_ext_to_int_order_type.items()
         }
 
-        self.futures_ext_to_int_position_side = {
-            BinanceFuturesPositionSide.BOTH: PositionSide.FLAT,
-            BinanceFuturesPositionSide.LONG: PositionSide.LONG,
-            BinanceFuturesPositionSide.SHORT: PositionSide.SHORT,
-        }
-
         self.futures_valid_time_in_force = {
             TimeInForce.GTC,
-            TimeInForce.GTD,  # Will be transformed to GTC with warning
+            TimeInForce.GTD,  # Will be transformed to GTC
             TimeInForce.FOK,
             TimeInForce.IOC,
         }
@@ -199,11 +195,11 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
 
     def parse_futures_position_side(
         self,
-        position_side: BinanceFuturesPositionSide,
+        net_size: Decimal,
     ) -> PositionSide:
-        try:
-            return self.futures_ext_to_int_position_side[position_side]
-        except KeyError:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized binance futures position side, was {position_side}",  # pragma: no cover
-            )
+        if net_size > 0:
+            return PositionSide.LONG
+        elif net_size < 0:
+            return PositionSide.SHORT
+        else:
+            return PositionSide.FLAT

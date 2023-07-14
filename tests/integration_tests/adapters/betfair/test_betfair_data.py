@@ -62,7 +62,9 @@ INSTRUMENTS = []
 @pytest.fixture(scope="session", autouse=True)
 @patch("nautilus_trader.adapters.betfair.providers.load_markets_metadata")
 def instrument_list(mock_load_markets_metadata):
-    """Prefill `INSTRUMENTS` cache for tests"""
+    """
+    Prefill `INSTRUMENTS` cache for tests.
+    """
     global INSTRUMENTS
 
     # Setup
@@ -322,7 +324,7 @@ def test_orderbook_updates(data_client):
                 raise KeyError
 
     # Assert
-    book = order_books[list(order_books)[0]]
+    book = order_books[next(iter(order_books))]
     expected = """╭───────────────┬───────┬──────────────╮
 │ bids          │ price │ asks         │
 ├───────────────┼───────┼──────────────┤

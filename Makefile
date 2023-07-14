@@ -40,10 +40,6 @@ build-wheel-debug:
 clean:
 	git clean -fxd
 
-.PHONY: docs
-docs:
-	poetry run sphinx-build docs docs/build/html -b html
-
 .PHONY: format
 format:
 	(cd nautilus_core && cargo +nightly fmt)
@@ -62,6 +58,17 @@ update:
 	poetry update
 	poetry install --with dev,test --all-extras --no-root
 
+.PHONY: docs
+docs: docs-python docs-rust
+
+.PHONY: docs-python
+docs-python: install-just-deps-all
+	poetry run sphinx-build docs docs/build/html -b html
+
+.PHONY: docs-rust
+docs-rust:
+	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --no-deps)
+
 .PHONY: clippy
 clippy:
 	(cd nautilus_core && cargo clippy --fix --all-targets --all-features -- -D warnings -W clippy::pedantic -W clippy::nursery -W clippy::unwrap_used -W clippy::expect_used)
@@ -76,7 +83,7 @@ cargo-update:
 
 .PHONY: cargo-test
 cargo-test:
-	(cd nautilus_core && cargo test)
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo test)
 
 .PHONY: cargo-bench
 cargo-bench:

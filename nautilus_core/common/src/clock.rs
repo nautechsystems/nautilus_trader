@@ -24,7 +24,7 @@ use pyo3::{prelude::*, AsPyPointer};
 
 use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 
-const ONE_NANOSECOND_DURATION: Duration = Duration::from_nanos(1);
+const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub struct MonotonicClock {
     /// The last recorded duration value from the clock.
@@ -40,7 +40,7 @@ impl MonotonicClock {
     fn monotonic_duration_since_unix_epoch(&mut self) -> Duration {
         let now = duration_since_unix_epoch();
         let output = if now <= self.last {
-            self.last + ONE_NANOSECOND_DURATION
+            self.last + ONE_NANOSECOND
         } else {
             now
         };
@@ -109,13 +109,13 @@ pub trait Clock {
     /// Return the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
-    /// Register a default event handler for the clock. If a [Timer]
+    /// Register a default event handler for the clock. If a [`Timer`]
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>);
 
     fn register_default_handler_py(&mut self, callback_py: PyObject);
 
-    /// Set a [Timer] to alert at a particular time. Optional
+    /// Set a [`Timer`] to alert at a particular time. Optional
     /// callback gets used to handle generated events.
     fn set_time_alert_ns_py(
         &mut self,
@@ -124,7 +124,7 @@ pub trait Clock {
         callback_py: Option<PyObject>,
     );
 
-    /// Set a [Timer] to start alerting at every interval
+    /// Set a [`Timer`] to start alerting at every interval
     /// between start and stop time. Optional callback gets
     /// used to handle generated event.
     fn set_timer_ns_py(

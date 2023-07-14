@@ -164,7 +164,11 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     """
 
     def __init__(
-        self, http_client: BetfairHttpClient, logger: Logger, message_handler: Callable, **kwargs
+        self,
+        http_client: BetfairHttpClient,
+        logger: Logger,
+        message_handler: Callable,
+        **kwargs,
     ):
         super().__init__(
             http_client=http_client,

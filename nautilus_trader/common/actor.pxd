@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Callable
+
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
@@ -50,6 +52,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 cdef class Actor(Component):
     cdef set _warning_events
     cdef dict _signal_classes
+    cdef dict _pending_requests
 
     cdef readonly config
     """The actors configuration.\n\n:returns: `NautilusConfig`"""
@@ -152,33 +155,36 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_data(self, ClientId client_id, DataType data_type, UUID4 request_id=*)
-    cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=*, UUID4 request_id=*)
-    cpdef void request_instruments(self, Venue venue, ClientId client_id=*, UUID4 request_id=*)
-    cpdef void request_quote_ticks(
+    cpdef UUID4 request_data(self, DataType data_type, ClientId client_id, callback=*)
+    cpdef UUID4 request_instrument(self, InstrumentId instrument_id, ClientId client_id=*, callback=*)
+    cpdef UUID4 request_instruments(self, Venue venue, ClientId client_id=*, callback=*)
+    cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
-        UUID4 request_id=*,
+        callback=*,
     )
-    cpdef void request_trade_ticks(
+    cpdef UUID4 request_trade_ticks(
         self,
         InstrumentId instrument_id,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
-        UUID4 request_id= *,
+        callback=*,
     )
-    cpdef void request_bars(
+    cpdef UUID4 request_bars(
         self,
         BarType bar_type,
         datetime start=*,
         datetime end=*,
         ClientId client_id=*,
-        UUID4 request_id= *,
+        callback=*,
     )
+    cpdef bint is_pending_request(self, UUID4 request_id)
+    cpdef bint has_pending_requests(self)
+    cpdef set pending_requests(self)
 
 # -- HANDLERS -------------------------------------------------------------------------------------
 
@@ -206,6 +212,7 @@ cdef class Actor(Component):
     cpdef void _handle_quote_ticks_response(self, DataResponse response)
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
+    cpdef void _finish_response(self, UUID4 request_id)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

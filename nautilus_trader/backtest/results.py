@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
@@ -25,13 +26,13 @@ class BacktestResult:
 
     trader_id: str
     machine_id: str
-    run_config_id: Optional[str]
+    run_config_id: str | None
     instance_id: str
     run_id: str
-    run_started: Optional[int]
-    run_finished: Optional[int]
-    backtest_start: Optional[int]
-    backtest_end: Optional[int]
+    run_started: int | None
+    run_finished: int | None
+    backtest_start: int | None
+    backtest_end: int | None
     elapsed_time: float
     iterations: int
     total_events: int

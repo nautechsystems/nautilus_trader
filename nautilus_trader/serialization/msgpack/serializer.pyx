@@ -13,8 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import re
 from typing import Any
 
+from libc.stdint cimport uint64_t
+
+import pandas as pd
+import pytz
 from msgspec import msgpack
 
 from nautilus_trader.core.correctness cimport Condition
@@ -29,13 +34,21 @@ cdef class MsgPackSerializer(Serializer):
 
     Parameters
     ----------
-    timestamps_as_str : bool
-        If the serializer converts `int64_t` timestamps to `str` on serialization,
-        and back to `int64_t` on deserialization.
+    timestamps_as_str : bool, default False
+        If the serializer converts `uint64_t` timestamps to integer strings on serialization,
+        and back to `uint64_t` on deserialization.
+    timestamps_as_iso8601 : bool, default False
+        If the serializer converts `uint64_t` timestamps to ISO 8601 strings on serialization,
+        and back to `uint64_t` on deserialization.
     """
 
-    def __init__(self, bint timestamps_as_str=False):
+    def __init__(
+        self,
+        bint timestamps_as_str = False,
+        bint timestamps_as_iso8601 = False,
+    ):
         self.timestamps_as_str = timestamps_as_str
+        self.timestamps_as_iso8601 = timestamps_as_iso8601
 
     cpdef bytes serialize(self, object obj):
         """
@@ -63,14 +76,15 @@ cdef class MsgPackSerializer(Serializer):
             raise RuntimeError("cannot serialize object: unrecognized type")
 
         cdef dict obj_dict = delegate(obj)
-        if self.timestamps_as_str:
-            ts_event = obj_dict.get("ts_event")
-            if ts_event is not None:
-                obj_dict["ts_event"] = str(ts_event)
+        cdef dict timestamp_kvs = {k: v for k, v in obj_dict.items() if re.match(r"^ts_", k)}
 
-            ts_init = obj_dict.get("ts_init")
-            if ts_init is not None:
-                obj_dict["ts_init"] = str(ts_init)
+        cdef str key
+        if self.timestamps_as_iso8601:
+            for key, value in timestamp_kvs.items():
+                obj_dict[key] = pd.Timestamp(value, tz=pytz.utc).isoformat()
+        elif self.timestamps_as_str:
+            for key, value in timestamp_kvs.items():
+                obj_dict[key] = str(value)
 
         return msgpack.encode(obj_dict)
 
@@ -96,14 +110,19 @@ cdef class MsgPackSerializer(Serializer):
         Condition.not_none(obj_bytes, "obj_bytes")
 
         cdef dict obj_dict = msgpack.decode(obj_bytes)  # type: dict[str, Any]
-        if self.timestamps_as_str:
-            ts_event = obj_dict.get("ts_event")
-            if ts_event is not None:
-                obj_dict["ts_event"] = int(ts_event)
+        cdef dict timestamp_kvs = {k: v for k, v in obj_dict.items() if re.match(r"^ts_", k)}
 
-            ts_init = obj_dict.get("ts_init")
-            if ts_init is not None:
-                obj_dict["ts_init"] = int(ts_init)
+        cdef:
+            str key
+            uint64_t value_uint64
+        if self.timestamps_as_iso8601 or self.timestamps_as_str:
+            for key, value in timestamp_kvs.items():
+                if re.match(r"^\d+$", value):  # Check if value is an integer-like string
+                    value_uint64 = int(value)
+                    obj_dict[key] = value_uint64
+                else:  # Else assume the value is in ISO 8601 format
+                    value_uint64 = pd.Timestamp(value, tz=pytz.utc).value
+                    obj_dict[key] = value_uint64
 
         delegate = _OBJECT_FROM_DICT_MAP.get(obj_dict["type"])
         if delegate is None:

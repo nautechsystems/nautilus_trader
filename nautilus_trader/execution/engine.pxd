@@ -53,8 +53,6 @@ cdef class ExecutionEngine(Component):
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly bint allow_cash_positions
     """If unleveraged spot/cash assets should generate positions.\n\n:returns: `bool`"""
-    cdef readonly bint filter_unclaimed_external_orders
-    """If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.\n\n:returns `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
@@ -68,6 +66,7 @@ cdef class ExecutionEngine(Component):
     cpdef bint check_disconnected(self)
     cpdef bint check_residuals(self)
     cpdef StrategyId get_external_order_claim(self, InstrumentId instrument_id)
+    cpdef set get_external_order_claims_instruments(self)
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -113,8 +112,8 @@ cdef class ExecutionEngine(Component):
     cpdef OmsType _determine_oms_type(self, OrderFilled fill)
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type)
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
-    cpdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type)
-    cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
+    cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)
+    cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)

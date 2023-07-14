@@ -16,11 +16,10 @@
 from io import BytesIO
 from pathlib import Path
 
-import polars as pl
+import pandas as pd
 import pyarrow as pa
 
 from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
-from nautilus_trader.persistence.loaders_v2 import QuoteTickDataFrameLoader
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -35,10 +34,11 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
     path = Path(TEST_DATA_DIR) / "truefx-audusd-ticks.csv"
-    tick_data: pl.DataFrame = QuoteTickDataFrameLoader.read_csv(path)
+    df: pd.DataFrame = pd.read_csv(path)
 
-    wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(tick_data)
+    # Act
+    wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+    ticks = wrangler.from_pandas(df)
 
     # Act
     batches_bytes = DataTransformer.pyo3_quote_ticks_to_batches_bytes(ticks)
@@ -63,6 +63,6 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     reader = pa.ipc.open_stream(batches_stream)
 
     # Assert
-    assert len(ticks) == 69806
+    assert len(ticks) == 69_806
     assert len(reader.read_all()) == len(ticks)
     reader.close()

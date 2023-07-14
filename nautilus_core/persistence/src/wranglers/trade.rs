@@ -13,38 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{collections::HashMap, io::Cursor, str::FromStr};
 
-use nautilus_core::time::UnixNanos;
-use nautilus_model::{
-    data::trade::TradeTick,
-    enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-    types::{price::Price, quantity::Quantity},
-};
-use polars::{
-    prelude::{DataFrame, *},
-    series::Series,
-};
-use pyo3::prelude::*;
-use pyo3_polars::PyDataFrame;
+use datafusion::arrow::ipc::reader::StreamReader;
+use nautilus_model::{data::trade::TradeTick, identifiers::instrument_id::InstrumentId};
+use pyo3::{exceptions::PyValueError, prelude::*};
+
+use crate::arrow::DecodeFromRecordBatch;
 
 #[pyclass]
 pub struct TradeTickDataWrangler {
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
+    metadata: HashMap<String, String>,
 }
 
 #[pymethods]
 impl TradeTickDataWrangler {
     #[new]
-    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> Self {
-        Self {
-            instrument_id: InstrumentId::from_str(instrument_id).unwrap(),
+    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
+        let instrument_id = InstrumentId::from_str(instrument_id)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let metadata = TradeTick::get_metadata(&instrument_id, price_precision, size_precision);
+
+        Ok(Self {
+            instrument_id,
             price_precision,
             size_precision,
-        }
+            metadata,
+        })
     }
 
     #[getter]
@@ -62,117 +61,26 @@ impl TradeTickDataWrangler {
         self.size_precision
     }
 
-    fn process(
-        &self,
-        _py: Python,
-        data: PyDataFrame,
-        ts_init_delta: u64,
-    ) -> PyResult<Vec<TradeTick>> {
-        // Convert DataFrame to Series per column
-        let data: DataFrame = data.into();
-        let price: &Series = data.column("price").unwrap();
-        let size: &Series = data.column("size").unwrap();
-        let aggressor_side: &Series = data.column("aggressor_side").unwrap();
-        let trade_id: Series = data
-            .column("trade_id")
-            .unwrap()
-            .cast(&DataType::Utf8)
-            .unwrap();
-        let ts_event: Series = data
-            .column("ts_event")
-            .unwrap()
-            .datetime()
-            .unwrap()
-            .cast(&DataType::UInt64)
-            .unwrap()
-            .timestamp(TimeUnit::Nanoseconds)
-            .unwrap()
-            .cast(&DataType::UInt64)
-            .unwrap()
-            .into_series();
-        let ts_init: Series = match data.column("ts_init") {
-            Ok(column) => column
-                .datetime()
-                .unwrap()
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .timestamp(TimeUnit::Nanoseconds)
-                .unwrap()
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .into_series(),
-            Err(_) => {
-                let ts_event_plus_delta: Series = ts_event
-                    .u64()
-                    .unwrap()
-                    .into_iter()
-                    .map(|ts| ts.map(|ts| ts + ts_init_delta))
-                    .collect::<ChunkedArray<UInt64Type>>()
-                    .into_series();
-                ts_event_plus_delta
-            }
+    fn process_record_batches_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<TradeTick>> {
+        // Create a StreamReader (from Arrow IPC)
+        let cursor = Cursor::new(data);
+        let reader = match StreamReader::try_new(cursor, None) {
+            Ok(reader) => reader,
+            Err(e) => return Err(PyValueError::new_err(e.to_string())),
         };
 
-        // Convert Series to Rust native types
-        let price_values: Vec<f64> = price
-            .f64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let size_values: Vec<f64> = size
-            .f64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let aggressor_side_values: Vec<AggressorSide> = aggressor_side
-            .utf8()
-            .unwrap()
-            .into_iter()
-            .map(|val| AggressorSide::from_str(val.unwrap()).unwrap())
-            .collect();
-        let trade_id_values: Vec<TradeId> = trade_id
-            .utf8()
-            .unwrap()
-            .into_iter()
-            .map(|val| TradeId::from_str(val.unwrap()).unwrap())
-            .collect();
-        let ts_event_values: Vec<u64> = ts_event
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let ts_init_values: Vec<u64> = ts_init
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
+        let mut ticks = Vec::new();
 
-        // Map Series to Nautilus objects
-        let ticks: Vec<TradeTick> = price_values
-            .into_iter()
-            .zip(size_values.into_iter())
-            .zip(aggressor_side_values.into_iter())
-            .zip(trade_id_values.into_iter())
-            .zip(ts_event_values.into_iter())
-            .zip(ts_init_values.into_iter())
-            .map(
-                |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| {
-                    TradeTick::new(
-                        self.instrument_id.clone(),
-                        Price::new(price, self.price_precision),
-                        Quantity::new(size, self.size_precision),
-                        aggressor_side,
-                        trade_id,
-                        ts_event as UnixNanos,
-                        ts_init as UnixNanos,
-                    )
-                },
-            )
-            .collect();
+        // Read the record batches
+        for maybe_batch in reader {
+            let record_batch = match maybe_batch {
+                Ok(record_batch) => record_batch,
+                Err(e) => return Err(PyValueError::new_err(e.to_string())),
+            };
+
+            let batch_deltas = TradeTick::decode_batch(&self.metadata, record_batch);
+            ticks.extend(batch_deltas);
+        }
 
         Ok(ticks)
     }

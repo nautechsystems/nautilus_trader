@@ -91,9 +91,10 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         report_id: UUID4,
         ts_init: int,
+        use_position_ids: bool = True,
     ) -> TradeReport:
-        venue_position_id = None
-        if self.positionSide is not None:
+        venue_position_id: Optional[PositionId] = None
+        if self.positionSide is not None and use_position_ids:
             venue_position_id = PositionId(f"{instrument_id}-{self.positionSide}")
 
         order_side = OrderSide.BUY if self.isBuyer or self.buyer else OrderSide.SELL
@@ -185,7 +186,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             else ContingencyType.NO_CONTINGENCY
         )
 
-        trigger_price = Decimal(self.stopPrice)
+        trigger_price = Decimal(self.stopPrice) if self.stopPrice is not None else Decimal()
         trigger_type = TriggerType.NO_TRIGGER
         if self.workingType is not None:
             trigger_type = enum_parser.parse_binance_trigger_type(self.workingType)
@@ -204,6 +205,15 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         )
         reduce_only = self.reduceOnly if self.reduceOnly is not None else False
 
+        if self.side is None:
+            raise ValueError("`side` was `None` when a value was expected")
+        if self.type is None:
+            raise ValueError("`type` was `None` when a value was expected")
+        if self.timeInForce is None:
+            raise ValueError("`timeInForce` was `None` when a value was expected")
+        if self.status is None:
+            raise ValueError("`status` was `None` when a value was expected")
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -215,7 +225,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             contingency_type=contingency_type,
             time_in_force=enum_parser.parse_binance_time_in_force(self.timeInForce),
             order_status=enum_parser.parse_binance_order_status(self.status),
-            price=Price.from_str(str(Decimal(self.price))),
+            price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,

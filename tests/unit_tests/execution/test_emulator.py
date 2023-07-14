@@ -50,6 +50,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -65,6 +66,8 @@ from nautilus_trader.trading.strategy import Strategy
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
+BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestOrderEmulatorWithSingleOrders:
@@ -96,6 +99,8 @@ class TestOrderEmulatorWithSingleOrders:
             logger=self.logger,
         )
         self.cache.add_instrument(ETHUSDT_PERP_BINANCE)
+        self.cache.add_instrument(BTCUSDT_BINANCE)
+        self.cache.add_instrument(ETHUSDT_BINANCE)
 
         self.portfolio = Portfolio(
             msgbus=self.msgbus,
@@ -185,11 +190,17 @@ class TestOrderEmulatorWithSingleOrders:
 
     def test_create_matching_core_twice_raises_exception(self) -> None:
         # Arrange
-        self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+        self.emulator.create_matching_core(
+            ETHUSDT_PERP_BINANCE.id,
+            ETHUSDT_PERP_BINANCE.price_increment,
+        )
 
         # Act, Assert
         with pytest.raises(RuntimeError):
-            self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+            self.emulator.create_matching_core(
+                ETHUSDT_PERP_BINANCE.id,
+                ETHUSDT_PERP_BINANCE.price_increment,
+            )
 
     def test_subscribed_quotes_when_nothing_subscribed_returns_empty_list(self) -> None:
         # Arrange, Act
@@ -208,13 +219,6 @@ class TestOrderEmulatorWithSingleOrders:
     def test_get_submit_order_commands_when_no_emulations_returns_empty_dict(self) -> None:
         # Arrange, Act
         commands = self.emulator.get_submit_order_commands()
-
-        # Assert
-        assert commands == {}
-
-    def test_get_submit_order_list_commands_when_no_emulations_returns_empty_dict(self) -> None:
-        # Arrange, Act
-        commands = self.emulator.get_submit_order_list_commands()
 
         # Assert
         assert commands == {}
@@ -1057,7 +1061,10 @@ class TestOrderEmulatorWithSingleOrders:
             ask=5070.0,
         )
 
-        self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+        self.emulator.create_matching_core(
+            ETHUSDT_PERP_BINANCE.id,
+            ETHUSDT_PERP_BINANCE.price_increment,
+        )
         self.emulator.on_quote_tick(tick)
 
         # Act
@@ -1081,4 +1088,54 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
         assert isinstance(order.events[2], OrderInitialized)
+        assert self.exec_client.calls == ["_start", "submit_order"]
+
+    @pytest.mark.parametrize(
+        ("order_side"),
+        [
+            OrderSide.BUY,
+            OrderSide.SELL,
+        ],
+    )
+    def test_submit_limit_order_bid_ask_with_synthetic_instrument_trigger(
+        self,
+        order_side,
+    ):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+        self.cache.add_synthetic(synthetic)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_BINANCE.id,
+            order_side=order_side,
+            quantity=Quantity.from_int(10),
+            price=Price.from_str("30000.00000000"),  # <-- Synthetic price
+            emulation_trigger=TriggerType.DEFAULT,
+            trigger_instrument_id=synthetic.id,
+        )
+
+        self.strategy.submit_order(order)
+
+        tick1 = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_BINANCE,
+            bid=10_000.0,
+            ask=10_000.0,
+        )
+        tick2 = TestDataStubs.quote_tick(
+            instrument=BTCUSDT_BINANCE,
+            bid=50_000.0,
+            ask=50_000.0,
+        )
+
+        # Act
+        self.data_engine.process(tick1)  # <-- No synthetic tick emitted yet
+        self.data_engine.process(tick2)
+
+        # Assert
+        order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
+        assert order.order_type == OrderType.MARKET
+        assert order.emulation_trigger == TriggerType.NO_TRIGGER
+        assert len(order.events) == 2
+        assert isinstance(order.events[0], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
         assert self.exec_client.calls == ["_start", "submit_order"]

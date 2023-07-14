@@ -60,9 +60,9 @@ struct Position {
     pub size_precision: u8,
     pub multiplier: Quantity,
     pub is_inverse: bool,
-    pub quote_currency: Currency,
     pub base_currency: Option<Currency>,
-    pub cost_currency: Currency,
+    pub quote_currency: Currency,
+    pub settlement_currency: Currency,
     pub ts_init: UnixNanos,
     pub ts_opened: UnixNanos,
     pub ts_last: UnixNanos,
@@ -75,7 +75,7 @@ struct Position {
 }
 
 impl Position {
-    pub fn new(instrument: &dyn Instrument, fill: &OrderFilled) -> Self {
+    pub fn new<T: Instrument>(instrument: &T, fill: &OrderFilled) -> Self {
         assert_eq!(instrument.id(), &fill.instrument_id);
         assert!(fill.position_id.is_some());
         assert!(fill.order_side != OrderSide::NoOrderSide);
@@ -104,9 +104,9 @@ impl Position {
             size_precision: instrument.size_precision(),
             multiplier: instrument.multiplier(),
             is_inverse: instrument.is_inverse(),
-            quote_currency: instrument.quote_currency().clone(),
             base_currency: instrument.base_currency().clone().to_owned().cloned(),
-            cost_currency: instrument.cost_currency().clone(),
+            quote_currency: instrument.quote_currency().clone(),
+            settlement_currency: instrument.settlement_currency().clone(),
             ts_init: fill.ts_init,
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,

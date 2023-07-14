@@ -626,19 +626,23 @@ cdef class ExecAlgorithm(Actor):
         Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
 
-        cdef SubmitOrder primary_command = None
-        cdef SubmitOrder spawned_command = None
+        cdef Order primary = None
+        cdef PositionId position_id = None
+        cdef ClientId client_id = None
+        cdef SubmitOrder command = None
 
         if order.exec_spawn_id is not None:
             # Handle new spawned order
-            primary_command = self.cache.load_submit_order_command(order.exec_spawn_id)
-            Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
-            if primary_command is None:
+            primary = self.cache.order(order.exec_spawn_id)
+            Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
+            if primary is None:
                 self._log.error(
-                    "Cannot submit order: cannot find primary "
-                    f"`SubmitOrder` command for {repr(order.exec_spawn_id)}."
+                    "Cannot submit order: cannot find primary order for {repr(order.exec_spawn_id)}."
                 )
                 return
+
+            position_id = self.cache.position_id(primary.client_order_id)
+            client_id = self.cache.client_id(primary.client_order_id)
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
@@ -652,39 +656,38 @@ cdef class ExecAlgorithm(Actor):
                 msg=order.init_event_c(),
             )
 
-            self.cache.add_order(order, primary_command.position_id)
+            self.cache.add_order(order, position_id)
 
-            spawned_command = SubmitOrder(
+            command = SubmitOrder(
                 trader_id=self.trader_id,
-                strategy_id=primary_command.strategy_id,
+                strategy_id=primary.strategy_id,
                 order=order,
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
-                position_id=primary_command.position_id,
-                client_id=primary_command.client_id,
+                position_id=primary.position_id,
+                client_id=client_id,
             )
-            self.cache.add_submit_order_command(spawned_command)
 
-            self._send_risk_command(spawned_command)
+            self._send_risk_command(command)
             return
 
         # Handle primary (original) order
-        primary_command = self.cache.load_submit_order_command(order.client_order_id)
+        position_id = self.cache.position_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
         if cached_order.order_type != order.order_type:
-            self.cache.add_order(order, primary_command.position_id, override=True)
+            self.cache.add_order(order, position_id, client_id, override=True)
 
-        # Replace commands order with transformed order
-        primary_command.order = order
+        command = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=order.strategy_id,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            position_id=position_id,
+            client_id=None,  # Not yet supported
+        )
 
-        Condition.equal(order.strategy_id, primary_command.strategy_id, "order.strategy_id", "primary_command.strategy_id")
-        if primary_command is None:
-            self._log.error(
-                "Cannot submit order: cannot find primary "
-                f"`SubmitOrder` command for {repr(order.client_order_id)}."
-            )
-            return
-        self._send_risk_command(primary_command)
+        self._send_risk_command(command)
 
     cpdef void modify_order(
         self,

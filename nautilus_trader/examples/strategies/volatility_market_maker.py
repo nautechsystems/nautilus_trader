@@ -67,6 +67,7 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     instrument_id: str
@@ -222,7 +223,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -333,7 +334,7 @@ class VolatilityMarketMaker(Strategy):
             self.log.info("No quotes yet...")
             return
 
-        # If order filled then replace order at atr multiple distance from the market
+        # If order filled then replace order at ATR multiple distance from the market
         if isinstance(event, OrderFilled):
             if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:

@@ -13,37 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{collections::HashMap, io::Cursor, str::FromStr};
 
-use nautilus_core::time::UnixNanos;
-use nautilus_model::{
-    data::quote::QuoteTick,
-    identifiers::instrument_id::InstrumentId,
-    types::{price::Price, quantity::Quantity},
-};
-use polars::{
-    prelude::{DataFrame, NamedFrom, *},
-    series::Series,
-};
-use pyo3::prelude::*;
-use pyo3_polars::PyDataFrame;
+use datafusion::arrow::ipc::reader::StreamReader;
+use nautilus_model::{data::quote::QuoteTick, identifiers::instrument_id::InstrumentId};
+use pyo3::{exceptions::PyValueError, prelude::*};
+
+use crate::arrow::DecodeFromRecordBatch;
 
 #[pyclass]
 pub struct QuoteTickDataWrangler {
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
+    metadata: HashMap<String, String>,
 }
 
 #[pymethods]
 impl QuoteTickDataWrangler {
     #[new]
-    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> Self {
-        Self {
-            instrument_id: InstrumentId::from_str(instrument_id).unwrap(),
+    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
+        let instrument_id = InstrumentId::from_str(instrument_id)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let metadata = QuoteTick::get_metadata(&instrument_id, price_precision, size_precision);
+
+        Ok(Self {
+            instrument_id,
             price_precision,
             size_precision,
-        }
+            metadata,
+        })
     }
 
     #[getter]
@@ -61,107 +61,27 @@ impl QuoteTickDataWrangler {
         self.size_precision
     }
 
-    fn process(
-        &self,
-        _py: Python,
-        data: PyDataFrame,
-        default_size: f64,
-        ts_init_delta: u64,
-    ) -> PyResult<Vec<QuoteTick>> {
-        // Convert DataFrame to Series per column
-        let data: DataFrame = data.into();
-        let bid: &Series = data.column("bid").unwrap();
-        let ask: &Series = data.column("ask").unwrap();
-        let bid_size: &Series = &Series::new("bid_size", vec![default_size; data.height()]);
-        let bid_size: &Series = data.column("bid_size").unwrap_or(bid_size);
-        let ask_size: &Series = &Series::new("ask_size", vec![default_size; data.height()]);
-        let ask_size: &Series = data.column("ask_size").unwrap_or(ask_size);
-        let ts_event: Series = data
-            .column("ts_event")
-            .unwrap()
-            .datetime()
-            .unwrap()
-            .cast(&DataType::UInt64)
-            .unwrap()
-            .timestamp(TimeUnit::Nanoseconds)
-            .unwrap()
-            .cast(&DataType::UInt64)
-            .unwrap()
-            .into_series();
-        let ts_init: Series = match data.column("ts_init") {
-            Ok(column) => column
-                .datetime()
-                .unwrap()
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .timestamp(TimeUnit::Nanoseconds)
-                .unwrap()
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .into_series(),
-            Err(_) => {
-                let ts_event_plus_delta: Series = ts_event
-                    .u64()
-                    .unwrap()
-                    .into_iter()
-                    .map(|ts| ts.map(|ts| ts + ts_init_delta))
-                    .collect::<ChunkedArray<UInt64Type>>()
-                    .into_series();
-                ts_event_plus_delta
-            }
+    fn process_record_batches_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<QuoteTick>> {
+        // Create a StreamReader (from Arrow IPC)
+        let cursor = Cursor::new(data);
+        let reader = match StreamReader::try_new(cursor, None) {
+            Ok(reader) => reader,
+            Err(e) => return Err(PyValueError::new_err(e.to_string())),
         };
 
-        // Convert Series to vectors of Rust native types
-        let bid_values: Vec<f64> = bid.f64().unwrap().into_iter().map(Option::unwrap).collect();
-        let ask_values: Vec<f64> = ask.f64().unwrap().into_iter().map(Option::unwrap).collect();
-        let bid_size_values: Vec<f64> = bid_size
-            .f64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let ask_size_values: Vec<f64> = ask_size
-            .f64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let ts_event_values: Vec<u64> = ts_event
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let ts_init_values: Vec<u64> = ts_init
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
+        let mut quotes = Vec::new();
 
-        // Map Series to Nautilus objects
-        let ticks: Vec<QuoteTick> = bid_values
-            .into_iter()
-            .zip(ask_values.into_iter())
-            .zip(bid_size_values.into_iter())
-            .zip(ask_size_values.into_iter())
-            .zip(ts_event_values.into_iter())
-            .zip(ts_init_values.into_iter())
-            .map(
-                |(((((bid, ask), bid_size), ask_size), ts_event), ts_init)| {
-                    QuoteTick::new(
-                        self.instrument_id.clone(),
-                        Price::new(bid, self.price_precision),
-                        Price::new(ask, self.price_precision),
-                        Quantity::new(bid_size, self.size_precision),
-                        Quantity::new(ask_size, self.size_precision),
-                        ts_event as UnixNanos,
-                        ts_init as UnixNanos,
-                    )
-                },
-            )
-            .collect();
+        // Read the record batches
+        for maybe_batch in reader {
+            let record_batch = match maybe_batch {
+                Ok(record_batch) => record_batch,
+                Err(e) => return Err(PyValueError::new_err(e.to_string())),
+            };
 
-        Ok(ticks)
+            let batch_deltas = QuoteTick::decode_batch(&self.metadata, record_batch);
+            quotes.extend(batch_deltas);
+        }
+
+        Ok(quotes)
     }
 }

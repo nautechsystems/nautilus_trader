@@ -20,6 +20,7 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
@@ -65,12 +66,12 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         The logger for the client.
     instrument_provider : BinanceSpotInstrumentProvider
         The instrument provider.
+    base_url_ws : str
+        The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    base_url_ws : str, optional
-        The base URL for the WebSocket client.
-    warn_gtd_to_gtc : bool, default True
-        If log warning for GTD time in force transformed to GTC.
+    config : BinanceExecClientConfig
+        The configuration for the client.
 
     """
 
@@ -83,9 +84,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BinanceSpotInstrumentProvider,
+        base_url_ws: str,
+        config: BinanceExecClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        base_url_ws: Optional[str] = None,
-        warn_gtd_to_gtc: bool = True,
     ):
         PyCondition.true(
             account_type.is_spot_or_margin,
@@ -115,7 +116,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
-            warn_gtd_to_gtc=warn_gtd_to_gtc,
+            config=config,
         )
 
         # Register spot websocket user data event handlers
@@ -167,9 +168,9 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     async def _get_binance_active_position_symbols(
         self,
         symbol: Optional[str] = None,
-    ) -> list[str]:
+    ) -> set[str]:
         # Never cash positions
-        return []
+        return set()
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 

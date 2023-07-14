@@ -300,6 +300,7 @@ cdef class Strategy(Actor):
             trader_id=self.trader_id,
             strategy_id=self.id,
             clock=self.clock,
+            cache=self.cache,
         )
 
         # Required subscriptions
@@ -484,7 +485,7 @@ cdef class Strategy(Actor):
             self._deny_order(order, f"duplicate {repr(order.client_order_id)}")
             return
 
-        self.cache.add_order(order, position_id)
+        self.cache.add_order(order, position_id, client_id)
 
         cdef SubmitOrder command = SubmitOrder(
             trader_id=self.trader_id,
@@ -495,8 +496,6 @@ cdef class Strategy(Actor):
             position_id=position_id,
             client_id=client_id,
         )
-
-        self.cache.add_submit_order_command(command)
 
         if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
             self._set_gtd_expiry(order)
@@ -584,7 +583,7 @@ cdef class Strategy(Actor):
                 return
 
         for order in order_list.orders:
-            self.cache.add_order(order, position_id)
+            self.cache.add_order(order, position_id, client_id)
 
         cdef SubmitOrderList command = SubmitOrderList(
             trader_id=self.trader_id,
@@ -595,8 +594,6 @@ cdef class Strategy(Actor):
             ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
-
-        self.cache.add_submit_order_list_command(command)
 
         if manage_gtd_expiry:
             for order in command.order_list.orders:
@@ -1031,12 +1028,43 @@ cdef class Strategy(Actor):
 
         self._send_exec_command(command)
 
+    cpdef void cancel_gtd_expiry(self, Order order):
+        """
+        Cancel the managed GTD expiry for the given order.
+
+        If there is no current GTD expiry timer, then an error will be logged.
+
+        Parameters
+        ----------
+        order : Order
+            The order to cancel the GTD expiry for.
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
+        cdef str expire_time_str = f" @ {order.expire_time.isoformat()}" if hasattr(order, "expire_time") else ""
+
+        if timer_name not in self._clock.timer_names:
+            self._log.error(f"Cannot find managed GTD timer for order {order.client_order_id!r}")
+            return
+
+        self._log.info(
+            f"Canceling managed GTD expiry timer for {order.client_order_id}{expire_time_str}.",
+            LogColor.BLUE,
+        )
+        self._clock.cancel_timer(name=timer_name)
+
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id):
         return f"GTD-EXPIRY:{client_order_id.to_str()}"
 
+    cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id):
+        cdef str timer_name = self._get_gtd_expiry_timer_name(client_order_id)
+        return timer_name in self._clock.timer_names
+
     cdef void _set_gtd_expiry(self, Order order):
         self._log.info(
-            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time}.",
+            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
             LogColor.BLUE,
         )
         cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
@@ -1047,16 +1075,6 @@ cdef class Strategy(Actor):
         )
         # For now, we flip this opt-in flag
         self._manage_gtd_expiry = True
-
-    cdef void _cancel_gtd_expiry(self, Order order):
-        cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
-        cdef str expire_time_str = f" @ {order.expire_time}" if hasattr(order, "expire_time") else ""
-        if timer_name in self._clock.timer_names:
-            self._log.info(
-                f"Canceling managed GTD expiry timer for {order.client_order_id}{expire_time_str}.",
-                LogColor.BLUE,
-            )
-            self._clock.cancel_timer(name=timer_name)
 
     cpdef void _expire_gtd_order(self, TimeEvent event):
         cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
@@ -1314,8 +1332,8 @@ cdef class Strategy(Actor):
         cdef Order order
         if self._manage_gtd_expiry and isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
-            if order is not None and order.is_closed_c():
-                self._cancel_gtd_expiry(order)
+            if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
+                self.cancel_gtd_expiry(order)
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
@@ -1401,7 +1419,7 @@ cdef class Strategy(Actor):
         self._log.error(f"Order denied: {reason}.")
 
         if not self.cache.order_exists(order.client_order_id):
-            self.cache.add_order(order, position_id=None)
+            self.cache.add_order(order)
 
         # Generate event
         cdef OrderDenied event = self._generate_order_denied(order, reason)

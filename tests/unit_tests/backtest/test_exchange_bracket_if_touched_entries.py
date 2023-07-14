@@ -819,7 +819,10 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         tp_price: Price,
     ) -> None:
         # Arrange: Prepare market
-        self.emulator.create_matching_core(ETHUSDT_PERP_BINANCE)
+        self.emulator.create_matching_core(
+            ETHUSDT_PERP_BINANCE.id,
+            ETHUSDT_PERP_BINANCE.price_increment,
+        )
 
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,

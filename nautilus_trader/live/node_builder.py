@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 
 from nautilus_trader.cache.cache import Cache

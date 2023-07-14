@@ -105,6 +105,7 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.PENDING_CANCEL, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Real world possibility
     (OrderStatus.PENDING_CANCEL, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,  # Allow multiple requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.CANCELED): OrderStatus.CANCELED,
+    (OrderStatus.PENDING_CANCEL, OrderStatus.EXPIRED): OrderStatus.EXPIRED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Allows failed cancel requests
     (OrderStatus.PENDING_CANCEL, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.PENDING_CANCEL, OrderStatus.FILLED): OrderStatus.FILLED,
@@ -213,7 +214,8 @@ cdef class Order:
             f"{self.info()}, "
             f"status={self._fsm.state_string_c()}, "
             f"client_order_id={self.client_order_id.to_str()}, "
-            f"venue_order_id={self.venue_order_id}"  # Can be None (no whitespace before contingency_str)
+            f"venue_order_id={self.venue_order_id}, "  # Can be None (no whitespace before contingency_str)
+            f"position_id={self.position_id}"  # Can be None (no whitespace before contingency_str)
             f"{contingency_str}"
             f"{linked_order_ids_str}"
             f"{parent_order_id_str}"

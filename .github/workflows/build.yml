@@ -50,7 +50,7 @@ jobs:
 
       # Install build dependencies
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
       # Setup cached pre-commit
       - name: Setup cached pre-commit

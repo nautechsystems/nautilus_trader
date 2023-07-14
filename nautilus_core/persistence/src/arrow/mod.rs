@@ -66,7 +66,17 @@ pub trait DecodeFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
 {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data>;
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self>;
+}
+
+pub trait DecodeDataFromRecordBatch
+where
+    Self: Sized + Into<Data> + ArrowSchemaProvider,
+{
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Vec<Data>;
 }
 
 pub trait WriteStream {

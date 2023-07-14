@@ -60,14 +60,14 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v2.5.1
+    rev: v3.0.0
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 23.3.0
+    rev: 23.7.0
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -76,7 +76,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.275
+    rev: v0.0.278
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -91,7 +91,7 @@ repos:
         args: ["--settings-file", "pyproject.toml"]
 
   - repo: https://github.com/PyCQA/docformatter
-    rev: v1.7.3
+    rev: v1.7.5
     hooks:
       - id: docformatter
         additional_dependencies: [tomli]

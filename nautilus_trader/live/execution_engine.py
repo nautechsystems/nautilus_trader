@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 import math
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -101,7 +103,7 @@ class LiveExecutionEngine(ExecutionEngine):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[LiveExecEngineConfig] = None,
+        config: LiveExecEngineConfig | None = None,
     ) -> None:
         if config is None:
             config = LiveExecEngineConfig()
@@ -121,14 +123,23 @@ class LiveExecutionEngine(ExecutionEngine):
         # Settings
         self._reconciliation: bool = config.reconciliation
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
+        self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
+        self.filter_position_reports: bool = config.filter_position_reports
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
+        self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
+        self._log.info(f"{config.reconciliation_lookback_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.filter_unclaimed_external_orders=}", LogColor.BLUE)
+        self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
+        self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
+
         # Async tasks
-        self._cmd_queue_task: Optional[asyncio.Task] = None
-        self._evt_queue_task: Optional[asyncio.Task] = None
-        self._inflight_check_task: Optional[asyncio.Task] = None
+        self._cmd_queue_task: asyncio.Task | None = None
+        self._evt_queue_task: asyncio.Task | None = None
+        self._inflight_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
         # Register endpoints
@@ -166,7 +177,7 @@ class LiveExecutionEngine(ExecutionEngine):
         for client in self._clients.values():
             client.disconnect()
 
-    def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
+    def get_cmd_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal command queue task for the engine.
 
@@ -177,7 +188,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         return self._cmd_queue_task
 
-    def get_evt_queue_task(self) -> Optional[asyncio.Task]:
+    def get_evt_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal event queue task for the engine.
 
@@ -188,7 +199,7 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         return self._evt_queue_task
 
-    def get_inflight_check_task(self) -> Optional[asyncio.Task]:
+    def get_inflight_check_task(self) -> asyncio.Task | None:
         """
         Return the internal in-flight check task for the engine.
 
@@ -333,7 +344,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         try:
             while True:
-                command: Optional[TradingCommand] = await self._cmd_queue.get()
+                command: TradingCommand | None = await self._cmd_queue.get()
                 if command is self._sentinel:
                     break
                 self._execute_command(command)
@@ -352,7 +363,7 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         try:
             while True:
-                event: Optional[OrderEvent] = await self._evt_queue.get()
+                event: OrderEvent | None = await self._evt_queue.get()
                 if event is self._sentinel:
                     break
                 self._handle_event(event)
@@ -425,7 +436,7 @@ class LiveExecutionEngine(ExecutionEngine):
         results: list[bool] = []
 
         # Request execution mass status report from clients
-        reconciliation_lookback_mins: Optional[int] = (
+        reconciliation_lookback_mins: int | None = (
             self.reconciliation_lookback_mins if self.reconciliation_lookback_mins > 0 else None
         )
         mass_status_coros = [
@@ -493,7 +504,10 @@ class LiveExecutionEngine(ExecutionEngine):
         """
         self._reconcile_mass_status(report)
 
-    def _reconcile_mass_status(self, mass_status: ExecutionMassStatus) -> bool:
+    def _reconcile_mass_status(
+        self,
+        mass_status: ExecutionMassStatus,
+    ) -> bool:
         self._log.debug(f"[RECV][RPT] {mass_status}.")
         self.report_count += 1
 
@@ -507,23 +521,42 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         results: list[bool] = []
+        reconciled_orders: set[ClientOrderId] = set()
+        reconciled_trades: set[TradeId] = set()
 
         # Reconcile all reported orders
         for venue_order_id, order_report in mass_status.order_reports().items():
             trades = mass_status.trade_reports().get(venue_order_id, [])
+
+            # Check and handle duplicate client order IDs
+            client_order_id = order_report.client_order_id
+            if client_order_id is not None and client_order_id in reconciled_orders:
+                self._log.error(f"Duplicate {client_order_id!r} detected: {order_report}")
+                continue  # Determine how to handle this
+
+            # Check for duplicate trade IDs
+            for trade_report in trades:
+                if trade_report.trade_id in reconciled_trades:
+                    self._log.error(
+                        f"Duplicate {trade_report.trade_id!r} detected: {trade_report}.",
+                    )
+                reconciled_trades.add(trade_report.trade_id)
+
             try:
                 result = self._reconcile_order_report(order_report, trades)
             except InvalidStateTrigger as e:
                 self._log.error(str(e))
                 result = False
             results.append(result)
+            reconciled_orders.add(order_report.client_order_id)
 
-        position_reports: list[PositionStatusReport]
-        # Reconcile all reported positions
-        for position_reports in mass_status.position_reports().values():
-            for report in position_reports:
-                result = self._reconcile_position_report(report)
-                results.append(result)
+        if not self.filter_position_reports:
+            position_reports: list[PositionStatusReport]
+            # Reconcile all reported positions
+            for position_reports in mass_status.position_reports().values():
+                for report in position_reports:
+                    result = self._reconcile_position_report(report)
+                    results.append(result)
 
         # Publish mass status
         self._msgbus.publish(
@@ -547,6 +580,8 @@ class LiveExecutionEngine(ExecutionEngine):
             # Assign to report
             report.client_order_id = client_order_id
 
+        self._log.info(f"Reconciling order for {client_order_id!r}...", LogColor.BLUE)
+
         order: Order = self._cache.order(client_order_id)
         if order is None:
             order = self._generate_external_order(report)
@@ -554,7 +589,7 @@ class LiveExecutionEngine(ExecutionEngine):
                 # External order dropped
                 return True  # No further reconciliation
             # Add to cache without determining any position ID initially
-            self._cache.add_order(order, position_id=None)
+            self._cache.add_order(order)
 
         if report.order_status == OrderStatus.REJECTED:
             if order.status != OrderStatus.REJECTED:
@@ -594,7 +629,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         # Order has some fills from this point
-        instrument: Optional[Instrument] = self._cache.instrument(order.instrument_id)
+        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot reconcile order {order.client_order_id}: "
@@ -605,6 +640,10 @@ class LiveExecutionEngine(ExecutionEngine):
         # Reconcile all trades
         for trade in trades:
             self._reconcile_trade_report(order, trade, instrument)
+
+        if report.avg_px is None:
+            self._log.error("report.avg_px was `None` when a value was expected.")
+            return False  # Failed
 
         # Check reported filled qty against order filled qty
         if report.filled_qty != order.filled_qty:
@@ -622,23 +661,23 @@ class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     def _reconcile_trade_report_single(self, report: TradeReport) -> bool:
-        client_order_id: Optional[ClientOrderId] = self._cache.client_order_id(
+        client_order_id: ClientOrderId | None = self._cache.client_order_id(
             report.venue_order_id,
         )
         if client_order_id is None:
             self._log.error(
-                "Cannot reconcile TradeReport: client order ID {client_order_id} not found.",
+                f"Cannot reconcile TradeReport: client order ID {client_order_id} not found.",
             )
             return False  # Failed
 
-        order: Optional[Order] = self._cache.order(client_order_id)
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
             self._log.error(
                 "Cannot reconcile TradeReport: no order for client order ID {client_order_id}",
             )
             return False  # Failed
 
-        instrument: Optional[Instrument] = self._cache.instrument(order.instrument_id)
+        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
                 f"Cannot reconcile order {order.client_order_id}: "
@@ -675,7 +714,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return self._reconcile_position_report_netting(report)
 
     def _reconcile_position_report_hedging(self, report: PositionStatusReport) -> bool:
-        position: Optional[Position] = self._cache.position(report.venue_position_id)
+        position: Position | None = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
                 f"Cannot reconcile position: position ID {report.venue_position_id} not found.",
@@ -684,9 +723,8 @@ class LiveExecutionEngine(ExecutionEngine):
         position_signed_decimal_qty: Decimal = position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
-                f"Cannot reconcile position: "
-                f"position ID {report.venue_position_id} "
-                f"position signed qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}. "
+                f"Cannot reconcile {report.instrument_id} {report.venue_position_id}: position "
+                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}. "
                 f"{report}.",
             )
             return False  # Failed
@@ -698,14 +736,15 @@ class LiveExecutionEngine(ExecutionEngine):
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
         )
+
         position_signed_decimal_qty: Decimal = Decimal()
         for position in positions_open:
             position_signed_decimal_qty += position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
-                f"Cannot reconcile position: "
-                f"{report.instrument_id} "
-                f"position signed decimal qty {position_signed_decimal_qty} != reported {report.signed_decimal_qty}.",
+                f"Cannot reconcile {report.instrument_id}: position "
+                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}. "
+                f"{report}.",
             )
             return False  # Failed
 
@@ -738,7 +777,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if order.avg_px is None:
             last_px: Price = instrument.make_price(report.avg_px)
         else:
-            report_cost: float = float(report.avg_px) * float(report.filled_qty)
+            report_cost: float = float(report.avg_px or 0.0) * float(report.filled_qty)
             filled_cost = order.avg_px * float(order.filled_qty)
             last_px = instrument.make_price((report_cost - filled_cost) / float(last_qty))
 
@@ -770,9 +809,9 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.warning(f"Generated inferred {filled}.")
         return filled
 
-    def _generate_external_order(self, report: OrderStatusReport) -> Optional[Order]:
+    def _generate_external_order(self, report: OrderStatusReport) -> Order | None:
         self._log.info(
-            f"Generating external order {report.client_order_id!r}",
+            f"Generating order {report.client_order_id!r}",
             color=LogColor.BLUE,
         )
 
@@ -980,18 +1019,19 @@ class LiveExecutionEngine(ExecutionEngine):
     def _should_update(self, order: Order, report: OrderStatusReport) -> bool:
         if report.quantity != order.quantity:
             return True
-        elif order.order_type == OrderType.LIMIT:
-            if report.price != order.price:
-                return True
-        elif (
-            order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_MARKET
-        ):
-            if report.trigger_price != order.trigger_price:
-                return True
-        elif (
-            order.order_type == OrderType.STOP_LIMIT
-            or order.order_type == OrderType.TRAILING_STOP_LIMIT
-        ) and (report.trigger_price != order.trigger_price or report.price != order.price):
+
+        if order.order_type == OrderType.LIMIT and report.price != order.price:
             return True
+
+        if (
+            order.order_type in [OrderType.STOP_MARKET, OrderType.TRAILING_STOP_MARKET]
+            and report.trigger_price != order.trigger_price
+        ):
+            return True
+
+        if order.order_type in [OrderType.STOP_LIMIT, OrderType.TRAILING_STOP_LIMIT] and (
+            report.trigger_price != order.trigger_price or report.price != order.price
+        ):
+            return True
+
         return False

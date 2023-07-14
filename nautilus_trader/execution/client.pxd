@@ -24,9 +24,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.execution.reports cimport OrderStatusReport
-from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport LiquiditySide
@@ -187,6 +184,6 @@ cdef class ExecutionClient(Component):
 
     cpdef void _send_account_state(self, AccountState account_state)
     cpdef void _send_order_event(self, OrderEvent event)
-    cpdef void _send_mass_status_report(self, ExecutionMassStatus report)
-    cpdef void _send_order_status_report(self, OrderStatusReport report)
-    cpdef void _send_trade_report(self, TradeReport report)
+    cpdef void _send_mass_status_report(self, report)
+    cpdef void _send_order_status_report(self, report)
+    cpdef void _send_trade_report(self, report)

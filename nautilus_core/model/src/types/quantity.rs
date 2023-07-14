@@ -64,6 +64,12 @@ impl Quantity {
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
+
+    #[must_use]
+    pub fn is_positive(&self) -> bool {
+        self.raw > 0
+    }
+
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
@@ -231,7 +237,7 @@ impl Serialize for Quantity {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{}", self))
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -301,6 +307,8 @@ mod tests {
         assert_eq!(qty.precision, 8);
         assert_eq!(qty.as_f64(), 0.00812);
         assert_eq!(qty.to_string(), "0.00812000");
+        assert!(!qty.is_zero());
+        assert!(qty.is_positive());
     }
 
     #[test]
@@ -308,10 +316,12 @@ mod tests {
         let qty = Quantity::zero(8);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
+        assert!(qty.is_zero());
+        assert!(!qty.is_positive());
     }
 
     #[test]
-    fn test_qty_from_i64() {
+    fn test_from_i64() {
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 100_000_000_000_000);
@@ -319,14 +329,28 @@ mod tests {
     }
 
     #[test]
-    fn test_qty_minimum() {
-        let qty = Quantity::new(0.000_000_001, 9);
+    fn test_with_maximum_value() {
+        let qty = Quantity::new(QUANTITY_MAX, 0);
+        assert_eq!(qty.raw, 18_446_744_073_000_000_000);
+        assert_eq!(qty.to_string(), "18446744073");
+    }
+
+    #[test]
+    fn test_with_minimum_positive_value() {
+        let qty = Quantity::new(0.000000001, 9);
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
 
     #[test]
-    fn test_qty_is_zero() {
+    fn test_with_minimum_value() {
+        let qty = Quantity::new(QUANTITY_MIN, 9);
+        assert_eq!(qty.raw, 0);
+        assert_eq!(qty.to_string(), "0.000000000");
+    }
+
+    #[test]
+    fn test_is_zero() {
         let qty = Quantity::zero(8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 0);
@@ -337,14 +361,14 @@ mod tests {
     }
 
     #[test]
-    fn test_qty_precision() {
+    fn test_precision() {
         let qty = Quantity::new(1.001, 2);
         assert_eq!(qty.raw, 1_000_000_000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
     #[test]
-    fn test_qty_new_from_str() {
+    fn test_new_from_str() {
         let qty = Quantity::from_str("0.00812000").unwrap();
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8_120_000);
@@ -354,7 +378,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quantity_from_str_valid_input() {
+    fn test_from_str_valid_input() {
         let input = "1000.25";
         let expected_quantity = Quantity::new(1000.25, precision_from_str(input));
         let result = Quantity::from_str(input).unwrap();
@@ -362,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quantity_from_str_invalid_input() {
+    fn test_from_str_invalid_input() {
         let input = "invalid";
         let result = Quantity::from_str(input);
         assert!(result.is_err());
@@ -409,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn test_quantity_mul_assign() {
+    fn test_mul_assign() {
         let mut q = Quantity::from_raw(100, 0);
         q *= 2u64;
 
@@ -417,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn test_qty_equality() {
+    fn test_equality() {
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
         assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
         assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
@@ -432,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn test_qty_display() {
+    fn test_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let qty = Quantity::from_str(input_string).unwrap();

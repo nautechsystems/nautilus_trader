@@ -17,7 +17,7 @@ import pathlib
 import random
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 import fsspec
 import numpy as np
@@ -407,7 +407,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def equity(symbol: str = "AAPL", venue: str = "NASDAQ"):
+    def equity(symbol: str = "AAPL", venue: str = "NASDAQ") -> Equity:
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
             native_symbol=Symbol(symbol),
@@ -518,7 +518,7 @@ class TestInstrumentProvider:
     def synthetic_instrument() -> SyntheticInstrument:
         return SyntheticInstrument(
             symbol=Symbol("BTC-ETH"),
-            precision=8,
+            price_precision=8,
             components=[
                 TestInstrumentProvider.btcusdt_binance().id,
                 TestInstrumentProvider.ethusdt_binance().id,
@@ -666,7 +666,10 @@ class TestDataGenerator:
 
     @staticmethod
     def generate_quote_ticks(
-        instrument_id: str, price_prec: int = 4, quantity_prec: int = 4, **kwargs
+        instrument_id: str,
+        price_prec: int = 4,
+        quantity_prec: int = 4,
+        **kwargs: Any,
     ) -> list[QuoteTick]:
         df: pd.DataFrame = TestDataGenerator.generate_time_series(**kwargs)
         return [
@@ -684,7 +687,10 @@ class TestDataGenerator:
 
     @staticmethod
     def generate_trade_ticks(
-        instrument_id: str, price_prec: int = 4, quantity_prec: int = 4, **kwargs
+        instrument_id: str,
+        price_prec: int = 4,
+        quantity_prec: int = 4,
+        **kwargs: Any,
     ) -> list[TradeTick]:
         df: pd.DataFrame = TestDataGenerator.generate_time_series(**kwargs)
         return [

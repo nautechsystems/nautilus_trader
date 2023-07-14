@@ -27,10 +27,10 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
-def resolve_path(path: str):
-    module, cls = path.rsplit(":", maxsplit=1)
+def resolve_path(path: str) -> type:
+    module, cls_str = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
-    cls = getattr(mod, cls)
+    cls: type = getattr(mod, cls_str)
     return cls
 
 
@@ -118,6 +118,7 @@ class CacheConfig(NautilusConfig, frozen=True):
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt
         The maximum length for internal bar dequeues.
+
     """
 
     tick_capacity: PositiveInt = 1000
@@ -144,6 +145,9 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should use an SSL enabled connection.
     flush : bool, default False
         If database should be flushed before start.
+    timestamps_as_iso8601, default False
+        If timestamps should be persisted as ISO 8601 strings.
+
     """
 
     type: str = "in-memory"
@@ -153,6 +157,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     password: Optional[str] = None
     ssl: bool = False
     flush: bool = False
+    timestamps_as_iso8601: bool = False
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
@@ -172,6 +177,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
+
     """
 
     def __eq__(self, other):
@@ -206,6 +212,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     time_bars_build_with_no_updates: bool = True
@@ -231,6 +238,7 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
         The value should be a valid decimal format.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     bypass: bool = False
@@ -250,15 +258,13 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
-    filter_unclaimed_external_orders : bool, default False
-        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = True
-    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
@@ -411,6 +417,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         how the `ExecutionEngine` handles position IDs (see docs).
     external_order_claims : list[str], optional
         The external order claim instrument IDs.
+        External orders for matching instrument IDs will be associated with (claimed by) the strategy.
 
     """
 
@@ -539,7 +546,8 @@ class ExecAlgorithmFactory:
 
 class LoggingConfig(NautilusConfig, frozen=True):
     """
-    Configuration for standard output and file logging for a ``NautilusKernel`` instance.
+    Configuration for standard output and file logging for a ``NautilusKernel``
+    instance.
 
     Parameters
     ----------
@@ -562,6 +570,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
         IDs (e.g. actor/strategy IDs) and values are log levels.
     bypass_logging : bool, default False
         If all logging should be bypassed.
+
     """
 
     log_level: str = "INFO"
@@ -617,6 +626,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The timeout for all engine clients to disconnect.
     timeout_post_stop : PositiveFloat (seconds)
         The timeout after stopping the node to await residual events before final shutdown.
+
     """
 
     environment: Environment

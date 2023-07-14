@@ -25,7 +25,8 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use super::DecodeDataFromRecordBatch;
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
@@ -108,7 +109,7 @@ impl EncodeToRecordBatch for Bar {
 }
 
 impl DecodeFromRecordBatch for Bar {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
         // Parse and validate metadata
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata);
 
@@ -132,22 +133,29 @@ impl DecodeFromRecordBatch for Bar {
             .zip(ts_event_values.iter())
             .zip(ts_init_values.iter())
             .map(
-                |((((((open, high), low), close), volume), ts_event), ts_init)| {
-                    Self {
-                        bar_type: bar_type.clone(),
-                        open: Price::from_raw(open.unwrap(), price_precision),
-                        high: Price::from_raw(high.unwrap(), price_precision),
-                        low: Price::from_raw(low.unwrap(), price_precision),
-                        close: Price::from_raw(close.unwrap(), price_precision),
-                        volume: Quantity::from_raw(volume.unwrap(), size_precision),
-                        ts_event: ts_event.unwrap(),
-                        ts_init: ts_init.unwrap(),
-                    }
-                    .into()
+                |((((((open, high), low), close), volume), ts_event), ts_init)| Self {
+                    bar_type: bar_type.clone(),
+                    open: Price::from_raw(open.unwrap(), price_precision),
+                    high: Price::from_raw(high.unwrap(), price_precision),
+                    low: Price::from_raw(low.unwrap(), price_precision),
+                    close: Price::from_raw(close.unwrap(), price_precision),
+                    volume: Quantity::from_raw(volume.unwrap(), size_precision),
+                    ts_event: ts_event.unwrap(),
+                    ts_init: ts_init.unwrap(),
                 },
             );
 
         values.collect()
+    }
+}
+
+impl DecodeDataFromRecordBatch for Bar {
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Vec<Data> {
+        let bars: Vec<Bar> = Bar::decode_batch(metadata, record_batch);
+        bars.into_iter().map(Data::from).collect()
     }
 }
 

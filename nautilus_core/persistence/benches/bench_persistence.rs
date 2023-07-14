@@ -17,7 +17,7 @@ use std::fs;
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use nautilus_model::data::{quote::QuoteTick, trade::TradeTick};
-use nautilus_persistence::session::{DataBackendSession, QueryResult};
+use nautilus_persistence::backend::session::{DataBackendSession, QueryResult};
 use pyo3_asyncio::tokio::get_runtime;
 
 fn single_stream_bench(c: &mut Criterion) {

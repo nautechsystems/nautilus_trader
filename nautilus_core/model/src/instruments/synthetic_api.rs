@@ -66,7 +66,7 @@ impl DerefMut for SyntheticInstrument_API {
 #[no_mangle]
 pub unsafe extern "C" fn synthetic_instrument_new(
     symbol: Symbol,
-    precision: u8,
+    price_precision: u8,
     components_ptr: *const c_char,
     formula_ptr: *const c_char,
     ts_event: u64,
@@ -78,7 +78,14 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         .map(|s| InstrumentId::from_str(&s).unwrap())
         .collect::<Vec<InstrumentId>>();
     let formula = cstr_to_string(formula_ptr);
-    let synth = SyntheticInstrument::new(symbol, precision, components, formula, ts_event, ts_init);
+    let synth = SyntheticInstrument::new(
+        symbol,
+        price_precision,
+        components,
+        formula,
+        ts_event,
+        ts_init,
+    );
 
     SyntheticInstrument_API(Box::new(synth.unwrap()))
 }
@@ -94,8 +101,13 @@ pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument_API) -> In
 }
 
 #[no_mangle]
-pub extern "C" fn synthetic_instrument_precision(synth: &SyntheticInstrument_API) -> u8 {
-    synth.precision
+pub extern "C" fn synthetic_instrument_price_precision(synth: &SyntheticInstrument_API) -> u8 {
+    synth.price_precision
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_price_increment(synth: &SyntheticInstrument_API) -> Price {
+    synth.price_increment
 }
 
 #[no_mangle]

@@ -15,11 +15,11 @@
 """
 Defines `Binance` common enums.
 
-
 References
 ----------
 https://binance-docs.github.io/apidocs/spot/en/#public-api-definitions
 https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
+
 """
 
 
@@ -41,7 +41,8 @@ from nautilus_trader.model.orders import Order
 @unique
 class BinanceRateLimitType(Enum):
     """
-    Represents a `Binance` rate limit type."""
+    Represents a `Binance` rate limit type.
+    """
 
     REQUEST_WEIGHT = "REQUEST_WEIGHT"
     ORDERS = "ORDERS"
@@ -50,7 +51,9 @@ class BinanceRateLimitType(Enum):
 
 @unique
 class BinanceRateLimitInterval(Enum):
-    """Represents a `Binance` rate limit interval."""
+    """
+    Represents a `Binance` rate limit interval.
+    """
 
     SECOND = "SECOND"
     MINUTE = "MINUTE"
@@ -59,7 +62,9 @@ class BinanceRateLimitInterval(Enum):
 
 @unique
 class BinanceKlineInterval(Enum):
-    """Represents a `Binance` kline chart interval."""
+    """
+    Represents a `Binance` kline chart interval.
+    """
 
     SECOND_1 = "1s"
     MINUTE_1 = "1m"
@@ -81,7 +86,9 @@ class BinanceKlineInterval(Enum):
 
 @unique
 class BinanceExchangeFilterType(Enum):
-    """Represents a `Binance` exchange filter type."""
+    """
+    Represents a `Binance` exchange filter type.
+    """
 
     EXCHANGE_MAX_NUM_ORDERS = "EXCHANGE_MAX_NUM_ORDERS"
     EXCHANGE_MAX_NUM_ALGO_ORDERS = "EXCHANGE_MAX_NUM_ALGO_ORDERS"
@@ -89,7 +96,9 @@ class BinanceExchangeFilterType(Enum):
 
 @unique
 class BinanceSymbolFilterType(Enum):
-    """Represents a `Binance` symbol filter type."""
+    """
+    Represents a `Binance` symbol filter type.
+    """
 
     PRICE_FILTER = "PRICE_FILTER"
     PERCENT_PRICE = "PERCENT_PRICE"
@@ -108,7 +117,9 @@ class BinanceSymbolFilterType(Enum):
 
 @unique
 class BinanceAccountType(Enum):
-    """Represents a `Binance` account type."""
+    """
+    Represents a `Binance` account type.
+    """
 
     SPOT = "SPOT"
     MARGIN = "MARGIN"
@@ -145,7 +156,9 @@ class BinanceAccountType(Enum):
 
 @unique
 class BinanceOrderSide(Enum):
-    """Represents a `Binance` order side."""
+    """
+    Represents a `Binance` order side.
+    """
 
     BUY = "BUY"
     SELL = "SELL"
@@ -153,7 +166,9 @@ class BinanceOrderSide(Enum):
 
 @unique
 class BinanceExecutionType(Enum):
-    """Represents a `Binance` execution type."""
+    """
+    Represents a `Binance` execution type.
+    """
 
     NEW = "NEW"
     CANCELED = "CANCELED"
@@ -161,11 +176,15 @@ class BinanceExecutionType(Enum):
     REJECTED = "REJECTED"
     TRADE = "TRADE"
     EXPIRED = "EXPIRED"
+    AMENDMENT = "AMENDMENT"
+    TRADE_PREVENTION = "TRADE_PREVENTION"
 
 
 @unique
 class BinanceOrderStatus(Enum):
-    """Represents a `Binance` order status."""
+    """
+    Represents a `Binance` order status.
+    """
 
     NEW = "NEW"
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
@@ -180,7 +199,9 @@ class BinanceOrderStatus(Enum):
 
 @unique
 class BinanceTimeInForce(Enum):
-    """Represents a `Binance` order time in force."""
+    """
+    Represents a `Binance` order time in force.
+    """
 
     GTC = "GTC"
     IOC = "IOC"
@@ -191,7 +212,9 @@ class BinanceTimeInForce(Enum):
 
 @unique
 class BinanceOrderType(Enum):
-    """Represents a `Binance` order type."""
+    """
+    Represents a `Binance` order type.
+    """
 
     LIMIT = "LIMIT"
     MARKET = "MARKET"
@@ -208,7 +231,9 @@ class BinanceOrderType(Enum):
 
 @unique
 class BinanceSecurityType(Enum):
-    """Represents a `Binance` endpoint security type."""
+    """
+    Represents a `Binance` endpoint security type.
+    """
 
     NONE = "NONE"
     TRADE = "TRADE"
@@ -220,7 +245,9 @@ class BinanceSecurityType(Enum):
 
 @unique
 class BinanceMethodType(Enum):
-    """Represents a `Binance` endpoint method type."""
+    """
+    Represents a `Binance` endpoint method type.
+    """
 
     GET = "GET"
     POST = "POST"

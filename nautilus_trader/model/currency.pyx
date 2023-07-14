@@ -215,6 +215,8 @@ cdef class Currency:
             currency_type=CurrencyType.CRYPTO,
         )
         print(f"Currency '{code}' not found, created {repr(currency)}")
+        currency_register(currency_clone(&currency._mem))
+
         return currency
 
     @staticmethod

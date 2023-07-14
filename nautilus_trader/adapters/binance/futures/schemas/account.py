@@ -139,10 +139,9 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
         report_id: UUID4,
         ts_init: int,
     ) -> PositionStatusReport:
-        position_side = enum_parser.parse_futures_position_side(
-            self.positionSide,
-        )
         net_size = Decimal(self.positionAmt)
+        position_side = enum_parser.parse_futures_position_side(net_size)
+
         return PositionStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,

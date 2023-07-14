@@ -111,7 +111,7 @@ cdef class Portfolio(PortfolioFacade):
 
         self._venue = None  # Venue for specific portfolio behaviour (Interactive Brokers)
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
-        self._net_positions: dict[InstrumentId, float] = {}
+        self._net_positions: dict[InstrumentId, Decimal] = {}
         self._pending_calcs: set[InstrumentId] = set()
 
         self.analyzer = PortfolioAnalyzer()
@@ -1005,14 +1005,14 @@ cdef class Portfolio(PortfolioFacade):
         return self._net_positions.get(instrument_id, Decimal(0))
 
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open):
-        cdef double net_position = 0.0
+        net_position = Decimal(0)
 
         cdef Position position
         for position in positions_open:
-            net_position += position.signed_qty
+            net_position += position.signed_decimal_qty()
 
-        cdef double existing_position = self._net_positions.get(instrument_id, 0.0)
-        if existing_position is None or existing_position != net_position:
+        existing_position: Decimal = self._net_positions.get(instrument_id, Decimal(0))
+        if existing_position != net_position:
             self._net_positions[instrument_id] = net_position
             self._log.info(f"{instrument_id} net_position={net_position}")
 

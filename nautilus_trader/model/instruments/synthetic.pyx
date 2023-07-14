@@ -38,7 +38,8 @@ from nautilus_trader.core.rust.model cimport synthetic_instrument_formula_to_cst
 from nautilus_trader.core.rust.model cimport synthetic_instrument_id
 from nautilus_trader.core.rust.model cimport synthetic_instrument_is_valid_formula
 from nautilus_trader.core.rust.model cimport synthetic_instrument_new
-from nautilus_trader.core.rust.model cimport synthetic_instrument_precision
+from nautilus_trader.core.rust.model cimport synthetic_instrument_price_increment
+from nautilus_trader.core.rust.model cimport synthetic_instrument_price_precision
 from nautilus_trader.core.rust.model cimport synthetic_instrument_ts_event
 from nautilus_trader.core.rust.model cimport synthetic_instrument_ts_init
 from nautilus_trader.core.string cimport cstr_to_pybytes
@@ -61,7 +62,7 @@ cdef class SyntheticInstrument(Data):
     ----------
     symbol : Symbol
         The symbol for the synethic instrument.
-    precision : uint8_t
+    price_precision : uint8_t
         The price precision for the synthetic instrument.
     components : list[InstrumentId]
         The component instruments for the synthetic instrument.
@@ -75,9 +76,9 @@ cdef class SyntheticInstrument(Data):
     Raises
     ------
     ValueError
-        If `precision` is greater than 9.
+        If `price_precision` is greater than 9.
     OverflowError
-        If `precision` is negative (< 0).
+        If `price_precision` is negative (< 0).
     ValueError
         If the `components` list does not contain at least 2 instrument IDs.
     ValueError
@@ -85,18 +86,22 @@ cdef class SyntheticInstrument(Data):
     ValueError
         If the `formula` is not a valid expression.
 
+    Warnings
+    --------
+    All component instruments should already be defined and exist in the cache prior to defining
+    a new synthetic instrument.
     """
 
     def __init__(
         self,
         Symbol symbol not None,
-        uint8_t precision,
+        uint8_t price_precision,
         list components not None,
         str formula not None,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        Condition.true(price_precision <= 9, f"invalid `price_precision` greater than max 9, was {price_precision}")
         Condition.true(len(components) >= 2, "There must be at least two component instruments")
         Condition.list_type(components, InstrumentId, "components")
         Condition.valid_string(formula, "formula")
@@ -106,7 +111,7 @@ cdef class SyntheticInstrument(Data):
 
         self._mem = synthetic_instrument_new(
             symbol_clone(&symbol._mem),
-            precision,
+            price_precision,
             pybytes_to_cstr(msgspec.json.encode([c.value for c in components])),
             pystr_to_cstr(formula),
             ts_event,
@@ -120,7 +125,7 @@ cdef class SyntheticInstrument(Data):
     def __getstate__(self):
         return (
             self.id.symbol.value,
-            self.precision,
+            self.price_precision,
             msgspec.json.encode([c.value for c in self.components]),
             self.formula,
             self.ts_event,
@@ -156,7 +161,7 @@ cdef class SyntheticInstrument(Data):
         return InstrumentId.from_mem_c(synthetic_instrument_id(&self._mem))
 
     @property
-    def precision(self) -> int:
+    def price_precision(self) -> int:
         """
         Return the precision for the synthetic instrument.
 
@@ -165,7 +170,19 @@ cdef class SyntheticInstrument(Data):
         int
 
         """
-        return synthetic_instrument_precision(&self._mem)
+        return synthetic_instrument_price_precision(&self._mem)
+
+    @property
+    def price_increment(self) -> Price:
+        """
+        Return the minimum price increment (tick size) for the synthetic instrument.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_mem_c(synthetic_instrument_price_increment(&self._mem))
 
     @property
     def components(self) -> list[InstrumentId]:
@@ -312,7 +329,7 @@ cdef class SyntheticInstrument(Data):
         Condition.not_none(values, "values")
         return SyntheticInstrument(
             symbol=Symbol(values["symbol"]),
-            precision=values["precision"],
+            price_precision=values["price_precision"],
             components=[InstrumentId.from_str_c(c) for c in msgspec.json.decode(values["components"])],
             formula=values["formula"],
             ts_event=values["ts_event"],
@@ -325,7 +342,7 @@ cdef class SyntheticInstrument(Data):
         return {
             "type": "SyntheticInstrument",
             "symbol": obj.id.symbol.value,
-            "precision": obj.precision,
+            "price_precision": obj.price_precision,
             "components": msgspec.json.encode([c.value for c in obj.components]),
             "formula": obj.formula,
             "ts_event": obj.ts_event,

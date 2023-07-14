@@ -14,20 +14,15 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Debug, Display, Formatter},
-    hash::Hash,
+    hash::{Hash, Hasher},
     str::FromStr,
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{
-    exceptions::{PyKeyError, PyValueError},
-    prelude::*,
-    pyclass::CompareOp,
-    types::PyDict,
-};
-use serde::{Deserialize, Serialize};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror;
 
 use crate::{
@@ -59,7 +54,7 @@ impl Display for BarSpecification {
 /// Represents a bar type including the instrument ID, bar specification and
 /// aggregation source.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[pyclass]
 pub struct BarType {
     /// The bar types instrument ID.
@@ -146,9 +141,29 @@ impl Display for BarType {
     }
 }
 
+impl Serialize for BarType {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for BarType {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        BarType::from_str(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Represents an aggregated bar.
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
 #[pyclass]
 pub struct Bar {
     /// The bar type for this bar.
@@ -244,6 +259,12 @@ impl Bar {
         }
     }
 
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -293,106 +314,52 @@ impl Bar {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn as_dict(&self) -> Py<PyDict> {
-        Python::with_gil(|py| {
-            let dict = PyDict::new(py);
-
-            dict.set_item("type", stringify!(Bar)).unwrap();
-            dict.set_item("bar_type", self.bar_type.to_string())
-                .unwrap();
-            dict.set_item("open", self.open.to_string()).unwrap();
-            dict.set_item("high", self.high.to_string()).unwrap();
-            dict.set_item("low", self.low.to_string()).unwrap();
-            dict.set_item("close", self.close.to_string()).unwrap();
-            dict.set_item("volume", self.volume.to_string()).unwrap();
-            dict.set_item("ts_event", self.ts_event).unwrap();
-            dict.set_item("ts_init", self.ts_init).unwrap();
-
-            dict.into_py(py)
-        })
+    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("decode", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
-    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
-        let bar_type: String = values
-            .get_item("bar_type")
-            .ok_or(PyKeyError::new_err("'bar_type' not found in `values`"))?
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Serialize to JSON bytes
+        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("encode", (values,), None)?
             .extract()?;
-        let open: String = values
-            .get_item("open")
-            .ok_or(PyKeyError::new_err("'open' not found in `values`"))?
-            .extract()?;
-        let high: String = values
-            .get_item("high")
-            .ok_or(PyKeyError::new_err("'high' not found in `values`"))?
-            .extract()?;
-        let low: String = values
-            .get_item("low")
-            .ok_or(PyKeyError::new_err("'low' not found in `values`"))?
-            .extract()?;
-        let close: String = values
-            .get_item("close")
-            .ok_or(PyKeyError::new_err("'close' not found in `values`"))?
-            .extract()?;
-        let volume: String = values
-            .get_item("volume")
-            .ok_or(PyKeyError::new_err("'volume' not found in `values`"))?
-            .extract()?;
-        let ts_event: UnixNanos = values
-            .get_item("ts_event")
-            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
-            .extract()?;
-        let ts_init: UnixNanos = values
-            .get_item("ts_init")
-            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
-            .extract()?;
-
-        let bar_type =
-            BarType::from_str(&bar_type).map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let open = Price::from_str(&open).map_err(PyValueError::new_err)?;
-        let high = Price::from_str(&high).map_err(PyValueError::new_err)?;
-        let low = Price::from_str(&low).map_err(PyValueError::new_err)?;
-        let close = Price::from_str(&close).map_err(PyValueError::new_err)?;
-        let volume = Quantity::from_str(&volume).map_err(PyValueError::new_err)?;
-
-        Ok(Self::new(
-            bar_type, open, high, low, close, volume, ts_event, ts_init,
-        ))
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_bytes)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_json_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserializing JSON: {}",
-                err
-            ))),
-        }
+        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_msgpack_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize MsgPack: {}",
-                err
-            ))),
-        }
+        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self) -> Py<PyAny> {
+    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+        self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self) -> Py<PyAny> {
+    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
+        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
 
@@ -644,14 +611,27 @@ mod tests {
     }
 
     #[test]
-    fn test_to_dict_and_from_dict() {
+    fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
         let bar = create_stub_bar();
 
         Python::with_gil(|py| {
-            let dict = bar.as_dict();
-            let parsed = Bar::from_dict(dict.as_ref(py)).unwrap();
+            let dict_string = bar.as_dict(py).unwrap().to_string();
+            let expected_string = r#"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-BID-EXTERNAL', 'open': '1.00001', 'high': '1.00004', 'low': '1.00002', 'close': '1.00003', 'volume': '100000', 'ts_event': 0, 'ts_init': 1}"#;
+            assert_eq!(dict_string, expected_string);
+        });
+    }
+
+    #[test]
+    fn test_as_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let bar = create_stub_bar();
+
+        Python::with_gil(|py| {
+            let dict = bar.as_dict(py).unwrap();
+            let parsed = Bar::from_dict(py, dict).unwrap();
             assert_eq!(parsed, bar);
         });
     }

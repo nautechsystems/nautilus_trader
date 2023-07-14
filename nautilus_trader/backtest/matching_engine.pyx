@@ -182,7 +182,8 @@ cdef class OrderMatchingEngine:
 
         # Market
         self._core = MatchingCore(
-            instrument=instrument,
+            instrument_id=instrument.id,
+            price_increment=instrument.price_increment,
             trigger_stop_order=self.trigger_stop_order,
             fill_market_order=self.fill_market_order,
             fill_limit_order=self.fill_limit_order,
@@ -1088,7 +1089,7 @@ cdef class OrderMatchingEngine:
 
     cdef void _update_trailing_stop_order(self, Order order):
         cdef tuple output = TrailingStopCalculator.calculate(
-            instrument=self.instrument,
+            price_increment=self.instrument.price_increment,
             order=order,
             bid=self._core.bid,
             ask=self._core.ask,
@@ -1423,6 +1424,8 @@ cdef class OrderMatchingEngine:
         Apply the given list of fills to the given order. Optionally provide
         existing position details.
 
+        If the `fills` list is empty, then an error will be logged.
+
         Parameters
         ----------
         order : Order
@@ -1453,6 +1456,9 @@ cdef class OrderMatchingEngine:
         order.liquidity_side = liquidity_side
 
         if not fills:
+            self._log.error(
+                "Cannot fill order: no fills from book when fills were expected (check sizes in data).",
+            )
             return  # No fills
 
         if self.oms_type == OmsType.NETTING:
@@ -1467,12 +1473,10 @@ cdef class OrderMatchingEngine:
             )
 
         cdef:
-            uint64_t raw_org_qty
-            uint64_t raw_adj_qty
             Price fill_px
             Quantity fill_qty
-            Quantity updated_qty
             bint initial_market_to_limit_fill = False
+            Price last_fill_px = None
         for fill_px, fill_qty in fills:
             if order.filled_qty._mem.raw == 0:
                 if order.order_type == OrderType.MARKET_TO_LIMIT:
@@ -1492,8 +1496,6 @@ cdef class OrderMatchingEngine:
                 self.cancel_order(order)
                 return
 
-            if order.is_reduce_only and order.leaves_qty._mem.raw == 0:
-                return  # Done early
             if self.book_type == BookType.L1_TBBO and self._fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
                     fill_px = fill_px.add(self.instrument.price_increment)
@@ -1503,23 +1505,25 @@ cdef class OrderMatchingEngine:
                     raise ValueError(  # pragma: no cover (design-time error)
                         f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)
                     )
+
+            # Check reduce only order
             if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
-                # Adjust fill to honor reduce only execution
-                raw_org_qty = fill_qty._mem.raw
-                raw_adj_qty = fill_qty._mem.raw - (fill_qty._mem.raw - position.quantity._mem.raw)
-                fill_qty = Quantity.from_raw_c(raw_adj_qty, fill_qty._mem.precision)
-                updated_qty = Quantity.from_raw_c(
-                    order.quantity._mem.raw - (raw_org_qty - raw_adj_qty),
-                    fill_qty._mem.precision)
-                if updated_qty._mem.raw > 0:
-                    self._generate_order_updated(
-                        order=order,
-                        qty=updated_qty,
-                        price=None,
-                        trigger_price=None,
-                    )
-            if not fill_qty._mem.raw > 0:
+                if position.quantity._mem.raw == 0:
+                    return  # Done
+
+                # Adjust fill to honor reduce only execution (fill remaining position size only)
+                fill_qty = Quantity.from_raw_c(position.quantity._mem.raw, fill_qty._mem.precision)
+
+                self._generate_order_updated(
+                    order=order,
+                    qty=fill_qty,
+                    price=None,
+                    trigger_price=None,
+                )
+
+            if fill_qty._mem.raw == 0:
                 return  # Done
+
             self.fill_order(
                 order=order,
                 last_px=fill_px,
@@ -1530,6 +1534,8 @@ cdef class OrderMatchingEngine:
             )
             if order.order_type == OrderType.MARKET_TO_LIMIT and initial_market_to_limit_fill:
                 return  # Filled initial level
+
+            last_fill_px = fill_px
 
         if (
             order.is_open_c()
@@ -1546,11 +1552,12 @@ cdef class OrderMatchingEngine:
                 return
 
             # Exhausted simulated book volume (continue aggressive filling into next level)
-            fill_px = fills[-1][0]
+            # This is a very basic implementation of slipping by a single tick, in the future
+            # we will implement more detailed fill modeling.
             if order.side == OrderSide.BUY:
-                fill_px = fill_px.add(self.instrument.price_increment)
+                fill_px = last_fill_px.add(self.instrument.price_increment)
             elif order.side == OrderSide.SELL:
-                fill_px = fill_px.sub(self.instrument.price_increment)
+                fill_px = last_fill_px.sub(self.instrument.price_increment)
             else:
                 raise ValueError(  # pragma: no cover (design-time error)
                     f"invalid `OrderSide`, was {order.side}",  # pragma: no cover (design-time error)

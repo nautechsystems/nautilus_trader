@@ -26,18 +26,24 @@ use rust_decimal::Decimal;
 
 use crate::{
     enums::{AssetClass, AssetType},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    types::{currency::Currency, price::Price, quantity::Quantity},
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 pub trait Instrument {
     fn id(&self) -> &InstrumentId;
+    fn symbol(&self) -> &Symbol {
+        &self.id().symbol
+    }
+    fn venue(&self) -> &Venue {
+        &self.id().venue
+    }
     fn native_symbol(&self) -> &Symbol;
     fn asset_class(&self) -> AssetClass;
     fn asset_type(&self) -> AssetType;
     fn base_currency(&self) -> Option<&Currency>;
     fn quote_currency(&self) -> &Currency;
-    fn cost_currency(&self) -> &Currency;
+    fn settlement_currency(&self) -> &Currency;
     fn is_inverse(&self) -> bool;
     fn price_precision(&self) -> u8;
     fn size_precision(&self) -> u8;
@@ -53,4 +59,54 @@ pub trait Instrument {
     fn margin_maint(&self) -> Decimal;
     fn maker_fee(&self) -> Decimal;
     fn taker_fee(&self) -> Decimal;
+
+    /// Creates a new price from the given `value` with the correct price precision for the instrument.
+    fn make_price(&self, value: f64) -> Price {
+        Price::new(value, self.price_precision())
+    }
+
+    /// Creates a new quantity from the given `value` with the correct size precision for the instrument.
+    fn make_qty(&self, value: f64) -> Quantity {
+        Quantity::new(value, self.size_precision())
+    }
+
+    /// Calculates the notional value from the given parameters.
+    /// The `use_quote_for_inverse` flag is only applicable for inverse instruments.
+    ///
+    /// # Panics
+    ///
+    /// If instrument is inverse and not `use_quote_for_inverse`, with no base currency.
+    fn calculate_notional_value(
+        &self,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+    ) -> Money {
+        let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
+        let (amount, currency) = if self.is_inverse() {
+            if use_quote_for_inverse {
+                (quantity.as_f64(), self.quote_currency().to_owned())
+            } else {
+                let amount =
+                    quantity.as_f64() * self.multiplier().as_f64() * (1.0 / price.as_f64());
+                let currency = self
+                    .base_currency()
+                    .expect("Error: no base currency for notional calculation")
+                    .to_owned();
+                (amount, currency)
+            }
+        } else {
+            let amount = quantity.as_f64() * self.multiplier().as_f64() * price.as_f64();
+            let currency = self.quote_currency().to_owned();
+            (amount, currency)
+        };
+
+        Money::new(amount, currency)
+    }
+
+    /// Returns the equivalent quantity of the base asset.
+    fn calculate_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
+        let value = quantity.as_f64() * (1.0 / last_px.as_f64());
+        Quantity::new(value, self.size_precision())
+    }
 }

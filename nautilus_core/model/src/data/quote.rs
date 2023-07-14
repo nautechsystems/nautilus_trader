@@ -15,18 +15,13 @@
 
 use std::{
     cmp,
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
-    str::FromStr,
+    hash::{Hash, Hasher},
 };
 
 use nautilus_core::{correctness, serialization::Serializable, time::UnixNanos};
-use pyo3::{
-    exceptions::{PyKeyError, PyValueError},
-    prelude::*,
-    pyclass::CompareOp,
-    types::PyDict,
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -159,6 +154,12 @@ impl QuoteTick {
         }
     }
 
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -207,108 +208,52 @@ impl QuoteTick {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn as_dict(&self) -> Py<PyDict> {
-        Python::with_gil(|py| {
-            let dict = PyDict::new(py);
-
-            dict.set_item("type", stringify!(QuoteTick)).unwrap();
-            dict.set_item("instrument_id", self.instrument_id.to_string())
-                .unwrap();
-            dict.set_item("bid", self.bid.to_string()).unwrap();
-            dict.set_item("ask", self.ask.to_string()).unwrap();
-            dict.set_item("bid_size", self.bid_size.to_string())
-                .unwrap();
-            dict.set_item("ask_size", self.ask_size.to_string())
-                .unwrap();
-            dict.set_item("ts_event", self.ts_event).unwrap();
-            dict.set_item("ts_init", self.ts_init).unwrap();
-
-            dict.into_py(py)
-        })
+    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("decode", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
-    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
-        let instrument_id: String = values
-            .get_item("instrument_id")
-            .ok_or(PyKeyError::new_err("'instrument_id' not found in `values`"))?
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Serialize to JSON bytes
+        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("encode", (values,), None)?
             .extract()?;
-        let bid: String = values
-            .get_item("bid")
-            .ok_or(PyKeyError::new_err("'bid' not found in `values`"))?
-            .extract()?;
-        let ask: String = values
-            .get_item("ask")
-            .ok_or(PyKeyError::new_err("'ask' not found in `values`"))?
-            .extract()?;
-        let bid_size: String = values
-            .get_item("bid_size")
-            .ok_or(PyKeyError::new_err("'bid_size' not found in `values`"))?
-            .extract()?;
-        let ask_size: String = values
-            .get_item("ask_size")
-            .ok_or(PyKeyError::new_err("'ask_size' not found in `values`"))?
-            .extract()?;
-        let ts_event: UnixNanos = values
-            .get_item("ts_event")
-            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
-            .extract()?;
-        let ts_init: UnixNanos = values
-            .get_item("ts_init")
-            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
-            .extract()?;
-
-        let instrument_id = InstrumentId::from_str(&instrument_id)
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_bytes)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let bid = Price::from_str(&bid).map_err(PyValueError::new_err)?;
-        let ask = Price::from_str(&ask).map_err(PyValueError::new_err)?;
-        let bid_size = Quantity::from_str(&bid_size).map_err(PyValueError::new_err)?;
-        let ask_size = Quantity::from_str(&ask_size).map_err(PyValueError::new_err)?;
-
-        Ok(Self::new(
-            instrument_id,
-            bid,
-            ask,
-            bid_size,
-            ask_size,
-            ts_event,
-            ts_init,
-        ))
+        Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_json_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize JSON: {}",
-                err
-            ))),
-        }
+        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_msgpack_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize MsgPack: {}",
-                err
-            ))),
-        }
+        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self) -> Py<PyAny> {
+    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+        self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self) -> Py<PyAny> {
+    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
+        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
 
@@ -365,14 +310,27 @@ mod tests {
     }
 
     #[test]
-    fn test_to_dict_and_from_dict() {
+    fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
         let tick = create_stub_quote_tick();
 
         Python::with_gil(|py| {
-            let dict = tick.as_dict();
-            let parsed = QuoteTick::from_dict(dict.as_ref(py)).unwrap();
+            let dict_string = tick.as_dict(py).unwrap().to_string();
+            let expected_string = r#"{'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid': '10000.0000', 'ask': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 1, 'ts_init': 0}"#;
+            assert_eq!(dict_string, expected_string);
+        });
+    }
+
+    #[test]
+    fn test_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let tick = create_stub_quote_tick();
+
+        Python::with_gil(|py| {
+            let dict = tick.as_dict(py).unwrap();
+            let parsed = QuoteTick::from_dict(py, dict).unwrap();
             assert_eq!(parsed, tick);
         });
     }

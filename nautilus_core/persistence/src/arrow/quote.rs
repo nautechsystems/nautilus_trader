@@ -26,7 +26,8 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use crate::parquet::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use super::DecodeDataFromRecordBatch;
+use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for QuoteTick {
     fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
@@ -105,7 +106,7 @@ impl EncodeToRecordBatch for QuoteTick {
 }
 
 impl DecodeFromRecordBatch for QuoteTick {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Data> {
+    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
         // Parse and validate metadata
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
 
@@ -127,21 +128,28 @@ impl DecodeFromRecordBatch for QuoteTick {
             .zip(ts_event_values.iter())
             .zip(ts_init_values.iter())
             .map(
-                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| {
-                    Self {
-                        instrument_id: instrument_id.clone(),
-                        bid: Price::from_raw(bid.unwrap(), price_precision),
-                        ask: Price::from_raw(ask.unwrap(), price_precision),
-                        bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
-                        ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
-                        ts_event: ts_event.unwrap(),
-                        ts_init: ts_init.unwrap(),
-                    }
-                    .into()
+                |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| Self {
+                    instrument_id: instrument_id.clone(),
+                    bid: Price::from_raw(bid.unwrap(), price_precision),
+                    ask: Price::from_raw(ask.unwrap(), price_precision),
+                    bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
+                    ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
+                    ts_event: ts_event.unwrap(),
+                    ts_init: ts_init.unwrap(),
                 },
             );
 
         values.collect()
+    }
+}
+
+impl DecodeDataFromRecordBatch for QuoteTick {
+    fn decode_data_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Vec<Data> {
+        let ticks: Vec<QuoteTick> = QuoteTick::decode_batch(metadata, record_batch);
+        ticks.into_iter().map(Data::from).collect()
     }
 }
 

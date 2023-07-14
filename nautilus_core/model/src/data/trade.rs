@@ -14,18 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
+    collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
-    str::FromStr,
+    hash::{Hash, Hasher},
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{
-    exceptions::{PyKeyError, PyValueError},
-    prelude::*,
-    pyclass::CompareOp,
-    types::PyDict,
-};
+use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -37,6 +32,7 @@ use crate::{
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(tag = "type")]
 #[pyclass]
 pub struct TradeTick {
     /// The trade instrument ID.
@@ -138,6 +134,12 @@ impl TradeTick {
         }
     }
 
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
     fn __str__(&self) -> String {
         self.to_string()
     }
@@ -182,111 +184,52 @@ impl TradeTick {
     }
 
     /// Return a dictionary representation of the object.
-    pub fn as_dict(&self) -> Py<PyDict> {
-        Python::with_gil(|py| {
-            let dict = PyDict::new(py);
-
-            dict.set_item("type", stringify!(TradeTick)).unwrap();
-            dict.set_item("instrument_id", self.instrument_id.to_string())
-                .unwrap();
-            dict.set_item("price", self.price.to_string()).unwrap();
-            dict.set_item("size", self.size.to_string()).unwrap();
-            dict.set_item("aggressor_side", self.aggressor_side.to_string())
-                .unwrap();
-            dict.set_item("trade_id", self.trade_id.to_string())
-                .unwrap();
-            dict.set_item("ts_event", self.ts_event).unwrap();
-            dict.set_item("ts_init", self.ts_init).unwrap();
-
-            dict.into_py(py)
-        })
+    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("decode", (json_str.as_bytes(),), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
-    pub fn from_dict(values: &PyDict) -> PyResult<Self> {
-        let instrument_id: String = values
-            .get_item("instrument_id")
-            .ok_or(PyKeyError::new_err("'instrument_id' not found in `values`"))?
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Serialize to JSON bytes
+        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
+            .getattr("json")?
+            .call_method("encode", (values,), None)?
             .extract()?;
-        let price: String = values
-            .get_item("price")
-            .ok_or(PyKeyError::new_err("'price' not found in `values`"))?
-            .extract()?;
-        let size: String = values
-            .get_item("size")
-            .ok_or(PyKeyError::new_err("'size' not found in `values`"))?
-            .extract()?;
-        let aggressor_side: String = values
-            .get_item("aggressor_side")
-            .ok_or(PyKeyError::new_err(
-                "'aggressor_side' not found in `values`",
-            ))?
-            .extract()?;
-        let trade_id: String = values
-            .get_item("trade_id")
-            .ok_or(PyKeyError::new_err("'trade_id' not found in `values`"))?
-            .extract()?;
-        let ts_event: UnixNanos = values
-            .get_item("ts_event")
-            .ok_or(PyKeyError::new_err("'ts_event' not found in `values`"))?
-            .extract()?;
-        let ts_init: UnixNanos = values
-            .get_item("ts_init")
-            .ok_or(PyKeyError::new_err("'ts_init' not found in `values`"))?
-            .extract()?;
-
-        let instrument_id = InstrumentId::from_str(&instrument_id)
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_bytes)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let price = Price::from_str(&price).map_err(PyValueError::new_err)?;
-        let size = Quantity::from_str(&size).map_err(PyValueError::new_err)?;
-        let aggressor_side = AggressorSide::from_str(&aggressor_side)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        let trade_id = TradeId::new(&trade_id);
-
-        Ok(Self::new(
-            instrument_id,
-            price,
-            size,
-            aggressor_side,
-            trade_id,
-            ts_event,
-            ts_init,
-        ))
+        Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_json_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize JSON: {}",
-                err
-            ))),
-        }
+        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        match Self::from_msgpack_bytes(data) {
-            Ok(quote) => Ok(quote),
-            Err(err) => Err(PyValueError::new_err(format!(
-                "Failed to deserialize MsgPack: {}",
-                err
-            ))),
-        }
+        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
     }
 
     /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self) -> Py<PyAny> {
+    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_json_bytes().unwrap().into_py(py))
+        self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self) -> Py<PyAny> {
+    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
-        Python::with_gil(|py| self.as_msgpack_bytes().unwrap().into_py(py))
+        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
 
@@ -329,14 +272,45 @@ mod tests {
     }
 
     #[test]
-    fn test_to_dict_and_from_dict() {
+    fn test_deserialize_raw_string() {
+        let raw_string = r#"{
+            "type": "TradeTick",
+            "instrument_id": "ETHUSDT-PERP.BINANCE",
+            "price": "10000.0000",
+            "size": "1.00000000",
+            "aggressor_side": "BUYER",
+            "trade_id": "123456789",
+            "ts_event": 1,
+            "ts_init": 0
+        }"#;
+
+        let tick: TradeTick = serde_json::from_str(raw_string).unwrap();
+
+        assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
+    }
+
+    #[test]
+    fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
         let tick = create_stub_trade_tick();
 
         Python::with_gil(|py| {
-            let dict = tick.as_dict();
-            let parsed = TradeTick::from_dict(dict.as_ref(py)).unwrap();
+            let dict_string = tick.as_dict(py).unwrap().to_string();
+            let expected_string = r#"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 1, 'ts_init': 0}"#;
+            assert_eq!(dict_string, expected_string);
+        });
+    }
+
+    #[test]
+    fn test_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let tick = create_stub_trade_tick();
+
+        Python::with_gil(|py| {
+            let dict = tick.as_dict(py).unwrap();
+            let parsed = TradeTick::from_dict(py, dict).unwrap();
             assert_eq!(parsed, tick);
         });
     }

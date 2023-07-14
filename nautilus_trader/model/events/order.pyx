@@ -323,6 +323,7 @@ cdef class OrderInitialized(OrderEvent):
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
+        exec_algorithm_params_json = values["exec_algorithm_params"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -343,7 +344,7 @@ cdef class OrderInitialized(OrderEvent):
             linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
             parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str is not None else None,
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
-            exec_algorithm_params=json.loads(values["exec_algorithm_params"]),  # Using vanilla json due mixed schema types
+            exec_algorithm_params=json.loads(exec_algorithm_params_json) if exec_algorithm_params_json is not None else None,
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
             tags=values["tags"],
             event_id=UUID4(values["event_id"]),
@@ -376,7 +377,7 @@ cdef class OrderInitialized(OrderEvent):
             "linked_order_ids": ",".join([o.to_str() for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
             "parent_order_id": obj.parent_order_id.to_str() if obj.parent_order_id is not None else None,
             "exec_algorithm_id": obj.exec_algorithm_id.to_str() if obj.exec_algorithm_id is not None else None,
-            "exec_algorithm_params": json.dumps(obj.exec_algorithm_params),  # Using vanilla json due mixed schema types
+            "exec_algorithm_params": json.dumps(obj.exec_algorithm_params) if obj.exec_algorithm_params else None,
             "exec_spawn_id": obj.exec_spawn_id.to_str() if obj.exec_spawn_id is not None else None,
             "tags": obj.tags,
             "event_id": obj.id.to_str(),
@@ -2365,6 +2366,7 @@ cdef class OrderFilled(OrderEvent):
     cdef OrderFilled from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef str position_id_str = values["position_id"]
+        cdef bytes info_bytes = values["info"]
         return OrderFilled(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -2384,7 +2386,7 @@ cdef class OrderFilled(OrderEvent):
             event_id=UUID4(values["event_id"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=msgspec.json.decode(values["info"]),
+            info=msgspec.json.decode(info_bytes) if info_bytes is not None else None,
             reconciliation=values.get("reconciliation", False),
         )
 
@@ -2411,7 +2413,7 @@ cdef class OrderFilled(OrderEvent):
             "event_id": obj.id.to_str(),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": msgspec.json.encode(obj.info),
+            "info": msgspec.json.encode(obj.info) if obj.info is not None else None,
             "reconciliation": obj.reconciliation,
         }
 

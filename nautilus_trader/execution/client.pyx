@@ -15,6 +15,10 @@
 
 from typing import Optional
 
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.execution.reports import TradeReport
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.cache cimport Cache
@@ -28,9 +32,6 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.execution.reports cimport OrderStatusReport
-from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport LiquiditySide
@@ -777,31 +778,31 @@ cdef class ExecutionClient(Component):
 
 # --------------------------------------------------------------------------------------------------
 
-    cpdef void _send_account_state(self, AccountState account_state):
+    cpdef void _send_account_state(self, account_state: AccountState):
         self._msgbus.send(
             endpoint=f"Portfolio.update_account",
             msg=account_state,
         )
 
-    cpdef void _send_order_event(self, OrderEvent event):
+    cpdef void _send_order_event(self, event: OrderEvent):
         self._msgbus.send(
             endpoint="ExecEngine.process",
             msg=event,
         )
 
-    cpdef void _send_mass_status_report(self, ExecutionMassStatus report):
+    cpdef void _send_mass_status_report(self, report: ExecutionMassStatus):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_mass_status",
             msg=report,
         )
 
-    cpdef void _send_order_status_report(self, OrderStatusReport report):
+    cpdef void _send_order_status_report(self, report: OrderStatusReport):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_report",
             msg=report,
         )
 
-    cpdef void _send_trade_report(self, TradeReport report):
+    cpdef void _send_trade_report(self, report: TradeReport):
         self._msgbus.send(
             endpoint="ExecEngine.reconcile_report",
             msg=report,

@@ -33,8 +33,8 @@ async def test_binance_websocket_client():
         base_url="wss://fstream.binance.com",
     )
 
-    client.subscribe_book_ticker("BTCUSDT-PERP")
-
     await client.connect()
+    await client.subscribe_book_ticker("BTCUSDT-PERP")
+
     await asyncio.sleep(4)
     await client.disconnect()

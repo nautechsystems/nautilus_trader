@@ -15,7 +15,6 @@
 
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport TrailingOffsetType
-from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 
@@ -24,7 +23,7 @@ cdef class TrailingStopCalculator:
 
     @staticmethod
     cdef tuple calculate(
-        Instrument instrument,
+        Price price_increment,
         Order order,
         Price bid,
         Price ask,
@@ -33,7 +32,7 @@ cdef class TrailingStopCalculator:
 
     @staticmethod
     cdef Price calculate_with_last(
-        Instrument instrument,
+        Price price_increment,
         TrailingOffsetType trailing_offset_type,
         OrderSide side,
         double offset,
@@ -42,7 +41,7 @@ cdef class TrailingStopCalculator:
 
     @staticmethod
     cdef Price calculate_with_bid_ask(
-        Instrument instrument,
+        Price price_increment,
         TrailingOffsetType trailing_offset_type,
         OrderSide side,
         double offset,

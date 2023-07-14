@@ -13,39 +13,38 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{collections::HashMap, io::Cursor, str::FromStr};
 
-use nautilus_model::{
-    data::{delta::OrderBookDelta, order::BookOrder},
-    enums::{BookAction, FromU8, OrderSide},
-    identifiers::instrument_id::InstrumentId,
-    types::{price::Price, quantity::Quantity},
-};
-use polars::{
-    prelude::{
-        ChunkCast, ChunkedArray, DataFrame, DataType, TemporalMethods, TimeUnit, UInt64Type,
-    },
-    series::{IntoSeries, Series},
-};
-use pyo3::prelude::*;
-use pyo3_polars::PyDataFrame;
+use datafusion::arrow::ipc::reader::StreamReader;
+use nautilus_model::{data::delta::OrderBookDelta, identifiers::instrument_id::InstrumentId};
+use pyo3::{exceptions::PyValueError, prelude::*};
 
-#[pyclass]
+use crate::arrow::DecodeFromRecordBatch;
+
+#[pyclass()]
 pub struct OrderBookDeltaDataWrangler {
     instrument_id: InstrumentId,
     price_precision: u8,
     size_precision: u8,
+    metadata: HashMap<String, String>,
 }
 
 #[pymethods]
 impl OrderBookDeltaDataWrangler {
     #[new]
-    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> Self {
-        Self {
-            instrument_id: InstrumentId::from_str(instrument_id).unwrap(),
+    fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
+        let instrument_id = InstrumentId::from_str(instrument_id)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+
+        let metadata =
+            OrderBookDelta::get_metadata(&instrument_id, price_precision, size_precision);
+
+        Ok(Self {
+            instrument_id,
             price_precision,
             size_precision,
-        }
+            metadata,
+        })
     }
 
     #[getter]
@@ -63,142 +62,30 @@ impl OrderBookDeltaDataWrangler {
         self.size_precision
     }
 
-    fn process(
+    fn process_record_batches_bytes(
         &self,
         _py: Python,
-        data: PyDataFrame,
-        ts_init_delta: u64,
+        data: &[u8],
     ) -> PyResult<Vec<OrderBookDelta>> {
-        // Convert DataFrame to Series per column
-        let data: DataFrame = data.into();
-
-        // Extract column data as Series
-        let action: &Series = data.column("action").unwrap();
-        let side: &Series = data.column("side").unwrap();
-        let price: &Series = data.column("price").unwrap();
-        let size: &Series = data.column("size").unwrap();
-        let order_id: &Series = data.column("order_id").unwrap();
-        let flags: &Series = data.column("flags").unwrap();
-        let sequence: &Series = data.column("sequence").unwrap();
-        let ts_event: Series = data
-            .column("ts_event")
-            .unwrap()
-            .datetime()
-            .unwrap()
-            .cast(&DataType::UInt64)
-            .unwrap()
-            .timestamp(TimeUnit::Nanoseconds)
-            .unwrap()
-            .cast(&DataType::UInt64)
-            .unwrap()
-            .into_series();
-        let ts_init: Series = match data.column("ts_init") {
-            Ok(column) => column
-                .datetime()
-                .unwrap()
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .timestamp(TimeUnit::Nanoseconds)
-                .unwrap()
-                .cast(&DataType::UInt64)
-                .unwrap()
-                .into_series(),
-            Err(_) => {
-                let ts_event_plus_delta: Series = ts_event
-                    .u64()
-                    .unwrap()
-                    .into_iter()
-                    .map(|ts| ts.map(|ts| ts + ts_init_delta))
-                    .collect::<ChunkedArray<UInt64Type>>()
-                    .into_series();
-                ts_event_plus_delta
-            }
+        // Create a StreamReader (from Arrow IPC)
+        let cursor = Cursor::new(data);
+        let reader = match StreamReader::try_new(cursor, None) {
+            Ok(reader) => reader,
+            Err(e) => return Err(PyValueError::new_err(e.to_string())),
         };
 
-        // Extract values from Series as Rust native types
-        let action_values: Vec<u8> = action
-            .u8()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let side_values: Vec<u8> = side.u8().unwrap().into_iter().map(Option::unwrap).collect();
-        let price_values: Vec<i64> = price
-            .i64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let size_values: Vec<u64> = size
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let order_id_values: Vec<u64> = order_id
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let flags_values: Vec<u8> = flags
-            .u8()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let sequence_values: Vec<u64> = sequence
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let ts_event_values: Vec<u64> = ts_event
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
-        let ts_init_values: Vec<u64> = ts_init
-            .u64()
-            .unwrap()
-            .into_iter()
-            .map(Option::unwrap)
-            .collect();
+        let mut deltas = Vec::new();
 
-        // Map Series to Nautilus objects
-        let deltas: Vec<OrderBookDelta> = action_values
-            .into_iter()
-            .zip(side_values.into_iter())
-            .zip(price_values.into_iter())
-            .zip(size_values.into_iter())
-            .zip(order_id_values.into_iter())
-            .zip(flags_values.into_iter())
-            .zip(sequence_values.into_iter())
-            .zip(ts_event_values.into_iter())
-            .zip(ts_init_values.into_iter())
-            .map(
-                |(
-                    (((((((action, side), price), size), order_id), flags), sequence), ts_event),
-                    ts_init,
-                )| {
-                    OrderBookDelta {
-                        instrument_id: self.instrument_id.clone(),
-                        action: BookAction::from_u8(action).unwrap(),
-                        order: BookOrder {
-                            side: OrderSide::from_u8(side).unwrap(),
-                            price: Price::from_raw(price, self.price_precision),
-                            size: Quantity::from_raw(size, self.size_precision),
-                            order_id,
-                        },
-                        flags,
-                        sequence,
-                        ts_event,
-                        ts_init,
-                    }
-                },
-            )
-            .collect();
+        // Read the record batches
+        for maybe_batch in reader {
+            let record_batch = match maybe_batch {
+                Ok(record_batch) => record_batch,
+                Err(e) => return Err(PyValueError::new_err(e.to_string())),
+            };
+
+            let batch_deltas = OrderBookDelta::decode_batch(&self.metadata, record_batch);
+            deltas.extend(batch_deltas);
+        }
 
         Ok(deltas)
     }

@@ -34,6 +34,6 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
 
     /// Serialize an object to MsgPack encoded bytes.
     fn as_msgpack_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec(self)
+        rmp_serde::to_vec_named(self)
     }
 }

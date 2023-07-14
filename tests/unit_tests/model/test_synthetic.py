@@ -30,14 +30,14 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def test_synthetic_instrument_initialization() -> None:
     # Arrange
     symbol = Symbol("BTC-ETH")
-    precision = 8
+    price_precision = 8
     components = [BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id]
     formula = "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2"
 
     # Act
     synthetic = SyntheticInstrument(
         symbol=symbol,
-        precision=precision,
+        price_precision=price_precision,
         components=components,
         formula=formula,
         ts_event=0,
@@ -45,7 +45,8 @@ def test_synthetic_instrument_initialization() -> None:
     )
 
     # Assert
-    assert synthetic.precision == precision
+    assert synthetic.price_precision == price_precision
+    assert synthetic.price_increment == Price.from_str("0.00000001")
     assert synthetic.id == InstrumentId.from_str("BTC-ETH.SYNTH")
     assert synthetic.formula == formula
     assert synthetic.components == components
@@ -60,7 +61,7 @@ def test_synthetic_instrument_with_invalid_formula() -> None:
     with pytest.raises(ValueError):
         SyntheticInstrument(
             symbol=Symbol("BTC-ETH"),
-            precision=8,
+            price_precision=8,
             components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
             formula="z)(?,.",  # <-- Invalid
             ts_event=0,
@@ -83,7 +84,7 @@ def test_synthetic_instrument_calculate_with_invalid_inputs(
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,
@@ -99,7 +100,7 @@ def test_synthetic_instrument_calculate() -> None:
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,
@@ -112,7 +113,7 @@ def test_synthetic_instrument_calculate() -> None:
 
     # Assert
     assert isinstance(price, Price)
-    assert price.precision == synthetic.precision
+    assert price.precision == synthetic.price_precision
     assert price == 150.0
 
 
@@ -120,7 +121,7 @@ def test_synthetic_instrument_change_formula_with_invalid_formula() -> None:
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,
@@ -140,7 +141,7 @@ def test_synthetic_instrument_change_formula() -> None:
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,
@@ -156,8 +157,8 @@ def test_synthetic_instrument_change_formula() -> None:
     price2 = synthetic.calculate(inputs)
 
     # Assert
-    assert price1.precision == synthetic.precision
-    assert price2.precision == synthetic.precision
+    assert price1.precision == synthetic.price_precision
+    assert price2.precision == synthetic.price_precision
     assert price1 == 150.0
     assert price2 == 75.0
     assert synthetic.formula == new_formula
@@ -167,7 +168,7 @@ def test_synthetic_instrument_to_dict():
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,
@@ -181,7 +182,7 @@ def test_synthetic_instrument_to_dict():
     assert result == {
         "type": "SyntheticInstrument",
         "symbol": "BTC-ETH",
-        "precision": 8,
+        "price_precision": 8,
         "components": b'["BTCUSDT.BINANCE","ETHUSDT.BINANCE"]',
         "formula": "(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         "ts_event": 0,
@@ -193,7 +194,7 @@ def test_synthetic_instrument_from_dict():
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,
@@ -211,7 +212,7 @@ def test_pickling_round_trip_results_in_expected_tick():
     # Arrange
     synthetic = SyntheticInstrument(
         symbol=Symbol("BTC-ETH"),
-        precision=8,
+        price_precision=8,
         components=[BTCUSDT_BINANCE.id, ETHUSDT_BINANCE.id],
         formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
         ts_event=0,

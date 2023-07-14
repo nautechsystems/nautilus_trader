@@ -121,7 +121,7 @@ class TestOrderMatchingEngine:
             order_side=OrderSide.BUY,
             time_in_force=TimeInForce.AT_THE_CLOSE,
         )
-        self.cache.add_order(client_order, None)
+        self.cache.add_order(client_order)
         self.matching_engine.process_order(client_order, self.account_id)
         self.matching_engine.process_status(MarketStatus.OPEN)
         self.matching_engine.process_status(MarketStatus.PRE_OPEN)

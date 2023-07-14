@@ -47,6 +47,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
+
     """
 
     api_key: Optional[str] = None
@@ -83,8 +84,15 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
-    warn_gtd_to_gtc : bool, default True
-        If log warning for GTD time in force transformed to GTC.
+    use_position_ids: bool, default True
+        If Binance Futures hedging position IDs should be used.
+        If False then order event `position_id`(s) from the execution client will be `None`, which
+        allows *virtual* positions with `OmsType.HEDGING`.
+    treat_expired_as_canceled : bool, default False
+        If the `EXPIRED` execution type is semantically treated as `CANCELED`.
+        Binance treats cancels with certain combinations of order type and time in force as expired
+        events. This config option allows you to treat these uniformally as cancels.
+
     """
 
     api_key: Optional[str] = None
@@ -95,4 +103,5 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     us: bool = False
     testnet: bool = False
     clock_sync_interval_secs: int = 0
-    warn_gtd_to_gtc: bool = True
+    use_position_ids: bool = True
+    treat_expired_as_canceled: bool = False

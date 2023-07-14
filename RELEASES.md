@@ -3,14 +3,40 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
+- Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
+- Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
+- Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
+- Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
+- Added `MessageBus.is_pending_request(...)` method
+- Added `Actor.is_pending_request(...)` convenience method
+- Added `Actor.has_pending_requests()` convenience method
+- Added `Actor.pending_requests()` convenience method
+- Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
+- Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
+- Improved `Binance` live clients logging
 
 ### Breaking Changes
-None
+- Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
+- All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
+- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an info log)
 
 ### Fixes
-- Fixed parsing of `TriggerType` for Binance, thanks for reporting @davidblom603
-- Fixed parsing of invalid Binance orders in execution reports, thanks for reporting @graceyangfan
+- Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
+- Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
+- Fixed race condition on `OrderFactory` order identifiers generation
+- Fixed `Currency` registration with core global map on creation
+- Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
+- Fixed assignment of position IDs for contingency orders (when parent filled)
+- Fixed Binance Futures `PositionStatusReport` parsing of position side
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
+- Fixed Binance execution submitting of order lists
+- Fixed fill handling of `reduce_only` orders when partially filled
+- Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
+- Fixed parsing of `TriggerType` for Binance #1154, thanks for reporting @davidblom603
+- Fixed parsing of invalid Binance orders in execution reports #1157, thanks for reporting @graceyangfan
+- Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
 
 ---
 

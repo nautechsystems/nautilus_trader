@@ -57,6 +57,7 @@ class TemplateLiveDataClient(LiveDataClient):
     +---------------------------------------+-------------+
     | _request                              | optional    |
     +---------------------------------------+-------------+
+
     """
 
     async def _connect(self) -> None:
@@ -87,7 +88,8 @@ class TemplateLiveDataClient(LiveDataClient):
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
     """
-    An example of a ``LiveMarketDataClient`` highlighting the overridable abstract methods.
+    An example of a ``LiveMarketDataClient`` highlighting the overridable abstract
+    methods.
 
     A live market data client general handles market data feeds and requests.
 
@@ -129,6 +131,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _request_trade_ticks                   | optional    |
     | _request_bars                          | optional    |
     +----------------------------------------+-------------+
+
     """
 
     async def _connect(self) -> None:

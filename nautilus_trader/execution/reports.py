@@ -13,51 +13,58 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
+from datetime import datetime
 from decimal import Decimal
-from typing import Optional
 
-from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.message import Document
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import contingency_type_to_str
+from nautilus_trader.model.enums import liquidity_side_to_str
+from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_status_to_str
+from nautilus_trader.model.enums import order_type_to_str
+from nautilus_trader.model.enums import position_side_to_str
+from nautilus_trader.model.enums import time_in_force_to_str
+from nautilus_trader.model.enums import trailing_offset_type_to_str
+from nautilus_trader.model.enums import trigger_type_to_str
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import OrderListId
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.message cimport Document
-from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OrderStatus
-from nautilus_trader.model.enums_c cimport PositionSide
-from nautilus_trader.model.enums_c cimport TrailingOffsetType
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport contingency_type_to_str
-from nautilus_trader.model.enums_c cimport liquidity_side_to_str
-from nautilus_trader.model.enums_c cimport order_side_to_str
-from nautilus_trader.model.enums_c cimport order_status_to_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
-from nautilus_trader.model.enums_c cimport position_side_to_str
-from nautilus_trader.model.enums_c cimport time_in_force_to_str
-from nautilus_trader.model.enums_c cimport trailing_offset_type_to_str
-from nautilus_trader.model.enums_c cimport trigger_type_to_str
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport TradeId
-from nautilus_trader.model.identifiers cimport Venue
-from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.objects cimport Quantity
 
-
-cdef class ExecutionReport(Document):
+class ExecutionReport(Document):
     """
     The base class for all execution reports.
     """
 
     def __init__(
         self,
-        AccountId account_id not None,
-        InstrumentId instrument_id not None,
-        UUID4 report_id not None,
-        uint64_t ts_init,
-    ):
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        report_id: UUID4,
+        ts_init: int,
+    ) -> None:
         super().__init__(
             report_id,
             ts_init,
@@ -66,7 +73,7 @@ cdef class ExecutionReport(Document):
         self.instrument_id = instrument_id
 
 
-cdef class OrderStatusReport(ExecutionReport):
+class OrderStatusReport(ExecutionReport):
     """
     Represents an order status at a point in time.
 
@@ -92,11 +99,11 @@ cdef class OrderStatusReport(ExecutionReport):
         The reported filled quantity at the exchange.
     report_id : UUID4
         The report ID.
-    ts_accepted : uint64_t
+    ts_accepted : int
         The UNIX timestamp (nanoseconds) when the reported order was accepted.
-    ts_last : uint64_t
+    ts_last : int
         The UNIX timestamp (nanoseconds) of the last order status change.
-    ts_init : uint64_t
+    ts_init : int
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_order_id : ClientOrderId, optional
         The reported client order ID.
@@ -128,7 +135,7 @@ cdef class OrderStatusReport(ExecutionReport):
         If the reported order carries the 'reduce-only' execution instruction.
     cancel_reason : str, optional
         The reported reason for order cancellation.
-    ts_triggered : uint64_t, optional
+    ts_triggered : int, optional
         The UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
@@ -141,46 +148,52 @@ cdef class OrderStatusReport(ExecutionReport):
         If `trigger_price` is not ``None`` and `trigger_price` is equal to ``NO_TRIGGER``.
     ValueError
         If `limit_offset` or `trailing_offset` is not ``None`` and trailing_offset_type is equal to ``NO_TRAILING_OFFSET``.
+
     """
 
     def __init__(
         self,
-        AccountId account_id not None,
-        InstrumentId instrument_id not None,
-        VenueOrderId venue_order_id not None,
-        OrderSide order_side,
-        OrderType order_type,
-        TimeInForce time_in_force,
-        OrderStatus order_status,
-        Quantity quantity not None,
-        Quantity filled_qty not None,
-        UUID4 report_id not None,
-        uint64_t ts_accepted,
-        uint64_t ts_last,
-        uint64_t ts_init,
-        ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
-        OrderListId order_list_id: Optional[OrderListId] = None,
-        ContingencyType contingency_type = ContingencyType.NO_CONTINGENCY,
-        datetime expire_time: Optional[datetime] = None,
-        Price price: Optional[Price] = None,
-        Price trigger_price: Optional[Price] = None,
-        TriggerType trigger_type = TriggerType.NO_TRIGGER,
-        limit_offset: Optional[Decimal] = None,
-        trailing_offset: Optional[Decimal] = None,
-        TrailingOffsetType trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET,
-        avg_px: Optional[Decimal] = None,
-        Quantity display_qty: Optional[Quantity] = None,
-        bint post_only = False,
-        bint reduce_only = False,
-        str cancel_reason: Optional[str] = None,
-        ts_triggered: Optional[int] = None,
-    ):
-        Condition.positive(quantity, "quantity")
-        Condition.not_negative(filled_qty, "filled_qty")
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        time_in_force: TimeInForce,
+        order_status: OrderStatus,
+        quantity: Quantity,
+        filled_qty: Quantity,
+        report_id: UUID4,
+        ts_accepted: int,
+        ts_last: int,
+        ts_init: int,
+        client_order_id: ClientOrderId | None = None,  # (None if external order)
+        order_list_id: OrderListId | None = None,
+        contingency_type: ContingencyType = ContingencyType.NO_CONTINGENCY,
+        expire_time: datetime | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        trigger_type: TriggerType = TriggerType.NO_TRIGGER,
+        limit_offset: Decimal | None = None,
+        trailing_offset: Decimal | None = None,
+        trailing_offset_type: TrailingOffsetType = TrailingOffsetType.NO_TRAILING_OFFSET,
+        avg_px: Decimal | None = None,
+        display_qty: Quantity | None = None,
+        post_only: bool = False,
+        reduce_only: bool = False,
+        cancel_reason: str | None = None,
+        ts_triggered: int | None = None,
+    ) -> None:
+        PyCondition.positive(quantity, "quantity")
+        PyCondition.not_negative(filled_qty, "filled_qty")
         if trigger_price is not None and trigger_price > 0:
-            Condition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
+            PyCondition.not_equal(trigger_type, TriggerType.NO_TRIGGER, "trigger_type", "NONE")
         if limit_offset is not None or trailing_offset is not None:
-            Condition.not_equal(trailing_offset_type, TrailingOffsetType.NO_TRAILING_OFFSET, "trailing_offset_type", "NO_TRAILING_OFFSET")
+            PyCondition.not_equal(
+                trailing_offset_type,
+                TrailingOffsetType.NO_TRAILING_OFFSET,
+                "trailing_offset_type",
+                "NO_TRAILING_OFFSET",
+            )
 
         super().__init__(
             account_id,
@@ -205,7 +218,10 @@ cdef class OrderStatusReport(ExecutionReport):
         self.trailing_offset_type = trailing_offset_type
         self.quantity = quantity
         self.filled_qty = filled_qty
-        self.leaves_qty = Quantity(self.quantity.as_f64_c() - self.filled_qty.as_f64_c(), self.quantity._mem.precision)
+        self.leaves_qty = Quantity(
+            self.quantity - self.filled_qty,
+            self.quantity.precision,
+        )
         self.display_qty = display_qty
         self.avg_px = avg_px
         self.post_only = post_only
@@ -215,7 +231,9 @@ cdef class OrderStatusReport(ExecutionReport):
         self.ts_triggered = ts_triggered or 0
         self.ts_last = ts_last
 
-    def __eq__(self, OrderStatusReport other) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, OrderStatusReport):
+            return False
         return (
             self.account_id == other.account_id
             and self.instrument_id == other.instrument_id
@@ -226,11 +244,11 @@ cdef class OrderStatusReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
+            f"account_id={self.account_id}, "
+            f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
             f"order_list_id={self.order_list_id}, "  # Can be None
-            f"venue_order_id={self.venue_order_id.to_str()}, "  # Can be None
+            f"venue_order_id={self.venue_order_id}, "  # Can be None
             f"order_side={order_side_to_str(self.order_side)}, "
             f"order_type={order_type_to_str(self.order_type)}, "
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
@@ -246,7 +264,7 @@ cdef class OrderStatusReport(ExecutionReport):
             f"quantity={self.quantity.to_str()}, "
             f"filled_qty={self.filled_qty.to_str()}, "
             f"leaves_qty={self.leaves_qty.to_str()}, "
-            f"display_qty={self.display_qty.to_str() if self.display_qty is not None else None}, "
+            f"display_qty={self.display_qty}, "
             f"avg_px={self.avg_px}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -259,7 +277,7 @@ cdef class OrderStatusReport(ExecutionReport):
         )
 
 
-cdef class TradeReport(ExecutionReport):
+class TradeReport(ExecutionReport):
     """
     Represents a report of a single trade.
 
@@ -283,9 +301,9 @@ cdef class TradeReport(ExecutionReport):
         The reported liquidity side for the trade.
     report_id : UUID4
         The report ID.
-    ts_event : uint64_t
+    ts_event : int
         The UNIX timestamp (nanoseconds) when the trade occurred.
-    ts_init : uint64_t
+    ts_init : int
         The UNIX timestamp (nanoseconds) when the object was initialized.
     client_order_id : ClientOrderId, optional
         The reported client order ID for the trade.
@@ -301,26 +319,27 @@ cdef class TradeReport(ExecutionReport):
     ------
     ValueError
         If `last_qty` is not positive (> 0).
+
     """
 
     def __init__(
         self,
-        AccountId account_id not None,
-        InstrumentId instrument_id not None,
-        VenueOrderId venue_order_id not None,
-        TradeId trade_id not None,
-        OrderSide order_side,
-        Quantity last_qty not None,
-        Price last_px not None,
-        LiquiditySide liquidity_side,
-        UUID4 report_id not None,
-        uint64_t ts_event,
-        uint64_t ts_init,
-        ClientOrderId client_order_id: Optional[ClientOrderId] = None,  # (None if external order)
-        PositionId venue_position_id: Optional[PositionId] = None,
-        Money commission: Optional[Money] = None,
-    ):
-        Condition.positive(last_qty, "last_qty")
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        venue_order_id: VenueOrderId,
+        trade_id: TradeId,
+        order_side: OrderSide,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+        report_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        client_order_id: ClientOrderId | None = None,  # (None if external order)
+        venue_position_id: PositionId | None = None,
+        commission: Money | None = None,
+    ) -> None:
+        PyCondition.positive(last_qty, "last_qty")
 
         super().__init__(
             account_id,
@@ -339,7 +358,9 @@ cdef class TradeReport(ExecutionReport):
         self.liquidity_side = liquidity_side
         self.ts_event = ts_event
 
-    def __eq__(self, TradeReport other) -> bool:
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, TradeReport):
+            return False
         return (
             self.account_id == other.account_id
             and self.instrument_id == other.instrument_id
@@ -351,16 +372,16 @@ cdef class TradeReport(ExecutionReport):
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"client_order_id={self.client_order_id}, "  # Can be None
-            f"venue_order_id={self.venue_order_id.to_str()}, "
-            f"venue_position_id={self.venue_position_id}, "  # Can be None
-            f"trade_id={self.trade_id.to_str()}, "
+            f"account_id={self.account_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"venue_order_id={self.venue_order_id}, "
+            f"venue_position_id={self.venue_position_id}, "
+            f"trade_id={self.trade_id}, "
             f"order_side={order_side_to_str(self.order_side)}, "
             f"last_qty={self.last_qty.to_str()}, "
             f"last_px={self.last_px}, "
-            f"commission={self.commission.to_str() if self.commission is not None else None}, "  # Can be None
+            f"commission={self.commission.to_str() if self.commission is not None else None}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
             f"report_id={self.id}, "
             f"ts_event={self.ts_event}, "
@@ -368,7 +389,7 @@ cdef class TradeReport(ExecutionReport):
         )
 
 
-cdef class PositionStatusReport(ExecutionReport):
+class PositionStatusReport(ExecutionReport):
     """
     Represents a position status at a point in time.
 
@@ -384,28 +405,29 @@ cdef class PositionStatusReport(ExecutionReport):
         The reported position quantity at the exchange.
     report_id : UUID4
         The report ID.
-    ts_last : uint64_t
+    ts_last : int
         The UNIX timestamp (nanoseconds) of the last position change.
-    ts_init : uint64_t
+    ts_init : int
         The UNIX timestamp (nanoseconds) when the object was initialized.
     venue_position_id : PositionId, optional
         The reported venue position ID (assigned by the venue). If the trading
         venue has assigned a position ID / ticket for the trade then pass that
         here, otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
+
     """
 
     def __init__(
         self,
-        AccountId account_id not None,
-        InstrumentId instrument_id not None,
-        PositionSide position_side,
-        Quantity quantity not None,
-        UUID4 report_id not None,
-        uint64_t ts_last,
-        uint64_t ts_init,
-        PositionId venue_position_id: Optional[PositionId] = None,
-    ):
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        position_side: PositionSide,
+        quantity: Quantity,
+        report_id: UUID4,
+        ts_last: int,
+        ts_init: int,
+        venue_position_id: PositionId | None = None,
+    ) -> None:
         super().__init__(
             account_id,
             instrument_id,
@@ -415,15 +437,19 @@ cdef class PositionStatusReport(ExecutionReport):
         self.venue_position_id = venue_position_id
         self.position_side = position_side
         self.quantity = quantity
-        self.signed_decimal_qty = -self.quantity.as_decimal() if position_side == PositionSide.SHORT else self.quantity.as_decimal()
+        self.signed_decimal_qty = (
+            -self.quantity.as_decimal()
+            if position_side == PositionSide.SHORT
+            else self.quantity.as_decimal()
+        )
         self.ts_last = ts_last
 
     def __repr__(self) -> str:
         return (
             f"{type(self).__name__}("
-            f"account_id={self.account_id.to_str()}, "
-            f"instrument_id={self.instrument_id.to_str()}, "
-            f"venue_position_id={self.venue_position_id}, "  # Can be None
+            f"account_id={self.account_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"venue_position_id={self.venue_position_id}, "
             f"position_side={position_side_to_str(self.position_side)}, "
             f"quantity={self.quantity.to_str()}, "
             f"signed_decimal_qty={self.signed_decimal_qty}, "
@@ -433,10 +459,10 @@ cdef class PositionStatusReport(ExecutionReport):
         )
 
 
-cdef class ExecutionMassStatus(Document):
+class ExecutionMassStatus(Document):
     """
-    Represents an execution mass status report for an execution client -
-    including status of all orders, trades for those orders and open positions.
+    Represents an execution mass status report for an execution client - including
+    status of all orders, trades for those orders and open positions.
 
     Parameters
     ----------
@@ -448,18 +474,19 @@ cdef class ExecutionMassStatus(Document):
         The account ID for the report.
     report_id : UUID4
         The report ID.
-    ts_init : uint64_t
+    ts_init : int
         The UNIX timestamp (nanoseconds) when the object was initialized.
+
     """
 
     def __init__(
         self,
-        ClientId client_id not None,
-        AccountId account_id not None,
-        Venue venue not None,
-        UUID4 report_id not None,
-        uint64_t ts_init,
-    ):
+        client_id: ClientId,
+        account_id: AccountId,
+        venue: Venue,
+        report_id: UUID4,
+        ts_init: int,
+    ) -> None:
         super().__init__(
             report_id,
             ts_init,
@@ -476,8 +503,8 @@ cdef class ExecutionMassStatus(Document):
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
-            f"account_id={self.account_id.to_str()}, "
-            f"venue={self.venue.to_str()}, "
+            f"account_id={self.account_id}, "
+            f"venue={self.venue}, "
             f"order_reports={self._order_reports}, "
             f"trade_reports={self._trade_reports}, "
             f"position_reports={self._position_reports}, "
@@ -485,7 +512,7 @@ cdef class ExecutionMassStatus(Document):
             f"ts_init={self.ts_init})"
         )
 
-    cpdef dict order_reports(self):
+    def order_reports(self) -> dict[VenueOrderId, OrderStatusReport]:
         """
         Return the order status reports.
 
@@ -496,7 +523,7 @@ cdef class ExecutionMassStatus(Document):
         """
         return self._order_reports.copy()
 
-    cpdef dict trade_reports(self):
+    def trade_reports(self) -> dict[VenueOrderId, list[TradeReport]]:
         """
         Return the trade reports.
 
@@ -507,7 +534,7 @@ cdef class ExecutionMassStatus(Document):
         """
         return self._trade_reports.copy()
 
-    cpdef dict position_reports(self):
+    def position_reports(self) -> dict[InstrumentId, list[PositionStatusReport]]:
         """
         Return the position status reports.
 
@@ -518,7 +545,7 @@ cdef class ExecutionMassStatus(Document):
         """
         return self._position_reports.copy()
 
-    cpdef void add_order_reports(self, list reports):
+    def add_order_reports(self, reports: list[OrderStatusReport]) -> None:
         """
         Add the order reports to the mass status.
 
@@ -528,18 +555,17 @@ cdef class ExecutionMassStatus(Document):
             The list of reports to add.
 
         Raises
-        -------
+        ------
         TypeError
             If `reports` contains a type other than `TradeReport`.
 
         """
-        Condition.not_none(reports, "reports")
+        PyCondition.not_none(reports, "reports")
 
-        cdef OrderStatusReport report
         for report in reports:
             self._order_reports[report.venue_order_id] = report
 
-    cpdef void add_trade_reports(self, list reports):
+    def add_trade_reports(self, reports: list[TradeReport]) -> None:
         """
         Add the trade reports to the mass status.
 
@@ -549,21 +575,20 @@ cdef class ExecutionMassStatus(Document):
             The list of reports to add.
 
         Raises
-        -------
+        ------
         TypeError
             If `reports` contains a type other than `TradeReport`.
 
         """
-        Condition.not_none(reports, "reports")
+        PyCondition.not_none(reports, "reports")
 
         # Sort reports by venue order ID
-        cdef TradeReport report
         for report in reports:
             if report.venue_order_id not in self._trade_reports:
                 self._trade_reports[report.venue_order_id] = []
             self._trade_reports[report.venue_order_id].append(report)
 
-    cpdef void add_position_reports(self, list reports):
+    def add_position_reports(self, reports: list[PositionStatusReport]) -> None:
         """
         Add the position status reports to the mass status.
 
@@ -573,7 +598,7 @@ cdef class ExecutionMassStatus(Document):
             The reports to add.
 
         """
-        Condition.not_none(reports, "reports")
+        PyCondition.not_none(reports, "reports")
 
         # Sort reports by instrument ID
         for report in reports:

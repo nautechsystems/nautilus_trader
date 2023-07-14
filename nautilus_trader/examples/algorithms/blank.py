@@ -30,6 +30,7 @@ class MyExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
     ----------
     exec_algorithm_id : str | ExecAlgorithmId, optional
         The execution algorithm ID (will override default which is the class name).
+
     """
 
     exec_algorithm_id: Optional[str] = None

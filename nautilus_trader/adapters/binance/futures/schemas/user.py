@@ -55,13 +55,17 @@ from nautilus_trader.model.objects import Quantity
 
 
 class BinanceFuturesUserMsgData(msgspec.Struct, frozen=True):
-    """Inner struct for execution WebSocket messages from `Binance`."""
+    """
+    Inner struct for execution WebSocket messages from `Binance`.
+    """
 
     e: BinanceFuturesEventType
 
 
 class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
-    """Provides a wrapper for execution WebSocket messages from `Binance`."""
+    """
+    Provides a wrapper for execution WebSocket messages from `Binance`.
+    """
 
     stream: str
     data: BinanceFuturesUserMsgData
@@ -293,7 +297,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             )
         elif self.x == BinanceExecutionType.TRADE:
             instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            assert instrument is not None
+            if instrument is None:
+                raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
 
             # Determine commission
             commission_asset: Optional[str] = self.N
@@ -304,23 +309,29 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 # Commission in margin collateral currency
                 commission = Money(0, instrument.quote_currency)
 
+            venue_position_id: Optional[PositionId] = None
+            if exec_client.use_position_ids:
+                venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
+
             exec_client.generate_order_filled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
-                venue_position_id=PositionId(f"{instrument_id}-{self.ps.value}"),
+                venue_position_id=venue_position_id,
                 trade_id=TradeId(str(self.t)),  # Trade ID
                 order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
                 order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
-                last_qty=Quantity.from_str(self.l),
-                last_px=Price.from_str(self.L),
+                last_qty=Quantity(float(self.l), instrument.size_precision),
+                last_px=Price(float(self.L), instrument.price_precision),
                 quote_currency=instrument.quote_currency,
                 commission=commission,
                 liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
                 ts_event=ts_event,
             )
-        elif self.x == BinanceExecutionType.CANCELED:
+        elif self.x == BinanceExecutionType.CANCELED or (
+            exec_client.treat_expired_as_canceled and self.x == BinanceExecutionType.EXPIRED
+        ):
             exec_client.generate_order_canceled(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,

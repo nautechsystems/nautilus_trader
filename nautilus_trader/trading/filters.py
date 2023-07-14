@@ -13,21 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from datetime import datetime
-
-from libc.stdint cimport uint64_t
-
+from datetime import timedelta
 from enum import Enum
 from enum import unique
 
 import pandas as pd
 import pytz
 
-from cpython.datetime cimport datetime
-from cpython.datetime cimport timedelta
-
-from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.datetime cimport is_datetime_utc
+from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import is_datetime_utc
+from nautilus_trader.model.currency import Currency
 
 
 @unique
@@ -38,9 +37,10 @@ class ForexSession(Enum):
     NEW_YORK = 4
 
 
-cdef class ForexSessionFilter:
+class ForexSessionFilter:
     """
-    Provides methods to help filter trading strategy rules dependent on Forex session times.
+    Provides methods to help filter trading strategy rules dependent on Forex session
+    times.
     """
 
     def __init__(self):
@@ -49,7 +49,7 @@ cdef class ForexSessionFilter:
         self._tz_london = pytz.timezone("Europe/London")
         self._tz_new_york = pytz.timezone("America/New_York")
 
-    cpdef datetime local_from_utc(self, session: ForexSession, datetime time_now):
+    def local_from_utc(self, session: ForexSession, time_now: datetime) -> datetime:
         """
         Return the local datetime from the given session and time_now (UTC).
 
@@ -71,8 +71,8 @@ cdef class ForexSessionFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.type(session, ForexSession, "session")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if session == ForexSession.SYDNEY:
             return time_now.astimezone(self._tz_sydney)
@@ -86,7 +86,7 @@ cdef class ForexSessionFilter:
         if session == ForexSession.NEW_YORK:
             return time_now.astimezone(self._tz_new_york)
 
-    cpdef datetime next_start(self, session: ForexSession, datetime time_now):
+    def next_start(self, session: ForexSession, time_now: datetime) -> datetime:
         """
         Return the next session start.
 
@@ -117,21 +117,31 @@ cdef class ForexSessionFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.type(session, ForexSession, "session")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
-        cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime next_start = None
+        local_now: datetime = self.local_from_utc(session, time_now)
+        next_start: datetime | None = None
 
         # Local days session start
         if session == ForexSession.SYDNEY:
-            next_start = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+            next_start = self._tz_sydney.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 7),
+            )
         elif session == ForexSession.TOKYO:
-            next_start = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+            next_start = self._tz_tokyo.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 9),
+            )
         elif session == ForexSession.LONDON:
-            next_start = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            next_start = self._tz_london.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 8),
+            )
         elif session == ForexSession.NEW_YORK:
-            next_start = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            next_start = self._tz_new_york.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 8),
+            )
+        if next_start is None:
+            raise ValueError("`next_start` was `None`, expected a value")
 
         # Already past this days session start
         if local_now > next_start:
@@ -144,7 +154,7 @@ cdef class ForexSessionFilter:
 
         return next_start.astimezone(pytz.utc)
 
-    cpdef datetime prev_start(self, session: ForexSession, datetime time_now):
+    def prev_start(self, session: ForexSession, time_now: datetime) -> datetime:
         """
         Return the previous session start.
 
@@ -175,21 +185,31 @@ cdef class ForexSessionFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.type(session, ForexSession, "session")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
-        cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime prev_start = None
+        local_now: datetime = self.local_from_utc(session, time_now)
+        prev_start: datetime | None = None
 
         # Local days session start
         if session == ForexSession.SYDNEY:
-            prev_start = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 7))
+            prev_start = self._tz_sydney.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 7),
+            )
         elif session == ForexSession.TOKYO:
-            prev_start = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 9))
+            prev_start = self._tz_tokyo.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 9),
+            )
         elif session == ForexSession.LONDON:
-            prev_start = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            prev_start = self._tz_london.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 8),
+            )
         elif session == ForexSession.NEW_YORK:
-            prev_start = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 8))
+            prev_start = self._tz_new_york.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 8),
+            )
+        if prev_start is None:
+            raise ValueError("`prev_start` was `None`, expected a value")
 
         # Prior to this days session start
         if local_now < prev_start:
@@ -202,7 +222,7 @@ cdef class ForexSessionFilter:
 
         return prev_start.astimezone(pytz.utc)
 
-    cpdef datetime next_end(self, session: ForexSession, datetime time_now):
+    def next_end(self, session: ForexSession, time_now: datetime) -> datetime:
         """
         Return the next session end.
 
@@ -233,21 +253,31 @@ cdef class ForexSessionFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.type(session, ForexSession, "session")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
-        cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime next_end = None
+        local_now: datetime = self.local_from_utc(session, time_now)
+        next_end: datetime | None = None
 
         # Local days session end
         if session == ForexSession.SYDNEY:
-            next_end = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            next_end = self._tz_sydney.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 16),
+            )
         elif session == ForexSession.TOKYO:
-            next_end = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+            next_end = self._tz_tokyo.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 18),
+            )
         elif session == ForexSession.LONDON:
-            next_end = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            next_end = self._tz_london.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 16),
+            )
         elif session == ForexSession.NEW_YORK:
-            next_end = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+            next_end = self._tz_new_york.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 17),
+            )
+        if next_end is None:
+            raise ValueError("`next_end` was `None`, expected a value")
 
         # Already past this days session end
         if local_now > next_end:
@@ -260,7 +290,7 @@ cdef class ForexSessionFilter:
 
         return next_end.astimezone(pytz.utc)
 
-    cpdef datetime prev_end(self, session: ForexSession, datetime time_now):
+    def prev_end(self, session: ForexSession, time_now: datetime) -> datetime:
         """
         Return the previous sessions end.
 
@@ -291,21 +321,31 @@ cdef class ForexSessionFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.type(session, ForexSession, "session")
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.type(session, ForexSession, "session")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
-        cdef datetime local_now = self.local_from_utc(session, time_now)
-        cdef datetime prev_end = None
+        local_now: datetime = self.local_from_utc(session, time_now)
+        prev_end: datetime | None = None
 
         # Local days session end
         if session == ForexSession.SYDNEY:
-            prev_end = self._tz_sydney.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            prev_end = self._tz_sydney.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 16),
+            )
         elif session == ForexSession.TOKYO:
-            prev_end = self._tz_tokyo.localize(datetime(local_now.year, local_now.month, local_now.day, 18))
+            prev_end = self._tz_tokyo.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 18),
+            )
         elif session == ForexSession.LONDON:
-            prev_end = self._tz_london.localize(datetime(local_now.year, local_now.month, local_now.day, 16))
+            prev_end = self._tz_london.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 16),
+            )
         elif session == ForexSession.NEW_YORK:
-            prev_end = self._tz_new_york.localize(datetime(local_now.year, local_now.month, local_now.day, 17))
+            prev_end = self._tz_new_york.localize(
+                datetime(local_now.year, local_now.month, local_now.day, 17),
+            )
+        if prev_end is None:
+            raise ValueError("`prev_end` was `None`, expected a value")
 
         # Prior to this days session end
         if local_now < prev_end:
@@ -327,7 +367,7 @@ class NewsImpact(Enum):
     HIGH = 4
 
 
-cdef class NewsEvent(Data):
+class NewsEvent(Data):
     """
     Represents an economic news event.
 
@@ -339,25 +379,38 @@ cdef class NewsEvent(Data):
         The name of the economic news event.
     currency : Currency
         The currency the economic news event is expected to affect.
-    ts_event : uint64_t
+    ts_event : int
         The UNIX timestamp (nanoseconds) when the news event occurred.
-    ts_init : uint64_t
+    ts_init : int
         The UNIX timestamp (nanoseconds) when the data object was initialized.
+
     """
 
     def __init__(
         self,
         impact: NewsImpact,
-        str name,
-        Currency currency,
-        uint64_t ts_event,
-        uint64_t ts_init,
+        name: str,
+        currency: Currency,
+        ts_event: int,
+        ts_init: int,
     ):
-        self.impact = impact
-        self.name = name
-        self.currency = currency
+        self._impact = impact
+        self._name = name
+        self._currency = currency
         self._ts_event = ts_event
         self._ts_init = ts_init
+
+    @property
+    def impact(self) -> NewsImpact:
+        return self._impact
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def currency(self) -> Currency:
+        return self._currency
 
     @property
     def ts_event(self) -> int:
@@ -368,9 +421,10 @@ cdef class NewsEvent(Data):
         return self._ts_init
 
 
-cdef class EconomicNewsEventFilter:
+class EconomicNewsEventFilter:
     """
-    Provides methods to help filter trading strategy rules based on economic news events.
+    Provides methods to help filter trading strategy rules based on economic news
+    events.
 
     Parameters
     ----------
@@ -380,13 +434,14 @@ cdef class EconomicNewsEventFilter:
         The list of impact levels to filter ('LOW', 'MEDIUM', 'HIGH').
     news_data : pd.DataFrame
         The economic news data.
+
     """
 
     def __init__(
         self,
-        list currencies not None,
-        list impacts not None,
-        news_data not None: pd.DataFrame,
+        currencies: list[str],
+        impacts: list[str],
+        news_data: pd.DataFrame,
     ):
         self._currencies = currencies
         self._impacts = impacts
@@ -446,14 +501,15 @@ cdef class EconomicNewsEventFilter:
         """
         return self._impacts
 
-    cpdef NewsEvent next_event(self, datetime time_now):
+    def next_event(self, time_now: datetime) -> NewsEvent | None:
         """
-        Return the next news event matching the filter conditions.
-        Will return None if no news events match the filter conditions.
+        Return the next news event matching the filter conditions. Will return None if
+        no news events match the filter conditions.
 
         Parameters
         ----------
         time_now : datetime
+            The current time.
 
         Returns
         -------
@@ -470,40 +526,45 @@ cdef class EconomicNewsEventFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if time_now < self._unfiltered_data_start:
-            raise ValueError(f"The given time_now at {time_now} was prior to the "
-                             f"available news data start at {self._unfiltered_data_start}")
+            raise ValueError(
+                f"The given time_now at {time_now} was prior to the "
+                f"available news data start at {self._unfiltered_data_start}",
+            )
 
         if time_now > self._unfiltered_data_end:
-            raise ValueError(f"The given time_now at {time_now} was after the "
-                             f"available news data end at {self._unfiltered_data_end}")
+            raise ValueError(
+                f"The given time_now at {time_now} was after the "
+                f"available news data end at {self._unfiltered_data_end}",
+            )
 
         events = self._news_data[self._news_data.index >= time_now]
 
         if events.empty:
             return None
 
-        cdef int index = 0
+        index = 0
         row = events.iloc[index]
-        cdef uint64_t ts_event = pd.Timestamp(events.index[index]).value
+        ts_event = pd.Timestamp(events.index[index]).value
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
-            Currency.from_str_c(row["Currency"]),
+            Currency.from_str(row["Currency"]),
             ts_event,
             ts_event,
         )
 
-    cpdef NewsEvent prev_event(self, datetime time_now):
+    def prev_event(self, time_now: datetime) -> NewsEvent | None:
         """
-        Return the previous news event matching the initial filter conditions.
-        Will return None if no news events match the filter conditions.
+        Return the previous news event matching the initial filter conditions. Will
+        return None if no news events match the filter conditions.
 
         Parameters
         ----------
         time_now : datetime
+            The current time.
 
         Returns
         -------
@@ -520,27 +581,31 @@ cdef class EconomicNewsEventFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        Condition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if time_now < self._unfiltered_data_start:
-            raise ValueError(f"The given time_now at {time_now} was prior to the "
-                             f"available news data start at {self._unfiltered_data_start}")
+            raise ValueError(
+                f"The given time_now at {time_now} was prior to the "
+                f"available news data start at {self._unfiltered_data_start}",
+            )
 
         if time_now > self._unfiltered_data_end:
-            raise ValueError(f"The given time_now at {time_now} was after the "
-                             f"available news data end at {self._unfiltered_data_end}")
+            raise ValueError(
+                f"The given time_now at {time_now} was after the "
+                f"available news data end at {self._unfiltered_data_end}",
+            )
 
         events = self._news_data[self._news_data.index <= time_now]
         if events.empty:
             return None
 
-        cdef int index = -1
+        index = -1
         row = events.iloc[index]
-        cdef uint64_t ts_event = pd.Timestamp(events.index[index]).value
+        ts_event = pd.Timestamp(events.index[index]).value
         return NewsEvent(
             NewsImpact[row["Impact"]],
             row["Name"],
-            Currency.from_str_c(row["Currency"]),
+            Currency.from_str(row["Currency"]),
             ts_event,
             ts_event,
         )

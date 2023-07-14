@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from numpy import float64
@@ -103,7 +105,7 @@ class PortfolioAnalyzer:
         """
         return list(self._account_balances.keys())
 
-    def statistic(self, name: str) -> Optional[PortfolioStatistic]:
+    def statistic(self, name: str) -> PortfolioStatistic | None:
         """
         Return the statistic with the given name (if found).
 
@@ -193,7 +195,7 @@ class PortfolioAnalyzer:
             self._returns.loc[timestamp] = 0.0
         self._returns.loc[timestamp] += float(value)
 
-    def realized_pnls(self, currency: Optional[Currency] = None) -> Optional[pd.Series]:
+    def realized_pnls(self, currency: Currency | None = None) -> pd.Series | None:
         """
         Return the realized PnL for the portfolio.
 
@@ -226,8 +228,8 @@ class PortfolioAnalyzer:
 
     def total_pnl(
         self,
-        currency: Optional[Currency] = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> float:
         """
         Return the total PnL for the portfolio.
@@ -277,8 +279,8 @@ class PortfolioAnalyzer:
 
     def total_pnl_percentage(
         self,
-        currency: Optional[Currency] = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> float:
         """
         Return the percentage change of the total PnL for the portfolio.
@@ -338,8 +340,8 @@ class PortfolioAnalyzer:
 
     def get_performance_stats_pnls(
         self,
-        currency: Optional[Currency] = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> dict[str, float]:
         """
         Return the 'PnL' (profit and loss) performance statistics, optionally includes
@@ -419,8 +421,8 @@ class PortfolioAnalyzer:
 
     def get_stats_pnls_formatted(
         self,
-        currency: Optional[Currency] = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> list[str]:
         """
         Return the performance statistics from the last backtest run formatted for

@@ -94,7 +94,7 @@ class TestDataStubs:
     def trade_tick(
         instrument: Optional[Instrument] = None,
         price: float = 1.0,
-        quantity: float = 100_000,
+        size: float = 100_000,
         aggressor_side: AggressorSide = AggressorSide.BUYER,
         trade_id: str = "123456",
         ts_event: int = 0,
@@ -104,7 +104,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=inst.id,
             price=inst.make_price(price),
-            size=inst.make_qty(quantity),
+            size=inst.make_qty(size),
             aggressor_side=aggressor_side,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
