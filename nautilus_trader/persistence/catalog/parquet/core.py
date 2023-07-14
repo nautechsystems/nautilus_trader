@@ -76,7 +76,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
-            self.fs_protocol, **self.fs_storage_options
+            self.fs_protocol,
+            **self.fs_storage_options,
         )
         self.serializer = ParquetSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
@@ -132,7 +133,11 @@ class ParquetDataCatalog(BaseDataCatalog):
             return f"{self.path}/data/{class_to_filename(cls)}"
 
     def write_chunk(
-        self, data: list[Data], cls: type[Data], instrument_id: Optional[str] = None, **kwargs
+        self,
+        data: list[Data],
+        cls: type[Data],
+        instrument_id: Optional[str] = None,
+        **kwargs,
     ):
         table = self._objects_to_table(data, cls=cls)
 
