@@ -26,12 +26,13 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractStatus
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesContractType
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesFeeRates
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFuturesCommissionRate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -80,10 +81,15 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             config=config,
         )
 
+        self._clock = clock
         self._client = client
         self._account_type = account_type
-        self._clock = clock
 
+        self._http_account = BinanceFuturesAccountHttpAPI(
+            self._client,
+            clock=self._clock,
+            account_type=account_type,
+        )
         self._http_wallet = BinanceFuturesWalletHttpAPI(
             self._client,
             clock=self._clock,
@@ -96,31 +102,39 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self._decoder = msgspec.json.Decoder()
         self._encoder = msgspec.json.Encoder()
 
+        # This fee rates map is only applicable for backtesting, as live trading will utilise
+        # real-time account update messages provided by Binance.
+        # These fee rates assume USD-M Futures Trading without the 10% off for using BNB or BUSD.
+        # The next step is to enable users to pass their own fee rates map via the config.
+        # In the future, we aim to represent this fee model with greater accuracy for backtesting.
+        self._fee_rates = {
+            0: BinanceFuturesFeeRates(feeTier=0, maker="0.0200", taker="0.0180"),
+            1: BinanceFuturesFeeRates(feeTier=1, maker="0.0160", taker="0.0144"),
+            2: BinanceFuturesFeeRates(feeTier=2, maker="0.0140", taker="0.0126"),
+            3: BinanceFuturesFeeRates(feeTier=3, maker="0.0120", taker="0.0108"),
+            4: BinanceFuturesFeeRates(feeTier=4, maker="0.0100", taker="0.0090"),
+            5: BinanceFuturesFeeRates(feeTier=5, maker="0.0080", taker="0.0072"),
+            6: BinanceFuturesFeeRates(feeTier=6, maker="0.0060", taker="0.0054"),
+            7: BinanceFuturesFeeRates(feeTier=7, maker="0.0040", taker="0.0036"),
+            8: BinanceFuturesFeeRates(feeTier=8, maker="0.0020", taker="0.0018"),
+            9: BinanceFuturesFeeRates(feeTier=9, maker="0.0000", taker="0.0000"),
+        }
+
     async def load_all_async(self, filters: Optional[dict] = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
         # Get exchange info for all assets
         exchange_info = await self._http_market.query_futures_exchange_info()
+        account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
+        fee_rates = self._fee_rates[account_info.feeTier]
 
-        self._log.warning(
-            "Currently not requesting actual trade fees. All instruments will have zero fees.",
-        )
         for symbol_info in exchange_info.symbols:
-            fee: Optional[BinanceFuturesCommissionRate] = None
-            # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
-            #  in some other way.
-            # if not self._client.base_url.__contains__("testnet.binancefuture.com"):
-            #     try:
-            #         # Get current commission rates for the symbol
-            #         fee = await self._http_wallet.query_futures_commission_rate(symbol_info.symbol)
-            #         print(fee)
-            #     except BinanceClientError as e:
-            #         self._log.error(
-            #             "Cannot load instruments: API key authentication failed "
-            #             f"(this is needed to fetch the applicable account fee tier). {e.message}",
-            #         )
-            #         return
+            fee = BinanceFuturesCommissionRate(
+                symbol=symbol_info.symbol,
+                makerCommissionRate=fee_rates.maker,
+                takerCommissionRate=fee_rates.taker,
+            )
 
             self._parse_instrument(
                 symbol_info=symbol_info,
@@ -154,23 +168,15 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         symbol_info_dict: dict[str, BinanceFuturesSymbolInfo] = {
             info.symbol: info for info in exchange_info.symbols
         }
+        account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
+        fee_rates = self._fee_rates[account_info.feeTier]
 
-        self._log.warning(
-            "Currently not requesting actual trade fees. All instruments will have zero fees.",
-        )
         for symbol in symbols:
-            fee: Optional[BinanceFuturesCommissionRate] = None
-            # TODO(cs): This won't work for 174 instruments, we'll have to pre-request these
-            #  in some other way.
-            # if not self._client.base_url.__contains__("testnet.binancefuture.com"):
-            #     try:
-            #         # Get current commission rates for the symbol
-            #         fee = await self._http_wallet.query_futures_commission_rate(symbol)
-            #     except BinanceClientError as e:
-            #         self._log.error(
-            #             "Cannot load instruments: API key authentication failed "
-            #             f"(this is needed to fetch the applicable account fee tier). {e.message}",
-            #         )
+            fee = BinanceFuturesCommissionRate(
+                symbol=symbol,
+                makerCommissionRate=fee_rates.maker,
+                takerCommissionRate=fee_rates.taker,
+            )
 
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
@@ -193,16 +199,13 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             info.symbol: info for info in exchange_info.symbols
         }
 
-        fee: Optional[BinanceFuturesCommissionRate] = None
-        if not self._client.base_url.__contains__("testnet.binancefuture.com"):
-            try:
-                # Get current commission rates for the symbol
-                fee = await self._http_wallet.query_futures_commission_rate(symbol)
-            except BinanceClientError as e:
-                self._log.error(
-                    "Cannot load instruments: API key authentication failed "
-                    f"(this is needed to fetch the applicable account fee tier). {e.message}",
-                )
+        account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
+        fee_rates = self._fee_rates[account_info.feeTier]
+        fee = BinanceFuturesCommissionRate(
+            symbol=symbol,
+            makerCommissionRate=fee_rates.maker,
+            takerCommissionRate=fee_rates.taker,
+        )
 
         self._parse_instrument(
             symbol_info=symbol_info_dict[symbol],

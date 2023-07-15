@@ -105,6 +105,7 @@ def get_cached_binance_spot_instrument_provider(
     logger: Logger,
     clock: LiveClock,
     account_type: BinanceAccountType,
+    is_testnet: bool,
     config: InstrumentProviderConfig,
 ) -> BinanceSpotInstrumentProvider:
     """
@@ -122,6 +123,8 @@ def get_cached_binance_spot_instrument_provider(
         The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
+    is_testnet : bool, default False
+        If the provider is for the Spot testnet.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
 
@@ -135,6 +138,7 @@ def get_cached_binance_spot_instrument_provider(
         logger=logger,
         clock=clock,
         account_type=account_type,
+        is_testnet=is_testnet,
         config=config,
     )
 
@@ -250,6 +254,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 logger=logger,
                 clock=clock,
                 account_type=config.account_type,
+                is_testnet=config.testnet,
                 config=config.instrument_provider,
             )
 
@@ -362,6 +367,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 logger=logger,
                 clock=clock,
                 account_type=config.account_type,
+                is_testnet=config.testnet,
                 config=config.instrument_provider,
             )
 
