@@ -24,18 +24,19 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
-- Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed race condition on `OrderFactory` order identifiers generation
 - Fixed `Currency` registration with core global map on creation
 - Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
 - Fixed assignment of position IDs for contingency orders (when parent filled)
+- Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
+- Fixed fill handling of `reduce_only` orders when partially filled
+- Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
 - Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
 - Fixed Binance execution submitting of order lists
-- Fixed fill handling of `reduce_only` orders when partially filled
-- Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
-- Fixed parsing of `TriggerType` for Binance #1154, thanks for reporting @davidblom603
-- Fixed parsing of invalid Binance orders in execution reports #1157, thanks for reporting @graceyangfan
+- Fixed Binance Spot commission rates requests for `InstrumentProvider`
+- Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
+- Fixed Binance order parsing of invalid orders in execution reports #1157, thanks for reporting @graceyangfan
 - Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
 
 ---
