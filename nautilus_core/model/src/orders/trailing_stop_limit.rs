@@ -23,7 +23,8 @@ use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use super::base::{Order, OrderCore};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     events::order::{OrderEvent, OrderInitialized},
     identifiers::{
@@ -35,18 +36,21 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-pub struct LimitIfTouchedOrder {
+pub struct TrailingStopLimitOrder {
     core: OrderCore,
     pub price: Price,
     pub trigger_price: Price,
     pub trigger_type: TriggerType,
+    pub limit_offset: Price,
+    pub trailing_offset: Price,
+    pub trailing_offset_type: TrailingOffsetType,
     pub expire_time: Option<UnixNanos>,
     pub display_qty: Option<Quantity>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
 }
 
-impl LimitIfTouchedOrder {
+impl TrailingStopLimitOrder {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -59,6 +63,9 @@ impl LimitIfTouchedOrder {
         price: Price,
         trigger_price: Price,
         trigger_type: TriggerType,
+        limit_offset: Price,
+        trailing_offset: Price,
+        trailing_offset_type: TrailingOffsetType,
         time_in_force: TimeInForce,
         expire_time: Option<UnixNanos>,
         post_only: bool,
@@ -84,7 +91,7 @@ impl LimitIfTouchedOrder {
                 instrument_id,
                 client_order_id,
                 order_side,
-                OrderType::LimitIfTouched,
+                OrderType::TrailingStopLimit,
                 quantity,
                 time_in_force,
                 post_only,
@@ -105,6 +112,9 @@ impl LimitIfTouchedOrder {
             price,
             trigger_price,
             trigger_type,
+            limit_offset,
+            trailing_offset,
+            trailing_offset_type,
             expire_time,
             display_qty,
             is_triggered: false,
@@ -113,10 +123,10 @@ impl LimitIfTouchedOrder {
     }
 }
 
-/// Provides a default [`LimitIfTouchedOrder`] used for testing.
-impl Default for LimitIfTouchedOrder {
+/// Provides a default [`TrailingStopLimitOrder`] used for testing.
+impl Default for TrailingStopLimitOrder {
     fn default() -> Self {
-        LimitIfTouchedOrder::new(
+        TrailingStopLimitOrder::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -126,6 +136,9 @@ impl Default for LimitIfTouchedOrder {
             Price::new(1.0, 5),
             Price::new(1.0, 5),
             TriggerType::BidAsk,
+            Price::new(0.001, 5),
+            Price::new(0.001, 5),
+            TrailingOffsetType::Price,
             TimeInForce::Gtc,
             None,
             false,
@@ -147,7 +160,7 @@ impl Default for LimitIfTouchedOrder {
     }
 }
 
-impl Deref for LimitIfTouchedOrder {
+impl Deref for TrailingStopLimitOrder {
     type Target = OrderCore;
 
     fn deref(&self) -> &Self::Target {
@@ -155,13 +168,13 @@ impl Deref for LimitIfTouchedOrder {
     }
 }
 
-impl DerefMut for LimitIfTouchedOrder {
+impl DerefMut for TrailingStopLimitOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
 }
 
-impl Order for LimitIfTouchedOrder {
+impl Order for TrailingStopLimitOrder {
     fn status(&self) -> OrderStatus {
         self.status
     }
@@ -319,9 +332,9 @@ impl Order for LimitIfTouchedOrder {
     }
 }
 
-impl From<OrderInitialized> for LimitIfTouchedOrder {
+impl From<OrderInitialized> for TrailingStopLimitOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitIfTouchedOrder::new(
+        TrailingStopLimitOrder::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -330,15 +343,18 @@ impl From<OrderInitialized> for LimitIfTouchedOrder {
             event.quantity,
             event
                 .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitIfTouchedOrder"),
+                .expect("Error initializing order: `price` was `None` for `TrailingStopLimitOrder`"),
             event
                 .trigger_price // TODO: Improve this error, model order domain errors
                 .expect(
-                    "Error initializing order: `trigger_price` was `None` for `LimitIfTouchedOrder",
+                    "Error initializing order: `trigger_price` was `None` for `TrailingStopLimitOrder`",
                 ),
             event
                 .trigger_type
-                .expect("Error initializing order: `trigger_type` was `None`"),
+                .expect("Error initializing order: `trigger_type` was `None` for `TrailingStopLimitOrder`"),
+            event.limit_offset.unwrap(),  // TODO
+            event.trailing_offset.unwrap(),  // TODO
+            event.trailing_offset_type.unwrap(),  // TODO
             event.time_in_force,
             event.expire_time,
             event.post_only,
@@ -360,8 +376,8 @@ impl From<OrderInitialized> for LimitIfTouchedOrder {
     }
 }
 
-impl From<&LimitIfTouchedOrder> for OrderInitialized {
-    fn from(order: &LimitIfTouchedOrder) -> Self {
+impl From<&TrailingStopLimitOrder> for OrderInitialized {
+    fn from(order: &TrailingStopLimitOrder) -> Self {
         Self {
             trader_id: order.trader_id.clone(),
             strategy_id: order.strategy_id.clone(),
@@ -379,9 +395,9 @@ impl From<&LimitIfTouchedOrder> for OrderInitialized {
             reduce_only: order.is_reduce_only,
             quote_quantity: order.is_quote_quantity,
             display_qty: order.display_qty,
-            limit_offset: None,
-            trailing_offset: None,
-            trailing_offset_type: None,
+            limit_offset: Some(order.limit_offset),
+            trailing_offset: Some(order.trailing_offset),
+            trailing_offset_type: Some(order.trailing_offset_type),
             emulation_trigger: order.emulation_trigger,
             contingency_type: order.contingency_type,
             order_list_id: order.order_list_id.clone(),
