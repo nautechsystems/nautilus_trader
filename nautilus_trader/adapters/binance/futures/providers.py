@@ -232,7 +232,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             quote_currency = symbol_info.parse_to_quote_currency()
 
             native_symbol = Symbol(symbol_info.symbol)
-            parsed_symbol = BinanceSymbol(native_symbol.value).parse_binance_to_internal(
+            parsed_symbol = BinanceSymbol(native_symbol.value).parse_as_nautilus(
                 self._account_type,
             )
             nautilus_symbol = Symbol(parsed_symbol)

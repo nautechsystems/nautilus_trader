@@ -542,7 +542,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Parse instrument ID
         binance_symbol = BinanceSymbol(symbol)
         assert binance_symbol
-        nautilus_symbol: str = binance_symbol.parse_binance_to_internal(
+        nautilus_symbol: str = binance_symbol.parse_as_nautilus(
             self._binance_account_type,
         )
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)

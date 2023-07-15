@@ -720,7 +720,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        nautilus_symbol: str = BinanceSymbol(symbol).parse_binance_to_internal(
+        nautilus_symbol: str = BinanceSymbol(symbol).parse_as_nautilus(
             self._binance_account_type,
         )
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
