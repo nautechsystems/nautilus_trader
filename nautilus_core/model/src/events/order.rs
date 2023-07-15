@@ -20,7 +20,10 @@ use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
@@ -72,7 +75,7 @@ pub struct OrderInitialized {
     pub display_qty: Option<Quantity>,
     pub limit_offset: Option<Price>,
     pub trailing_offset: Option<Price>,
-    pub trailing_offset_type: Option<TriggerType>,
+    pub trailing_offset_type: Option<TrailingOffsetType>,
     pub emulation_trigger: Option<TriggerType>,
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
