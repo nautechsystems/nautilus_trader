@@ -137,6 +137,7 @@ pub trait Order {
     fn parent_order_id(&self) -> Option<ClientOrderId>;
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
     fn exec_algorithm_params(&self) -> Option<HashMap<String, String>>;
+    fn exec_spawn_id(&self) -> Option<ClientOrderId>;
     fn tags(&self) -> Option<String>;
     fn filled_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
@@ -267,6 +268,7 @@ pub struct OrderCore {
     pub parent_order_id: Option<ClientOrderId>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
     pub exec_algorithm_params: Option<HashMap<String, String>>,
+    pub exec_spawn_id: Option<ClientOrderId>,
     pub tags: Option<String>,
     pub filled_qty: Quantity,
     pub leaves_qty: Quantity,
@@ -299,6 +301,7 @@ impl OrderCore {
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
         init_id: UUID4,
         ts_init: UnixNanos,
@@ -334,6 +337,7 @@ impl OrderCore {
             parent_order_id,
             exec_algorithm_id,
             exec_algorithm_params,
+            exec_spawn_id,
             tags,
             filled_qty: Quantity::zero(quantity.precision),
             leaves_qty: quantity,

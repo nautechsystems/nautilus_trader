@@ -58,6 +58,7 @@ impl MarketOrder {
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
         init_id: UUID4,
         ts_init: UnixNanos,
@@ -82,6 +83,7 @@ impl MarketOrder {
                 parent_order_id,
                 exec_algorithm_id,
                 exec_algorithm_params,
+                exec_spawn_id,
                 tags,
                 init_id,
                 ts_init,
@@ -103,6 +105,7 @@ impl Default for MarketOrder {
             TimeInForce::Day,
             false,
             false,
+            None,
             None,
             None,
             None,
@@ -239,6 +242,10 @@ impl Order for MarketOrder {
         self.exec_algorithm_params.clone()
     }
 
+    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+        self.exec_spawn_id.clone()
+    }
+
     fn tags(&self) -> Option<String> {
         self.tags.clone()
     }
@@ -302,6 +309,7 @@ impl From<OrderInitialized> for MarketOrder {
             event.parent_order_id,
             event.exec_algorithm_id,
             event.exec_algorithm_params,
+            event.exec_spawn_id,
             event.tags,
             event.event_id,
             event.ts_event,
@@ -338,6 +346,7 @@ impl From<&MarketOrder> for OrderInitialized {
             parent_order_id: order.parent_order_id.clone(),
             exec_algorithm_id: order.exec_algorithm_id.clone(),
             exec_algorithm_params: order.exec_algorithm_params.clone(),
+            exec_spawn_id: order.exec_spawn_id.clone(),
             tags: order.tags.clone(),
             event_id: order.init_id.clone(),
             ts_event: order.ts_init,
