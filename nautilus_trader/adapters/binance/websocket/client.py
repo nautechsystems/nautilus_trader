@@ -107,7 +107,7 @@ class BinanceWebSocketClient:
         """
         Connect a websocket client to the server for the given `stream`.
         """
-        ws_url = self._base_url + f"/streams?streams={stream}"
+        ws_url = self._base_url + f"/stream?streams={stream}"
 
         self._log.debug(f"Connecting to {ws_url}...")
         client = await WebSocketClient.connect(
