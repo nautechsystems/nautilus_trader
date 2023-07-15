@@ -231,11 +231,12 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             base_currency = symbol_info.parse_to_base_currency()
             quote_currency = symbol_info.parse_to_quote_currency()
 
-            binance_symbol = BinanceSymbol(symbol_info.symbol).parse_binance_to_internal(
+            native_symbol = Symbol(symbol_info.symbol)
+            parsed_symbol = BinanceSymbol(native_symbol.value).parse_binance_to_internal(
                 self._account_type,
             )
-            native_symbol = Symbol(binance_symbol)
-            instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
+            nautilus_symbol = Symbol(parsed_symbol)
+            instrument_id = InstrumentId(symbol=nautilus_symbol, venue=BINANCE_VENUE)
 
             # Parse instrument filters
             filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
