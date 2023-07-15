@@ -116,7 +116,7 @@ def get_cached_betfair_instrument_provider(
 
     Returns
     -------
-    BinanceInstrumentProvider
+    BetfairInstrumentProvider
 
     """
     global INSTRUMENT_PROVIDER
