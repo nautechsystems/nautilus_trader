@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ops::{Deref, DerefMut};
+use std::{
+    collections::HashMap,
+    ops::{Deref, DerefMut},
+};
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
@@ -24,9 +27,10 @@ use crate::{
     },
     events::order::{OrderEvent, OrderInitialized},
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
-        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -60,6 +64,8 @@ impl LimitOrder {
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<HashMap<String, String>>,
         tags: Option<String>,
         init_id: UUID4,
         ts_init: UnixNanos,
@@ -82,6 +88,8 @@ impl LimitOrder {
                 order_list_id,
                 linked_order_ids,
                 parent_order_id,
+                exec_algorithm_id,
+                exec_algorithm_params,
                 tags,
                 init_id,
                 ts_init,
@@ -93,7 +101,7 @@ impl LimitOrder {
     }
 }
 
-/// Provides a default [`MarketOrder`] used for testing.
+/// Provides a default [`LimitOrder`] used for testing.
 impl Default for LimitOrder {
     fn default() -> Self {
         LimitOrder::new(
@@ -109,6 +117,8 @@ impl Default for LimitOrder {
             false,
             false,
             false,
+            None,
+            None,
             None,
             None,
             None,
@@ -189,6 +199,18 @@ impl Order for LimitOrder {
         self.time_in_force
     }
 
+    fn price(&self) -> Option<Price> {
+        Some(self.price)
+    }
+
+    fn trigger_price(&self) -> Option<Price> {
+        None
+    }
+
+    fn trigger_type(&self) -> Option<TriggerType> {
+        None
+    }
+
     fn liquidity_side(&self) -> Option<LiquiditySide> {
         self.liquidity_side
     }
@@ -223,6 +245,14 @@ impl Order for LimitOrder {
 
     fn parent_order_id(&self) -> Option<ClientOrderId> {
         self.parent_order_id.clone()
+    }
+
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+        self.exec_algorithm_id.clone()
+    }
+
+    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
+        self.exec_algorithm_params.clone()
     }
 
     fn tags(&self) -> Option<String> {
@@ -293,6 +323,8 @@ impl From<OrderInitialized> for LimitOrder {
             event.order_list_id,
             event.linked_order_ids,
             event.parent_order_id,
+            event.exec_algorithm_id,
+            event.exec_algorithm_params,
             event.tags,
             event.event_id,
             event.ts_event,
@@ -327,6 +359,8 @@ impl From<&LimitOrder> for OrderInitialized {
             order_list_id: order.order_list_id.clone(),
             linked_order_ids: order.linked_order_ids.clone(),
             parent_order_id: order.parent_order_id.clone(),
+            exec_algorithm_id: order.exec_algorithm_id.clone(),
+            exec_algorithm_params: order.exec_algorithm_params.clone(),
             tags: order.tags.clone(),
             event_id: order.init_id.clone(),
             ts_event: order.ts_init,
