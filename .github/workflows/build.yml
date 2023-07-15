@@ -26,15 +26,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain (Linux/Windows)
+      - name: Set up Rust tool-chain (Linux/Windows) stable
         if: runner.os != 'macOS'
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
 
-      - name: Set up Rust tool-chain (macOS)
+      # Work around as actions-rust-lang does not seem to work on macOS yet
+      - name: Set up Rust tool-chain (macOS) stable
         if: runner.os == 'macOS'
         uses: actions-rs/toolchain@v1
         with:
