@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use thiserror;
 
@@ -27,9 +29,10 @@ use crate::{
         OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
-        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -120,6 +123,9 @@ pub trait Order {
     fn order_type(&self) -> OrderType;
     fn quantity(&self) -> Quantity;
     fn time_in_force(&self) -> TimeInForce;
+    fn price(&self) -> Option<Price>;
+    fn trigger_price(&self) -> Option<Price>;
+    fn trigger_type(&self) -> Option<TriggerType>;
     fn liquidity_side(&self) -> Option<LiquiditySide>;
     fn is_post_only(&self) -> bool;
     fn is_reduce_only(&self) -> bool;
@@ -129,6 +135,8 @@ pub trait Order {
     fn order_list_id(&self) -> Option<OrderListId>;
     fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>>;
     fn parent_order_id(&self) -> Option<ClientOrderId>;
+    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
+    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>>;
     fn tags(&self) -> Option<String>;
     fn filled_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
@@ -257,6 +265,8 @@ pub struct OrderCore {
     pub order_list_id: Option<OrderListId>,
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
     pub parent_order_id: Option<ClientOrderId>,
+    pub exec_algorithm_id: Option<ExecAlgorithmId>,
+    pub exec_algorithm_params: Option<HashMap<String, String>>,
     pub tags: Option<String>,
     pub filled_qty: Quantity,
     pub leaves_qty: Quantity,
@@ -287,6 +297,8 @@ impl OrderCore {
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<HashMap<String, String>>,
         tags: Option<String>,
         init_id: UUID4,
         ts_init: UnixNanos,
@@ -320,6 +332,8 @@ impl OrderCore {
             order_list_id,
             linked_order_ids,
             parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params,
             tags,
             filled_qty: Quantity::zero(quantity.precision),
             leaves_qty: quantity,

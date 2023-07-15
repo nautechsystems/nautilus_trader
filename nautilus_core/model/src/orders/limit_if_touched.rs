@@ -35,11 +35,18 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-pub struct MarketOrder {
+pub struct LimitIfTouchedOrder {
     core: OrderCore,
+    pub price: Price,
+    pub trigger_price: Price,
+    pub trigger_type: TriggerType,
+    pub is_triggered: bool,
+    pub ts_triggered: Option<UnixNanos>,
+    pub expire_time: Option<UnixNanos>,
+    pub display_qty: Option<Quantity>,
 }
 
-impl MarketOrder {
+impl LimitIfTouchedOrder {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -49,9 +56,16 @@ impl MarketOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
+        price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
         time_in_force: TimeInForce,
+        expire_time: Option<UnixNanos>,
+        post_only: bool,
         reduce_only: bool,
         quote_quantity: bool,
+        display_qty: Option<Quantity>,
+        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -69,13 +83,13 @@ impl MarketOrder {
                 instrument_id,
                 client_order_id,
                 order_side,
-                OrderType::Market,
+                OrderType::LimitIfTouched,
                 quantity,
                 time_in_force,
-                false,
+                post_only,
                 reduce_only,
                 quote_quantity,
-                None,
+                emulation_trigger,
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -86,23 +100,37 @@ impl MarketOrder {
                 init_id,
                 ts_init,
             ),
+            price,
+            trigger_price,
+            trigger_type,
+            is_triggered: false,
+            ts_triggered: None,
+            expire_time,
+            display_qty,
         }
     }
 }
 
-/// Provides a default [`MarketOrder`] used for testing.
-impl Default for MarketOrder {
+/// Provides a default [`LimitIfTouchedOrder`] used for testing.
+impl Default for LimitIfTouchedOrder {
     fn default() -> Self {
-        MarketOrder::new(
+        LimitIfTouchedOrder::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
             ClientOrderId::default(),
             OrderSide::Buy,
             Quantity::new(100_000.0, 0),
-            TimeInForce::Day,
+            Price::new(1.0, 5),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
             false,
             false,
+            false,
+            None,
+            None,
             None,
             None,
             None,
@@ -116,7 +144,7 @@ impl Default for MarketOrder {
     }
 }
 
-impl Deref for MarketOrder {
+impl Deref for LimitIfTouchedOrder {
     type Target = OrderCore;
 
     fn deref(&self) -> &Self::Target {
@@ -124,13 +152,13 @@ impl Deref for MarketOrder {
     }
 }
 
-impl DerefMut for MarketOrder {
+impl DerefMut for LimitIfTouchedOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
 }
 
-impl Order for MarketOrder {
+impl Order for LimitIfTouchedOrder {
     fn status(&self) -> OrderStatus {
         self.status
     }
@@ -184,15 +212,15 @@ impl Order for MarketOrder {
     }
 
     fn price(&self) -> Option<Price> {
-        None
+        Some(self.price)
     }
 
     fn trigger_price(&self) -> Option<Price> {
-        None
+        Some(self.trigger_price)
     }
 
     fn trigger_type(&self) -> Option<TriggerType> {
-        None
+        Some(self.trigger_type)
     }
 
     fn liquidity_side(&self) -> Option<LiquiditySide> {
@@ -284,18 +312,33 @@ impl Order for MarketOrder {
     }
 }
 
-impl From<OrderInitialized> for MarketOrder {
+impl From<OrderInitialized> for LimitIfTouchedOrder {
     fn from(event: OrderInitialized) -> Self {
-        MarketOrder::new(
+        LimitIfTouchedOrder::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
             event.client_order_id,
             event.order_side,
             event.quantity,
+            event
+                .price // TODO: Improve this error, model order domain errors
+                .expect("Error initializing order: `price` was `None` for `LimitIfTouchedOrder"),
+            event
+                .trigger_price // TODO: Improve this error, model order domain errors
+                .expect(
+                    "Error initializing order: `trigger_price` was `None` for `LimitIfTouchedOrder",
+                ),
+            event
+                .trigger_type
+                .expect("Error initializing order: `trigger_type` was `None`"),
             event.time_in_force,
+            event.expire_time,
+            event.post_only,
             event.reduce_only,
             event.quote_quantity,
+            event.display_qty,
+            event.emulation_trigger,
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,
@@ -309,8 +352,8 @@ impl From<OrderInitialized> for MarketOrder {
     }
 }
 
-impl From<&MarketOrder> for OrderInitialized {
-    fn from(order: &MarketOrder) -> Self {
+impl From<&LimitIfTouchedOrder> for OrderInitialized {
+    fn from(order: &LimitIfTouchedOrder) -> Self {
         Self {
             trader_id: order.trader_id.clone(),
             strategy_id: order.strategy_id.clone(),
@@ -319,15 +362,15 @@ impl From<&MarketOrder> for OrderInitialized {
             order_side: order.side,
             order_type: order.order_type,
             quantity: order.quantity,
-            price: None,
-            trigger_price: None,
-            trigger_type: None,
+            price: Some(order.price),
+            trigger_price: Some(order.trigger_price),
+            trigger_type: Some(order.trigger_type),
             time_in_force: order.time_in_force,
-            expire_time: None,
+            expire_time: order.expire_time,
             post_only: order.is_post_only,
             reduce_only: order.is_reduce_only,
             quote_quantity: order.is_quote_quantity,
-            display_qty: None,
+            display_qty: order.display_qty,
             limit_offset: None,
             trailing_offset: None,
             trailing_offset_type: None,
