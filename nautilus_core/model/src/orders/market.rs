@@ -35,14 +35,11 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-pub struct LimitOrder {
+pub struct MarketOrder {
     core: OrderCore,
-    pub price: Price,
-    pub expire_time: Option<UnixNanos>,
-    pub display_qty: Option<Quantity>,
 }
 
-impl LimitOrder {
+impl MarketOrder {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -52,14 +49,9 @@ impl LimitOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
-        price: Price,
         time_in_force: TimeInForce,
-        expire_time: Option<UnixNanos>,
-        post_only: bool,
         reduce_only: bool,
         quote_quantity: bool,
-        display_qty: Option<Quantity>,
-        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -78,13 +70,13 @@ impl LimitOrder {
                 instrument_id,
                 client_order_id,
                 order_side,
-                OrderType::Limit,
+                OrderType::Market,
                 quantity,
                 time_in_force,
-                post_only,
+                false,
                 reduce_only,
                 quote_quantity,
-                emulation_trigger,
+                None,
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -96,31 +88,23 @@ impl LimitOrder {
                 init_id,
                 ts_init,
             ),
-            price,
-            expire_time,
-            display_qty,
         }
     }
 }
 
-/// Provides a default [`LimitOrder`] used for testing.
-impl Default for LimitOrder {
+/// Provides a default [`MarketOrder`] used for testing.
+impl Default for MarketOrder {
     fn default() -> Self {
-        LimitOrder::new(
+        MarketOrder::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
             ClientOrderId::default(),
             OrderSide::Buy,
             Quantity::new(100_000.0, 0),
-            Price::new(1.0, 5),
-            TimeInForce::Gtc,
-            None,
+            TimeInForce::Day,
             false,
             false,
-            false,
-            None,
-            None,
             None,
             None,
             None,
@@ -135,7 +119,7 @@ impl Default for LimitOrder {
     }
 }
 
-impl Deref for LimitOrder {
+impl Deref for MarketOrder {
     type Target = OrderCore;
 
     fn deref(&self) -> &Self::Target {
@@ -143,13 +127,13 @@ impl Deref for LimitOrder {
     }
 }
 
-impl DerefMut for LimitOrder {
+impl DerefMut for MarketOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
 }
 
-impl Order for LimitOrder {
+impl Order for MarketOrder {
     fn status(&self) -> OrderStatus {
         self.status
     }
@@ -203,7 +187,7 @@ impl Order for LimitOrder {
     }
 
     fn price(&self) -> Option<Price> {
-        Some(self.price)
+        None
     }
 
     fn trigger_price(&self) -> Option<Price> {
@@ -307,25 +291,18 @@ impl Order for LimitOrder {
     }
 }
 
-impl From<OrderInitialized> for LimitOrder {
+impl From<OrderInitialized> for MarketOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitOrder::new(
+        MarketOrder::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
             event.client_order_id,
             event.order_side,
             event.quantity,
-            event
-                .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitOrder"),
             event.time_in_force,
-            event.expire_time,
-            event.post_only,
             event.reduce_only,
             event.quote_quantity,
-            event.display_qty,
-            event.emulation_trigger,
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,
@@ -340,8 +317,8 @@ impl From<OrderInitialized> for LimitOrder {
     }
 }
 
-impl From<&LimitOrder> for OrderInitialized {
-    fn from(order: &LimitOrder) -> Self {
+impl From<&MarketOrder> for OrderInitialized {
+    fn from(order: &MarketOrder) -> Self {
         Self {
             trader_id: order.trader_id.clone(),
             strategy_id: order.strategy_id.clone(),
@@ -350,15 +327,15 @@ impl From<&LimitOrder> for OrderInitialized {
             order_side: order.side,
             order_type: order.order_type,
             quantity: order.quantity,
-            price: Some(order.price),
+            price: None,
             trigger_price: None,
             trigger_type: None,
             time_in_force: order.time_in_force,
-            expire_time: order.expire_time,
+            expire_time: None,
             post_only: order.is_post_only,
             reduce_only: order.is_reduce_only,
             quote_quantity: order.is_quote_quantity,
-            display_qty: order.display_qty,
+            display_qty: None,
             limit_offset: None,
             trailing_offset: None,
             trailing_offset_type: None,

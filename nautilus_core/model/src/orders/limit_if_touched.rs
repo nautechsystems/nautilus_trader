@@ -35,14 +35,18 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-pub struct LimitOrder {
+pub struct LimitIfTouchedOrder {
     core: OrderCore,
     pub price: Price,
+    pub trigger_price: Price,
+    pub trigger_type: TriggerType,
+    pub is_triggered: bool,
+    pub ts_triggered: Option<UnixNanos>,
     pub expire_time: Option<UnixNanos>,
     pub display_qty: Option<Quantity>,
 }
 
-impl LimitOrder {
+impl LimitIfTouchedOrder {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -53,6 +57,8 @@ impl LimitOrder {
         order_side: OrderSide,
         quantity: Quantity,
         price: Price,
+        trigger_price: Price,
+        trigger_type: TriggerType,
         time_in_force: TimeInForce,
         expire_time: Option<UnixNanos>,
         post_only: bool,
@@ -78,7 +84,7 @@ impl LimitOrder {
                 instrument_id,
                 client_order_id,
                 order_side,
-                OrderType::Limit,
+                OrderType::LimitIfTouched,
                 quantity,
                 time_in_force,
                 post_only,
@@ -97,16 +103,20 @@ impl LimitOrder {
                 ts_init,
             ),
             price,
+            trigger_price,
+            trigger_type,
+            is_triggered: false,
+            ts_triggered: None,
             expire_time,
             display_qty,
         }
     }
 }
 
-/// Provides a default [`LimitOrder`] used for testing.
-impl Default for LimitOrder {
+/// Provides a default [`LimitIfTouchedOrder`] used for testing.
+impl Default for LimitIfTouchedOrder {
     fn default() -> Self {
-        LimitOrder::new(
+        LimitIfTouchedOrder::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -114,6 +124,8 @@ impl Default for LimitOrder {
             OrderSide::Buy,
             Quantity::new(100_000.0, 0),
             Price::new(1.0, 5),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
             TimeInForce::Gtc,
             None,
             false,
@@ -135,7 +147,7 @@ impl Default for LimitOrder {
     }
 }
 
-impl Deref for LimitOrder {
+impl Deref for LimitIfTouchedOrder {
     type Target = OrderCore;
 
     fn deref(&self) -> &Self::Target {
@@ -143,13 +155,13 @@ impl Deref for LimitOrder {
     }
 }
 
-impl DerefMut for LimitOrder {
+impl DerefMut for LimitIfTouchedOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
 }
 
-impl Order for LimitOrder {
+impl Order for LimitIfTouchedOrder {
     fn status(&self) -> OrderStatus {
         self.status
     }
@@ -207,11 +219,11 @@ impl Order for LimitOrder {
     }
 
     fn trigger_price(&self) -> Option<Price> {
-        None
+        Some(self.trigger_price)
     }
 
     fn trigger_type(&self) -> Option<TriggerType> {
-        None
+        Some(self.trigger_type)
     }
 
     fn liquidity_side(&self) -> Option<LiquiditySide> {
@@ -307,9 +319,9 @@ impl Order for LimitOrder {
     }
 }
 
-impl From<OrderInitialized> for LimitOrder {
+impl From<OrderInitialized> for LimitIfTouchedOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitOrder::new(
+        LimitIfTouchedOrder::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -318,7 +330,15 @@ impl From<OrderInitialized> for LimitOrder {
             event.quantity,
             event
                 .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitOrder"),
+                .expect("Error initializing order: `price` was `None` for `LimitIfTouchedOrder"),
+            event
+                .trigger_price // TODO: Improve this error, model order domain errors
+                .expect(
+                    "Error initializing order: `trigger_price` was `None` for `LimitIfTouchedOrder",
+                ),
+            event
+                .trigger_type
+                .expect("Error initializing order: `trigger_type` was `None`"),
             event.time_in_force,
             event.expire_time,
             event.post_only,
@@ -340,8 +360,8 @@ impl From<OrderInitialized> for LimitOrder {
     }
 }
 
-impl From<&LimitOrder> for OrderInitialized {
-    fn from(order: &LimitOrder) -> Self {
+impl From<&LimitIfTouchedOrder> for OrderInitialized {
+    fn from(order: &LimitIfTouchedOrder) -> Self {
         Self {
             trader_id: order.trader_id.clone(),
             strategy_id: order.strategy_id.clone(),
@@ -351,8 +371,8 @@ impl From<&LimitOrder> for OrderInitialized {
             order_type: order.order_type,
             quantity: order.quantity,
             price: Some(order.price),
-            trigger_price: None,
-            trigger_type: None,
+            trigger_price: Some(order.trigger_price),
+            trigger_type: Some(order.trigger_type),
             time_in_force: order.time_in_force,
             expire_time: order.expire_time,
             post_only: order.is_post_only,

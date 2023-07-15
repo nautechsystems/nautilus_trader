@@ -37,7 +37,7 @@ class BinanceSymbol(str):
                 symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
             )
 
-    def parse_binance_to_internal(self, account_type: BinanceAccountType) -> str:
+    def parse_as_nautilus(self, account_type: BinanceAccountType) -> str:
         if account_type.is_spot_or_margin:
             return str(self)
 

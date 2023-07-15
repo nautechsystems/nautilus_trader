@@ -109,7 +109,9 @@ mod tests {
     fn test_pystr_to_string_with_null_ptr() {
         // Create a null Python object pointer
         let ptr: *mut ffi::PyObject = std::ptr::null_mut();
-        unsafe { pystr_to_string(ptr) };
+        unsafe {
+            let _ = pystr_to_string(ptr);
+        };
     }
 
     #[test]
@@ -126,7 +128,9 @@ mod tests {
     fn test_cstr_to_string_with_null_ptr() {
         // Create a null C string pointer
         let ptr: *const c_char = std::ptr::null();
-        unsafe { cstr_to_string(ptr) };
+        unsafe {
+            let _ = cstr_to_string(ptr);
+        };
     }
 
     #[test]

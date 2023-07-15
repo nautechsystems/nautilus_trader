@@ -57,6 +57,12 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         The client for the provider.
     logger : Logger
         The logger for the provider.
+    clock : LiveClock
+        The clock for the provider.
+    account_type : BinanceAccountType, default SPOT
+        The Binance account type for the provider.
+    is_testnet : bool, default False
+        If the provider is for the Spot testnet.
     config : InstrumentProviderConfig, optional
         The configuration for the provider.
 
@@ -68,6 +74,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         logger: Logger,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
+        is_testnet: bool = False,
         config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
@@ -76,9 +83,10 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             config=config,
         )
 
+        self._clock = clock
         self._client = client
         self._account_type = account_type
-        self._clock = clock
+        self._is_testnet = is_testnet
 
         self._http_wallet = BinanceSpotWalletHttpAPI(
             self._client,
@@ -96,16 +104,17 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        # Get current commission rates
         try:
-            # response = await self._http_wallet.query_spot_trade_fees()
-            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
-            # TODO: Requests for testnet seem to fail auth
-            self._log.warning(
-                "Currently not requesting actual trade fees. "
-                "All instruments will have zero fees.",
-            )
-            fees_dict: dict[str, BinanceSpotTradeFee] = {}
+            # Get current commission rates
+            if not self._is_testnet:
+                response = await self._http_wallet.query_spot_trade_fees()
+                fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            else:
+                self._log.warning(
+                    "Currently not requesting actual trade fees for the SPOT testnet. "
+                    "All instruments will have zero fees.",
+                )
+                fees_dict = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -138,16 +147,17 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
-        # Get current commission rates
         try:
-            # response = await self._http_wallet.query_spot_trade_fees()
-            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
-            # TODO: Requests for testnet seem to fail auth
-            self._log.warning(
-                "Currently not requesting actual trade fees. "
-                "All instruments will have zero fees.",
-            )
-            fees_dict: dict[str, BinanceSpotTradeFee] = {}
+            # Get current commission rates
+            if not self._is_testnet:
+                response = await self._http_wallet.query_spot_trade_fees()
+                fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            else:
+                fees_dict = {}
+                self._log.warning(
+                    "Currently not requesting actual trade fees for the SPOT testnet. "
+                    "All instruments will have zero fees.",
+                )
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "
@@ -181,16 +191,17 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         symbol = str(BinanceSymbol(instrument_id.symbol.value))
 
-        # Get current commission rates
         try:
-            # trade_fees = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
-            # fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in trade_fees}
-            # TODO: Requests for testnet seem to fail auth
-            self._log.warning(
-                "Currently not requesting actual trade fees. "
-                "All instruments will have zero fees.",
-            )
-            fees_dict: dict[str, BinanceSpotTradeFee] = {}
+            # Get current commission rates
+            if not self._is_testnet:
+                response = await self._http_wallet.query_spot_trade_fees(symbol=symbol)
+                fees_dict: dict[str, BinanceSpotTradeFee] = {fee.symbol: fee for fee in response}
+            else:
+                self._log.warning(
+                    "Currently not requesting actual trade fees for the SPOT testnet. "
+                    "All instruments will have zero fees.",
+                )
+                fees_dict = {}
         except BinanceClientError as e:
             self._log.error(
                 "Cannot load instruments: API key authentication failed "

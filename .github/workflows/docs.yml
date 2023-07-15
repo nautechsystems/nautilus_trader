@@ -13,7 +13,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Rust tool-chain
+      - name: Set up Rust tool-chain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: Set up Rust tool-chain (nightly)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: nightly

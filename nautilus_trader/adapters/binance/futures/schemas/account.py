@@ -159,3 +159,16 @@ class BinanceFuturesDualSidePosition(msgspec.Struct, frozen=True):
     """
 
     dualSidePosition: bool
+
+
+class BinanceFuturesFeeRates(msgspec.Struct, frozen=True):
+    """
+    Represents a `BinanceFutures` fee tier.
+
+    https://www.binance.com/en/fee/futureFee
+
+    """
+
+    feeTier: int
+    maker: str
+    taker: str
