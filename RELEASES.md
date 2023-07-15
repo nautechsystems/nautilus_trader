@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
 - Fixed fill handling of `reduce_only` orders when partially filled
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
+- Fixed Binance Futures native symbol parsing (was actually Nautilus symbol values)
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
 - Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
 - Fixed Binance execution submitting of order lists
