@@ -109,7 +109,7 @@ impl Logger {
         }
 
         let trader_id_clone = trader_id.value.to_string();
-        let instance_id_clone = instance_id.value.to_string();
+        let instance_id_clone = instance_id.to_string();
 
         thread::spawn(move || {
             Self::handle_messages(

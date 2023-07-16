@@ -57,12 +57,13 @@ cdef extern from "Python.h":
     char* PyBytes_AsString(object string) except NULL
 
 
-cdef inline str cstr_to_pystr(const char* ptr):
+cdef inline str cstr_to_pystr(const char* ptr, bint drop = True):
     cdef str obj = PyUnicode_FromString(ptr)
 
     # Assumes `ptr` was created from Rust `CString::from_raw`,
     # otherwise will lead to undefined behaviour when passed to `cstr_drop`.
-    cstr_drop(ptr)
+    if drop:
+        cstr_drop(ptr)
     return obj
 
 

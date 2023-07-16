@@ -121,7 +121,7 @@ impl MessageBus {
                 if self.correlation_index.contains_key(id) {
                     todo!()
                 } else {
-                    self.correlation_index.insert(id.clone(), callback);
+                    self.correlation_index.insert(*id, callback);
                     if let Some(handler) = self.endpoints.get(endpoint) {
                         handler(request)
                     } else {

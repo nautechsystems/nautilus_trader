@@ -281,7 +281,7 @@ impl Order for MarketToLimitOrder {
     }
 
     fn init_id(&self) -> UUID4 {
-        self.init_id.clone()
+        self.init_id
     }
 
     fn ts_init(&self) -> UnixNanos {
@@ -366,7 +366,7 @@ impl From<&MarketToLimitOrder> for OrderInitialized {
             exec_algorithm_params: order.exec_algorithm_params.clone(),
             exec_spawn_id: order.exec_spawn_id.clone(),
             tags: order.tags.clone(),
-            event_id: order.init_id.clone(),
+            event_id: order.init_id,
             ts_event: order.ts_init,
             ts_init: order.ts_init,
             reconciliation: false,
