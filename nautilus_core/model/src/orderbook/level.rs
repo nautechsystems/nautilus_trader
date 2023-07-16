@@ -18,6 +18,7 @@ use std::cmp::Ordering;
 use crate::{
     data::order::BookOrder,
     orderbook::{book::BookIntegrityError, ladder::BookPrice},
+    types::fixed::FIXED_SCALAR,
 };
 
 #[derive(Clone, Debug, Eq)]
@@ -107,10 +108,28 @@ impl Level {
     }
 
     #[must_use]
+    pub fn volume_raw(&self) -> u64 {
+        let mut sum = 0u64;
+        for o in self.orders.iter() {
+            sum += o.size.raw
+        }
+        sum
+    }
+
+    #[must_use]
     pub fn exposure(&self) -> f64 {
         let mut sum: f64 = 0.0;
         for o in self.orders.iter() {
             sum += o.price.as_f64() * o.size.as_f64()
+        }
+        sum
+    }
+
+    #[must_use]
+    pub fn exposure_raw(&self) -> u64 {
+        let mut sum = 0u64;
+        for o in self.orders.iter() {
+            sum += ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64
         }
         sum
     }
@@ -342,5 +361,89 @@ mod tests {
     fn test_remove_nonexistent_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
         level.remove(1);
+    }
+
+    #[test]
+    fn test_volume() {
+        let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(1.00, 2),
+            Quantity::new(10.0, 0),
+            0,
+        );
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(1.00, 2),
+            Quantity::new(15.0, 0),
+            1,
+        );
+
+        level.add(order1);
+        level.add(order2);
+        assert_eq!(level.volume(), 25.0);
+    }
+
+    #[test]
+    fn test_volume_raw() {
+        let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(10.0, 0),
+            0,
+        );
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(20.0, 0),
+            1,
+        );
+
+        level.add(order1);
+        level.add(order2);
+        assert_eq!(level.volume_raw(), 30_000_000_000);
+    }
+
+    #[test]
+    fn test_exposure() {
+        let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(10.0, 0),
+            0,
+        );
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(20.0, 0),
+            1,
+        );
+
+        level.add(order1);
+        level.add(order2);
+        assert_eq!(level.exposure(), 60.0);
+    }
+
+    #[test]
+    fn test_exposure_raw() {
+        let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
+        let order1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(10.0, 0),
+            0,
+        );
+        let order2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::new(2.00, 2),
+            Quantity::new(20.0, 0),
+            1,
+        );
+
+        level.add(order1);
+        level.add(order2);
+        assert_eq!(level.exposure_raw(), 60_000_000_000);
     }
 }

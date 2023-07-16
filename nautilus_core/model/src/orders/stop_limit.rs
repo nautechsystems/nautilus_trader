@@ -35,7 +35,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-pub struct LimitIfTouchedOrder {
+pub struct StopLimitOrder {
     core: OrderCore,
     pub price: Price,
     pub trigger_price: Price,
@@ -46,7 +46,7 @@ pub struct LimitIfTouchedOrder {
     pub ts_triggered: Option<UnixNanos>,
 }
 
-impl LimitIfTouchedOrder {
+impl StopLimitOrder {
     #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -113,10 +113,10 @@ impl LimitIfTouchedOrder {
     }
 }
 
-/// Provides a default [`LimitIfTouchedOrder`] used for testing.
-impl Default for LimitIfTouchedOrder {
+/// Provides a default [`StopLimitOrder`] used for testing.
+impl Default for StopLimitOrder {
     fn default() -> Self {
-        LimitIfTouchedOrder::new(
+        StopLimitOrder::new(
             TraderId::default(),
             StrategyId::default(),
             InstrumentId::default(),
@@ -147,7 +147,7 @@ impl Default for LimitIfTouchedOrder {
     }
 }
 
-impl Deref for LimitIfTouchedOrder {
+impl Deref for StopLimitOrder {
     type Target = OrderCore;
 
     fn deref(&self) -> &Self::Target {
@@ -155,13 +155,13 @@ impl Deref for LimitIfTouchedOrder {
     }
 }
 
-impl DerefMut for LimitIfTouchedOrder {
+impl DerefMut for StopLimitOrder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.core
     }
 }
 
-impl Order for LimitIfTouchedOrder {
+impl Order for StopLimitOrder {
     fn status(&self) -> OrderStatus {
         self.status
     }
@@ -319,9 +319,9 @@ impl Order for LimitIfTouchedOrder {
     }
 }
 
-impl From<OrderInitialized> for LimitIfTouchedOrder {
+impl From<OrderInitialized> for StopLimitOrder {
     fn from(event: OrderInitialized) -> Self {
-        LimitIfTouchedOrder::new(
+        StopLimitOrder::new(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -330,12 +330,10 @@ impl From<OrderInitialized> for LimitIfTouchedOrder {
             event.quantity,
             event
                 .price // TODO: Improve this error, model order domain errors
-                .expect("Error initializing order: `price` was `None` for `LimitIfTouchedOrder"),
+                .expect("Error initializing order: `price` was `None` for `StopLimitOrder"),
             event
                 .trigger_price // TODO: Improve this error, model order domain errors
-                .expect(
-                    "Error initializing order: `trigger_price` was `None` for `LimitIfTouchedOrder",
-                ),
+                .expect("Error initializing order: `trigger_price` was `None` for `StopLimitOrder"),
             event
                 .trigger_type
                 .expect("Error initializing order: `trigger_type` was `None`"),
@@ -360,8 +358,8 @@ impl From<OrderInitialized> for LimitIfTouchedOrder {
     }
 }
 
-impl From<&LimitIfTouchedOrder> for OrderInitialized {
-    fn from(order: &LimitIfTouchedOrder) -> Self {
+impl From<&StopLimitOrder> for OrderInitialized {
+    fn from(order: &StopLimitOrder) -> Self {
         Self {
             trader_id: order.trader_id.clone(),
             strategy_id: order.strategy_id.clone(),

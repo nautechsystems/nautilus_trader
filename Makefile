@@ -85,6 +85,10 @@ cargo-update:
 cargo-test:
 	RUST_BACKTRACE=1 && (cd nautilus_core && cargo test)
 
+.PHONY: cargo-test-nightly
+cargo-test-nightly:
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo +nightly test)
+
 .PHONY: cargo-bench
 cargo-bench:
 	(cd nautilus_core && cargo bench)
