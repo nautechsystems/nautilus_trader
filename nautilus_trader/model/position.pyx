@@ -133,11 +133,11 @@ cdef class Position:
         """
         return {
             "position_id": self.id.to_str(),
+            "strategy_id": self.strategy_id.to_str(),
+            "instrument_id": self.instrument_id.to_str(),
             "account_id": self.account_id.to_str(),
             "opening_order_id": self.opening_order_id.to_str(),
             "closing_order_id": self.closing_order_id.to_str() if self.closing_order_id is not None else None,
-            "strategy_id": self.strategy_id.to_str(),
-            "instrument_id": self.instrument_id.to_str(),
             "entry": order_side_to_str(self.entry),
             "side": position_side_to_str(self.side),
             "signed_qty": self.signed_qty,

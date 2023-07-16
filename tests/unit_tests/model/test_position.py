@@ -136,11 +136,11 @@ class TestPosition:
         # Assert
         assert result == {
             "position_id": "P-123456",
+            "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
             "account_id": "SIM-000",
             "opening_order_id": "O-19700101-0000-000-001-1",
             "closing_order_id": None,
-            "strategy_id": "S-001",
             "entry": "BUY",
             "side": "LONG",
             "signed_qty": 100000.0,
