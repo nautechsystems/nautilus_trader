@@ -695,6 +695,9 @@ class NautilusKernel:
     async def start(self) -> None:
         self._log.info("STARTING...")
 
+        if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
+            self._cache.flush_db()
+
         # Start system
         self._data_engine.start()
         self._risk_engine.start()

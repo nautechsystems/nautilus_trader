@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
 - Added `MessageBus.is_pending_request(...)` method
+- Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
 - Added `Actor.is_pending_request(...)` convenience method
 - Added `Actor.has_pending_requests()` convenience method
 - Added `Actor.pending_requests()` convenience method
@@ -20,7 +21,8 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
-- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an info log)
+- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
+- Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
@@ -35,7 +37,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
 - Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
 - Fixed Binance execution submitting of order lists
-- Fixed Binance Spot commission rates requests for `InstrumentProvider`
+- Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
 - Fixed Binance order parsing of invalid orders in execution reports #1157, thanks for reporting @graceyangfan
 - Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
