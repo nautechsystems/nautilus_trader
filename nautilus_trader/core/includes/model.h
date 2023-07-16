@@ -1871,6 +1871,10 @@ double orderbook_spread(struct OrderBook_API *book);
 
 double orderbook_midpoint(struct OrderBook_API *book);
 
+double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
+                                         struct Quantity_t qty,
+                                         enum OrderSide order_side);
+
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
 
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);

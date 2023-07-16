@@ -46,6 +46,7 @@ from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_delta_clone
 from nautilus_trader.core.rust.model cimport orderbook_drop
+from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_instrument_id
@@ -409,6 +410,37 @@ cdef class OrderBook(Data):
             return None
 
         return orderbook_midpoint(&self._mem)
+
+    cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side):
+        """
+        Return the average price expected for the given `quantity` based on the current state
+        of the order book.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The quantity for the calculation.
+        order_side : OrderSide
+            The order side for the calculation.
+
+        Returns
+        -------
+        double
+
+        Raises
+        ------
+        ValueError
+            If `order_side` is equal to ``NO_ORDER_SIDE``
+
+        Warnings
+        --------
+        If no average price can be calculated then will return 0.0 (zero).
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+
+        return orderbook_get_avg_px_for_quantity(&self._mem, quantity._mem, order_side)
 
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive):
         """
