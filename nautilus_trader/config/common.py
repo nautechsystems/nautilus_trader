@@ -147,6 +147,16 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should be flushed on start.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
+        If `False` then will persit as UNIX nanoseconds.
+    snapshot_orders : bool, default False
+        If order state snapshot lists should be persisted.
+        Snapshots will be taken at every order status transition.
+    snapshot_positions : bool, default False
+        If position state snapshot lists should be persisted.
+        Snapshots will be taken at position opened, changed and closed.
+    snapshot_positions_interval : float, optional
+        The interval (seconds) at which additional position state snapshots are persisted.
+        If ``None`` then no additional snapshots will be taken.
 
     """
 
@@ -158,6 +168,9 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     ssl: bool = False
     flush_on_start: bool = False
     timestamps_as_iso8601: bool = False
+    snapshot_orders: bool = False
+    snapshot_positions: bool = False
+    snapshot_positions_interval: Optional[float] = None
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
