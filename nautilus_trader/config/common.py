@@ -143,8 +143,8 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         The account password for the database connection.
     ssl : bool, default False
         If database should use an SSL enabled connection.
-    flush : bool, default False
-        If database should be flushed before start.
+    flush_on_start : bool, default False
+        If database should be flushed on start.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
 
@@ -156,7 +156,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     username: Optional[str] = None
     password: Optional[str] = None
     ssl: bool = False
-    flush: bool = False
+    flush_on_start: bool = False
     timestamps_as_iso8601: bool = False
 
 

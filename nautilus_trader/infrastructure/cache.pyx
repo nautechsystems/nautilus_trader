@@ -22,6 +22,7 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
@@ -157,7 +158,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         self._log.debug("Flushing database....")
         self._redis.flushdb()
-        self._log.info("Flushed database.")
+        self._log.info("Flushed database.", LogColor.BLUE)
 
     cpdef dict load(self):
         """
