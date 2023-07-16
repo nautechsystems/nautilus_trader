@@ -27,10 +27,10 @@ use crate::{
     },
     events::order::{OrderEvent, OrderInitialized},
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
         strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        venue_order_id::VenueOrderId, AccountIdTag, Identifier,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -176,8 +176,8 @@ impl Order for MarketToLimitOrder {
         self.position_id.clone()
     }
 
-    fn account_id(&self) -> Option<AccountId> {
-        self.account_id.clone()
+    fn account_id(&self) -> Option<Identifier<AccountIdTag>> {
+        self.account_id
     }
 
     fn last_trade_id(&self) -> Option<TradeId> {

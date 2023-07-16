@@ -907,10 +907,6 @@ typedef struct OrderDenied_t {
     uint64_t ts_init;
 } OrderDenied_t;
 
-typedef struct AccountId_t {
-    struct Arc_String *value;
-} AccountId_t;
-
 typedef struct ClientId_t {
     struct Arc_String *value;
 } ClientId_t;
@@ -1437,29 +1433,13 @@ struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
 const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
 
 /**
- * Returns a Nautilus identifier from a C string pointer.
+ * Intern a C string pointer
  *
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
  */
-struct AccountId_t account_id_new(const char *ptr);
-
-struct AccountId_t account_id_clone(const struct AccountId_t *account_id);
-
-/**
- * Frees the memory for the given `account_id` by dropping.
- */
-void account_id_drop(struct AccountId_t account_id);
-
-/**
- * Returns an [`AccountId`] as a C string pointer.
- */
-const char *account_id_to_cstr(const struct AccountId_t *account_id);
-
-uint8_t account_id_eq(const struct AccountId_t *lhs, const struct AccountId_t *rhs);
-
-uint64_t account_id_hash(const struct AccountId_t *account_id);
+const char *intern_string(const char *ptr);
 
 /**
  * Returns a Nautilus identifier from C string pointer.

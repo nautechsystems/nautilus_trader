@@ -13,14 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{
+    ffi::{c_char, CStr},
+    fmt::{Debug, Display, Formatter},
+    marker::PhantomData,
+    str::FromStr,
+};
 
+use anyhow::Ok;
+use nautilus_core::correctness;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use ustr::Ustr;
 
 #[macro_use]
 mod macros;
 
-pub mod account_id;
 pub mod client_id;
 pub mod client_order_id;
 pub mod component_id;
@@ -35,7 +42,77 @@ pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
 
-impl_from_str_for_identifier!(account_id::AccountId);
+pub struct AccountIdTag;
+pub struct ClientIdTag;
+
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct Identifier<T> {
+    pub value: Ustr,
+    kind: PhantomData<T>,
+}
+
+impl<T> Debug for Identifier<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl<T> Display for Identifier<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.value)
+    }
+}
+
+impl Identifier<AccountIdTag> {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`Identifier<AccountId>` value");
+        correctness::string_contains(s, "-", "`TraderId` value");
+
+        Self {
+            value: Ustr::from(s),
+            kind: PhantomData,
+        }
+    }
+}
+
+impl Identifier<ClientIdTag> {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`ClientId` value");
+
+        Self {
+            value: Ustr::from(s),
+            kind: PhantomData,
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// C API
+////////////////////////////////////////////////////////////////////////////////
+
+/// Intern a C string pointer
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn intern_string(ptr: *const c_char) -> *const c_char {
+    Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).as_char_ptr()
+}
+
+/// Return the hash of an interned string
+///
+/// # Safety
+/// - Assumes `ptr` is an interned string
+pub unsafe extern "C" fn interned_string_hash(ptr: *const c_char) -> u64 {
+    Ustr::from_existing(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+        .map(|entry| entry.precomputed_hash())
+        .expect("Did not find entry for given string")
+}
+
 impl_from_str_for_identifier!(client_id::ClientId);
 impl_from_str_for_identifier!(client_order_id::ClientOrderId);
 impl_from_str_for_identifier!(component_id::ComponentId);
@@ -49,7 +126,6 @@ impl_from_str_for_identifier!(trader_id::TraderId);
 impl_from_str_for_identifier!(venue::Venue);
 impl_from_str_for_identifier!(venue_order_id::VenueOrderId);
 
-impl_serialization_for_identifier!(account_id::AccountId);
 impl_serialization_for_identifier!(client_id::ClientId);
 impl_serialization_for_identifier!(client_order_id::ClientOrderId);
 impl_serialization_for_identifier!(component_id::ComponentId);
