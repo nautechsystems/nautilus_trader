@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::{cvec::CVec, string::str_to_cstr};
 
-use super::book::OrderBook;
+use super::{book::OrderBook, level_api::Level_API};
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::{BookType, OrderSide},
@@ -142,6 +142,24 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, ts_event: u64, 
 #[no_mangle]
 pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: OrderBookDelta) {
     book.apply_delta(delta)
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_bids(book: &mut OrderBook_API) -> CVec {
+    book.bids()
+        .iter()
+        .map(|l| Level_API::new(l.to_owned().clone()))
+        .collect::<Vec<Level_API>>()
+        .into()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
+    book.asks()
+        .iter()
+        .map(|l| Level_API::new(l.to_owned().clone()))
+        .collect::<Vec<Level_API>>()
+        .into()
 }
 
 #[no_mangle]

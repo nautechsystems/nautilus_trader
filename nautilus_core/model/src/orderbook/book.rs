@@ -162,6 +162,14 @@ impl OrderBook {
         }
     }
 
+    pub fn bids(&self) -> Vec<&Level> {
+        self.bids.levels.values().collect()
+    }
+
+    pub fn asks(&self) -> Vec<&Level> {
+        self.asks.levels.values().collect()
+    }
+
     pub fn has_bid(&self) -> bool {
         match self.bids.top() {
             Some(top) => !top.orders.is_empty(),
