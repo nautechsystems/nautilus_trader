@@ -218,6 +218,22 @@ class TestOrderBook:
         assert book.best_ask_size() == 6.0
         assert book.spread() == 1.0
         assert book.midpoint() == 10.5
+        assert len(book.bids()) == 1
+        assert len(book.asks()) == 1
+        assert (
+            repr(book.bids())
+            == "[Level(price=10.0, orders=[BookOrder { side: Buy, price: 10.0, size: 5, order_id: 10000000000 }])]"
+        )
+        assert (
+            repr(book.asks())
+            == "[Level(price=11.0, orders=[BookOrder { side: Sell, price: 11.0, size: 6, order_id: 11000000000 }])]"
+        )
+        bid_level = book.bids()[0]
+        ask_level = book.asks()[0]
+        assert len(bid_level.orders()) == 1
+        assert len(ask_level.orders()) == 1
+        assert bid_level.price == Price.from_str("10.0")
+        assert ask_level.price == Price.from_str("11.0")
 
     def test_repr(self):
         book = OrderBook(

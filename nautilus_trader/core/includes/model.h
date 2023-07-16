@@ -620,6 +620,8 @@ typedef enum TriggerType {
 
 typedef struct Arc_String Arc_String;
 
+typedef struct Level Level;
+
 typedef struct OrderBook OrderBook;
 
 typedef struct String String;
@@ -961,6 +963,20 @@ typedef struct SyntheticInstrument_API {
 typedef struct OrderBook_API {
     struct OrderBook *_0;
 } OrderBook_API;
+
+/**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+ *
+ * This struct wraps `Level` in a way that makes it compatible with C function
+ * calls, enabling interaction with `Level` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `Level_API` to be
+ * dereferenced to `Level`, providing access to `Level`'s methods without
+ * having to manually acce wss the underlying `Level` instance.
+ */
+typedef struct Level_API {
+    struct Level *_0;
+} Level_API;
 
 typedef struct Currency_t {
     struct Arc_String *code;
@@ -1855,6 +1871,10 @@ void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
 
+CVec orderbook_bids(struct OrderBook_API *book);
+
+CVec orderbook_asks(struct OrderBook_API *book);
+
 uint8_t orderbook_has_bid(struct OrderBook_API *book);
 
 uint8_t orderbook_has_ask(struct OrderBook_API *book);
@@ -1889,6 +1909,24 @@ void vec_fills_drop(CVec v);
  * Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
  */
 const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
+
+struct Level_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
+
+void level_drop(struct Level_API level);
+
+struct Level_API level_clone(const struct Level_API *level);
+
+struct Price_t level_price(const struct Level_API *level);
+
+CVec level_orders(const struct Level_API *level);
+
+double level_volume(const struct Level_API *level);
+
+double level_exposure(const struct Level_API *level);
+
+void vec_levels_drop(CVec v);
+
+void vec_orders_drop(CVec v);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.
