@@ -23,7 +23,7 @@ use nautilus_core::{cvec::CVec, string::str_to_cstr};
 use super::book::OrderBook;
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
-    enums::BookType,
+    enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
@@ -188,6 +188,15 @@ pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
 pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
     book.midpoint()
         .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_get_avg_px_for_quantity(
+    book: &mut OrderBook_API,
+    qty: Quantity,
+    order_side: OrderSide,
+) -> f64 {
+    book.get_avg_px_for_quantity(qty, order_side)
 }
 
 #[no_mangle]

@@ -23,6 +23,8 @@ from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -47,6 +49,7 @@ cdef class OrderBook(Data):
     cpdef best_ask_size(self)
     cpdef spread(self)
     cpdef midpoint(self)
+    cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side)
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
