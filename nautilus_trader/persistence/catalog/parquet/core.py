@@ -32,6 +32,7 @@ from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
@@ -46,6 +47,10 @@ from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSeria
 from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
 from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.persistence.wranglers import list_from_capsule
+
+
+timestamp_like = Union[int, str, float]
 
 
 class ParquetDataCatalog(BaseDataCatalog):
@@ -175,19 +180,33 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
-        session = DataBackendSession()
+    def query(
+        self,
+        cls,
+        instrument_ids=None,
+        start: Optional[timestamp_like] = None,
+        end: Optional[timestamp_like] = None,
+        **kwargs,
+    ):
         name = cls.__name__
         file_prefix = camel_to_snake_case(name)
         data_type = getattr(NautilusDataType, name)
-        for fn in self.fs.glob(f"{self.path}/data/{file_prefix}/**/*"):
+        session = DataBackendSession()
+        # TODO (bm) - fix this glob, query once on catalog creation?
+        for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
             assert pathlib.Path(fn).exists()
             if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
                 continue
-            session.add_file(file_prefix + "s", fn, data_type)
-        session.to_query_result()
+            table = f"{file_prefix}_{idx}"
+            query = self._build_query(table, instrument_ids=instrument_ids, start=start, end=end)
+            session.add_file_with_query(table, fn, query, data_type)
 
-        data = session.quote_ticks_to_batches_bytes(None)
+        result = session.to_query_result()
+
+        # Gather data
+        data = []
+        for chunk in result:
+            data.extend(list_from_capsule(chunk))
 
         if not is_nautilus_class(cls):
             # Special handling for generic data
@@ -196,6 +215,31 @@ class ParquetDataCatalog(BaseDataCatalog):
                 for d in data
             ]
         return data
+
+    def _build_query(
+        self,
+        table: str,
+        instrument_ids=None,
+        start: Optional[timestamp_like] = None,
+        end: Optional[timestamp_like] = None,
+    ) -> str:
+        """
+        Build datafusion sql query.
+        """
+        q = f"SELECT * FROM {table}"  # noqa
+        conditions: list[str] = []
+        if instrument_ids:
+            conditions.append(f"instrument_id in {tuple(instrument_ids)}")
+        if start:
+            ts = dt_to_unix_nanos(pd.Timestamp(start))
+            conditions.append(f"ts_init >= {ts}")
+        if end:
+            dt_to_unix_nanos(pd.Timestamp(end))
+            conditions.append(f"ts_init <= {ts}")
+        if conditions:
+            q += f" WHERE {' AND '.join(conditions)}"
+        q += " ORDER BY ts_init"
+        return q
 
     @staticmethod
     def _handle_table_dataframe(
@@ -230,7 +274,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         base_cls: type,
         instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
-        as_nautilus: bool = False,
         **kwargs,
     ):
         subclasses = [base_cls, *base_cls.__subclasses__()]
@@ -243,7 +286,6 @@ class ParquetDataCatalog(BaseDataCatalog):
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
-                    as_nautilus=as_nautilus,
                     **kwargs,
                 )
                 dfs.append(df)
@@ -256,11 +298,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 else:
                     raise e
 
-        if not as_nautilus:
-            return pd.concat([df for df in dfs if df is not None])
-        else:
-            objects = [o for objs in [df for df in dfs if df is not None] for o in objs]
-            return objects
+        objects = [o for objs in [df for df in dfs if df is not None] for o in objs]
+        return objects
 
     # ---  OVERLOADED BASE METHODS ------------------------------------------------
     def instruments(
