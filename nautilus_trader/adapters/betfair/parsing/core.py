@@ -15,12 +15,13 @@
 
 from typing import Optional
 
+import fsspec
 from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.mcm import MarketDefinition
-from betfair_parser.util import iter_file
+from betfair_parser.util import iter_stream
 
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
@@ -61,5 +62,6 @@ def parse_betfair_file(uri: str):  # noqa
 
     """
     parser = BetfairParser()
-    for mcm in iter_file(uri):
-        yield from parser.parse(mcm)
+    with fsspec.open(uri, compression="infer") as f:
+        for mcm in iter_stream(f):
+            yield from parser.parse(mcm)

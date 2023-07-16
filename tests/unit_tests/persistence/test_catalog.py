@@ -84,7 +84,7 @@ class _TestPersistenceCatalog:
         # Assert
         # TODO(cs): Assert new HivePartitioning object for catalog v2
 
-    def test_data_catalog_query_filtered(self):
+    def test_data_catalog_query_filtered(self, load_betfair_data):
         ticks = self.catalog.trade_ticks()
         assert len(ticks) == 312
 

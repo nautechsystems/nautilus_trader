@@ -35,14 +35,14 @@ def make_symbol(
     Make symbol.
 
     >>> make_symbol(market_id="1.201070830", selection_id="123456", selection_handicap=None)
-    Symbol('1.201070830|123456|None')
+    Symbol('1.201070830-123456-None')
 
     """
 
     def _clean(s):
         return str(s).replace(" ", "").replace(":", "")
 
-    value: str = "|".join(
+    value: str = "-".join(
         [_clean(k) for k in (market_id, selection_id, selection_handicap)],
     )
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
@@ -59,7 +59,7 @@ def betfair_instrument_id(
     Create an instrument ID from betfair fields.
 
     >>> betfair_instrument_id(market_id="1.201070830", selection_id="123456", selection_handicap=None)
-    InstrumentId('1.201070830|123456|None.BETFAIR')
+    InstrumentId('1.201070830-123456-None.BETFAIR')
 
     """
     PyCondition.not_empty(market_id, "market_id")

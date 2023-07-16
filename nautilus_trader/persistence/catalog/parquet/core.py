@@ -36,6 +36,7 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.instruments import Instrument
@@ -175,8 +176,17 @@ class ParquetDataCatalog(BaseDataCatalog):
     # -- QUERIES -----------------------------------------------------------------------------------
 
     def query(self, cls, filter_expr=None, instrument_ids=None, as_nautilus=False, **kwargs):
-        # TODO - Query with datafusion
         session = DataBackendSession()
+        name = cls.__name__
+        file_prefix = camel_to_snake_case(name)
+        data_type = getattr(NautilusDataType, name)
+        for fn in self.fs.glob(f"{self.path}/data/{file_prefix}/**/*"):
+            assert pathlib.Path(fn).exists()
+            if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
+                continue
+            session.add_file(file_prefix + "s", fn, data_type)
+        session.to_query_result()
+
         data = session.quote_ticks_to_batches_bytes(None)
 
         if not is_nautilus_class(cls):

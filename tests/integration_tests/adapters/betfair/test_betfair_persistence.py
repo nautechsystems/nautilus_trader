@@ -12,19 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import fsspec
-import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.historic import make_betfair_reader
-from nautilus_trader.persistence.external.core import RawFile
-from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.serialization.arrow_old.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
 
 
 class TestBetfairPersistence:
@@ -35,7 +28,7 @@ class TestBetfairPersistence:
 
     def test_bsp_delta_serialize(self):
         # Arrange
-        bsp_delta = BSPOrderBookDelta.from_dict(
+        bsp_delta = BSPOrderBookDeltas.from_dict(
             {
                 "type": "BSPOrderBookDelta",
                 "instrument_id": self.instrument.id.value,
@@ -95,16 +88,8 @@ class TestBetfairPersistence:
         # Assert
         assert result.bsp == bsp.bsp
 
-    @pytest.mark.skip("Broken due to parquet writing")
-    def test_bsp_deltas(self):
+    def test_bsp_deltas(self, load_betfair_data):
         # Arrange
-        rf = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA_DIR}/betfair/1.206064380.bz2", compression="infer"),
-            block_size=None,
-        )
-
-        # Act
-        process_raw_file(catalog=self.catalog, reader=make_betfair_reader(), raw_file=rf)
 
         # Act
         data = self.catalog.query(BSPOrderBookDeltas)

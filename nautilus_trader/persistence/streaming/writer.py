@@ -30,9 +30,9 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
 from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
 from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
+from nautilus_trader.persistence.catalog.parquet.util import GENERIC_DATA_PREFIX
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
-from nautilus_trader.serialization.arrow_old.util import GENERIC_DATA_PREFIX
-from nautilus_trader.serialization.arrow_old.util import list_dicts_to_dict_lists
+from nautilus_trader.persistence.catalog.parquet.util import list_dicts_to_dict_lists
 
 
 class StreamingFeatherWriter:

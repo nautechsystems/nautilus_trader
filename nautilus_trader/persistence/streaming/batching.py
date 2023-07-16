@@ -30,7 +30,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.wranglers import list_from_capsule
-from nautilus_trader.serialization.arrow_old.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 
 
 def _generate_batches_within_time_range(

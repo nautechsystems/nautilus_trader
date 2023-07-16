@@ -15,7 +15,7 @@
 
 from collections import defaultdict
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import Optional, Union
 
 import pandas as pd
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
@@ -26,13 +26,11 @@ from betfair_parser.spec.streaming.mcm import RunnerChange
 from betfair_parser.spec.streaming.mcm import RunnerStatus
 from betfair_parser.spec.streaming.mcm import _PriceVolume
 
-from nautilus_trader.adapters.betfair.common import B2N_MARKET_SIDE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -67,7 +65,6 @@ PARSE_TYPES = Union[
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
-    BSPOrderBookDelta,
     BSPOrderBookDeltas,
     BetfairStartingPrice,
 ]
@@ -451,30 +448,6 @@ def runner_change_to_betfair_ticker(
     )
 
 
-def _create_bsp_order_book_delta(
-    bsp_instrument_id: InstrumentId,
-    side: Literal["spb", "spl"],
-    price: float,
-    volume: float,
-    ts_event: int,
-    ts_init: int,
-) -> BSPOrderBookDelta:
-    price = betfair_float_to_price(price)
-    order_id = price_to_order_id(price)
-    return BSPOrderBookDelta(
-        bsp_instrument_id,
-        BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-        BookOrder(
-            price=price,
-            size=betfair_float_to_quantity(volume),
-            side=B2N_MARKET_SIDE[side],
-            order_id=order_id,
-        ),
-        ts_event,
-        ts_init,
-    )
-
-
 def runner_change_to_bsp_order_book_deltas(
     rc: RunnerChange,
     instrument_id: InstrumentId,
@@ -484,29 +457,45 @@ def runner_change_to_bsp_order_book_deltas(
     if not (rc.spb or rc.spl):
         return None
     bsp_instrument_id = make_bsp_instrument_id(instrument_id)
-    deltas: list[BSPOrderBookDelta] = []
+    deltas: list[OrderBookDelta] = []
+
     for spb in rc.spb:
-        deltas.append(
-            _create_bsp_order_book_delta(
-                bsp_instrument_id,
-                "spb",
-                spb.price,
-                spb.volume,
-                ts_event,
-                ts_init,
+        side = OrderSide.SELL
+        price = betfair_float_to_price(spb.price)
+        volume = betfair_float_to_quantity(spb.volume)
+        order_id = price_to_order_id(price)
+        delta = OrderBookDelta(
+            bsp_instrument_id,
+            BookAction.DELETE if volume == 0 else BookAction.UPDATE,
+            BookOrder(
+                price=price,
+                size=volume,
+                side=side,
+                order_id=order_id,
             ),
+            ts_event,
+            ts_init,
         )
+        deltas.append(delta)
+
     for spl in rc.spl:
-        deltas.append(
-            _create_bsp_order_book_delta(
-                bsp_instrument_id,
-                "spl",
-                spl.price,
-                spl.volume,
-                ts_event,
-                ts_init,
+        side = OrderSide.BUY
+        price = betfair_float_to_price(spl.price)
+        volume = betfair_float_to_quantity(spl.volume)
+        order_id = price_to_order_id(price)
+        delta = OrderBookDelta(
+            bsp_instrument_id,
+            BookAction.DELETE if volume == 0 else BookAction.UPDATE,
+            BookOrder(
+                price=price,
+                size=volume,
+                side=side,
+                order_id=order_id,
             ),
+            ts_event,
+            ts_init,
         )
+        deltas.append(delta)
 
     return BSPOrderBookDeltas(bsp_instrument_id, deltas)
 

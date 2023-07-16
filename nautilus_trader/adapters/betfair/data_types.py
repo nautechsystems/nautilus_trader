@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import copy
 from enum import Enum
 from typing import Optional
 
@@ -22,14 +22,15 @@ import pyarrow as pa
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.persistence.catalog.parquet.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.persistence.catalog.parquet.serializers import make_dict_serializer
 from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
+from nautilus_trader.serialization.base import register_serializable_object
 
 
 # fmt: on
@@ -47,17 +48,11 @@ class SubscriptionStatus(Enum):
 
 class BSPOrderBookDeltas(OrderBookDeltas):
     """
-    Represents a batch of Betfair BSP order book delta.
-    """
-
-
-class BSPOrderBookDelta(OrderBookDelta):
-    """
     Represents a `Betfair` BSP order book delta.
     """
 
     @staticmethod
-    def from_dict(values) -> "BSPOrderBookDelta":
+    def from_dict(values) -> "BSPOrderBookDeltas":
         PyCondition.not_none(values, "values")
         action: BookAction = book_action_from_str(values["action"])
         if action != BookAction.CLEAR:
@@ -70,7 +65,7 @@ class BSPOrderBookDelta(OrderBookDelta):
             book_order = BookOrder.from_dict(book_dict)
         else:
             book_order = None
-        return BSPOrderBookDelta(
+        return BSPOrderBookDeltas(
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             action=action,
             order=book_order,
@@ -80,7 +75,7 @@ class BSPOrderBookDelta(OrderBookDelta):
 
     @staticmethod
     def to_dict(obj) -> dict:
-        values = OrderBookDelta.to_dict(obj)
+        values = OrderBookDeltas.to_dict(obj)
         values["type"] = obj.__class__.__name__
         return values
 
@@ -223,14 +218,15 @@ register_parquet(
 )
 
 # Register serialization/parquet BSPOrderBookDeltas
-# BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDelta])
-# BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
-#
-# register_serializable_object(
-#     BSPOrderBookDeltas,
-#     BSPOrderBookDeltas.to_dict,
-#     BSPOrderBookDeltas.from_dict,
-# )
+BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDeltas])
+BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDeltas"})
+
+register_serializable_object(
+    BSPOrderBookDeltas,
+    BSPOrderBookDeltas.to_dict,
+    BSPOrderBookDeltas.from_dict,
+)
+
 # register_parquet(
 #     cls=BSPOrderBookDeltas,
 #     serializer=serialize_orderbook,
