@@ -18,7 +18,6 @@ include = ["CVec"]
 rename_variants = "ScreamingSnakeCase"
 
 [export.rename]
-"Ustr" = "uintptr_t"
 "UnixNanos" = "uint64_t"
 "TimedeltaNanos" = "int64_t"
 "TimeEvent" = "TimeEvent_t"
