@@ -150,10 +150,10 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If `False` then will persit as UNIX nanoseconds.
     snapshot_orders : bool, default False
         If order state snapshot lists should be persisted.
-        Snapshots will be taken at every order status transition.
+        Snapshots will be taken at every order state update (when events are applied).
     snapshot_positions : bool, default False
         If position state snapshot lists should be persisted.
-        Snapshots will be taken at position opened, changed and closed.
+        Snapshots will be taken at position opened, changed and closed (when events are applied).
     snapshot_positions_interval : float, optional
         The interval (seconds) at which additional position state snapshots are persisted.
         If ``None`` then no additional snapshots will be taken.
