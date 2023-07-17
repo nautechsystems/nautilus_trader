@@ -406,7 +406,7 @@ class TestOrders:
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -493,7 +493,7 @@ class TestOrders:
             "exec_algorithm_params": b'{"period":60}',
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -605,7 +605,7 @@ class TestOrders:
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -692,7 +692,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": "STOP_LOSS",
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -772,7 +772,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -853,7 +853,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -945,7 +945,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": "STOP_LOSS",
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -1061,7 +1061,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -1113,7 +1113,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -1233,7 +1233,7 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 
@@ -1292,7 +1292,7 @@ class TestOrders:
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
+            "ts_last": None,
             "ts_init": 0,
         }
 

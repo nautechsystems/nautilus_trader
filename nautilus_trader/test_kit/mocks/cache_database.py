@@ -53,8 +53,8 @@ class MockCacheDatabase(CacheDatabase):
         self.accounts: dict[AccountId, Account] = {}
         self.orders: dict[ClientOrderId, Order] = {}
         self.positions: dict[PositionId, Position] = {}
-        self.index_order_position: dict[ClientOrderId, PositionId] = {}
-        self.index_order_client: dict[ClientOrderId, ClientId] = {}
+        self._index_order_position: dict[ClientOrderId, PositionId] = {}
+        self._index_order_client: dict[ClientOrderId, ClientId] = {}
 
     def flush(self) -> None:
         self.general.clear()
@@ -64,8 +64,8 @@ class MockCacheDatabase(CacheDatabase):
         self.accounts.clear()
         self.orders.clear()
         self.positions.clear()
-        self.index_order_position.clear()
-        self.index_order_client.clear()
+        self._index_order_position.clear()
+        self._index_order_client.clear()
 
     def load(self) -> dict:
         return self.general.copy()
@@ -104,10 +104,10 @@ class MockCacheDatabase(CacheDatabase):
         return self.orders.get(client_order_id)
 
     def load_index_order_position(self) -> dict[ClientOrderId, PositionId]:
-        return self.index_order_position
+        return self._index_order_position
 
     def load_index_order_client(self) -> dict[ClientOrderId, ClientId]:
-        return self.index_order_client
+        return self._index_order_client
 
     def load_position(self, position_id: PositionId) -> Optional[Position]:
         return self.positions.get(position_id)
@@ -137,11 +137,14 @@ class MockCacheDatabase(CacheDatabase):
         client_id: Optional[ClientId] = None,
     ) -> None:
         self.orders[order.client_order_id] = order
-        self.index_order_position[order.client_order_id] = position_id
-        self.index_order_client[order.client_order_id] = client_id
+        self._index_order_position[order.client_order_id] = position_id
+        self._index_order_client[order.client_order_id] = client_id
 
     def add_position(self, position: Position) -> None:
         self.positions[position.id] = position
+
+    def index_order_position(self, client_order_id: ClientOrderId, position_id: PositionId) -> None:
+        self._index_order_position[client_order_id] = position_id
 
     def update_account(self, event: Account) -> None:
         pass  # Would persist the event

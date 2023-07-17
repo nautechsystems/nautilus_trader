@@ -60,6 +60,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -102,6 +103,8 @@ cdef class Cache(CacheFacade):
         # Configuration
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
+        self.snapshot_orders = config.snapshot_orders
+        self.snapshot_positions = config.snapshot_positions
 
         # Caches
         self._general: dict[str, bytes] = {}
@@ -890,6 +893,26 @@ cdef class Cache(CacheFacade):
                 )
                 self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
 
+    cdef Money _calculate_unrealized_pnl(self, Position position):
+        ticks = self._quote_ticks.get(position.instrument_id)
+        if not ticks:
+            self._log.warning(
+                f"Cannot calculate unrealized PnL for {position.id!r}, no quotes for {position.instrument_id}",
+            )
+            return None
+
+        cdef QuoteTick quote = ticks[-1]
+
+        cdef Price last
+        if position.side == PositionSide.FLAT:
+            return Money(0.0, position.cost_currency)
+        elif position.side == PositionSide.LONG:
+            last = quote.ask
+        else:
+            last = quote.bid
+
+        return position.unrealized_pnl(last)
+
     cpdef void load_actor(self, Actor actor):
         """
         Load the state dictionary into the given actor.
@@ -1487,6 +1510,8 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.add_order(order, position_id, client_id)
+            if self.snapshot_orders:
+                self._database.snapshot_order(order)
 
         self._log.debug(f"Added {order}.")
 
@@ -1555,6 +1580,8 @@ cdef class Cache(CacheFacade):
 
         # Index: ClientOrderId -> PositionId
         self._index_order_position[client_order_id] = position_id
+        if self._database is not None:
+            self._database.index_order_position(client_order_id, position_id)
 
         # Index: PositionId -> StrategyId
         self._index_position_strategy[position_id] = strategy_id
@@ -1634,6 +1661,11 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.add_position(position)
+            if self.snapshot_positions:
+                self._database.snapshot_position(
+                    position,
+                    self._calculate_unrealized_pnl(position),
+                )
 
     cpdef void snapshot_position(self, Position position):
         """
@@ -1717,6 +1749,8 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.update_order(order)
+            if self.snapshot_orders:
+                self._database.snapshot_order(order)
 
     cpdef void update_position(self, Position position):
         """
@@ -1740,6 +1774,11 @@ cdef class Cache(CacheFacade):
         # Update database
         if self._database is not None:
             self._database.update_position(position)
+            if self.snapshot_positions:
+                self._database.snapshot_position(
+                    position,
+                    self._calculate_unrealized_pnl(position),
+                )
 
     cpdef void update_actor(self, Actor actor):
         """

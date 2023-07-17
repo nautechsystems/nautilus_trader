@@ -71,11 +71,15 @@ cdef class MsgPackSerializer(Serializer):
         """
         Condition.not_none(obj, "obj")
 
-        delegate = _OBJECT_TO_DICT_MAP.get(type(obj).__name__)
-        if delegate is None:
-            raise RuntimeError("cannot serialize object: unrecognized type")
+        cdef dict obj_dict
+        if isinstance(obj, dict):
+            obj_dict = obj
+        else:
+            delegate = _OBJECT_TO_DICT_MAP.get(type(obj).__name__)
+            if delegate is None:
+                raise RuntimeError("cannot serialize object: unrecognized type")
+            obj_dict = delegate(obj)
 
-        cdef dict obj_dict = delegate(obj)
         cdef dict timestamp_kvs = {k: v for k, v in obj_dict.items() if re.match(r"^ts_", k)}
 
         cdef str key
@@ -84,7 +88,8 @@ cdef class MsgPackSerializer(Serializer):
                 obj_dict[key] = pd.Timestamp(value, tz=pytz.utc).isoformat()
         elif self.timestamps_as_str:
             for key, value in timestamp_kvs.items():
-                obj_dict[key] = str(value)
+                if value is not None:
+                    obj_dict[key] = str(value)
 
         return msgpack.encode(obj_dict)
 
@@ -117,6 +122,8 @@ cdef class MsgPackSerializer(Serializer):
             uint64_t value_uint64
         if self.timestamps_as_iso8601 or self.timestamps_as_str:
             for key, value in timestamp_kvs.items():
+                if value is None:
+                    continue
                 if re.match(r"^\d+$", value):  # Check if value is an integer-like string
                     value_uint64 = int(value)
                     obj_dict[key] = value_uint64
@@ -126,6 +133,6 @@ cdef class MsgPackSerializer(Serializer):
 
         delegate = _OBJECT_FROM_DICT_MAP.get(obj_dict["type"])
         if delegate is None:
-            raise RuntimeError("cannot deserialize object: unrecognized type")
+            return obj_dict
 
         return delegate(obj_dict)
