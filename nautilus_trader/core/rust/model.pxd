@@ -359,10 +359,10 @@ cdef extern from "../includes/model.h":
         PriceType price_type;
 
     cdef struct Symbol_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct Venue_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct InstrumentId_t:
         Symbol_t symbol;
@@ -451,7 +451,7 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct TradeId_t:
-        Ustr value;
+        uintptr_t value;
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
@@ -471,13 +471,13 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct TraderId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct StrategyId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct ClientOrderId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct OrderDenied_t:
         TraderId_t trader_id;
@@ -490,25 +490,25 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct AccountId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct ClientId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct ComponentId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct ExecAlgorithmId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct OrderListId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct PositionId_t:
-        Ustr value;
+        uintptr_t value;
 
     cdef struct VenueOrderId_t:
-        Ustr value;
+        uintptr_t value;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying
     # [`SyntheticInstrument`].

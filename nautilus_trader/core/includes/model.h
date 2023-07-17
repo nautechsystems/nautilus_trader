@@ -652,11 +652,11 @@ typedef struct BarSpecification_t {
 } BarSpecification_t;
 
 typedef struct Symbol_t {
-    Ustr value;
+    uintptr_t value;
 } Symbol_t;
 
 typedef struct Venue_t {
-    Ustr value;
+    uintptr_t value;
 } Venue_t;
 
 typedef struct InstrumentId_t {
@@ -822,7 +822,7 @@ typedef struct QuoteTick_t {
 } QuoteTick_t;
 
 typedef struct TradeId_t {
-    Ustr value;
+    uintptr_t value;
 } TradeId_t;
 
 /**
@@ -860,15 +860,15 @@ typedef struct TradeTick_t {
 } TradeTick_t;
 
 typedef struct TraderId_t {
-    Ustr value;
+    uintptr_t value;
 } TraderId_t;
 
 typedef struct StrategyId_t {
-    Ustr value;
+    uintptr_t value;
 } StrategyId_t;
 
 typedef struct ClientOrderId_t {
-    Ustr value;
+    uintptr_t value;
 } ClientOrderId_t;
 
 typedef struct OrderDenied_t {
@@ -883,31 +883,31 @@ typedef struct OrderDenied_t {
 } OrderDenied_t;
 
 typedef struct AccountId_t {
-    Ustr value;
+    uintptr_t value;
 } AccountId_t;
 
 typedef struct ClientId_t {
-    Ustr value;
+    uintptr_t value;
 } ClientId_t;
 
 typedef struct ComponentId_t {
-    Ustr value;
+    uintptr_t value;
 } ComponentId_t;
 
 typedef struct ExecAlgorithmId_t {
-    Ustr value;
+    uintptr_t value;
 } ExecAlgorithmId_t;
 
 typedef struct OrderListId_t {
-    Ustr value;
+    uintptr_t value;
 } OrderListId_t;
 
 typedef struct PositionId_t {
-    Ustr value;
+    uintptr_t value;
 } PositionId_t;
 
 typedef struct VenueOrderId_t {
-    Ustr value;
+    uintptr_t value;
 } VenueOrderId_t;
 
 /**
