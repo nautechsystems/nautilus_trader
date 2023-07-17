@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `Cache` position and order state snapshots (configure via `CacheConfig`)
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
