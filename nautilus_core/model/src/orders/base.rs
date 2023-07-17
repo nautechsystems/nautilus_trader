@@ -418,8 +418,8 @@ impl OrderCore {
                 if self.venue_order_id.is_some()
                     && venue_order_id != self.venue_order_id.as_ref().unwrap()
                 {
-                    self.venue_order_id = Some(venue_order_id.clone());
-                    self.venue_order_ids.push(venue_order_id.clone()); // TODO(cs): Temporary clone
+                    self.venue_order_id = Some(*venue_order_id);
+                    self.venue_order_ids.push(*venue_order_id);
                 }
             }
             None => {}

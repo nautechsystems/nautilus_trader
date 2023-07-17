@@ -1001,10 +1001,6 @@ struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
 
-void bar_type_drop(struct BarType_t bar_type);
-
-struct BarType_t bar_type_clone(const struct BarType_t *bar_type);
-
 uint8_t bar_type_eq(const struct BarType_t *lhs, const struct BarType_t *rhs);
 
 uint8_t bar_type_lt(const struct BarType_t *lhs, const struct BarType_t *rhs);
@@ -1042,10 +1038,6 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
                               uint64_t ts_event,
                               uint64_t ts_init);
 
-void bar_drop(struct Bar_t bar);
-
-struct Bar_t bar_clone(const struct Bar_t *bar);
-
 uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
 uint64_t bar_hash(const struct Bar_t *bar);
@@ -1054,10 +1046,6 @@ uint64_t bar_hash(const struct Bar_t *bar);
  * Returns a [`Bar`] as a C string.
  */
 const char *bar_to_cstr(const struct Bar_t *bar);
-
-void orderbook_delta_drop(struct OrderBookDelta_t delta);
-
-struct OrderBookDelta_t orderbook_delta_clone(const struct OrderBookDelta_t *delta);
 
 struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
                                             enum BookAction action,
@@ -1108,10 +1096,6 @@ struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
-void quote_tick_drop(struct QuoteTick_t tick);
-
-struct QuoteTick_t quote_tick_clone(const struct QuoteTick_t *tick);
-
 uint8_t quote_tick_eq(const struct QuoteTick_t *lhs, const struct QuoteTick_t *rhs);
 
 uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
@@ -1130,10 +1114,6 @@ struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
                                   struct TradeId_t trade_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
-
-void trade_tick_drop(struct TradeTick_t tick);
-
-struct TradeTick_t trade_tick_clone(const struct TradeTick_t *tick);
 
 uint8_t trade_tick_eq(const struct TradeTick_t *lhs, const struct TradeTick_t *rhs);
 

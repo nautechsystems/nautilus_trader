@@ -275,7 +275,7 @@ impl Bar {
 
     #[getter]
     fn bar_type(&self) -> BarType {
-        self.bar_type.clone()
+        self.bar_type
     }
 
     #[getter]

@@ -53,16 +53,6 @@ pub extern "C" fn quote_tick_new(
 }
 
 #[no_mangle]
-pub extern "C" fn quote_tick_drop(tick: QuoteTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn quote_tick_clone(tick: &QuoteTick) -> QuoteTick {
-    tick.clone()
-}
-
-#[no_mangle]
 pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
     u8::from(lhs == rhs)
 }

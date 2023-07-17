@@ -52,16 +52,6 @@ pub extern "C" fn trade_tick_new(
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_drop(tick: TradeTick) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn trade_tick_clone(tick: &TradeTick) -> TradeTick {
-    tick.clone()
-}
-
-#[no_mangle]
 pub extern "C" fn trade_tick_eq(lhs: &TradeTick, rhs: &TradeTick) -> u8 {
     u8::from(lhs == rhs)
 }

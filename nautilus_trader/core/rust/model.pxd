@@ -581,10 +581,6 @@ cdef extern from "../includes/model.h":
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
 
-    void bar_type_drop(BarType_t bar_type);
-
-    BarType_t bar_type_clone(const BarType_t *bar_type);
-
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
     uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
@@ -620,20 +616,12 @@ cdef extern from "../includes/model.h":
                            uint64_t ts_event,
                            uint64_t ts_init);
 
-    void bar_drop(Bar_t bar);
-
-    Bar_t bar_clone(const Bar_t *bar);
-
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
     uint64_t bar_hash(const Bar_t *bar);
 
     # Returns a [`Bar`] as a C string.
     const char *bar_to_cstr(const Bar_t *bar);
-
-    void orderbook_delta_drop(OrderBookDelta_t delta);
-
-    OrderBookDelta_t orderbook_delta_clone(const OrderBookDelta_t *delta);
 
     OrderBookDelta_t orderbook_delta_new(InstrumentId_t instrument_id,
                                          BookAction action,
@@ -680,10 +668,6 @@ cdef extern from "../includes/model.h":
                                uint64_t ts_event,
                                uint64_t ts_init);
 
-    void quote_tick_drop(QuoteTick_t tick);
-
-    QuoteTick_t quote_tick_clone(const QuoteTick_t *tick);
-
     uint8_t quote_tick_eq(const QuoteTick_t *lhs, const QuoteTick_t *rhs);
 
     uint64_t quote_tick_hash(const QuoteTick_t *delta);
@@ -700,10 +684,6 @@ cdef extern from "../includes/model.h":
                                TradeId_t trade_id,
                                uint64_t ts_event,
                                uint64_t ts_init);
-
-    void trade_tick_drop(TradeTick_t tick);
-
-    TradeTick_t trade_tick_clone(const TradeTick_t *tick);
 
     uint8_t trade_tick_eq(const TradeTick_t *lhs, const TradeTick_t *rhs);
 
