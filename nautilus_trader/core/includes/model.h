@@ -632,6 +632,25 @@ typedef struct String String;
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 
+/**
+ * Represents a bar aggregation specification including a step, aggregation
+ * method/rule and price type.
+ */
+typedef struct BarSpecification_t {
+    /**
+     * The step for binning samples for bar aggregation.
+     */
+    uint64_t step;
+    /**
+     * The type of bar aggregation.
+     */
+    uint8_t aggregation;
+    /**
+     * The price type to use for aggregation.
+     */
+    enum PriceType price_type;
+} BarSpecification_t;
+
 typedef struct Symbol_t {
     Ustr value;
 } Symbol_t;
@@ -645,6 +664,25 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
+/**
+ * Represents a bar type including the instrument ID, bar specification and
+ * aggregation source.
+ */
+typedef struct BarType_t {
+    /**
+     * The bar types instrument ID.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The bar types specification.
+     */
+    struct BarSpecification_t spec;
+    /**
+     * The bar types aggregation source.
+     */
+    enum AggregationSource aggregation_source;
+} BarType_t;
+
 typedef struct Price_t {
     int64_t raw;
     uint8_t precision;
@@ -654,6 +692,44 @@ typedef struct Quantity_t {
     uint64_t raw;
     uint8_t precision;
 } Quantity_t;
+
+/**
+ * Represents an aggregated bar.
+ */
+typedef struct Bar_t {
+    /**
+     * The bar type for this bar.
+     */
+    struct BarType_t bar_type;
+    /**
+     * The bars open price.
+     */
+    struct Price_t open;
+    /**
+     * The bars high price.
+     */
+    struct Price_t high;
+    /**
+     * The bars low price.
+     */
+    struct Price_t low;
+    /**
+     * The bars close price.
+     */
+    struct Price_t close;
+    /**
+     * The bars volume.
+     */
+    struct Quantity_t volume;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
+    uint64_t ts_init;
+} Bar_t;
 
 /**
  * Represents an order in a book.
@@ -783,107 +859,6 @@ typedef struct TradeTick_t {
     uint64_t ts_init;
 } TradeTick_t;
 
-/**
- * Represents a bar aggregation specification including a step, aggregation
- * method/rule and price type.
- */
-typedef struct BarSpecification_t {
-    /**
-     * The step for binning samples for bar aggregation.
-     */
-    uint64_t step;
-    /**
-     * The type of bar aggregation.
-     */
-    uint8_t aggregation;
-    /**
-     * The price type to use for aggregation.
-     */
-    enum PriceType price_type;
-} BarSpecification_t;
-
-/**
- * Represents a bar type including the instrument ID, bar specification and
- * aggregation source.
- */
-typedef struct BarType_t {
-    /**
-     * The bar types instrument ID.
-     */
-    struct InstrumentId_t instrument_id;
-    /**
-     * The bar types specification.
-     */
-    struct BarSpecification_t spec;
-    /**
-     * The bar types aggregation source.
-     */
-    enum AggregationSource aggregation_source;
-} BarType_t;
-
-/**
- * Represents an aggregated bar.
- */
-typedef struct Bar_t {
-    /**
-     * The bar type for this bar.
-     */
-    struct BarType_t bar_type;
-    /**
-     * The bars open price.
-     */
-    struct Price_t open;
-    /**
-     * The bars high price.
-     */
-    struct Price_t high;
-    /**
-     * The bars low price.
-     */
-    struct Price_t low;
-    /**
-     * The bars close price.
-     */
-    struct Price_t close;
-    /**
-     * The bars volume.
-     */
-    struct Quantity_t volume;
-    /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
-     */
-    uint64_t ts_event;
-    /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
-     */
-    uint64_t ts_init;
-} Bar_t;
-
-typedef enum Data_t_Tag {
-    DELTA,
-    QUOTE,
-    TRADE,
-    BAR,
-} Data_t_Tag;
-
-typedef struct Data_t {
-    Data_t_Tag tag;
-    union {
-        struct {
-            struct OrderBookDelta_t delta;
-        };
-        struct {
-            struct QuoteTick_t quote;
-        };
-        struct {
-            struct TradeTick_t trade;
-        };
-        struct {
-            struct Bar_t bar;
-        };
-    };
-} Data_t;
-
 typedef struct TraderId_t {
     Ustr value;
 } TraderId_t;
@@ -995,10 +970,6 @@ typedef struct Money_t {
  * Sentinel Price for errors.
  */
 #define ERROR_PRICE (Price_t){ .raw = INT64_MAX, .precision = 0 }
-
-void data_drop(struct Data_t data);
-
-struct Data_t data_clone(const struct Data_t *data);
 
 struct BarSpecification_t bar_specification_new(uint64_t step,
                                                 uint8_t aggregation,
@@ -1491,7 +1462,7 @@ struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
 uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
 
-struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const struct Venue_t *venue);
+struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

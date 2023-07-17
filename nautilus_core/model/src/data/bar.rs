@@ -34,7 +34,7 @@ use crate::{
 /// Represents a bar aggregation specification including a step, aggregation
 /// method/rule and price type.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 #[pyclass]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
@@ -54,7 +54,7 @@ impl Display for BarSpecification {
 /// Represents a bar type including the instrument ID, bar specification and
 /// aggregation source.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[pyclass]
 pub struct BarType {
     /// The bar types instrument ID.
@@ -162,7 +162,7 @@ impl<'de> Deserialize<'de> for BarType {
 
 /// Represents an aggregated bar.
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[pyclass]
 pub struct Bar {

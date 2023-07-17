@@ -16,10 +16,9 @@
 use std::{
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    sync::Arc,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
 

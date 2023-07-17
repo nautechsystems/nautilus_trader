@@ -14,14 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
 

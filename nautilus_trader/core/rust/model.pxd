@@ -348,6 +348,16 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument:
         pass
 
+    # Represents a bar aggregation specification including a step, aggregation
+    # method/rule and price type.
+    cdef struct BarSpecification_t:
+        # The step for binning samples for bar aggregation.
+        uint64_t step;
+        # The type of bar aggregation.
+        uint8_t aggregation;
+        # The price type to use for aggregation.
+        PriceType price_type;
+
     cdef struct Symbol_t:
         Ustr value;
 
@@ -358,6 +368,16 @@ cdef extern from "../includes/model.h":
         Symbol_t symbol;
         Venue_t venue;
 
+    # Represents a bar type including the instrument ID, bar specification and
+    # aggregation source.
+    cdef struct BarType_t:
+        # The bar types instrument ID.
+        InstrumentId_t instrument_id;
+        # The bar types specification.
+        BarSpecification_t spec;
+        # The bar types aggregation source.
+        AggregationSource aggregation_source;
+
     cdef struct Price_t:
         int64_t raw;
         uint8_t precision;
@@ -365,6 +385,25 @@ cdef extern from "../includes/model.h":
     cdef struct Quantity_t:
         uint64_t raw;
         uint8_t precision;
+
+    # Represents an aggregated bar.
+    cdef struct Bar_t:
+        # The bar type for this bar.
+        BarType_t bar_type;
+        # The bars open price.
+        Price_t open;
+        # The bars high price.
+        Price_t high;
+        # The bars low price.
+        Price_t low;
+        # The bars close price.
+        Price_t close;
+        # The bars volume.
+        Quantity_t volume;
+        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the data object was initialized.
+        uint64_t ts_init;
 
     # Represents an order in a book.
     cdef struct BookOrder_t:
@@ -430,58 +469,6 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         #  The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
-
-    # Represents a bar aggregation specification including a step, aggregation
-    # method/rule and price type.
-    cdef struct BarSpecification_t:
-        # The step for binning samples for bar aggregation.
-        uint64_t step;
-        # The type of bar aggregation.
-        uint8_t aggregation;
-        # The price type to use for aggregation.
-        PriceType price_type;
-
-    # Represents a bar type including the instrument ID, bar specification and
-    # aggregation source.
-    cdef struct BarType_t:
-        # The bar types instrument ID.
-        InstrumentId_t instrument_id;
-        # The bar types specification.
-        BarSpecification_t spec;
-        # The bar types aggregation source.
-        AggregationSource aggregation_source;
-
-    # Represents an aggregated bar.
-    cdef struct Bar_t:
-        # The bar type for this bar.
-        BarType_t bar_type;
-        # The bars open price.
-        Price_t open;
-        # The bars high price.
-        Price_t high;
-        # The bars low price.
-        Price_t low;
-        # The bars close price.
-        Price_t close;
-        # The bars volume.
-        Quantity_t volume;
-        # The UNIX timestamp (nanoseconds) when the data event occurred.
-        uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the data object was initialized.
-        uint64_t ts_init;
-
-    cpdef enum Data_t_Tag:
-        DELTA,
-        QUOTE,
-        TRADE,
-        BAR,
-
-    cdef struct Data_t:
-        Data_t_Tag tag;
-        OrderBookDelta_t delta;
-        QuoteTick_t quote;
-        TradeTick_t trade;
-        Bar_t bar;
 
     cdef struct TraderId_t:
         Ustr value;
@@ -570,10 +557,6 @@ cdef extern from "../includes/model.h":
 
     # Sentinel Price for errors.
     const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }
-
-    void data_drop(Data_t data);
-
-    Data_t data_clone(const Data_t *data);
 
     BarSpecification_t bar_specification_new(uint64_t step,
                                              uint8_t aggregation,
@@ -985,7 +968,7 @@ cdef extern from "../includes/model.h":
 
     uint64_t exec_algorithm_id_hash(const ExecAlgorithmId_t *id);
 
-    InstrumentId_t instrument_id_new(const Symbol_t *symbol, const Venue_t *venue);
+    InstrumentId_t instrument_id_new(Symbol_t symbol, Venue_t venue);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

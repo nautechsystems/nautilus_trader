@@ -72,13 +72,3 @@ impl From<Bar> for Data {
         Self::Bar(value)
     }
 }
-
-#[no_mangle]
-pub extern "C" fn data_drop(data: Data) {
-    drop(data); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn data_clone(data: &Data) -> Data {
-    data.clone()
-}

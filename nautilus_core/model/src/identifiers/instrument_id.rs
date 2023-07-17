@@ -105,9 +105,7 @@ impl<'de> Deserialize<'de> for InstrumentId {
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
-pub extern "C" fn instrument_id_new(symbol: &Symbol, venue: &Venue) -> InstrumentId {
-    let symbol = symbol.clone();
-    let venue = venue.clone();
+pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentId {
     InstrumentId::new(symbol, venue)
 }
 
