@@ -23,14 +23,15 @@ use std::{
 
 use nautilus_core::{correctness, string::str_to_cstr};
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct Venue {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
 }
 
 impl Venue {
@@ -39,7 +40,7 @@ impl Venue {
         correctness::valid_string(s, "`Venue` value");
 
         Self {
-            value: Box::new(Arc::new(s.to_string())),
+            value: Ustr::from(s),
         }
     }
 
@@ -49,14 +50,14 @@ impl Venue {
     }
 
     pub fn is_synthetic(&self) -> bool {
-        self.value.as_ref().as_str() == SYNTHETIC_VENUE
+        self.value.as_str() == SYNTHETIC_VENUE
     }
 }
 
 impl Default for Venue {
     fn default() -> Self {
         Self {
-            value: Box::new(Arc::new(String::from("SIM"))),
+            value: Ustr::from("SIM"),
         }
     }
 }
@@ -87,32 +88,8 @@ pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
 }
 
 #[no_mangle]
-pub extern "C" fn venue_clone(venue: &Venue) -> Venue {
-    venue.clone()
-}
-
-/// Frees the memory for the given `venue` by dropping.
-#[no_mangle]
-pub extern "C" fn venue_drop(venue: Venue) {
-    drop(venue); // Memory freed here
-}
-
-/// Returns a [`Venue`] identifier as a C string pointer.
-#[no_mangle]
-pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
-    str_to_cstr(&venue.value)
-}
-
-#[no_mangle]
-pub extern "C" fn venue_eq(lhs: &Venue, rhs: &Venue) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
-    let mut h = DefaultHasher::new();
-    venue.hash(&mut h);
-    h.finish()
+pub extern "C" fn venue_hash(id: &Venue) -> u64 {
+    id.value.precomputed_hash()
 }
 
 #[no_mangle]
@@ -126,26 +103,11 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::Venue;
-    use crate::identifiers::venue::venue_drop;
-
-    #[test]
-    fn test_equality() {
-        let venue1 = Venue::new("BINANCE");
-        let venue2 = Venue::new("IDEALPRO");
-        assert_eq!(venue1, venue1);
-        assert_ne!(venue1, venue2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let venue = Venue::new("BINANCE");
         assert_eq!(venue.to_string(), "BINANCE");
         assert_eq!(format!("{venue}"), "BINANCE");
-    }
-
-    #[test]
-    fn test_venue_drop() {
-        let id = Venue::new("BINANCE");
-        venue_drop(id); // No panic
     }
 }

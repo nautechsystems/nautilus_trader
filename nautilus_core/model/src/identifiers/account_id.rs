@@ -52,13 +52,13 @@ impl Default for AccountId {
 
 impl Debug for AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value.as_str())
+        write!(f, "{:?}", self.value)
     }
 }
 
 impl Display for AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value.as_str())
+        write!(f, "{}", self.value)
     }
 }
 

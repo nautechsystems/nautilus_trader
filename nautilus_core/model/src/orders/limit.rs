@@ -179,7 +179,7 @@ impl Order for LimitOrder {
     }
 
     fn account_id(&self) -> Option<AccountId> {
-        self.account_id.clone()
+        self.account_id
     }
 
     fn last_trade_id(&self) -> Option<TradeId> {

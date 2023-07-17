@@ -19,12 +19,12 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct ClientId {
     pub value: Ustr,
@@ -43,13 +43,13 @@ impl ClientId {
 
 impl Debug for ClientId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value.as_str())
+        write!(f, "{:?}", self.value)
     }
 }
 
 impl Display for ClientId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value.as_str())
+        write!(f, "{}", self.value)
     }
 }
 

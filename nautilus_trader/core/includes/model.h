@@ -633,11 +633,11 @@ typedef struct String String;
 typedef struct SyntheticInstrument SyntheticInstrument;
 
 typedef struct Symbol_t {
-    struct Arc_String *value;
+    Ustr value;
 } Symbol_t;
 
 typedef struct Venue_t {
-    struct Arc_String *value;
+    Ustr value;
 } Venue_t;
 
 typedef struct InstrumentId_t {
@@ -746,7 +746,7 @@ typedef struct QuoteTick_t {
 } QuoteTick_t;
 
 typedef struct TradeId_t {
-    struct Arc_String *value;
+    Ustr value;
 } TradeId_t;
 
 /**
@@ -885,15 +885,15 @@ typedef struct Data_t {
 } Data_t;
 
 typedef struct TraderId_t {
-    struct Arc_String *value;
+    Ustr value;
 } TraderId_t;
 
 typedef struct StrategyId_t {
-    struct Arc_String *value;
+    Ustr value;
 } StrategyId_t;
 
 typedef struct ClientOrderId_t {
-    struct Arc_String *value;
+    Ustr value;
 } ClientOrderId_t;
 
 typedef struct OrderDenied_t {
@@ -916,23 +916,23 @@ typedef struct ClientId_t {
 } ClientId_t;
 
 typedef struct ComponentId_t {
-    struct Arc_String *value;
+    Ustr value;
 } ComponentId_t;
 
 typedef struct ExecAlgorithmId_t {
-    struct Arc_String *value;
+    Ustr value;
 } ExecAlgorithmId_t;
 
 typedef struct OrderListId_t {
-    struct Arc_String *value;
+    Ustr value;
 } OrderListId_t;
 
 typedef struct PositionId_t {
-    struct Arc_String *value;
+    Ustr value;
 } PositionId_t;
 
 typedef struct VenueOrderId_t {
-    struct Arc_String *value;
+    Ustr value;
 } VenueOrderId_t;
 
 /**
@@ -1467,21 +1467,7 @@ uint64_t client_id_hash(const struct ClientId_t *id);
  */
 struct ClientOrderId_t client_order_id_new(const char *ptr);
 
-struct ClientOrderId_t client_order_id_clone(const struct ClientOrderId_t *client_order_id);
-
-/**
- * Frees the memory for the given `client_order_id` by dropping.
- */
-void client_order_id_drop(struct ClientOrderId_t client_order_id);
-
-/**
- * Returns a [`ClientOrderId`] as a C string pointer.
- */
-const char *client_order_id_to_cstr(const struct ClientOrderId_t *client_order_id);
-
-uint8_t client_order_id_eq(const struct ClientOrderId_t *lhs, const struct ClientOrderId_t *rhs);
-
-uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
+uint64_t client_order_id_hash(const struct ClientOrderId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1492,21 +1478,7 @@ uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
  */
 struct ComponentId_t component_id_new(const char *ptr);
 
-struct ComponentId_t component_id_clone(const struct ComponentId_t *component_id);
-
-/**
- * Frees the memory for the given `component_id` by dropping.
- */
-void component_id_drop(struct ComponentId_t component_id);
-
-/**
- * Returns a [`ComponentId`] identifier as a C string pointer.
- */
-const char *component_id_to_cstr(const struct ComponentId_t *component_id);
-
-uint8_t component_id_eq(const struct ComponentId_t *lhs, const struct ComponentId_t *rhs);
-
-uint64_t component_id_hash(const struct ComponentId_t *component_id);
+uint64_t component_id_hash(const struct ComponentId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1517,22 +1489,7 @@ uint64_t component_id_hash(const struct ComponentId_t *component_id);
  */
 struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
-struct ExecAlgorithmId_t exec_algorithm_id_clone(const struct ExecAlgorithmId_t *exec_algorithm_id);
-
-/**
- * Frees the memory for the given `exec_algorithm_id` by dropping.
- */
-void exec_algorithm_id_drop(struct ExecAlgorithmId_t exec_algorithm_id);
-
-/**
- * Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
- */
-const char *exec_algorithm_id_to_cstr(const struct ExecAlgorithmId_t *exec_algorithm_id);
-
-uint8_t exec_algorithm_id_eq(const struct ExecAlgorithmId_t *lhs,
-                             const struct ExecAlgorithmId_t *rhs);
-
-uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *exec_algorithm_id);
+uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
 
 struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const struct Venue_t *venue);
 
@@ -1545,19 +1502,10 @@ struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const str
  */
 struct InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
 
-struct InstrumentId_t instrument_id_clone(const struct InstrumentId_t *instrument_id);
-
-/**
- * Frees the memory for the given `instrument_id` by dropping.
- */
-void instrument_id_drop(struct InstrumentId_t instrument_id);
-
 /**
  * Returns an [`InstrumentId`] as a C string pointer.
  */
 const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
-
-uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct InstrumentId_t *rhs);
 
 uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
 
@@ -1572,21 +1520,7 @@ uint8_t instrument_id_is_synthetic(const struct InstrumentId_t *instrument_id);
  */
 struct OrderListId_t order_list_id_new(const char *ptr);
 
-struct OrderListId_t order_list_id_clone(const struct OrderListId_t *order_list_id);
-
-/**
- * Frees the memory for the given `order_list_id` by dropping.
- */
-void order_list_id_drop(struct OrderListId_t order_list_id);
-
-/**
- * Returns an [`OrderListId`] as a C string pointer.
- */
-const char *order_list_id_to_cstr(const struct OrderListId_t *order_list_id);
-
-uint8_t order_list_id_eq(const struct OrderListId_t *lhs, const struct OrderListId_t *rhs);
-
-uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
+uint64_t order_list_id_hash(const struct OrderListId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1597,21 +1531,7 @@ uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
  */
 struct PositionId_t position_id_new(const char *ptr);
 
-struct PositionId_t position_id_clone(const struct PositionId_t *position_id);
-
-/**
- * Frees the memory for the given `position_id` by dropping.
- */
-void position_id_drop(struct PositionId_t position_id);
-
-/**
- * Returns a [`PositionId`] identifier as a C string pointer.
- */
-const char *position_id_to_cstr(const struct PositionId_t *position_id);
-
-uint8_t position_id_eq(const struct PositionId_t *lhs, const struct PositionId_t *rhs);
-
-uint64_t position_id_hash(const struct PositionId_t *position_id);
+uint64_t position_id_hash(const struct PositionId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1622,18 +1542,6 @@ uint64_t position_id_hash(const struct PositionId_t *position_id);
  */
 struct StrategyId_t strategy_id_new(const char *ptr);
 
-struct StrategyId_t strategy_id_clone(const struct StrategyId_t *strategy_id);
-
-/**
- * Frees the memory for the given `strategy_id` by dropping.
- */
-void strategy_id_drop(struct StrategyId_t strategy_id);
-
-/**
- * Returns a [`StrategyId`] as a C string pointer.
- */
-const char *strategy_id_to_cstr(const struct StrategyId_t *strategy_id);
-
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
@@ -1643,21 +1551,7 @@ const char *strategy_id_to_cstr(const struct StrategyId_t *strategy_id);
  */
 struct Symbol_t symbol_new(const char *ptr);
 
-struct Symbol_t symbol_clone(const struct Symbol_t *symbol);
-
-/**
- * Frees the memory for the given [Symbol] by dropping.
- */
-void symbol_drop(struct Symbol_t symbol);
-
-/**
- * Returns a [`Symbol`] as a C string pointer.
- */
-const char *symbol_to_cstr(const struct Symbol_t *symbol);
-
-uint8_t symbol_eq(const struct Symbol_t *lhs, const struct Symbol_t *rhs);
-
-uint64_t symbol_hash(const struct Symbol_t *symbol);
+uint64_t symbol_hash(const struct Symbol_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1668,21 +1562,7 @@ uint64_t symbol_hash(const struct Symbol_t *symbol);
  */
 struct TradeId_t trade_id_new(const char *ptr);
 
-struct TradeId_t trade_id_clone(const struct TradeId_t *trade_id);
-
-/**
- * Frees the memory for the given `trade_id` by dropping.
- */
-void trade_id_drop(struct TradeId_t trade_id);
-
-/**
- * Returns [`TradeId`] as a C string pointer.
- */
-const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
-
-uint8_t trade_id_eq(const struct TradeId_t *lhs, const struct TradeId_t *rhs);
-
-uint64_t trade_id_hash(const struct TradeId_t *trade_id);
+uint64_t trade_id_hash(const struct TradeId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1693,18 +1573,6 @@ uint64_t trade_id_hash(const struct TradeId_t *trade_id);
  */
 struct TraderId_t trader_id_new(const char *ptr);
 
-struct TraderId_t trader_id_clone(const struct TraderId_t *trader_id);
-
-/**
- * Frees the memory for the given `trader_id` by dropping.
- */
-void trader_id_drop(struct TraderId_t trader_id);
-
-/**
- * Returns a [`TraderId`] as a C string pointer.
- */
-const char *trader_id_to_cstr(const struct TraderId_t *trader_id);
-
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
@@ -1714,21 +1582,7 @@ const char *trader_id_to_cstr(const struct TraderId_t *trader_id);
  */
 struct Venue_t venue_new(const char *ptr);
 
-struct Venue_t venue_clone(const struct Venue_t *venue);
-
-/**
- * Frees the memory for the given `venue` by dropping.
- */
-void venue_drop(struct Venue_t venue);
-
-/**
- * Returns a [`Venue`] identifier as a C string pointer.
- */
-const char *venue_to_cstr(const struct Venue_t *venue);
-
-uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
-
-uint64_t venue_hash(const struct Venue_t *venue);
+uint64_t venue_hash(const struct Venue_t *id);
 
 uint8_t venue_is_synthetic(const struct Venue_t *venue);
 
@@ -1741,18 +1595,7 @@ uint8_t venue_is_synthetic(const struct Venue_t *venue);
  */
 struct VenueOrderId_t venue_order_id_new(const char *ptr);
 
-struct VenueOrderId_t venue_order_id_clone(const struct VenueOrderId_t *venue_order_id);
-
-/**
- * Frees the memory for the given `venue_order_id` by dropping.
- */
-void venue_order_id_drop(struct VenueOrderId_t venue_order_id);
-
-const char *venue_order_id_to_cstr(const struct VenueOrderId_t *venue_order_id);
-
-uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOrderId_t *rhs);
-
-uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
+uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
 
 /**
  * # Safety

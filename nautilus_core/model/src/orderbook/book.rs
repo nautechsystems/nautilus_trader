@@ -273,10 +273,7 @@ impl OrderBook {
 
         ask_levels.reverse();
 
-        let levels: Vec<(&BookPrice, &Level)> = ask_levels
-            .into_iter()
-            .chain(bid_levels.into_iter())
-            .collect();
+        let levels: Vec<(&BookPrice, &Level)> = ask_levels.into_iter().chain(bid_levels).collect();
 
         let data: Vec<OrderLevelDisplay> = levels
             .iter()

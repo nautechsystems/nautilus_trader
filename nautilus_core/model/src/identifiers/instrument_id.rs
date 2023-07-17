@@ -29,7 +29,7 @@ use thiserror;
 use crate::identifiers::{symbol::Symbol, venue::Venue};
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[pyclass]
 pub struct InstrumentId {
     pub symbol: Symbol,
@@ -121,26 +121,10 @@ pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> Inst
     InstrumentId::from_str(cstr_to_string(ptr).as_str()).unwrap()
 }
 
-#[no_mangle]
-pub extern "C" fn instrument_id_clone(instrument_id: &InstrumentId) -> InstrumentId {
-    instrument_id.clone()
-}
-
-/// Frees the memory for the given `instrument_id` by dropping.
-#[no_mangle]
-pub extern "C" fn instrument_id_drop(instrument_id: InstrumentId) {
-    drop(instrument_id); // Memory freed here
-}
-
 /// Returns an [`InstrumentId`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
     str_to_cstr(&instrument_id.to_string())
-}
-
-#[no_mangle]
-pub extern "C" fn instrument_id_eq(lhs: &InstrumentId, rhs: &InstrumentId) -> u8 {
-    u8::from(lhs == rhs)
 }
 
 #[no_mangle]
@@ -163,9 +147,7 @@ mod tests {
     use std::{ffi::CStr, str::FromStr};
 
     use super::InstrumentId;
-    use crate::identifiers::instrument_id::{
-        instrument_id_drop, instrument_id_to_cstr, InstrumentIdParseError,
-    };
+    use crate::identifiers::instrument_id::{instrument_id_to_cstr, InstrumentIdParseError};
 
     #[test]
     fn test_instrument_id_parse_success() {
@@ -202,14 +184,6 @@ mod tests {
     }
 
     #[test]
-    fn test_equality() {
-        let id1 = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
-        let id2 = InstrumentId::from_str("XBT/USD.BITMEX").unwrap();
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
-
-    #[test]
     fn test_string_reprs() {
         let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
@@ -223,12 +197,5 @@ mod tests {
             let result = instrument_id_to_cstr(&id);
             assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
         }
-    }
-
-    #[test]
-    fn test_instrument_id_drop() {
-        let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
-
-        instrument_id_drop(id); // No panic
     }
 }
