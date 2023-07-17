@@ -46,7 +46,7 @@ impl CVec {
         Self {
             // Explicitly type cast the pointer to some type to satisfy the
             // compiler. Since the pointer is null it works for any type.
-            ptr: null() as *const bool as *mut c_void,
+            ptr: null::<bool>() as *mut c_void,
             len: 0,
             cap: 0,
         }

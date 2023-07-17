@@ -503,10 +503,10 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct AccountId_t:
-        Arc_String *value;
+        Ustr value;
 
     cdef struct ClientId_t:
-        Arc_String *value;
+        Ustr value;
 
     cdef struct ComponentId_t:
         Arc_String *value;
@@ -947,17 +947,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     AccountId_t account_id_new(const char *ptr);
 
-    AccountId_t account_id_clone(const AccountId_t *account_id);
-
-    # Frees the memory for the given `account_id` by dropping.
-    void account_id_drop(AccountId_t account_id);
-
-    # Returns an [`AccountId`] as a C string pointer.
-    const char *account_id_to_cstr(const AccountId_t *account_id);
-
-    uint8_t account_id_eq(const AccountId_t *lhs, const AccountId_t *rhs);
-
-    uint64_t account_id_hash(const AccountId_t *account_id);
+    uint64_t account_id_hash(const AccountId_t *id);
 
     # Returns a Nautilus identifier from C string pointer.
     #
@@ -966,17 +956,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     ClientId_t client_id_new(const char *ptr);
 
-    ClientId_t client_id_clone(const ClientId_t *client_id);
-
-    # Frees the memory for the given `client_id` by dropping.
-    void client_id_drop(ClientId_t client_id);
-
-    # Returns a [`ClientId`] identifier as a C string pointer.
-    const char *client_id_to_cstr(const ClientId_t *client_id);
-
-    uint8_t client_id_eq(const ClientId_t *lhs, const ClientId_t *rhs);
-
-    uint64_t client_id_hash(const ClientId_t *client_id);
+    uint64_t client_id_hash(const ClientId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

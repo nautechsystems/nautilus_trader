@@ -14,21 +14,20 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct AccountId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
 }
 
 impl AccountId {
@@ -38,7 +37,7 @@ impl AccountId {
         correctness::string_contains(s, "-", "`TraderId` value");
 
         Self {
-            value: Box::new(Arc::new(s.to_string())),
+            value: Ustr::from(s),
         }
     }
 }
@@ -46,20 +45,20 @@ impl AccountId {
 impl Default for AccountId {
     fn default() -> Self {
         Self {
-            value: Box::new(Arc::new(String::from("SIM-001"))),
+            value: Ustr::from("SIM-001"),
         }
     }
 }
 
 impl Debug for AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.value)
+        write!(f, "{:?}", self.value.as_str())
     }
 }
 
 impl Display for AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.value.as_str())
     }
 }
 
@@ -77,32 +76,8 @@ pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
 }
 
 #[no_mangle]
-pub extern "C" fn account_id_clone(account_id: &AccountId) -> AccountId {
-    account_id.clone()
-}
-
-/// Frees the memory for the given `account_id` by dropping.
-#[no_mangle]
-pub extern "C" fn account_id_drop(account_id: AccountId) {
-    drop(account_id); // Memory freed here
-}
-
-/// Returns an [`AccountId`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn account_id_to_cstr(account_id: &AccountId) -> *const c_char {
-    str_to_cstr(&account_id.value)
-}
-
-#[no_mangle]
-pub extern "C" fn account_id_eq(lhs: &AccountId, rhs: &AccountId) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn account_id_hash(account_id: &AccountId) -> u64 {
-    let mut h = DefaultHasher::new();
-    account_id.hash(&mut h);
-    h.finish()
+pub extern "C" fn account_id_hash(id: &AccountId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -129,26 +104,11 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_new() {
-        let s = "IB-U123456789";
-        let account_id = AccountId::new(s);
-        assert_eq!(account_id.value.as_str(), s);
-    }
-
-    #[test]
     fn test_account_id_fmt() {
         let s = "IB-U123456789";
         let account_id = AccountId::new(s);
         let formatted = format!("{account_id}");
         assert_eq!(formatted, s);
-    }
-
-    #[test]
-    fn test_equality() {
-        let id1 = AccountId::new("IB-123456789");
-        let id2 = AccountId::new("IB-234567890");
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
     }
 
     #[test]
@@ -158,63 +118,14 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_drop_c() {
-        let id = AccountId::new("IB-1234567890");
-        account_id_drop(id); // No panic
-    }
-
-    #[test]
-    fn test_account_id_new_c() {
-        let s = "IB-U123456789";
-        let c_string = CString::new(s).unwrap();
-        let ptr = c_string.as_ptr();
-        let account_id = unsafe { account_id_new(ptr) };
-        assert_eq!(account_id.value.as_ref().as_str(), s);
-    }
-
-    #[test]
-    fn test_account_id_clone_c() {
-        let s = "IB-U123456789";
-        let c_string = CString::new(s).unwrap();
-        let ptr = c_string.as_ptr();
-        let account_id = unsafe { account_id_new(ptr) };
-        let cloned_account_id = account_id_clone(&account_id);
-        assert_eq!(cloned_account_id.value.as_ref().as_str(), s);
-    }
-
-    #[test]
     fn test_account_id_to_cstr_c() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
         let account_id = unsafe { account_id_new(ptr) };
-        let cstr_ptr = account_id_to_cstr(&account_id);
+        let cstr_ptr = account_id.value.as_char_ptr();
         let c_str = unsafe { CStr::from_ptr(cstr_ptr) };
         assert_eq!(c_str.to_str().unwrap(), s);
-    }
-
-    #[test]
-    fn test_account_id_eq_c() {
-        let s1 = "IB-U123456789";
-        let c_string1 = CString::new(s1).unwrap();
-        let ptr1 = c_string1.as_ptr();
-        let account_id1 = unsafe { account_id_new(ptr1) };
-
-        let s2 = "IB-U123456789";
-        let c_string2 = CString::new(s2).unwrap();
-        let ptr2 = c_string2.as_ptr();
-        let account_id2 = unsafe { account_id_new(ptr2) };
-
-        let result1 = account_id_eq(&account_id1, &account_id2);
-
-        let s3 = "IB-U993456789";
-        let c_string3 = CString::new(s3).unwrap();
-        let ptr3 = c_string3.as_ptr();
-        let account_id3 = unsafe { account_id_new(ptr3) };
-
-        let result2 = account_id_eq(&account_id1, &account_id3);
-        assert_eq!(result1, 1);
-        assert_eq!(result2, 0);
     }
 
     #[test]
