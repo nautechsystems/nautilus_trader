@@ -273,7 +273,7 @@ cdef class MarketIfTouchedOrder(Order):
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
             "client_order_id": self.client_order_id.to_str(),
-            "venue_order_id": self.venue_order_id if self.venue_order_id is not None else None,
+            "venue_order_id": self.venue_order_id.to_str() if self.venue_order_id is not None else None,
             "position_id": self.position_id.to_str() if self.position_id is not None else None,
             "account_id": self.account_id.to_str() if self.account_id is not None else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id is not None else None,

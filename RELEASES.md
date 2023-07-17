@@ -28,6 +28,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
 - Fixed race condition on `OrderFactory` order identifiers generation
+- Fixed dictionary representation of orders for `venue_order_id` (for three order types)
 - Fixed `Currency` registration with core global map on creation
 - Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
 - Fixed assignment of position IDs for contingency orders (when parent filled)
