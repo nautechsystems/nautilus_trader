@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <Python.h>
 
+typedef struct Arc_String Arc_String;
+
 /**
  * `CVec` is a C compatible struct that stores an opaque pointer to a block of
  * memory, it's length and the capacity of the vector it was allocated from.
@@ -30,7 +32,7 @@ typedef struct CVec {
 } CVec;
 
 typedef struct UUID4_t {
-    uintptr_t value;
+    struct Arc_String *value;
 } UUID4_t;
 
 void cvec_drop(struct CVec cvec);
@@ -121,6 +123,8 @@ uint64_t unix_timestamp_ns(void);
 struct UUID4_t uuid4_new(void);
 
 struct UUID4_t uuid4_clone(const struct UUID4_t *uuid4);
+
+void uuid4_drop(struct UUID4_t uuid4);
 
 /**
  * Returns a [`UUID4`] from C string pointer.

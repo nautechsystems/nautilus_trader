@@ -17,7 +17,6 @@ rmp-serde.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true
-ustr = "0.10.0"
 
 [features]
 extension-module = ["pyo3/extension-module"]

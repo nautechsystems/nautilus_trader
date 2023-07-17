@@ -4,6 +4,9 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
+    cdef struct Arc_String:
+        pass
+
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
     # memory, it's length and the capacity of the vector it was allocated from.
     #
@@ -20,7 +23,7 @@ cdef extern from "../includes/core.h":
         uintptr_t cap;
 
     cdef struct UUID4_t:
-        uintptr_t value;
+        Arc_String *value;
 
     void cvec_drop(CVec cvec);
 
@@ -84,6 +87,8 @@ cdef extern from "../includes/core.h":
     UUID4_t uuid4_new();
 
     UUID4_t uuid4_clone(const UUID4_t *uuid4);
+
+    void uuid4_drop(UUID4_t uuid4);
 
     # Returns a [`UUID4`] from C string pointer.
     #

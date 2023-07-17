@@ -29,10 +29,10 @@ use crate::{
         OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
         strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId, AccountIdTag, Identifier,
+        venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -117,7 +117,7 @@ pub trait Order {
     fn client_order_id(&self) -> ClientOrderId;
     fn venue_order_id(&self) -> Option<VenueOrderId>;
     fn position_id(&self) -> Option<PositionId>;
-    fn account_id(&self) -> Option<Identifier<AccountIdTag>>;
+    fn account_id(&self) -> Option<AccountId>;
     fn last_trade_id(&self) -> Option<TradeId>;
     fn side(&self) -> OrderSide;
     fn order_type(&self) -> OrderType;
@@ -251,7 +251,7 @@ pub struct OrderCore {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub position_id: Option<PositionId>,
-    pub account_id: Option<Identifier<AccountIdTag>>,
+    pub account_id: Option<AccountId>,
     pub last_trade_id: Option<TradeId>,
     pub side: OrderSide,
     pub order_type: OrderType,
@@ -379,7 +379,7 @@ impl OrderCore {
     }
 
     fn submitted(&mut self, event: &OrderSubmitted) {
-        self.account_id = Some(event.account_id)
+        self.account_id = Some(event.account_id.clone())
     }
 
     fn accepted(&mut self, event: &OrderAccepted) {
@@ -622,7 +622,7 @@ mod tests {
     //         .trader_id(TraderId::default())
     //         .strategy_id(StrategyId::default())
     //         .instrument_id(InstrumentId::default())
-    //         .account_id(Identifier<AccountIdTag>::default())
+    //         .account_id(AccountId::default())
     //         .client_order_id(ClientOrderId::default())
     //         .venue_order_id(VenueOrderId::default())
     //         .position_id(None)

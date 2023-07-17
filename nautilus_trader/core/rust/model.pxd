@@ -502,6 +502,9 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    cdef struct AccountId_t:
+        Arc_String *value;
+
     cdef struct ClientId_t:
         Arc_String *value;
 
@@ -937,12 +940,24 @@ cdef extern from "../includes/model.h":
 
     const char *order_denied_reason_to_cstr(const OrderDenied_t *event);
 
-    # Intern a C string pointer
+    # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
-    const char *intern_string(const char *ptr);
+    AccountId_t account_id_new(const char *ptr);
+
+    AccountId_t account_id_clone(const AccountId_t *account_id);
+
+    # Frees the memory for the given `account_id` by dropping.
+    void account_id_drop(AccountId_t account_id);
+
+    # Returns an [`AccountId`] as a C string pointer.
+    const char *account_id_to_cstr(const AccountId_t *account_id);
+
+    uint8_t account_id_eq(const AccountId_t *lhs, const AccountId_t *rhs);
+
+    uint64_t account_id_hash(const AccountId_t *account_id);
 
     # Returns a Nautilus identifier from C string pointer.
     #

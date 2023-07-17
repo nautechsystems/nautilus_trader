@@ -52,6 +52,10 @@ cdef class UUID4:
             # `value` borrowed by Rust, `UUID4_t` owned from Rust
             self._mem = uuid4_from_cstr(pystr_to_cstr(value))
 
+    def __del__(self) -> None:
+        if self._mem.value != NULL:
+            uuid4_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
+
     def __getstate__(self):
         return self.to_str()
 

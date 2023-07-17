@@ -1915,7 +1915,6 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
- "ustr",
  "uuid",
 ]
 
@@ -1949,7 +1948,6 @@ dependencies = [
  "strum 0.25.0",
  "tabled",
  "thiserror",
- "ustr",
 ]
 
 [[package]]
@@ -3635,18 +3633,6 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
-]
-
-[[package]]
-name = "ustr"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b050b13c1933490b043b8238a75bc7676cb49292f49768c9350eabb284eaeb87"
-dependencies = [
- "ahash 0.8.3",
- "byteorder",
- "lazy_static",
- "parking_lot",
 ]
 
 [[package]]

@@ -19,16 +19,18 @@ use std::{
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
     str::FromStr,
+    sync::Arc,
 };
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use ustr::Ustr;
 use uuid::Uuid;
+
+use crate::string::str_to_cstr;
 
 #[repr(C)]
 #[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct UUID4 {
-    pub value: Ustr,
+    pub value: Box<Arc<String>>,
 }
 
 impl UUID4 {
@@ -36,7 +38,7 @@ impl UUID4 {
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
         UUID4 {
-            value: Ustr::from(&uuid.to_string()),
+            value: Box::new(Arc::new(uuid.to_string())),
         }
     }
 }
@@ -47,7 +49,7 @@ impl FromStr for UUID4 {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::parse_str(s).map_err(|_| "Invalid UUID string")?;
         Ok(Self {
-            value: Ustr::from(&uuid.to_string()),
+            value: Box::new(Arc::new(uuid.to_string())),
         })
     }
 }
@@ -102,6 +104,11 @@ pub extern "C" fn uuid4_clone(uuid4: &UUID4) -> UUID4 {
     uuid4.clone()
 }
 
+#[no_mangle]
+pub extern "C" fn uuid4_drop(uuid4: UUID4) {
+    drop(uuid4); // Memory freed here
+}
+
 /// Returns a [`UUID4`] from C string pointer.
 ///
 /// # Safety
@@ -122,7 +129,7 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
 
 #[no_mangle]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
-    uuid.value.as_cstr().to_owned().into_raw()
+    str_to_cstr(&uuid.value)
 }
 
 #[no_mangle]
@@ -205,6 +212,13 @@ mod tests {
         let uuid = UUID4::from(uuid_string);
         let uuid_cloned = uuid4_clone(&uuid);
         assert_eq!(uuid.value.to_string(), uuid_cloned.value.to_string());
+    }
+
+    #[test]
+    fn test_c_api_uuid4_drop() {
+        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
+        let uuid = UUID4::from(uuid_string);
+        uuid4_drop(uuid);
     }
 
     #[test]
