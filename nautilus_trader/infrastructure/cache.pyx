@@ -22,11 +22,13 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport currency_type_from_str
 from nautilus_trader.model.enums_c cimport currency_type_to_str
@@ -45,6 +47,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -73,6 +76,8 @@ cdef str _ACTORS = "actors"
 cdef str _STRATEGIES = "strategies"
 cdef str _INDEX_ORDER_POSITION = "index:order_position"
 cdef str _INDEX_ORDER_CLIENT = "index:order_client"
+cdef str _SNAPSHOTS_ORDERS = "snapshots:orders"
+cdef str _SNAPSHOTS_POSITIONS = "snapshots:positions"
 
 
 cdef class RedisCacheDatabase(CacheDatabase):
@@ -119,7 +124,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if config is None:
             config = CacheDatabaseConfig()
         Condition.type(config, CacheDatabaseConfig, "config")
-        super().__init__(logger)
+        super().__init__(logger, config)
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
@@ -132,8 +137,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
         self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
-        self._key_index_order_position  = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"  # noqa
+
+        self._key_index_order_position = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"  # noqa
         self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"  # noqa
+
+        self._key_snapshots_orders = f"{self._key_trader}:{_SNAPSHOTS_ORDERS}:"  # noqa
+        self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"  # noqa
 
         # Serializers
         self._serializer = serializer
@@ -157,7 +166,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         self._log.debug("Flushing database....")
         self._redis.flushdb()
-        self._log.info("Flushed database.")
+        self._log.info("Flushed database.", LogColor.BLUE)
 
     cpdef dict load(self):
         """
@@ -785,7 +794,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(account.id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added {account}).")
+        self._log.debug(f"Added {account}.")
 
     cpdef void add_order(self, Order order, PositionId position_id = None, ClientId client_id = None):
         """
@@ -813,11 +822,10 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added Order(id={order.client_order_id.to_str()}).")
+        self._log.debug(f"Added {order}.")
 
         if position_id is not None:
-            self._redis.hset(self._key_index_order_position, order.client_order_id.to_str(), position_id.to_str())
-            self._log.debug(f"Indexed {order.client_order_id!r} -> {position_id!r}")
+            self.index_order_position(order.client_order_id, position_id)
         if client_id is not None:
             self._redis.hset(self._key_index_order_client, order.client_order_id.to_str(), client_id.to_str())
             self._log.debug(f"Indexed {order.client_order_id!r} -> {client_id!r}")
@@ -843,7 +851,30 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(position.id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added Position(id={position.id.to_str()}).")
+        self._log.debug(f"Added {position}.")
+
+    cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id):
+        """
+        Add an index entry for the given `client_order_id` to `position_id`.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to index.
+        position_id : PositionId
+            The position ID to index.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+        Condition.not_none(position_id, "position_id")
+
+        self._redis.hset(
+            self._key_index_order_position,
+            client_order_id.to_str(),
+            position_id.to_str(),
+        )
+
+        self._log.debug(f"Indexed {client_order_id!r} -> {position_id!r}")
 
     cpdef void update_actor(self, Actor actor):
         """
@@ -952,3 +983,46 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), serialized_event)
 
         self._log.debug(f"Updated {position}.")
+
+    cpdef void snapshot_order(self, Order order):
+        """
+        Snapshot the state of the given `order`.
+
+        Parameters
+        ----------
+        order : Order
+            The order for the state snapshot.
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef dict order_state = order.to_dict()
+        cdef bytes snapshot_bytes = self._serializer.serialize(order_state)
+
+        self._redis.rpush(self._key_snapshots_orders + order.client_order_id.to_str(), snapshot_bytes)
+
+        self._log.debug(f"Snapshot {order}.")
+
+    cpdef void snapshot_position(self, Position position, Money unrealized_pnl):
+        """
+        Snapshot the state of the given `position`.
+
+        Parameters
+        ----------
+        position : Position
+            The position for the state snapshot.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the state snapshot.
+
+        """
+        Condition.not_none(position, "position")
+
+        cdef dict position_state = position.to_dict()
+
+        if unrealized_pnl is not None:
+            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+
+        cdef bytes snapshot_bytes = self._serializer.serialize(position_state)
+        self._redis.rpush(self._key_snapshots_positions + position.id.to_str(), snapshot_bytes)
+
+        self._log.debug(f"Snapshot {position}.")

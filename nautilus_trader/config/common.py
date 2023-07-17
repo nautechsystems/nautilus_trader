@@ -118,11 +118,27 @@ class CacheConfig(NautilusConfig, frozen=True):
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt
         The maximum length for internal bar dequeues.
+    snapshot_orders : bool, default False
+        If order state snapshot lists should be persisted.
+        Snapshots will be taken at every order state update (when events are applied).
+    snapshot_positions : bool, default False
+        If position state snapshot lists should be persisted.
+        Snapshots will be taken at position opened, changed and closed (when events are applied).
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
+    snapshot_positions_interval : float, optional
+        The interval (seconds) at which additional position state snapshots are persisted.
+        If ``None`` then no additional snapshots will be taken.
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
 
     """
 
     tick_capacity: PositiveInt = 1000
     bar_capacity: PositiveInt = 1000
+    snapshot_orders: bool = False
+    snapshot_positions: bool = False
+    snapshot_positions_interval: Optional[float] = None
 
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
@@ -143,10 +159,11 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         The account password for the database connection.
     ssl : bool, default False
         If database should use an SSL enabled connection.
-    flush : bool, default False
-        If database should be flushed before start.
+    flush_on_start : bool, default False
+        If database should be flushed on start.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
+        If `False` then will persit as UNIX nanoseconds.
 
     """
 
@@ -156,7 +173,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     username: Optional[str] = None
     password: Optional[str] = None
     ssl: bool = False
-    flush: bool = False
+    flush_on_start: bool = False
     timestamps_as_iso8601: bool = False
 
 

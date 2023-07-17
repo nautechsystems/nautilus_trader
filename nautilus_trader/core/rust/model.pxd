@@ -334,6 +334,9 @@ cdef extern from "../includes/model.h":
     cdef struct Arc_String:
         pass
 
+    cdef struct Level:
+        pass
+
     cdef struct OrderBook:
         pass
 
@@ -542,6 +545,17 @@ cdef extern from "../includes/model.h":
     # having to manually access the underlying `OrderBook` instance.
     cdef struct OrderBook_API:
         OrderBook *_0;
+
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+    #
+    # This struct wraps `Level` in a way that makes it compatible with C function
+    # calls, enabling interaction with `Level` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `Level_API` to be
+    # dereferenced to `Level`, providing access to `Level`'s methods without
+    # having to manually acce wss the underlying `Level` instance.
+    cdef struct Level_API:
+        Level *_0;
 
     cdef struct Currency_t:
         Arc_String *code;
@@ -1271,6 +1285,10 @@ cdef extern from "../includes/model.h":
 
     void orderbook_apply_delta(OrderBook_API *book, OrderBookDelta_t delta);
 
+    CVec orderbook_bids(OrderBook_API *book);
+
+    CVec orderbook_asks(OrderBook_API *book);
+
     uint8_t orderbook_has_bid(OrderBook_API *book);
 
     uint8_t orderbook_has_ask(OrderBook_API *book);
@@ -1287,6 +1305,10 @@ cdef extern from "../includes/model.h":
 
     double orderbook_midpoint(OrderBook_API *book);
 
+    double orderbook_get_avg_px_for_quantity(OrderBook_API *book,
+                                             Quantity_t qty,
+                                             OrderSide order_side);
+
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *tick);
 
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
@@ -1299,6 +1321,24 @@ cdef extern from "../includes/model.h":
 
     # Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
     const char *orderbook_pprint_to_cstr(const OrderBook_API *book, uintptr_t num_levels);
+
+    Level_API level_new(OrderSide order_side, Price_t price, CVec orders);
+
+    void level_drop(Level_API level);
+
+    Level_API level_clone(const Level_API *level);
+
+    Price_t level_price(const Level_API *level);
+
+    CVec level_orders(const Level_API *level);
+
+    double level_volume(const Level_API *level);
+
+    double level_exposure(const Level_API *level);
+
+    void vec_levels_drop(CVec v);
+
+    void vec_orders_drop(CVec v);
 
     # Returns a [`Currency`] from pointers and primitives.
     #

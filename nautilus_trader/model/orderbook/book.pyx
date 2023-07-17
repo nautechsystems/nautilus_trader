@@ -27,16 +27,26 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport BookOrder_t
+from nautilus_trader.core.rust.model cimport Level_API
+from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.core.rust.model cimport book_order_from_raw
 from nautilus_trader.core.rust.model cimport instrument_id_clone
+from nautilus_trader.core.rust.model cimport level_clone
+from nautilus_trader.core.rust.model cimport level_drop
+from nautilus_trader.core.rust.model cimport level_exposure
+from nautilus_trader.core.rust.model cimport level_orders
+from nautilus_trader.core.rust.model cimport level_price
+from nautilus_trader.core.rust.model cimport level_volume
 from nautilus_trader.core.rust.model cimport orderbook_add
 from nautilus_trader.core.rust.model cimport orderbook_apply_delta
+from nautilus_trader.core.rust.model cimport orderbook_asks
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_size
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_size
+from nautilus_trader.core.rust.model cimport orderbook_bids
 from nautilus_trader.core.rust.model cimport orderbook_book_type
 from nautilus_trader.core.rust.model cimport orderbook_check_integrity
 from nautilus_trader.core.rust.model cimport orderbook_clear
@@ -46,6 +56,7 @@ from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_delta_clone
 from nautilus_trader.core.rust.model cimport orderbook_drop
+from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_instrument_id
@@ -61,6 +72,8 @@ from nautilus_trader.core.rust.model cimport orderbook_update
 from nautilus_trader.core.rust.model cimport orderbook_update_quote_tick
 from nautilus_trader.core.rust.model cimport orderbook_update_trade_tick
 from nautilus_trader.core.rust.model cimport vec_fills_drop
+from nautilus_trader.core.rust.model cimport vec_levels_drop
+from nautilus_trader.core.rust.model cimport vec_orders_drop
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data.book cimport BookOrder
 from nautilus_trader.model.data.tick cimport TradeTick
@@ -326,6 +339,54 @@ cdef class OrderBook(Data):
         """
         orderbook_check_integrity(&self._mem)
 
+    cpdef list bids(self):
+        """
+        Return the bid levels for the order book.
+
+        Returns
+        -------
+        list[Level]
+            Sorted in descending order of price.
+
+        """
+        cdef CVec raw_levels_vec = orderbook_bids(&self._mem)
+        cdef Level_API* raw_levels = <Level_API*>raw_levels_vec.ptr
+
+        cdef list levels = []
+
+        cdef:
+            uint64_t i
+        for i in range(raw_levels_vec.len):
+            levels.append(Level.from_mem_c(raw_levels[i]))
+
+        vec_levels_drop(raw_levels_vec)
+
+        return levels
+
+    cpdef list asks(self):
+        """
+        Return the bid levels for the order book.
+
+        Returns
+        -------
+        list[Level]
+            Sorted in ascending order of price.
+
+        """
+        cdef CVec raw_levels_vec = orderbook_asks(&self._mem)
+        cdef Level_API* raw_levels = <Level_API*>raw_levels_vec.ptr
+
+        cdef list levels = []
+
+        cdef:
+            uint64_t i
+        for i in range(raw_levels_vec.len):
+            levels.append(Level.from_mem_c(raw_levels[i]))
+
+        vec_levels_drop(raw_levels_vec)
+
+        return levels
+
     cpdef best_bid_price(self):
         """
         Return the best bid price in the book (if no bids then returns ``None``).
@@ -409,6 +470,37 @@ cdef class OrderBook(Data):
             return None
 
         return orderbook_midpoint(&self._mem)
+
+    cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side):
+        """
+        Return the average price expected for the given `quantity` based on the current state
+        of the order book.
+
+        Parameters
+        ----------
+        quantity : Quantity
+            The quantity for the calculation.
+        order_side : OrderSide
+            The order side for the calculation.
+
+        Returns
+        -------
+        double
+
+        Raises
+        ------
+        ValueError
+            If `order_side` is equal to ``NO_ORDER_SIDE``
+
+        Warnings
+        --------
+        If no average price can be calculated then will return 0.0 (zero).
+
+        """
+        Condition.not_none(quantity, "quantity")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+
+        return orderbook_get_avg_px_for_quantity(&self._mem, quantity._mem, order_side)
 
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive):
         """
@@ -497,3 +589,108 @@ cdef class OrderBook(Data):
 
         """
         return cstr_to_pystr(orderbook_pprint_to_cstr(&self._mem, num_levels))
+
+
+cdef class Level:
+    """
+    Represents a read-only order book `Level`.
+
+    A price level on one side of the order book with one or more individual orders.
+
+    Parameters
+    ----------
+    price : Price
+        The price for the level.
+    orders : list[BookOrder]
+        The orders for the level.
+
+    Raises
+    ------
+    ValueError
+        If `orders` is empty.
+    """
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            level_drop(self._mem)
+
+    def __eq__(self, Level other) -> bool:
+        return self.price._mem.raw == other.price._mem.raw
+
+    def __lt__(self, Level other) -> bool:
+        return self.price._mem.raw < other.price._mem.raw
+
+    def __le__(self, Level other) -> bool:
+        return self.price._mem.raw <= other.price._mem.raw
+
+    def __gt__(self, Level other) -> bool:
+        return self.price._mem.raw > other.price._mem.raw
+
+    def __ge__(self, Level other) -> bool:
+        return self.price._mem.raw >= other.price._mem.raw
+
+    def __repr__(self) -> str:
+        return f"Level(price={self.price}, orders={self.orders()})"
+
+    @property
+    def price(self) -> Price:
+        """
+        Return the price for the level.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_mem_c(level_price(&self._mem))
+
+    @staticmethod
+    cdef Level from_mem_c(Level_API mem):
+        cdef Level level = Level.__new__(Level)
+        level._mem = level_clone(&mem)
+        return level
+
+    cpdef list orders(self):
+        """
+        Return the orders for the level.
+
+        Returns
+        -------
+        list[BookOrder]
+
+        """
+        cdef CVec raw_orders_vec = level_orders(&self._mem)
+        cdef BookOrder_t* raw_orders = <BookOrder_t*>raw_orders_vec.ptr
+
+        cdef list book_orders = []
+
+        cdef:
+            uint64_t i
+        for i in range(raw_orders_vec.len):
+            book_orders.append(BookOrder.from_mem_c(raw_orders[i]))
+
+        vec_orders_drop(raw_orders_vec)
+
+        return book_orders
+
+    cpdef double volume(self):
+        """
+        Return the volume at this level.
+
+        Returns
+        -------
+        double
+
+        """
+        return level_volume(&self._mem)
+
+    cpdef double exposure(self):
+        """
+        Return the exposure at this level (price * volume).
+
+        Returns
+        -------
+        double
+
+        """
+        return level_exposure(&self._mem)

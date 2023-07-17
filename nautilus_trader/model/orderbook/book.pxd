@@ -17,12 +17,16 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport Level_API
 from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.model.data.book cimport BookOrder
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 
 
@@ -41,13 +45,27 @@ cdef class OrderBook(Data):
     cpdef void apply(self, Data data)
     cpdef void check_integrity(self)
 
+    cpdef list bids(self)
+    cpdef list asks(self)
     cpdef best_bid_price(self)
     cpdef best_ask_price(self)
     cpdef best_bid_size(self)
     cpdef best_ask_size(self)
     cpdef spread(self)
     cpdef midpoint(self)
+    cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side)
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
     cpdef str pprint(self, int num_levels=*)
+
+
+cdef class Level:
+    cdef Level_API _mem
+
+    cpdef list orders(self)
+    cpdef double volume(self)
+    cpdef double exposure(self)
+
+    @staticmethod
+    cdef Level from_mem_c(Level_API mem)

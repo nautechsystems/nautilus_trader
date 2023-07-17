@@ -750,8 +750,6 @@ cdef class BacktestEngine:
         # Reset ExecEngine
         if self.kernel.exec_engine.is_running:
             self.kernel.exec_engine.stop()
-        if self._config.cache_database is not None and self._config.cache_database.flush:
-            self.kernel.exec_engine.flush_db()
         self.kernel.exec_engine.reset()
 
         # Reset RiskEngine

@@ -162,6 +162,14 @@ impl OrderBook {
         }
     }
 
+    pub fn bids(&self) -> Vec<&Level> {
+        self.bids.levels.values().collect()
+    }
+
+    pub fn asks(&self) -> Vec<&Level> {
+        self.asks.levels.values().collect()
+    }
+
     pub fn has_bid(&self) -> bool {
         match self.bids.top() {
             Some(top) => !top.orders.is_empty(),
@@ -212,22 +220,30 @@ impl OrderBook {
         }
     }
 
-    pub fn get_price_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> Price {
-        let (levels, mut target_price) = match order_side {
-            OrderSide::Buy => (&self.asks.levels, Price::max(0)),
-            OrderSide::Sell => (&self.bids.levels, Price::min(0)),
+    pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
             _ => panic!("Invalid `OrderSide` {}", order_side),
         };
-        let mut cumulative_volume = 0u64;
+        let mut cumulative_volume_raw = 0u64;
+        let mut cumulative_value = 0.0;
 
         for (book_price, level) in levels {
-            cumulative_volume += level.volume_raw();
-            if cumulative_volume >= qty.raw {
-                target_price = book_price.value;
+            let volume_this_level = level.volume_raw().min(qty.raw - cumulative_volume_raw);
+            cumulative_volume_raw += volume_this_level;
+            cumulative_value += book_price.value.as_f64() * volume_this_level as f64;
+
+            if cumulative_volume_raw >= qty.raw {
                 break;
             }
         }
-        target_price
+
+        if cumulative_volume_raw == 0 {
+            0.0
+        } else {
+            cumulative_value / cumulative_volume_raw as f64
+        }
     }
 
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
@@ -598,14 +614,8 @@ mod tests {
         let book = create_stub_book(BookType::L2_MBP);
         let qty = Quantity::new(1.0, 0);
 
-        assert_eq!(
-            book.get_price_for_quantity(qty, OrderSide::Buy),
-            Price::max(0)
-        );
-        assert_eq!(
-            book.get_price_for_quantity(qty, OrderSide::Sell),
-            Price::min(0)
-        );
+        assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Buy), 0.0);
+        assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Sell), 0.0);
     }
 
     #[test]
@@ -644,10 +654,13 @@ mod tests {
 
         let qty = Quantity::from("1.5");
 
-        assert_eq!(book.get_price_for_quantity(qty, OrderSide::Buy), ask2.price);
         assert_eq!(
-            book.get_price_for_quantity(qty, OrderSide::Sell),
-            bid2.price,
+            book.get_avg_px_for_quantity(qty, OrderSide::Buy),
+            2.0033333333333334
+        );
+        assert_eq!(
+            book.get_avg_px_for_quantity(qty, OrderSide::Sell),
+            0.9966666666666667
         );
     }
 

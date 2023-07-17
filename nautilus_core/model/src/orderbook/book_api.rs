@@ -20,10 +20,10 @@ use std::{
 
 use nautilus_core::{cvec::CVec, string::str_to_cstr};
 
-use super::book::OrderBook;
+use super::{book::OrderBook, level_api::Level_API};
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
-    enums::BookType,
+    enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
@@ -145,6 +145,24 @@ pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: OrderBo
 }
 
 #[no_mangle]
+pub extern "C" fn orderbook_bids(book: &mut OrderBook_API) -> CVec {
+    book.bids()
+        .iter()
+        .map(|l| Level_API::new(l.to_owned().clone()))
+        .collect::<Vec<Level_API>>()
+        .into()
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_asks(book: &mut OrderBook_API) -> CVec {
+    book.asks()
+        .iter()
+        .map(|l| Level_API::new(l.to_owned().clone()))
+        .collect::<Vec<Level_API>>()
+        .into()
+}
+
+#[no_mangle]
 pub extern "C" fn orderbook_has_bid(book: &mut OrderBook_API) -> u8 {
     book.has_bid() as u8
 }
@@ -188,6 +206,15 @@ pub extern "C" fn orderbook_spread(book: &mut OrderBook_API) -> f64 {
 pub extern "C" fn orderbook_midpoint(book: &mut OrderBook_API) -> f64 {
     book.midpoint()
         .expect("Error: Unable to calculate `midpoint` (no bid or ask)")
+}
+
+#[no_mangle]
+pub extern "C" fn orderbook_get_avg_px_for_quantity(
+    book: &mut OrderBook_API,
+    qty: Quantity,
+    order_side: OrderSide,
+) -> f64 {
+    book.get_avg_px_for_quantity(qty, order_side)
 }
 
 #[no_mangle]

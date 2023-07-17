@@ -273,7 +273,7 @@ cdef class MarketIfTouchedOrder(Order):
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
             "client_order_id": self.client_order_id.to_str(),
-            "venue_order_id": self.venue_order_id if self.venue_order_id is not None else None,
+            "venue_order_id": self.venue_order_id.to_str() if self.venue_order_id is not None else None,
             "position_id": self.position_id.to_str() if self.position_id is not None else None,
             "account_id": self.account_id.to_str() if self.account_id is not None else None,
             "last_trade_id": self.last_trade_id.to_str() if self.last_trade_id is not None else None,
@@ -286,8 +286,8 @@ cdef class MarketIfTouchedOrder(Order):
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px),
-            "slippage": str(self.slippage),
+            "avg_px": str(self.avg_px) if self.avg_px is not None else None,
+            "slippage": str(self.slippage) if self.slippage is not None else None,
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,
@@ -301,7 +301,7 @@ cdef class MarketIfTouchedOrder(Order):
             "exec_algorithm_params": msgspec.json.encode(self.exec_algorithm_params) if self.exec_algorithm_params is not None else None,  # noqa
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
-            "ts_last": self.ts_last,
+            "ts_last": self.ts_last if self.ts_last > 0 else None,
             "ts_init": self.ts_init,
         }
 

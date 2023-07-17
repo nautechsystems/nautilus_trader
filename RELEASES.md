@@ -4,12 +4,14 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `Cache` position and order state snapshots (configure via `CacheConfig`)
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
 - Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
 - Added `MessageBus.is_pending_request(...)` method
+- Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
 - Added `Actor.is_pending_request(...)` convenience method
 - Added `Actor.has_pending_requests()` convenience method
 - Added `Actor.pending_requests()` convenience method
@@ -20,11 +22,13 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
-- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an info log)
+- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
+- Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
 - Fixed race condition on `OrderFactory` order identifiers generation
+- Fixed dictionary representation of orders for `venue_order_id` (for three order types)
 - Fixed `Currency` registration with core global map on creation
 - Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
 - Fixed assignment of position IDs for contingency orders (when parent filled)
@@ -35,7 +39,7 @@ Released on TBD (UTC).
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
 - Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
 - Fixed Binance execution submitting of order lists
-- Fixed Binance Spot commission rates requests for `InstrumentProvider`
+- Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
 - Fixed Binance order parsing of invalid orders in execution reports #1157, thanks for reporting @graceyangfan
 - Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603

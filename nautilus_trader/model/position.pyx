@@ -133,27 +133,27 @@ cdef class Position:
         """
         return {
             "position_id": self.id.to_str(),
+            "strategy_id": self.strategy_id.to_str(),
+            "instrument_id": self.instrument_id.to_str(),
             "account_id": self.account_id.to_str(),
             "opening_order_id": self.opening_order_id.to_str(),
             "closing_order_id": self.closing_order_id.to_str() if self.closing_order_id is not None else None,
-            "strategy_id": self.strategy_id.to_str(),
-            "instrument_id": self.instrument_id.to_str(),
             "entry": order_side_to_str(self.entry),
             "side": position_side_to_str(self.side),
             "signed_qty": self.signed_qty,
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
             "ts_opened": self.ts_opened,
-            "ts_closed": self.ts_closed,
-            "duration_ns": self.duration_ns,
+            "ts_closed": self.ts_closed if self.ts_closed > 0 else None,
+            "duration_ns": self.duration_ns if self.duration_ns > 0 else None,
             "avg_px_open": str(self.avg_px_open),
-            "avg_px_close": str(self.avg_px_close),
+            "avg_px_close": str(self.avg_px_close) if self.avg_px_close > 0 else None,
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code if self.base_currency is not None else None,
             "cost_currency": self.cost_currency.code,
-            "realized_return": str(round(self.realized_return, 5)),
-            "realized_pnl": str(self.realized_pnl.to_str()),
             "commissions": str([c.to_str() for c in self.commissions()]),
+            "realized_return": str(round(self.realized_return, 5)),
+            "realized_pnl": self.realized_pnl.to_str(),
         }
 
     cdef list client_order_ids_c(self):
@@ -574,7 +574,7 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         if self.side == PositionSide.FLAT:
-            return Money(0, self.quote_currency)
+            return Money(0, self.cost_currency)
 
         cdef double pnl = self._calculate_pnl(
             avg_px_open=self.avg_px_open,

@@ -552,7 +552,6 @@ cdef class OrderBookDeltas(Data):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"{self.deltas}, "
-            f"sequence={self.sequence}, "
             f"is_snapshot={self.is_snapshot}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
