@@ -76,7 +76,7 @@ class ReportProvider:
             return pd.DataFrame()
 
         report = pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
-        report["ts_last"] = [unix_nanos_to_dt(ts_last) for ts_last in report["ts_last"]]
+        report["ts_last"] = [unix_nanos_to_dt(ts_last or 0) for ts_last in report["ts_last"]]
         report["ts_init"] = [unix_nanos_to_dt(ts_init) for ts_init in report["ts_init"]]
 
         return report
@@ -111,7 +111,9 @@ class ReportProvider:
         del report["base_currency"]
         del report["cost_currency"]
         report["ts_opened"] = [unix_nanos_to_dt(ts_opened) for ts_opened in report["ts_opened"]]
-        report["ts_closed"] = [unix_nanos_to_dt(ts_closed) for ts_closed in report["ts_closed"]]
+        report["ts_closed"] = [
+            unix_nanos_to_dt(ts_closed or 0) for ts_closed in report["ts_closed"]
+        ]
 
         return report
 

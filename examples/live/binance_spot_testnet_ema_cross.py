@@ -45,7 +45,7 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache_database=CacheDatabaseConfig(type="redis"),
+    cache_database=CacheDatabaseConfig(type="in-memory"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_API_KEY"

@@ -29,6 +29,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
@@ -66,8 +67,13 @@ cdef class CacheDatabase:
     cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
     cpdef void add_position(self, Position position)
 
+    cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id)
+
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
+
+    cpdef void snapshot_order_state(self, Order order)
+    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl=*)

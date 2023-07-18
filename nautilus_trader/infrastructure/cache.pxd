@@ -30,6 +30,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
     cdef str _key_strategies
     cdef str _key_index_order_position
     cdef str _key_index_order_client
+    cdef str _key_snapshots_orders
+    cdef str _key_snapshots_positions
 
     cdef Serializer _serializer
     cdef object _redis

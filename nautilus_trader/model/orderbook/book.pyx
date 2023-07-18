@@ -284,7 +284,6 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(delta, "delta")
 
-        # We have to clone the delta because of the heap allocation `instrument_id`
         orderbook_apply_delta(&self._mem, delta._mem)
 
     cpdef void apply_deltas(self, OrderBookDeltas deltas):

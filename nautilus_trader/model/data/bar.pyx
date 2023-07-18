@@ -476,7 +476,7 @@ cdef class BarType:
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
         self._mem = bar_type_new(
-           instrument_id._mem,
+            instrument_id._mem,
             bar_spec._mem,
             aggregation_source
         )

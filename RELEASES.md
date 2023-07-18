@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `Cache` position and order state snapshots (configure via `CacheConfig`)
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
@@ -23,10 +24,12 @@ Released on TBD (UTC).
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 - Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
 - Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
+- Changed `Order.ts_last` to represent the UNIX nanoseconds timestamp of the last _event_ (rather than fill)
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
 - Fixed race condition on `OrderFactory` order identifiers generation
+- Fixed dictionary representation of orders for `venue_order_id` (for three order types)
 - Fixed `Currency` registration with core global map on creation
 - Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
 - Fixed assignment of position IDs for contingency orders (when parent filled)

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.config import CacheDatabaseConfig
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport Logger
@@ -27,6 +29,7 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
@@ -46,7 +49,11 @@ cdef class CacheDatabase:
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(self, Logger logger not None):
+    def __init__(
+        self,
+        Logger logger not None,
+        config: Optional[CacheDatabaseConfig] = None,
+    ):
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 
         self._log.info("READY.")
@@ -159,6 +166,10 @@ cdef class CacheDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cpdef void update_account(self, Account event):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -176,5 +187,13 @@ cdef class CacheDatabase:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void update_strategy(self, Strategy strategy):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void snapshot_order_state(self, Order order):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
