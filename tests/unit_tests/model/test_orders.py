@@ -395,8 +395,9 @@ class TestOrders:
             "is_reduce_only": False,
             "is_quote_quantity": False,
             "filled_qty": "0",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
@@ -406,8 +407,8 @@ class TestOrders:
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_limit_order(self):
@@ -476,8 +477,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -493,8 +494,8 @@ class TestOrders:
             "exec_algorithm_params": b'{"period":60}',
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_limit_order_with_expiration(self):
@@ -590,8 +591,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": True,
@@ -605,8 +606,8 @@ class TestOrders:
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_stop_limit_order(self):
@@ -678,8 +679,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -692,8 +693,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": "STOP_LOSS",
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_market_to_limit_order(self):
@@ -763,8 +764,9 @@ class TestOrders:
             "is_reduce_only": False,
             "is_quote_quantity": False,
             "filled_qty": "0",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "liquidity_side": "NO_LIQUIDITY_SIDE",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "display_qty": None,
             "contingency_type": "NO_CONTINGENCY",
@@ -772,8 +774,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_market_if_touched_order(self):
@@ -841,8 +843,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": False,
@@ -853,8 +855,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_limit_if_touched_order(self):
@@ -931,8 +933,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -945,8 +947,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": "STOP_LOSS",
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_trailing_stop_market_order(self):
@@ -1049,8 +1051,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": False,
@@ -1061,8 +1063,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_trailing_stop_market_order_with_no_initial_trigger_to_dict(self):
@@ -1101,8 +1103,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": False,
@@ -1113,8 +1115,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_initialize_trailing_stop_limit_order(self):
@@ -1219,8 +1221,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1233,8 +1235,8 @@ class TestOrders:
             "linked_order_ids": None,
             "parent_order_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_trailing_stop_limit_order_with_no_initial_prices_to_dict(self):
@@ -1275,8 +1277,8 @@ class TestOrders:
             "time_in_force": "GTC",
             "filled_qty": "0",
             "liquidity_side": "NO_LIQUIDITY_SIDE",
-            "avg_px": "0.0",
-            "slippage": "0.0",
+            "avg_px": None,
+            "slippage": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1292,8 +1294,8 @@ class TestOrders:
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
             "tags": None,
-            "ts_last": 0,
             "ts_init": 0,
+            "ts_last": 0,
         }
 
     def test_order_list_equality(self):

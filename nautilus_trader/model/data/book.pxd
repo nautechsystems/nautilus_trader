@@ -63,8 +63,6 @@ cdef class OrderBookDelta(Data):
 cdef class OrderBookDeltas(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly uint64_t sequence
-    """The unique sequence number.\n\n:returns: `uint64`"""
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
     cdef readonly bint is_snapshot

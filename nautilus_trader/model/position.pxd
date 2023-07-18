@@ -82,7 +82,7 @@ cdef class Position:
     cdef readonly uint64_t ts_opened
     """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the last fill occurred.\n\n:returns: `uint64_t`"""
+    """The UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_closed
     """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t duration_ns
