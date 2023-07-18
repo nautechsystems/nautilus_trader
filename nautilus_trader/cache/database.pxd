@@ -76,4 +76,4 @@ cdef class CacheDatabase:
     cpdef void update_strategy(self, Strategy strategy)
 
     cpdef void snapshot_order(self, Order order)
-    cpdef void snapshot_position(self, Position position, Money unrealized_pnl)
+    cpdef void snapshot_position(self, Position position, Money unrealized_pnl=*)

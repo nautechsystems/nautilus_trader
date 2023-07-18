@@ -894,14 +894,13 @@ cdef class Cache(CacheFacade):
                 self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
 
     cdef Money _calculate_unrealized_pnl(self, Position position):
-        ticks = self._quote_ticks.get(position.instrument_id)
-        if not ticks:
+        cdef QuoteTick quote = self.quote_tick(position.instrument_id)
+        if quote is None:
             self._log.warning(
-                f"Cannot calculate unrealized PnL for {position.id!r}, no quotes for {position.instrument_id}",
+                f"Cannot calculate unrealized PnL for {position.id!r}, "
+                f"no quotes for {position.instrument_id}",
             )
             return None
-
-        cdef QuoteTick quote = ticks[-1]
 
         cdef Price last
         if position.side == PositionSide.FLAT:

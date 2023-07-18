@@ -194,6 +194,6 @@ cdef class CacheDatabase:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef void snapshot_position(self, Position position, Money unrealized_pnl):
+    cpdef void snapshot_position(self, Position position, Money unrealized_pnl = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
