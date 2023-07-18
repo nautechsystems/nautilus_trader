@@ -27,7 +27,6 @@ from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport ERROR_PRICE
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
-from nautilus_trader.core.rust.model cimport symbol_clone
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport synthetic_instrument_calculate
 from nautilus_trader.core.rust.model cimport synthetic_instrument_change_formula
@@ -110,7 +109,7 @@ cdef class SyntheticInstrument(Data):
             raise ValueError(f"invalid `formula`, was '{formula}'")
 
         self._mem = synthetic_instrument_new(
-            symbol_clone(&symbol._mem),
+            symbol._mem,
             price_precision,
             pybytes_to_cstr(msgspec.json.encode([c.value for c in components])),
             pystr_to_cstr(formula),

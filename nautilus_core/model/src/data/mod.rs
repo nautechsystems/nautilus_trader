@@ -29,7 +29,7 @@ use nautilus_core::time::UnixNanos;
 use self::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Data {
     Delta(OrderBookDelta),
     Quote(QuoteTick),
@@ -71,4 +71,9 @@ impl From<Bar> for Data {
     fn from(value: Bar) -> Self {
         Self::Bar(value)
     }
+}
+
+#[no_mangle]
+pub extern "C" fn data_clone(data: &Data) -> Data {
+    *data
 }

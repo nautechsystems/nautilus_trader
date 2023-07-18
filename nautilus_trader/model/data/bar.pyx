@@ -20,7 +20,6 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
-from nautilus_trader.core.rust.model cimport bar_drop
 from nautilus_trader.core.rust.model cimport bar_eq
 from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
@@ -34,8 +33,6 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
 from nautilus_trader.core.rust.model cimport bar_to_cstr
-from nautilus_trader.core.rust.model cimport bar_type_clone
-from nautilus_trader.core.rust.model cimport bar_type_drop
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_ge
 from nautilus_trader.core.rust.model cimport bar_type_gt
@@ -44,7 +41,6 @@ from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -480,7 +476,7 @@ cdef class BarType:
         AggregationSource aggregation_source=AggregationSource.EXTERNAL,
     ):
         self._mem = bar_type_new(
-            instrument_id_clone(&instrument_id._mem),
+           instrument_id._mem,
             bar_spec._mem,
             aggregation_source
         )
@@ -506,10 +502,6 @@ cdef class BarType:
             ),
             state[4],
         )
-
-    def __del__(self) -> None:
-        if self._mem.instrument_id.symbol.value != NULL:
-            bar_type_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
@@ -541,7 +533,7 @@ cdef class BarType:
     @staticmethod
     cdef BarType from_mem_c(BarType_t mem):
         cdef BarType bar_type = BarType.__new__(BarType)
-        bar_type._mem = bar_type_clone(&mem)
+        bar_type._mem = mem
         return bar_type
 
     @staticmethod
@@ -702,7 +694,7 @@ cdef class Bar(Data):
         Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
 
         self._mem = bar_new(
-            bar_type_clone(&bar_type._mem),
+            bar_type._mem,
             open._mem,
             high._mem,
             low._mem,
@@ -754,10 +746,6 @@ cdef class Bar(Data):
             state[12],
             state[13],
         )
-
-    def __del__(self) -> None:
-        if self._mem.bar_type.instrument_id.symbol.value != NULL:
-            bar_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, Bar other) -> bool:
         return bar_eq(&self._mem, &other._mem)

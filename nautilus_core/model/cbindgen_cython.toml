@@ -31,7 +31,7 @@ exclude = [
 ]
 
 [export.rename]
-"Ustr" = "uintptr_t"
+"Ustr" = "char*"
 "AccountId" = "AccountId_t"
 "Bar" = "Bar_t"
 "BarAggregation" = "uint8_t"

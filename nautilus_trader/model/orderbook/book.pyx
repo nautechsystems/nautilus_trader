@@ -32,7 +32,6 @@ from nautilus_trader.core.rust.model cimport OrderBook_API
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.core.rust.model cimport book_order_from_raw
-from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport level_clone
 from nautilus_trader.core.rust.model cimport level_drop
 from nautilus_trader.core.rust.model cimport level_exposure
@@ -54,8 +53,6 @@ from nautilus_trader.core.rust.model cimport orderbook_clear_asks
 from nautilus_trader.core.rust.model cimport orderbook_clear_bids
 from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
-from nautilus_trader.core.rust.model cimport orderbook_delta_clone
-from nautilus_trader.core.rust.model cimport orderbook_drop
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
@@ -100,13 +97,9 @@ cdef class OrderBook(Data):
         BookType book_type,
     ):
         self._mem = orderbook_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             book_type,
         )
-
-    def __del__(self) -> None:
-        if self._mem._0 != NULL:
-            orderbook_drop(self._mem)
 
     def __repr__(self) -> str:
         return (
@@ -292,7 +285,7 @@ cdef class OrderBook(Data):
         Condition.not_none(delta, "delta")
 
         # We have to clone the delta because of the heap allocation `instrument_id`
-        orderbook_apply_delta(&self._mem, orderbook_delta_clone(&delta._mem))
+        orderbook_apply_delta(&self._mem, delta._mem)
 
     cpdef void apply_deltas(self, OrderBookDeltas deltas):
         """

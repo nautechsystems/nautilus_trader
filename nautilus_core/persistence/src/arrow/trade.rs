@@ -130,7 +130,7 @@ impl DecodeFromRecordBatch for TradeTick {
             .zip(ts_init_values.into_iter())
             .map(
                 |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| Self {
-                    instrument_id: instrument_id.clone(),
+                    instrument_id,
                     price: Price::from_raw(price.unwrap(), price_precision),
                     size: Quantity::from_raw(size.unwrap(), size_precision),
                     aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)

@@ -26,9 +26,6 @@ from nautilus_trader.core.rust.model cimport book_order_exposure
 from nautilus_trader.core.rust.model cimport book_order_from_raw
 from nautilus_trader.core.rust.model cimport book_order_hash
 from nautilus_trader.core.rust.model cimport book_order_signed_size
-from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport orderbook_delta_clone
-from nautilus_trader.core.rust.model cimport orderbook_delta_drop
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
@@ -253,7 +250,7 @@ cdef class OrderBookDelta(Data):
             0,
         )
         self._mem = orderbook_delta_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             action,
             book_order,
             flags,
@@ -261,10 +258,6 @@ cdef class OrderBookDelta(Data):
             ts_event,
             ts_init,
         )
-
-    def __del__(self) -> None:
-        if self._mem.instrument_id.symbol.value != NULL:
-            orderbook_delta_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, OrderBookDelta other) -> bool:
         return orderbook_delta_eq(&self._mem, &other._mem)
@@ -419,7 +412,7 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem):
         cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
-        delta._mem = orderbook_delta_clone(&mem)
+        delta._mem = mem
         return delta
 
     @staticmethod
