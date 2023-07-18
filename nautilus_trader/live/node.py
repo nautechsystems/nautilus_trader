@@ -87,6 +87,8 @@ class TradingNode:
         self._is_built = False
         self._is_running = False
 
+        self._task_position_snapshots: asyncio.Task | None = None
+
     @property
     def trader_id(self) -> TraderId:
         """
@@ -376,6 +378,25 @@ class TradingNode:
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
+    async def snapshot_open_positions(self, interval: float) -> None:
+        """
+        Snapshot the state of all open positions at the configured interval.
+
+        Parameters
+        ----------
+        interval : float
+            The interval (seconds) between open position state snapshotting.
+
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                open_positions = self.kernel.cache.positions_open()
+                for position in open_positions:
+                    self.cache.snapshot_position_state(position)
+        except asyncio.CancelledError:
+            pass
+
     async def run_async(self) -> None:
         """
         Start and run the trading node asynchronously.
@@ -406,11 +427,17 @@ class TradingNode:
                 self.kernel.exec_engine.get_cmd_queue_task(),
                 self.kernel.exec_engine.get_evt_queue_task(),
             ]
+
+            if self._config.cache and self._config.cache.snapshot_positions_interval:
+                self._task_position_snapshots = asyncio.create_task(
+                    self.snapshot_open_positions(self._config.cache.snapshot_positions_interval),
+                )
+
             await asyncio.gather(*tasks)
         except asyncio.CancelledError as e:
             self.kernel.log.error(str(e))
 
-    async def stop_async(self) -> None:
+    async def stop_async(self) -> None:  # noqa (too complex)
         """
         Stop the trading node gracefully, asynchronously.
 
@@ -420,6 +447,10 @@ class TradingNode:
 
         """
         self.kernel.log.info("STOPPING...")
+
+        if self._task_position_snapshots:
+            self._task_position_snapshots.cancel()
+            self._task_position_snapshots = None
 
         if self.kernel.trader.is_running:
             self.kernel.trader.stop()
