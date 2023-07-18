@@ -898,7 +898,7 @@ cdef class Cache(CacheFacade):
         if quote is None:
             self._log.warning(
                 f"Cannot calculate unrealized PnL for {position.id!r}, "
-                f"no quotes for {position.instrument_id}",
+                f"no quotes for {position.instrument_id}.",
             )
             return None
 
@@ -1506,12 +1506,6 @@ cdef class Cache(CacheFacade):
         else:
             self._index_orders_emulated.add(order.client_order_id)
 
-        # Update database
-        if self._database is not None:
-            self._database.add_order(order, position_id, client_id)
-            if self.snapshot_orders:
-                self._database.snapshot_order(order)
-
         self._log.debug(f"Added {order}.")
 
         if position_id is not None:
@@ -1527,6 +1521,14 @@ cdef class Cache(CacheFacade):
         if client_id is not None:
             self._index_order_client[order.client_order_id] = client_id
             self._log.debug(f"Indexed {client_id!r}.")
+
+        if self._database is None:
+            return
+
+        # Update database
+        self._database.add_order(order, position_id, client_id)
+        if self.snapshot_orders:
+            self._database.snapshot_order_state(order)
 
     cpdef void add_order_list(self, OrderList order_list):
         """
@@ -1657,14 +1659,16 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Added Position(id={position.id.to_str()}, strategy_id={position.strategy_id.to_str()}).")
 
+        if self._database is None:
+            return
+
         # Update database
-        if self._database is not None:
-            self._database.add_position(position)
-            if self.snapshot_positions:
-                self._database.snapshot_position(
-                    position,
-                    self._calculate_unrealized_pnl(position),
-                )
+        self._database.add_position(position)
+        if self.snapshot_positions:
+            self._database.snapshot_position_state(
+                position,
+                self._calculate_unrealized_pnl(position),
+            )
 
     cpdef void snapshot_position(self, Position position):
         """
@@ -1692,6 +1696,53 @@ cdef class Cache(CacheFacade):
             self._position_snapshots[position_id] = [position_pickled]
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
+
+    cpdef void snapshot_position_state(self, Position position):
+        """
+        Snapshot the state dictionary for the given `position`.
+
+        This method will persist to the backing cache database.
+
+        Parameters
+        ----------
+        position : Position
+            The position to snapshot the state for.
+
+        """
+        Condition.not_none(position, "position")
+
+        if self._database is None:
+            self._log.warning(
+                "Cannot snapshot position state for {position.id:r!} (no database configured).",
+            )
+            return
+
+        self._database.snapshot_position_state(
+            position,
+            self._calculate_unrealized_pnl(position),
+        )
+
+    cpdef void snapshot_order_state(self, Order order):
+        """
+        Snapshot the state dictionary for the given `order`.
+
+        This method will persist to the backing cache database.
+
+        Parameters
+        ----------
+        order : Order
+            The order to snapshot the state for.
+
+        """
+        Condition.not_none(order, "order")
+
+        if self._database is None:
+            self._log.warning(
+                "Cannot snapshot order state for {order.client_order_id:r!} (no database configured).",
+            )
+            return
+
+        self._database.snapshot_order_state(order)
 
     cpdef void update_account(self, Account account):
         """
@@ -1745,11 +1796,13 @@ cdef class Cache(CacheFacade):
         else:
             self._index_orders_emulated.add(order.client_order_id)
 
+        if self._database is None:
+            return
+
         # Update database
-        if self._database is not None:
-            self._database.update_order(order)
-            if self.snapshot_orders:
-                self._database.snapshot_order(order)
+        self._database.update_order(order)
+        if self.snapshot_orders:
+            self._database.snapshot_order_state(order)
 
     cpdef void update_position(self, Position position):
         """
@@ -1770,14 +1823,16 @@ cdef class Cache(CacheFacade):
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
+        if self._database is None:
+            return
+
         # Update database
-        if self._database is not None:
-            self._database.update_position(position)
-            if self.snapshot_positions:
-                self._database.snapshot_position(
-                    position,
-                    self._calculate_unrealized_pnl(position),
-                )
+        self._database.update_position(position)
+        if self.snapshot_positions:
+            self._database.snapshot_position_state(
+                position,
+                self._calculate_unrealized_pnl(position),
+            )
 
     cpdef void update_actor(self, Actor actor):
         """
