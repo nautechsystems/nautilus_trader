@@ -80,12 +80,17 @@ cdef class MsgPackSerializer(Serializer):
                 raise RuntimeError("cannot serialize object: unrecognized type")
             obj_dict = delegate(obj)
 
-        cdef dict timestamp_kvs = {k: v for k, v in obj_dict.items() if re.match(r"^ts_", k)}
+        cdef dict timestamp_kvs = {
+            k: v for k, v in obj_dict.items() if k in ("expire_time_ns") or re.match(r"^ts_", k)
+        }
 
         cdef str key
         if self.timestamps_as_iso8601:
             for key, value in timestamp_kvs.items():
-                obj_dict[key] = pd.Timestamp(value, tz=pytz.utc).isoformat()
+                if value is None:
+                    continue
+                timestamp = pd.Timestamp(value, unit="ns", tz=pytz.utc)
+                obj_dict[key] = timestamp.isoformat().replace("+00:00", "Z")
         elif self.timestamps_as_str:
             for key, value in timestamp_kvs.items():
                 if value is not None:
@@ -115,7 +120,9 @@ cdef class MsgPackSerializer(Serializer):
         Condition.not_none(obj_bytes, "obj_bytes")
 
         cdef dict obj_dict = msgpack.decode(obj_bytes)  # type: dict[str, Any]
-        cdef dict timestamp_kvs = {k: v for k, v in obj_dict.items() if re.match(r"^ts_", k)}
+        cdef dict timestamp_kvs = {
+            k: v for k, v in obj_dict.items() if k in ("expire_time_ns") or re.match(r"^ts_", k)
+        }
 
         cdef:
             str key

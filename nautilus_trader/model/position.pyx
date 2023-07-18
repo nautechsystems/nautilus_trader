@@ -144,6 +144,7 @@ cdef class Position:
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
             "ts_opened": self.ts_opened,
+            "ts_last": self.ts_last,
             "ts_closed": self.ts_closed if self.ts_closed > 0 else None,
             "duration_ns": self.duration_ns if self.duration_ns > 0 else None,
             "avg_px_open": str(self.avg_px_open),

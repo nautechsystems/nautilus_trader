@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 - Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
 - Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
+- Changed `Order.ts_last` to represent the UNIX nanoseconds timestamp of the last _event_ (rather than fill)
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors

@@ -127,7 +127,7 @@ cdef class Order:
     cdef readonly uint64_t ts_init
     """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the last fill occurred (0 for no fill).\n\n:returns: `uint64_t`"""
+    """The UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
 
     cpdef str info(self)
     cpdef dict to_dict(self)
