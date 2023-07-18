@@ -126,7 +126,7 @@ class CacheConfig(NautilusConfig, frozen=True):
         Snapshots will be taken at position opened, changed and closed (when events are applied).
         To include the unrealized PnL in the snapshot then quotes for the positions instrument must
         be available in the cache.
-    snapshot_positions_interval : float, optional
+    snapshot_positions_interval : PositiveFloat, optional
         The interval (seconds) at which additional position state snapshots are persisted.
         If ``None`` then no additional snapshots will be taken.
         To include the unrealized PnL in the snapshot then quotes for the positions instrument must
@@ -138,7 +138,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     bar_capacity: PositiveInt = 1000
     snapshot_orders: bool = False
     snapshot_positions: bool = False
-    snapshot_positions_interval: Optional[float] = None
+    snapshot_positions_interval: Optional[PositiveFloat] = None
 
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
