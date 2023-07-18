@@ -23,7 +23,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -100,77 +100,49 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=InstrumentStatusUpdate,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=InstrumentStatusUpdate, instrument_ids=instrument_ids, **kwargs)
 
     def instrument_closes(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=InstrumentClose,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=InstrumentClose, instrument_ids=instrument_ids, **kwargs)
 
     def trade_ticks(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=TradeTick,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=TradeTick, instrument_ids=instrument_ids, **kwargs)
 
     def quote_ticks(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=QuoteTick,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=QuoteTick, instrument_ids=instrument_ids, **kwargs)
 
     def tickers(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self._query_subclasses(
-            base_cls=Ticker,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self._query_subclasses(base_cls=Ticker, instrument_ids=instrument_ids, **kwargs)
 
     def bars(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=Bar,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=Bar, instrument_ids=instrument_ids, **kwargs)
 
     def order_book_deltas(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=OrderBookDelta,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=OrderBookDeltas, instrument_ids=instrument_ids, **kwargs)
 
     def generic_data(
         self,

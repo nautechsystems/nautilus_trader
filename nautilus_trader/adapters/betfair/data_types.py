@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import copy
 from enum import Enum
 from typing import Optional
 
@@ -27,7 +26,6 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.persistence.catalog.parquet.schema import NAUTILUS_PARQUET_SCHEMA
 from nautilus_trader.persistence.catalog.parquet.serializers import make_dict_serializer
 from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
 from nautilus_trader.serialization.base import register_serializable_object
@@ -78,6 +76,22 @@ class BSPOrderBookDeltas(OrderBookDeltas):
         values = OrderBookDeltas.to_dict(obj)
         values["type"] = obj.__class__.__name__
         return values
+
+    @classmethod
+    def schema(cls) -> pa.Schema:
+        return pa.schema(
+            {
+                "action": pa.uint8(),
+                "side": pa.uint8(),
+                "price": pa.int64(),
+                "size": pa.uint64(),
+                "order_id": pa.uint64(),
+                "flags": pa.uint8(),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+            },
+            metadata={"type": "OrderBookDelta"},
+        )
 
 
 class BetfairTicker(Ticker):
@@ -218,19 +232,15 @@ register_parquet(
 )
 
 # Register serialization/parquet BSPOrderBookDeltas
-BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDeltas])
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDeltas"})
-
 register_serializable_object(
     BSPOrderBookDeltas,
     BSPOrderBookDeltas.to_dict,
     BSPOrderBookDeltas.from_dict,
 )
 
-# register_parquet(
-#     cls=BSPOrderBookDeltas,
-#     serializer=serialize_orderbook,
-#     deserializer=deserialize_orderbook,
-#     schema=BSP_ORDERBOOK_SCHEMA,
-#     chunk=True,
-# )
+register_parquet(
+    cls=BSPOrderBookDeltas,
+    serializer=BSPOrderBookDeltas.to_dict,
+    deserializer=BSPOrderBookDeltas.from_dict,
+    schema=BSPOrderBookDeltas.schema(),
+)

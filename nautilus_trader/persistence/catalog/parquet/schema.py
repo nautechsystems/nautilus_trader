@@ -22,7 +22,6 @@ from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import VenueStatusUpdate
 from nautilus_trader.model.events import AccountState
@@ -56,19 +55,6 @@ from nautilus_trader.model.instruments import OptionsContract
 
 
 NAUTILUS_PARQUET_SCHEMA = {
-    OrderBookDeltas: pa.schema(
-        {
-            "action": pa.uint8(),
-            "side": pa.uint8(),
-            "price": pa.int64(),
-            "size": pa.uint64(),
-            "order_id": pa.uint64(),
-            "flags": pa.uint8(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "OrderBookDelta"},
-    ),
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),

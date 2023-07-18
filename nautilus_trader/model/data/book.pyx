@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Optional
 
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -357,7 +358,7 @@ cdef class OrderBookDelta(Data):
         return <BookAction>self._mem.action == BookAction.CLEAR
 
     @property
-    def order(self) -> BookOrder:
+    def order(self) -> Optional[BookOrder]:
         """
         Return the deltas book order for the action.
 
@@ -366,7 +367,10 @@ cdef class OrderBookDelta(Data):
         BookOrder
 
         """
-        return BookOrder.from_mem_c(self._mem.order)
+        order = self._mem.order
+        if order is None:
+            return None
+        return BookOrder.from_mem_c(order)
 
     @property
     def flags(self) -> uint8_t:

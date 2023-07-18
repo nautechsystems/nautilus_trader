@@ -19,7 +19,7 @@ import platform
 from io import BytesIO
 from itertools import groupby
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -40,6 +40,7 @@ from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
 from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.serializers import RUST_SERIALIZERS
@@ -116,10 +117,16 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- WRITING -----------------------------------------------------------------------------------
     def objects_to_rust_table(self, data: list[Data], cls: type) -> pa.Table:
-        batches_bytes = DataTransformer.pyobjects_to_batches_bytes(data)
+        processed = self._unpack_container_objects(cls, data)
+        batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
         batches_stream = BytesIO(batches_bytes)
         reader = pa.ipc.open_stream(batches_stream)
         return reader.read_all()
+
+    def _unpack_container_objects(self, cls: type, data: list[Any]):
+        if cls == OrderBookDeltas:
+            return [delta for deltas in data for delta in deltas.deltas]
+        return data
 
     def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
         assert len(data) > 0
@@ -190,7 +197,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     ):
         name = cls.__name__
         file_prefix = camel_to_snake_case(name)
-        data_type = getattr(NautilusDataType, name)
+        data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
         session = DataBackendSession()
         # TODO (bm) - fix this glob, query once on catalog creation?
         for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):

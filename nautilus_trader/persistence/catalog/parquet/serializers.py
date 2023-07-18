@@ -20,6 +20,8 @@ import pyarrow as pa
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.base import GenericData
@@ -180,6 +182,8 @@ def dicts_to_table(data: list[dict], schema: pa.Schema) -> pa.Table:
 RUST_SERIALIZERS = {
     QuoteTick,
     TradeTick,
+    OrderBookDelta,
+    OrderBookDeltas,
 }
 
 assert not set(NAUTILUS_PARQUET_SCHEMA).intersection(RUST_SERIALIZERS)

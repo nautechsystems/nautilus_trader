@@ -29,8 +29,8 @@ from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
 from nautilus_trader.persistence.wranglers import list_from_capsule
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 
 
 def _generate_batches_within_time_range(
@@ -131,7 +131,7 @@ def _generate_batches(
                     "instrument_id",
                     pa.array([str(instrument_id)] * len(table), pa.string()),
                 )
-            objs = ParquetSerializer.deserialize(cls=cls, chunk=table.to_pylist())
+            objs = ParquetSerializer.deserialize(cls=cls, table=table)
             yield objs
 
 

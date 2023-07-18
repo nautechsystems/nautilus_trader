@@ -15,7 +15,7 @@
 
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
