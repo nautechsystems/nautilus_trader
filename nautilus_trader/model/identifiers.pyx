@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport account_id_drop
 from nautilus_trader.core.rust.model cimport account_id_eq
 from nautilus_trader.core.rust.model cimport account_id_hash
 from nautilus_trader.core.rust.model cimport account_id_new
@@ -24,13 +23,10 @@ from nautilus_trader.core.rust.model cimport client_order_id_eq
 from nautilus_trader.core.rust.model cimport client_order_id_hash
 from nautilus_trader.core.rust.model cimport client_order_id_new
 from nautilus_trader.core.rust.model cimport client_order_id_to_cstr
-from nautilus_trader.core.rust.model cimport component_id_drop
 from nautilus_trader.core.rust.model cimport component_id_eq
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport component_id_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_drop
 from nautilus_trader.core.rust.model cimport instrument_id_eq
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
@@ -47,20 +43,14 @@ from nautilus_trader.core.rust.model cimport position_id_eq
 from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
 from nautilus_trader.core.rust.model cimport position_id_to_cstr
-from nautilus_trader.core.rust.model cimport symbol_clone
-from nautilus_trader.core.rust.model cimport symbol_drop
 from nautilus_trader.core.rust.model cimport symbol_eq
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_to_cstr
-from nautilus_trader.core.rust.model cimport trade_id_clone
-from nautilus_trader.core.rust.model cimport trade_id_drop
 from nautilus_trader.core.rust.model cimport trade_id_eq
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
-from nautilus_trader.core.rust.model cimport venue_clone
-from nautilus_trader.core.rust.model cimport venue_drop
 from nautilus_trader.core.rust.model cimport venue_eq
 from nautilus_trader.core.rust.model cimport venue_hash
 from nautilus_trader.core.rust.model cimport venue_is_synthetic
@@ -168,7 +158,7 @@ cdef class Symbol(Identifier):
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t* mem):
         cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = symbol_clone(mem)
+        symbol._mem = mem
         return symbol
 
     cdef str to_str(self):
@@ -303,7 +293,7 @@ cdef class InstrumentId(Identifier):
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_clone(&mem)
+        instrument_id._mem = mem
         return instrument_id
 
     @staticmethod
@@ -367,10 +357,6 @@ cdef class ComponentId(Identifier):
     def __init__(self, str value not None):
         Condition.valid_string(value, "value")
         self._mem = component_id_new(pystr_to_cstr(value))
-
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            component_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -575,10 +561,6 @@ cdef class AccountId(Identifier):
         Condition.valid_string(value, "value")
         Condition.true("-" in value, "value was malformed: did not contain a hyphen '-'")
         self._mem = account_id_new(pystr_to_cstr(value))
-
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            account_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return self.to_str()
@@ -871,5 +853,5 @@ cdef class TradeId(Identifier):
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
-        trade_id._mem = trade_id_clone(&mem)
+        trade_id._mem = mem
         return trade_id
