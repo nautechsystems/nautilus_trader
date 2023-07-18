@@ -1003,7 +1003,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Snapshot {order}.")
 
-    cpdef void snapshot_position(self, Position position, Money unrealized_pnl):
+    cpdef void snapshot_position(self, Position position, Money unrealized_pnl = None):
         """
         Snapshot the state of the given `position`.
 
