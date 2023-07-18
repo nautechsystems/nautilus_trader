@@ -149,7 +149,7 @@ class TestReportProvider:
         assert report.iloc[0]["quantity"] == "1500000"
         assert report.iloc[0]["avg_px"] == "0.80011"
         assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
-        assert report.iloc[1]["avg_px"] == "0.0"
+        assert report.iloc[1]["avg_px"] is None
 
     def test_generate_order_fills_report(self):
         # Arrange

@@ -336,8 +336,8 @@ cdef class TrailingStopLimitOrder(Order):
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px) if self.avg_px is not None else None,
-            "slippage": str(self.slippage) if self.slippage is not None else None,
+            "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
@@ -353,8 +353,8 @@ cdef class TrailingStopLimitOrder(Order):
             "exec_algorithm_params": msgspec.json.encode(self.exec_algorithm_params) if self.exec_algorithm_params is not None else None,  # noqa
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
-            "ts_last": self.ts_last if self.ts_last > 0 else None,
             "ts_init": self.ts_init,
+            "ts_last": self.ts_last,
         }
 
     @staticmethod
