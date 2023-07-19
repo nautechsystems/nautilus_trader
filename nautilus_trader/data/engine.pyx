@@ -858,7 +858,7 @@ cdef class DataEngine(Component):
                     depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
-        except NotImplementedError as ex:
+        except NotImplementedError:
             if only_deltas:
                 raise
             if instrument_id not in client.subscribed_order_book_snapshots():
