@@ -123,11 +123,11 @@ impl DecodeFromRecordBatch for TradeTick {
         // Construct iterator of values from arrays
         let values = price_values
             .into_iter()
-            .zip(size_values.into_iter())
-            .zip(aggressor_side_values.into_iter())
-            .zip(trade_id_values_values.into_iter())
-            .zip(ts_event_values.into_iter())
-            .zip(ts_init_values.into_iter())
+            .zip(size_values)
+            .zip(aggressor_side_values)
+            .zip(trade_id_values_values)
+            .zip(ts_event_values)
+            .zip(ts_init_values)
             .map(
                 |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| Self {
                     instrument_id,

@@ -118,7 +118,18 @@ mod tests {
     }
 
     #[test]
-    fn test_account_id_to_cstr_c() {
+    fn test_account_id_round_trip() {
+        let s = "IB-U123456789";
+        let c_string = CString::new(s).unwrap();
+        let ptr = c_string.as_ptr();
+        let account_id = unsafe { account_id_new(ptr) };
+        let char_ptr = account_id.value.as_char_ptr();
+        let account_id_2 = unsafe { account_id_new(char_ptr) };
+        assert_eq!(account_id, account_id_2);
+    }
+
+    #[test]
+    fn test_account_id_to_cstr_and_back() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
         let ptr = c_string.as_ptr();
