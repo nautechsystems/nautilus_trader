@@ -23,6 +23,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import show_string_stats
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -32,6 +33,12 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestQuoteTick:
+    def test_pickling_instrument_id_round_trip(self):
+        pickled = pickle.dumps(AUDUSD_SIM.id)
+        unpickled = pickle.loads(pickled)
+
+        assert unpickled == AUDUSD_SIM.id
+
     def test_fully_qualified_name(self):
         # Arrange, Act, Assert
         assert QuoteTick.fully_qualified_name() == "nautilus_trader.model.data.tick:QuoteTick"
@@ -181,9 +188,15 @@ class TestQuoteTick:
             ts_init=2,
         )
 
+        # show_string_stats()
+        tick.instrument_id.print_pointers()
+
         # Act
         pickled = pickle.dumps(tick)
         unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+
+        # show_string_stats()
+        unpickled.instrument_id.print_pointers()
 
         # Assert
         assert tick == unpickled

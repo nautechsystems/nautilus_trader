@@ -1414,6 +1414,8 @@ struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
 
 const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
 
+void interned_string_stats(void);
+
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *

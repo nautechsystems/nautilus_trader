@@ -537,6 +537,7 @@ cdef class TradeTick(Data):
         )
 
     def __getstate__(self):
+        print(len(self.instrument_id.value))
         return (
             self.instrument_id.value,
             self._mem.price.raw,
@@ -550,6 +551,7 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
+        print(len(state[0]))
         self._mem = trade_tick_new(
             instrument_id_new_from_cstr(
                 pystr_to_cstr(state[0]),

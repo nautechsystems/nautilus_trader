@@ -145,7 +145,13 @@ mod tests {
     use std::{ffi::CStr, str::FromStr};
 
     use super::InstrumentId;
-    use crate::identifiers::instrument_id::{instrument_id_to_cstr, InstrumentIdParseError};
+    use crate::identifiers::{
+        instrument_id::{
+            instrument_id_new_from_cstr, instrument_id_to_cstr, InstrumentIdParseError,
+        },
+        symbol::Symbol,
+        venue::Venue,
+    };
 
     #[test]
     fn test_instrument_id_parse_success() {
@@ -194,6 +200,26 @@ mod tests {
             let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
             let result = instrument_id_to_cstr(&id);
             assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
+        }
+    }
+
+    #[test]
+    fn test_to_cstr_and_back() {
+        unsafe {
+            let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+            let result = instrument_id_to_cstr(&id);
+            let id2 = instrument_id_new_from_cstr(result);
+            assert_eq!(id, id2);
+        }
+    }
+
+    #[test]
+    fn test_from_symbol_and_back() {
+        unsafe {
+            let id = InstrumentId::new(Symbol::new("ETH/USDT"), Venue::new("BINANCE"));
+            let result = instrument_id_to_cstr(&id);
+            let id2 = instrument_id_new_from_cstr(result);
+            assert_eq!(id, id2);
         }
     }
 }

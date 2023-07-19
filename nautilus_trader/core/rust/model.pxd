@@ -918,6 +918,8 @@ cdef extern from "../includes/model.h":
 
     const char *order_denied_reason_to_cstr(const OrderDenied_t *event);
 
+    void interned_string_stats();
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety

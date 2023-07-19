@@ -54,6 +54,14 @@ pub extern "C" fn quote_tick_new(
 
 #[no_mangle]
 pub extern "C" fn quote_tick_eq(lhs: &QuoteTick, rhs: &QuoteTick) -> u8 {
+    assert_eq!(lhs.ask, rhs.ask);
+    assert_eq!(lhs.ask_size, rhs.ask_size);
+    assert_eq!(lhs.bid, rhs.bid);
+    assert_eq!(lhs.bid_size, rhs.bid_size);
+    assert_eq!(lhs.ts_event, rhs.ts_event);
+    assert_eq!(lhs.ts_init, rhs.ts_init);
+    assert_eq!(lhs.instrument_id.symbol.value, rhs.instrument_id.symbol.value);
+    assert_eq!(lhs.instrument_id.venue.value, rhs.instrument_id.venue.value);
     u8::from(lhs == rhs)
 }
 
