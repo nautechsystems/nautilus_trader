@@ -1004,6 +1004,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     StrategyId_t strategy_id_new(const char *ptr);
 
+    uint64_t strategy_id_hash(const StrategyId_t *id);
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
@@ -1028,6 +1030,8 @@ cdef extern from "../includes/model.h":
     #
     # - Assumes `ptr` is a valid C string pointer.
     TraderId_t trader_id_new(const char *ptr);
+
+    uint64_t trader_id_hash(const TraderId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

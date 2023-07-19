@@ -1520,6 +1520,8 @@ uint64_t position_id_hash(const struct PositionId_t *id);
  */
 struct StrategyId_t strategy_id_new(const char *ptr);
 
+uint64_t strategy_id_hash(const struct StrategyId_t *id);
+
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
@@ -1550,6 +1552,8 @@ uint64_t trade_id_hash(const struct TradeId_t *id);
  * - Assumes `ptr` is a valid C string pointer.
  */
 struct TraderId_t trader_id_new(const char *ptr);
+
+uint64_t trader_id_hash(const struct TraderId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

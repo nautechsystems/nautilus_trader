@@ -77,6 +77,11 @@ pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
     StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[no_mangle]
+pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
+    id.value.precomputed_hash()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

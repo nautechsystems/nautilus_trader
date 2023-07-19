@@ -74,6 +74,11 @@ pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
     TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[no_mangle]
+pub extern "C" fn trader_id_hash(id: &TraderId) -> u64 {
+    id.value.precomputed_hash()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
