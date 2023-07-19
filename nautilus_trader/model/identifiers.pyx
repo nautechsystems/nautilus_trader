@@ -28,6 +28,7 @@ from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
 from nautilus_trader.core.rust.model cimport order_list_id_hash
 from nautilus_trader.core.rust.model cimport order_list_id_new
 from nautilus_trader.core.rust.model cimport position_id_hash
@@ -260,7 +261,7 @@ cdef class InstrumentId(Identifier):
         return instrument_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return cstr_to_pystr(instrument_id_to_cstr(&self._mem))
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
