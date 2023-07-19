@@ -43,6 +43,15 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
+# Represents a 'NULL' order (used for 'CLEAR' actions by OrderBookDelta)
+NULL_ORDER = BookOrder(
+    side=OrderSide.NO_ORDER_SIDE,
+    price=Price(0, 0),
+    size=Quantity(0, 0),
+    order_id=0,
+)
+
+
 cdef class BookOrder:
     """
     Represents an order in a book.
