@@ -48,6 +48,7 @@ from nautilus_trader.core.rust.model cimport venue_order_id_hash
 from nautilus_trader.core.rust.model cimport venue_order_id_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 
 
 cdef class Identifier:
@@ -143,7 +144,7 @@ cdef class Symbol(Identifier):
         return symbol
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class Venue(Identifier):
@@ -186,7 +187,7 @@ cdef class Venue(Identifier):
         return venue
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     cpdef bint is_synthetic(self):
         """
@@ -346,7 +347,7 @@ cdef class ComponentId(Identifier):
         return component_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class ClientId(Identifier):
@@ -387,7 +388,7 @@ cdef class ClientId(Identifier):
         return client_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class TraderId(Identifier):
@@ -437,7 +438,7 @@ cdef class TraderId(Identifier):
         return trader_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     cpdef str get_tag(self):
         """
@@ -504,7 +505,7 @@ cdef class StrategyId(Identifier):
         return strategy_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     cpdef str get_tag(self):
         """
@@ -569,7 +570,7 @@ cdef class ExecAlgorithmId(Identifier):
         return exec_algorithm_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
 
 
@@ -618,7 +619,7 @@ cdef class AccountId(Identifier):
         return account_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     cpdef str get_issuer(self):
         """
@@ -681,7 +682,7 @@ cdef class ClientOrderId(Identifier):
         return client_order_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     cpdef bint is_this_trader(self, TraderId trader_id):
         """
@@ -740,7 +741,7 @@ cdef class VenueOrderId(Identifier):
         return venue_order_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class OrderListId(Identifier):
@@ -777,7 +778,7 @@ cdef class OrderListId(Identifier):
         return order_list_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class PositionId(Identifier):
@@ -814,7 +815,7 @@ cdef class PositionId(Identifier):
         return position_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     cdef bint is_virtual_c(self):
         return self.to_str().startswith("P-")
@@ -869,7 +870,7 @@ cdef class TradeId(Identifier):
         return trade_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(self._mem.value)
+        return ustr_to_pystr(self._mem.value)
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):
