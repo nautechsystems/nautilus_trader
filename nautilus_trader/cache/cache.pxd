@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
@@ -168,3 +170,5 @@ cdef class Cache(CacheFacade):
     cpdef void delete_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
     cpdef void delete_strategy(self, Strategy strategy)
+
+    cpdef void heartbeat(self, datetime timestamp)

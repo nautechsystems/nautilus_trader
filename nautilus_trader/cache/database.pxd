@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -77,3 +79,5 @@ cdef class CacheDatabase:
 
     cpdef void snapshot_order_state(self, Order order)
     cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl=*)
+
+    cpdef void heartbeat(self, datetime timestamp)

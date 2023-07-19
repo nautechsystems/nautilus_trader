@@ -87,6 +87,7 @@ class TradingNode:
         self._is_built = False
         self._is_running = False
 
+        self._task_heartbeats: asyncio.Task | None = None
         self._task_position_snapshots: asyncio.Task | None = None
 
     @property
@@ -378,6 +379,23 @@ class TradingNode:
         self.kernel.log.warning(f"Received {sig!s}, shutting down...")
         self.stop()
 
+    async def maintain_heartbeat(self, interval: float) -> None:
+        """
+        Maintain heartbeats at the given `interval` while the node is running.
+
+        Parameters
+        ----------
+        interval : float
+            The interval (seconds) between heartbeats.
+
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                self.cache.heartbeat(self.kernel.clock.utc_now())
+        except asyncio.CancelledError:
+            pass
+
     async def snapshot_open_positions(self, interval: float) -> None:
         """
         Snapshot the state of all open positions at the configured interval.
@@ -428,6 +446,10 @@ class TradingNode:
                 self.kernel.exec_engine.get_evt_queue_task(),
             ]
 
+            if self._config.heartbeat_interval:
+                self._task_heartbeats = asyncio.create_task(
+                    self.maintain_heartbeat(self._config.heartbeat_interval),
+                )
             if self._config.cache and self._config.cache.snapshot_positions_interval:
                 self._task_position_snapshots = asyncio.create_task(
                     self.snapshot_open_positions(self._config.cache.snapshot_positions_interval),
@@ -448,7 +470,13 @@ class TradingNode:
         """
         self.kernel.log.info("STOPPING...")
 
+        if self._task_heartbeats:
+            self.kernel.log.info("Cancelling `task_heartbeats` task...")
+            self._task_heartbeats.cancel()
+            self._task_heartbeats = None
+
         if self._task_position_snapshots:
+            self.kernel.log.info("Cancelling `task_position_snapshots` task...")
             self._task_position_snapshots.cancel()
             self._task_position_snapshots = None
 
