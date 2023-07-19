@@ -560,7 +560,7 @@ cdef class ExecAlgorithmId(Identifier):
     def __setstate__(self, state):
         self._mem = exec_algorithm_id_new(pystr_to_cstr(state))
 
-    def __eq__(self, ClientId other) -> bool:
+    def __eq__(self, ExecAlgorithmId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
         return self._mem.value == other._mem.value
