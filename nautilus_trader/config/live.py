@@ -23,6 +23,7 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.validation import NonNegativeInt
+from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 
 
@@ -177,6 +178,8 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
+    heartbeat_interval : PositiveFloat, optional
+        The heartbeat interval (seconds) to use for trading node health.
 
     """
 
@@ -187,3 +190,4 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
+    heartbeat_interval: Optional[PositiveFloat] = None
