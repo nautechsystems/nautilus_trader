@@ -23,7 +23,7 @@ use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
-use super::order::BookOrder;
+use super::order::{BookOrder, NULL_ORDER};
 use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
 
 /// Represents a single change/delta in an order book.
@@ -108,16 +108,16 @@ impl OrderBookDelta {
     fn py_new(
         instrument_id: InstrumentId,
         action: BookAction,
-        order: BookOrder,
         flags: u8,
         sequence: u64,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        order: Option<BookOrder>,
     ) -> Self {
         Self::new(
             instrument_id,
             action,
-            order,
+            order.unwrap_or(NULL_ORDER),
             flags,
             sequence,
             ts_event,

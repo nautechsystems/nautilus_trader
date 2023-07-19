@@ -30,6 +30,19 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+pub const NULL_ORDER: BookOrder = BookOrder {
+    side: OrderSide::NoOrderSide,
+    price: Price {
+        raw: 0,
+        precision: 0,
+    },
+    size: Quantity {
+        raw: 0,
+        precision: 0,
+    },
+    order_id: 0,
+};
+
 /// Represents an order in a book.
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
