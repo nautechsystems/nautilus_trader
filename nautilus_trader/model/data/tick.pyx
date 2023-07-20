@@ -25,11 +25,13 @@ from nautilus_trader.core.rust.model cimport quote_tick_eq
 from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
+from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_tick_eq
 from nautilus_trader.core.rust.model cimport trade_tick_hash
 from nautilus_trader.core.rust.model cimport trade_tick_new
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
+from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.enums_c cimport AggressorSide
@@ -38,6 +40,8 @@ from nautilus_trader.model.enums_c cimport aggressor_side_from_str
 from nautilus_trader.model.enums_c cimport aggressor_side_to_str
 from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -102,7 +106,8 @@ cdef class QuoteTick(Data):
 
     def __getstate__(self):
         return (
-            self.instrument_id.value,
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
             self._mem.bid.raw,
             self._mem.ask.raw,
             self._mem.bid.precision,
@@ -117,10 +122,10 @@ cdef class QuoteTick(Data):
 
     def __setstate__(self, state):
         self._mem = quote_tick_new(
-            instrument_id_new_from_cstr(
-                pystr_to_cstr(state[0]),
-            ),
-            state[1],
+            InstrumentId(
+                Symbol(state[0]),
+                Venue(state[1]),
+            )._mem,
             state[2],
             state[3],
             state[4],
@@ -130,6 +135,7 @@ cdef class QuoteTick(Data):
             state[8],
             state[9],
             state[10],
+            state[11],
         )
 
     def __eq__(self, QuoteTick other) -> bool:
@@ -539,7 +545,8 @@ cdef class TradeTick(Data):
     def __getstate__(self):
         print(len(self.instrument_id.value))
         return (
-            self.instrument_id.value,
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
             self._mem.price.raw,
             self._mem.price.precision,
             self._mem.size.raw,
@@ -553,17 +560,18 @@ cdef class TradeTick(Data):
     def __setstate__(self, state):
         print(len(state[0]))
         self._mem = trade_tick_new(
-            instrument_id_new_from_cstr(
-                pystr_to_cstr(state[0]),
-            ),
-            state[1],
+            InstrumentId(
+                Symbol(state[0]),
+                Venue(state[1]),
+            )._mem,
             state[2],
             state[3],
             state[4],
             state[5],
-            trade_id_new(pystr_to_cstr(state[6])),
-            state[7],
+            state[6],
+            TradeId(state[7])._mem,
             state[8],
+            state[9],
         )
 
     def __eq__(self, TradeTick other) -> bool:
