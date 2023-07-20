@@ -18,6 +18,8 @@ from typing import Optional
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.config.validation import PositiveFloat
+from nautilus_trader.config.validation import PositiveInt
 
 
 class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -92,6 +94,10 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If the `EXPIRED` execution type is semantically treated as `CANCELED`.
         Binance treats cancels with certain combinations of order type and time in force as expired
         events. This config option allows you to treat these uniformally as cancels.
+    max_retries : PositiveInt, optional
+        The maximum number of times a submit or cancel order request will be retried.
+    retry_delay : PositiveFloat, optional
+        The delay (seconds) between retries.
 
     """
 
@@ -105,3 +111,5 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     clock_sync_interval_secs: int = 0
     use_position_ids: bool = True
     treat_expired_as_canceled: bool = False
+    max_retries: Optional[PositiveInt] = None
+    retry_delay: Optional[PositiveFloat] = None
