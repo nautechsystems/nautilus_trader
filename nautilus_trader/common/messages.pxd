@@ -17,14 +17,15 @@ from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.model.enums_c cimport TradingState
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class ComponentStateChanged(Event):
     cdef readonly TraderId trader_id
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
-    cdef readonly ComponentId component_id
-    """The component ID associated with the event.\n\n:returns: `ComponentId`"""
+    cdef readonly Identifier component_id
+    """The component ID associated with the event.\n\n:returns: `Identifier`"""
     cdef readonly str component_type
     """The component type associated with the event.\n\n:returns: `str`"""
     cdef readonly ComponentState state

@@ -52,6 +52,8 @@ from nautilus_trader.model.enums_c cimport bar_aggregation_from_str
 from nautilus_trader.model.enums_c cimport bar_aggregation_to_str
 from nautilus_trader.model.enums_c cimport price_type_from_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -483,7 +485,8 @@ cdef class BarType:
 
     def __getstate__(self):
         return (
-            self.instrument_id.value,
+            self.instrument_id.symbol.value,
+            self.instrument_id.venue.value,
             self._mem.spec.step,
             self._mem.spec.aggregation,
             self._mem.spec.price_type,
@@ -492,15 +495,16 @@ cdef class BarType:
 
     def __setstate__(self, state):
         self._mem = bar_type_new(
-            instrument_id_new_from_cstr(
-                pystr_to_cstr(state[0]),
-            ),
+            InstrumentId(
+                Symbol(state[0]),
+                Venue(state[1]),
+            )._mem,
             bar_specification_new(
-                state[1],
                 state[2],
-                state[3]
+                state[3],
+                state[4]
             ),
-            state[4],
+            state[5],
         )
 
     cdef str to_str(self):
@@ -707,7 +711,8 @@ cdef class Bar(Data):
 
     def __getstate__(self):
         return (
-            self.bar_type.instrument_id.value,
+            self.bar_type.instrument_id.symbol.value,
+            self.bar_type.instrument_id.venue.value,
             self._mem.bar_type.spec.step,
             self._mem.bar_type.spec.aggregation,
             self._mem.bar_type.spec.price_type,
@@ -726,17 +731,17 @@ cdef class Bar(Data):
     def __setstate__(self, state):
         self._mem = bar_new_from_raw(
             bar_type_new(
-                instrument_id_new_from_cstr(
-                    pystr_to_cstr(state[0]),
-                ),
+                InstrumentId(
+                    Symbol(state[0]),
+                    Venue(state[1]),
+                )._mem,
                 bar_specification_new(
-                    state[1],
                     state[2],
                     state[3],
+                    state[4],
                 ),
-                state[4],
+                state[5],
             ),
-            state[5],
             state[6],
             state[7],
             state[8],
@@ -745,6 +750,7 @@ cdef class Bar(Data):
             state[11],
             state[12],
             state[13],
+            state[14],
         )
 
     def __eq__(self, Bar other) -> bool:

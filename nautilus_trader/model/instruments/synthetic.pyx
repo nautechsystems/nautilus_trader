@@ -47,6 +47,7 @@ from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 
 
@@ -116,30 +117,32 @@ cdef class SyntheticInstrument(Data):
             ts_event,
             ts_init,
         )
+        self.id = InstrumentId(symbol, Venue("SYNTH"))
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
             synthetic_instrument_drop(self._mem)
 
-    def __getstate__(self):
-        return (
-            self.id.symbol.value,
-            self.price_precision,
-            msgspec.json.encode([c.value for c in self.components]),
-            self.formula,
-            self.ts_event,
-            self.ts_init,
-        )
-
-    def __setstate__(self, state):
-        self._mem = synthetic_instrument_new(
-            symbol_new(pystr_to_cstr(state[0])),
-            state[1],
-            pybytes_to_cstr(state[2]),
-            pystr_to_cstr(state[3]),
-            state[4],
-            state[5],
-        )
+    # TODO: It's currently not safe to pickle synthetic instruments
+    # def __getstate__(self):
+    #     return (
+    #         self.id.symbol.value,
+    #         self.price_precision,
+    #         msgspec.json.encode([c.value for c in self.components]),
+    #         self.formula,
+    #         self.ts_event,
+    #         self.ts_init,
+    #     )
+    #
+    # def __setstate__(self, state):
+    #     self._mem = synthetic_instrument_new(
+    #         symbol_new(pystr_to_cstr(state[0])),
+    #         state[1],
+    #         pybytes_to_cstr(state[2]),
+    #         pystr_to_cstr(state[3]),
+    #         state[4],
+    #         state[5],
+    #     )
 
     def __eq__(self, SyntheticInstrument other) -> bool:
         return self.id == other.id
@@ -147,17 +150,17 @@ cdef class SyntheticInstrument(Data):
     def __hash__(self) -> int:
         return hash(self.id)
 
-    @property
-    def id(self) -> InstrumentId:
-        """
-        Return the synthetic instruments ID.
-
-        Returns
-        -------
-        InstrumentId
-
-        """
-        return InstrumentId.from_mem_c(synthetic_instrument_id(&self._mem))
+    # @property
+    # def id(self) -> InstrumentId:
+    #     """
+    #     Return the synthetic instruments ID.
+    #
+    #     Returns
+    #     -------
+    #     InstrumentId
+    #
+    #     """
+    #     return InstrumentId.from_mem_c(synthetic_instrument_id(&self._mem))
 
     @property
     def price_precision(self) -> int:

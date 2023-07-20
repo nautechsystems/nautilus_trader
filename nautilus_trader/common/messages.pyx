@@ -31,6 +31,7 @@ from nautilus_trader.model.enums_c cimport TradingState
 from nautilus_trader.model.enums_c cimport trading_state_from_str
 from nautilus_trader.model.enums_c cimport trading_state_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 
 
@@ -42,7 +43,7 @@ cdef class ComponentStateChanged(Event):
     ----------
     trader_id : TraderId
         The trader ID associated with the event.
-    component_id : ComponentId
+    component_id : Identifier
         The component ID associated with the event.
     component_type : str
         The component type.
@@ -59,7 +60,7 @@ cdef class ComponentStateChanged(Event):
     def __init__(
         self,
         TraderId trader_id not None,
-        ComponentId component_id not None,
+        Identifier component_id not None,
         str component_type not None,
         ComponentState state,
         dict config not None,
