@@ -22,6 +22,7 @@ import pandas as pd
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceUserTrade
@@ -155,6 +156,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
+        self._log.info(f"{config.max_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
         self._set_account_id(AccountId(f"{BINANCE_VENUE.value}-spot-master"))
 
@@ -195,6 +198,20 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             OrderType.MARKET_IF_TOUCHED: self._submit_stop_market_order,
             OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market_order,
         }
+
+        self._recv_window = 5_000
+
+        # Retry logic (hard coded for now)
+        self._max_retries: int = config.max_retries or 0
+        self._retry_delay: float = config.retry_delay or 1.0
+        self._retry_errors: set[BinanceErrorCode] = {
+            BinanceErrorCode.DISCONNECTED,
+            BinanceErrorCode.INVALID_TIMESTAMP,
+            BinanceErrorCode.CANCEL_REJECTED,
+            BinanceErrorCode.ME_RECVWINDOW_REJECT,
+        }
+
+        self._order_retries: dict[ClientOrderId, int] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
         self._log.info(f"Base URL WebSocket {base_url_ws}.", LogColor.BLUE)
@@ -346,7 +363,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         strategy_id=order.strategy_id,
                         instrument_id=instrument_id,
                         client_order_id=client_order_id,
-                        reason=e.message,
+                        reason=str(e.message),
                         ts_event=self._clock.timestamp_ns(),
                     )
             return None  # Error now handled
@@ -538,18 +555,36 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
-        try:
-            await self._submit_order_method[order.order_type](order)
-        except BinanceError as e:
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=e.message,
-                ts_event=self._clock.timestamp_ns(),
-            )
-        except KeyError:
-            raise RuntimeError(f"unsupported order type, was {order.order_type}")
+
+        while True:
+            try:
+                await self._submit_order_method[order.order_type](order)
+                self._order_retries.pop(order.client_order_id, None)
+                break  # Successful request
+            except KeyError:
+                raise RuntimeError(f"unsupported order type, was {order.order_type}")
+            except BinanceError as e:
+                error_code = BinanceErrorCode(e.message["code"])
+                if error_code not in self._retry_errors or not self._max_retries:
+                    raise
+
+                retries = self._order_retries.get(order.client_order_id, 0) + 1
+                if retries > self._max_retries:
+                    self.generate_order_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        reason=e.message,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
+                    break  # Done
+                self._order_retries[order.client_order_id] = retries
+
+                self._log.warning(
+                    f"{error_code.name}: retrying {order.client_order_id!r} "
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                )
+                await asyncio.sleep(self._retry_delay)
 
     def _check_order_validity(self, order: Order) -> None:
         # Implement in child class
@@ -562,7 +597,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             order_type=self._enum_parser.parse_internal_order_type(order),
             quantity=str(order.quantity),
             new_client_order_id=order.client_order_id.value,
-            recv_window=str(5000),
+            recv_window=str(self._recv_window),
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
@@ -587,7 +622,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
             reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
-            recv_window=str(5000),
+            recv_window=str(self._recv_window),
         )
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
@@ -618,7 +653,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
             reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
-            recv_window=str(5000),
+            recv_window=str(self._recv_window),
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -661,7 +696,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type=working_type,
             reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
-            recv_window=str(5000),
+            recv_window=str(self._recv_window),
         )
 
     async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
@@ -715,7 +750,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             working_type=working_type,
             reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
             new_client_order_id=order.client_order_id.value,
-            recv_window=str(5000),
+            recv_window=str(self._recv_window),
         )
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
@@ -733,11 +768,30 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.error("Cannot modify order: not supported by the venue.")
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        await self._cancel_order_single(
-            instrument_id=command.instrument_id,
-            client_order_id=command.client_order_id,
-            venue_order_id=command.venue_order_id,
-        )
+        while True:
+            try:
+                await self._cancel_order_single(
+                    instrument_id=command.instrument_id,
+                    client_order_id=command.client_order_id,
+                    venue_order_id=command.venue_order_id,
+                )
+                self._order_retries.pop(command.client_order_id, None)
+                break  # Successful request
+            except BinanceError as e:
+                error_code = BinanceErrorCode(e.message["code"])
+                if error_code not in self._retry_errors or not self._max_retries:
+                    raise
+
+                retries = self._order_retries.get(command.client_order_id, 0) + 1
+                if retries > self._max_retries:
+                    break
+                self._order_retries[command.client_order_id] = retries
+
+                self._log.warning(
+                    f"{error_code.name}: retrying {command.client_order_id!r} "
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                )
+                await asyncio.sleep(self._retry_delay)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders_strategy = self._cache.orders_open(
