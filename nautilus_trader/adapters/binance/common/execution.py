@@ -536,6 +536,19 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
+    def _check_order_validity(self, order: Order) -> None:
+        # Implement in child class
+        raise NotImplementedError
+
+    def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
+        if (
+            error_code not in self._retry_errors
+            or not self._max_retries
+            or retries > self._max_retries
+        ):
+            return False
+        return True
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_inner(command.order)
 
@@ -565,11 +578,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 raise RuntimeError(f"unsupported order type, was {order.order_type}")
             except BinanceError as e:
                 error_code = BinanceErrorCode(e.message["code"])
-                if error_code not in self._retry_errors or not self._max_retries:
-                    raise
 
                 retries = self._order_retries.get(order.client_order_id, 0) + 1
-                if retries > self._max_retries:
+                self._order_retries[order.client_order_id] = retries
+
+                if not self._should_retry(error_code, retries):
                     self.generate_order_rejected(
                         strategy_id=order.strategy_id,
                         instrument_id=order.instrument_id,
@@ -577,18 +590,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         reason=e.message,
                         ts_event=self._clock.timestamp_ns(),
                     )
-                    break  # Done
-                self._order_retries[order.client_order_id] = retries
+                    break
 
                 self._log.warning(
                     f"{error_code.name}: retrying {order.client_order_id!r} "
                     f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
                 )
                 await asyncio.sleep(self._retry_delay)
-
-    def _check_order_validity(self, order: Order) -> None:
-        # Implement in child class
-        raise NotImplementedError
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
         await self._http_account.new_order(
@@ -779,13 +787,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 break  # Successful request
             except BinanceError as e:
                 error_code = BinanceErrorCode(e.message["code"])
-                if error_code not in self._retry_errors or not self._max_retries:
-                    raise
 
                 retries = self._order_retries.get(command.client_order_id, 0) + 1
-                if retries > self._max_retries:
-                    break
                 self._order_retries[command.client_order_id] = retries
+
+                if not self._should_retry(error_code, retries):
+                    break
 
                 self._log.warning(
                     f"{error_code.name}: retrying {command.client_order_id!r} "
