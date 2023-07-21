@@ -130,6 +130,7 @@ cdef class Order:
     """The UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
 
     cpdef str info(self)
+    cpdef str status_string(self)
     cpdef dict to_dict(self)
 
     cdef void set_triggered_price_c(self, Price triggered_price)

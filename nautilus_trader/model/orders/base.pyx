@@ -225,6 +225,17 @@ cdef class Order:
             f", tags={self.tags})"
         )
 
+    cpdef str status_string(self):
+        """
+        Return a string representation of the current order status.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.status_string_c()
+
     cpdef str info(self):
         """
         Return a summary description of the order.
