@@ -381,6 +381,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             instrument_id=self._get_cached_instrument_id(binance_order.symbol),
             report_id=UUID4(),
             enum_parser=self._enum_parser,
+            treat_expired_as_canceled=self._treat_expired_as_canceled,
             ts_init=self._clock.timestamp_ns(),
         )
 
@@ -451,6 +452,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 instrument_id=self._get_cached_instrument_id(order.symbol),
                 report_id=UUID4(),
                 enum_parser=self._enum_parser,
+                treat_expired_as_canceled=self._treat_expired_as_canceled,
                 ts_init=self._clock.timestamp_ns(),
             )
             self._log.debug(f"Received {reports}.")
