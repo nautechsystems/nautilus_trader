@@ -206,6 +206,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._retry_delay: float = config.retry_delay or 1.0
         self._retry_errors: set[BinanceErrorCode] = {
             BinanceErrorCode.DISCONNECTED,
+            BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
+            BinanceErrorCode.TIMEOUT,
             BinanceErrorCode.INVALID_TIMESTAMP,
             BinanceErrorCode.CANCEL_REJECTED,
             BinanceErrorCode.ME_RECVWINDOW_REJECT,
@@ -340,10 +342,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     else None,
                 )
         except BinanceError as e:
+            retries += 1
             self._log.error(
                 f"Cannot generate order status report for {client_order_id!r}: {e.message}. Retry {retries}/3",
             )
-            retries += 1
             self._generate_order_status_retries[client_order_id] = retries
             if not client_order_id:
                 self._log.warning("Cannot retry without a client order ID.")
@@ -776,6 +778,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.error("Cannot modify order: not supported by the venue.")
+        # TODO: This will be implemented for LIMIT orders shortly
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         while True:
@@ -803,7 +806,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 await asyncio.sleep(self._retry_delay)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        open_orders_strategy = self._cache.orders_open(
+        open_orders_strategy: list[Order] = self._cache.orders_open(
             instrument_id=command.instrument_id,
             strategy_id=command.strategy_id,
         )
@@ -843,6 +846,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         client_order_id: ClientOrderId,
         venue_order_id: Optional[VenueOrderId],
     ) -> None:
+        order: Optional[Order] = self._cache.order(client_order_id)
+        if order is None:
+            self._log.error(f"{client_order_id!r} not found to cancel.")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"CancelOrder command for {client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange).",
+            )
+            return
+
         try:
             if venue_order_id is not None:
                 await self._http_account.cancel_order(
