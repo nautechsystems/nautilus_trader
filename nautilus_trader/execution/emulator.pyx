@@ -768,6 +768,7 @@ cdef class OrderEmulator(Actor):
 
         matching_core.delete_order(order)
 
+        order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
 
         # Cast to writable cache
@@ -815,6 +816,7 @@ cdef class OrderEmulator(Actor):
 
         matching_core.delete_order(order)
 
+        order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef LimitOrder transformed = LimitOrder.transform(order, self.clock.timestamp_ns())
 
         # Cast to writable cache
