@@ -15,6 +15,7 @@
 
 import pytest
 
+from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
@@ -60,11 +61,34 @@ class TestOrderBookDelta:
         assert isinstance(hash(delta), int)
         assert (
             str(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(10.0, 5.0, BUY, {order.order_id}), sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0}}), sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
         assert (
             repr(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(10.0, 5.0, BUY, {order.order_id}), sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0}}), sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+        )
+
+    def test_with_null_book_order(self):
+        # Arrange
+        delta = OrderBookDelta(
+            instrument_id=AUDUSD,
+            action=BookAction.CLEAR,
+            order=NULL_ORDER,
+            flags=32,
+            sequence=123456789,
+            ts_event=0,
+            ts_init=1_000_000_000,
+        )
+
+        # Act, Assert
+        assert isinstance(hash(delta), int)
+        assert (
+            str(delta)
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, ts_event=0, ts_init=1000000000, sequence=123456789, flags=32)"  # noqa
+        )
+        assert (
+            repr(delta)
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, ts_event=0, ts_init=1000000000, sequence=123456789, flags=32)"  # noqa
         )
 
     def test_to_dict_with_order_returns_expected_dict(self):

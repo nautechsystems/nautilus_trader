@@ -31,6 +31,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -171,6 +172,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         report_id: UUID4,
         enum_parser: BinanceEnumParser,
+        treat_expired_as_canceled: bool,
         ts_init: int,
     ) -> OrderStatusReport:
         if self.price is None:
@@ -214,6 +216,10 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         if self.status is None:
             raise ValueError("`status` was `None` when a value was expected")
 
+        order_status = enum_parser.parse_binance_order_status(self.status)
+        if treat_expired_as_canceled and order_status == OrderStatus.EXPIRED:
+            order_status = OrderStatus.CANCELED
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -224,7 +230,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             order_type=enum_parser.parse_binance_order_type(self.type),
             contingency_type=contingency_type,
             time_in_force=enum_parser.parse_binance_time_in_force(self.timeInForce),
-            order_status=enum_parser.parse_binance_order_status(self.status),
+            order_status=order_status,
             price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),
             trigger_type=trigger_type,

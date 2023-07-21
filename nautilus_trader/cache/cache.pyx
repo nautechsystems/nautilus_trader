@@ -22,6 +22,7 @@ from typing import Optional
 
 from nautilus_trader.config import CacheConfig
 
+from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -3956,3 +3957,21 @@ cdef class Cache(CacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._index_position_strategy.get(position_id)
+
+    cpdef void heartbeat(self, datetime timestamp):
+        """
+        Add a heartbeat at the given `timestamp`.
+
+        Parameters
+        ----------
+        timestamp : datetime
+            The timestamp for the heartbeat.
+
+        """
+        Condition.not_none(timestamp, "timestamp")
+
+        if self._database is None:
+            self._log.warning(f"Cannot set heartbeat {timestamp} (no database configured).")
+            return
+
+        self._database.heartbeat(timestamp)

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.config import CacheDatabaseConfig
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -195,5 +197,9 @@ cdef class CacheDatabase:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl = None):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef void heartbeat(self, datetime timestamp):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
