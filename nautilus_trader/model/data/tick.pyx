@@ -106,8 +106,7 @@ cdef class QuoteTick(Data):
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.bid.raw,
             self._mem.ask.raw,
             self._mem.bid.precision,
@@ -121,11 +120,10 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = quote_tick_new(
-            InstrumentId(
-                Symbol(state[0]),
-                Venue(state[1]),
-            )._mem,
+            instrument_id._mem,
+            state[1],
             state[2],
             state[3],
             state[4],
@@ -135,7 +133,6 @@ cdef class QuoteTick(Data):
             state[8],
             state[9],
             state[10],
-            state[11],
         )
 
     def __eq__(self, QuoteTick other) -> bool:
@@ -543,10 +540,8 @@ cdef class TradeTick(Data):
         )
 
     def __getstate__(self):
-        print(len(self.instrument_id.value))
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.price.raw,
             self._mem.price.precision,
             self._mem.size.raw,
@@ -558,20 +553,17 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
-        print(len(state[0]))
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = trade_tick_new(
-            InstrumentId(
-                Symbol(state[0]),
-                Venue(state[1]),
-            )._mem,
+            instrument_id._mem,
+            state[1],
             state[2],
             state[3],
             state[4],
             state[5],
-            state[6],
-            TradeId(state[7])._mem,
+            TradeId(state[6])._mem,
+            state[7],
             state[8],
-            state[9],
         )
 
     def __eq__(self, TradeTick other) -> bool:

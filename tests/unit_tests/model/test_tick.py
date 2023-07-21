@@ -187,15 +187,9 @@ class TestQuoteTick:
             ts_init=2,
         )
 
-        # show_string_stats()
-        # tick.instrument_id.print_pointers()
-
         # Act
         pickled = pickle.dumps(tick)
         unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
-
-        # show_string_stats()
-        # unpickled.instrument_id.print_pointers()
 
         # Assert
         assert tick == unpickled

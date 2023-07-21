@@ -485,8 +485,7 @@ cdef class BarType:
 
     def __getstate__(self):
         return (
-            self.instrument_id.symbol.value,
-            self.instrument_id.venue.value,
+            self.instrument_id.value,
             self._mem.spec.step,
             self._mem.spec.aggregation,
             self._mem.spec.price_type,
@@ -494,17 +493,15 @@ cdef class BarType:
         )
 
     def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = bar_type_new(
-            InstrumentId(
-                Symbol(state[0]),
-                Venue(state[1]),
-            )._mem,
+            instrument_id._mem,
             bar_specification_new(
+                state[1],
                 state[2],
-                state[3],
-                state[4]
+                state[3]
             ),
-            state[5],
+            state[4],
         )
 
     cdef str to_str(self):
@@ -545,7 +542,6 @@ cdef class BarType:
         Condition.valid_string(value, 'value')
 
         cdef list pieces = value.rsplit('-', maxsplit=4)
-
         if len(pieces) != 5:
             raise ValueError(f"The `BarType` string value was malformed, was {value}")
 
@@ -711,8 +707,7 @@ cdef class Bar(Data):
 
     def __getstate__(self):
         return (
-            self.bar_type.instrument_id.symbol.value,
-            self.bar_type.instrument_id.venue.value,
+            self.bar_type.instrument_id.value,
             self._mem.bar_type.spec.step,
             self._mem.bar_type.spec.aggregation,
             self._mem.bar_type.spec.price_type,
@@ -729,19 +724,18 @@ cdef class Bar(Data):
         )
 
     def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = bar_new_from_raw(
             bar_type_new(
-                InstrumentId(
-                    Symbol(state[0]),
-                    Venue(state[1]),
-                )._mem,
+                instrument_id._mem,
                 bar_specification_new(
+                    state[1],
                     state[2],
                     state[3],
-                    state[4],
                 ),
-                state[5],
+                state[4],
             ),
+            state[5],
             state[6],
             state[7],
             state[8],
@@ -750,7 +744,6 @@ cdef class Bar(Data):
             state[11],
             state[12],
             state[13],
-            state[14],
         )
 
     def __eq__(self, Bar other) -> bool:
