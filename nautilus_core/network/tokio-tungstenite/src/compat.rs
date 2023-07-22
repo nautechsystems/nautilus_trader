@@ -1,4 +1,4 @@
-use log::*;
+use log::trace;
 use std::{
     io::{Read, Write},
     pin::Pin,
@@ -10,13 +10,13 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tungstenite::Error as WsError;
 
-pub(crate) enum ContextWaker {
+pub enum ContextWaker {
     Read,
     Write,
 }
 
 #[derive(Debug)]
-pub(crate) struct AllowStd<S> {
+pub struct AllowStd<S> {
     inner: S,
     // We have the problem that external read operations (i.e. the Stream impl)
     // can trigger both read (AsyncRead) and write (AsyncWrite) operations on
@@ -50,7 +50,7 @@ pub(crate) struct AllowStd<S> {
 // read waker slot for this, but any would do.
 //
 // Don't ever use this from multiple tasks at the same time!
-pub(crate) trait SetWaker {
+pub trait SetWaker {
     fn set_waker(&self, waker: &task::Waker);
 }
 
@@ -186,7 +186,7 @@ where
     }
 }
 
-pub(crate) fn cvt<T>(r: Result<T, WsError>) -> Poll<Result<T, WsError>> {
+pub fn cvt<T>(r: Result<T, WsError>) -> Poll<Result<T, WsError>> {
     match r {
         Ok(v) => Poll::Ready(Ok(v)),
         Err(WsError::Io(ref e)) if e.kind() == std::io::ErrorKind::WouldBlock => {

@@ -1,11 +1,11 @@
-//! Async WebSocket usage.
+//! Async `WebSocket` usage.
 //!
-//! This library is an implementation of WebSocket handshakes and streams. It
-//! is based on the crate which implements all required WebSocket protocol
+//! This library is an implementation of `WebSocket` handshakes and streams. It
+//! is based on the crate which implements all required `WebSocket` protocol
 //! logic. So this crate basically just brings tokio support / tokio integration
 //! to it.
 //!
-//! Each WebSocket stream implements the required `Stream` and `Sink` traits,
+//! Each `WebSocket` stream implements the required `Stream` and `Sink` traits,
 //! so the socket is just a stream of messages coming in and going out.
 
 #![deny(missing_docs, unused_must_use, unused_mut, unused_imports, unused_import_braces)]
@@ -28,7 +28,7 @@ use futures_util::{
     sink::{Sink, SinkExt},
     stream::{FusedStream, Stream},
 };
-use log::*;
+use log::{debug, trace};
 use std::{
     pin::Pin,
     task::{Context, Poll},
@@ -65,13 +65,13 @@ pub use stream::MaybeTlsStream;
 
 use tungstenite::protocol::CloseFrame;
 
-/// Creates a WebSocket handshake from a request and a stream.
+/// Creates a `WebSocket` handshake from a request and a stream.
 /// For convenience, the user may call this with a url string, a URL,
 /// or a `Request`. Calling with `Request` allows the user to add
-/// a WebSocket protocol or other custom headers.
+/// a `WebSocket` protocol or other custom headers.
 ///
 /// Internally, this custom creates a handshake representation and returns
-/// a future representing the resolution of the WebSocket handshake. The
+/// a future representing the resolution of the `WebSocket` handshake. The
 /// returned future will resolve to either `WebSocketStream<S>` or `Error`
 /// depending on whether the handshake is successful.
 ///
@@ -112,11 +112,11 @@ where
     })
 }
 
-/// Accepts a new WebSocket connection with the provided stream.
+/// Accepts a new `WebSocket` connection with the provided stream.
 ///
 /// This function will internally call `server::accept` to create a
 /// handshake representation and returns a future representing the
-/// resolution of the WebSocket handshake. The returned future will resolve
+/// resolution of the `WebSocket` handshake. The returned future will resolve
 /// to either `WebSocketStream<S>` or `Error` depending if it's successful
 /// or not.
 ///
@@ -144,7 +144,7 @@ where
     accept_hdr_async_with_config(stream, NoCallback, config).await
 }
 
-/// Accepts a new WebSocket connection with the provided stream.
+/// Accepts a new `WebSocket` connection with the provided stream.
 ///
 /// This function does the same as `accept_async()` but accepts an extra callback
 /// for header processing. The callback receives headers of the incoming
@@ -179,7 +179,7 @@ where
     })
 }
 
-/// A wrapper around an underlying raw stream which implements the WebSocket
+/// A wrapper around an underlying raw stream which implements the `WebSocket`
 /// protocol.
 ///
 /// A `WebSocketStream<S>` represents a handshake that has been completed
@@ -196,7 +196,7 @@ pub struct WebSocketStream<S> {
 }
 
 impl<S> WebSocketStream<S> {
-    /// Convert a raw socket into a WebSocketStream without performing a
+    /// Convert a raw socket into a `WebSocketStream` without performing a
     /// handshake.
     pub async fn from_raw_socket(stream: S, role: Role, config: Option<WebSocketConfig>) -> Self
     where
@@ -208,7 +208,7 @@ impl<S> WebSocketStream<S> {
         .await
     }
 
-    /// Convert a raw socket into a WebSocketStream without performing a
+    /// Convert a raw socket into a `WebSocketStream` without performing a
     /// handshake.
     pub async fn from_partially_read(
         stream: S,
@@ -226,7 +226,7 @@ impl<S> WebSocketStream<S> {
     }
 
     pub(crate) fn new(ws: WebSocket<AllowStd<S>>) -> Self {
-        WebSocketStream { inner: ws, closing: false, ended: false }
+        Self { inner: ws, closing: false, ended: false }
     }
 
     fn with_context<F, R>(&mut self, ctx: Option<(ContextWaker, &mut Context<'_>)>, f: F) -> R
@@ -268,7 +268,7 @@ impl<S> WebSocketStream<S> {
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        let msg = msg.map(|msg| msg.into_owned());
+        let msg = msg.map(tungstenite::protocol::CloseFrame::into_owned);
         self.send(Message::Close(msg)).await
     }
 }
@@ -353,7 +353,7 @@ where
     fn poll_close(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         let res = if self.closing {
             // After queueing it, we call `flush` to drive the close handshake to completion.
-            (*self).with_context(Some((ContextWaker::Write, cx)), |s| s.flush())
+            (*self).with_context(Some((ContextWaker::Write, cx)), tungstenite::WebSocket::flush)
         } else {
             (*self).with_context(Some((ContextWaker::Write, cx)), |s| s.close(None))
         };
