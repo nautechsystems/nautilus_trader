@@ -42,8 +42,8 @@ cdef class CryptoFuture(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the instrument.
-    native_symbol : Symbol
-        The native/local symbol on the exchange for the instrument.
+    raw_symbol : Symbol
+        The native/local/raw symbol for the instrument, assigned by the venue.
     underlying : Currency
         The underlying asset.
     quote_currency : Currency
@@ -118,7 +118,7 @@ cdef class CryptoFuture(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol native_symbol not None,
+        Symbol raw_symbol not None,
         Currency underlying not None,
         Currency quote_currency not None,
         Currency settlement_currency not None,
@@ -145,7 +145,7 @@ cdef class CryptoFuture(Instrument):
     ):
         super().__init__(
             instrument_id=instrument_id,
-            native_symbol=native_symbol,
+            raw_symbol=raw_symbol,
             asset_class=AssetClass.CRYPTOCURRENCY,
             asset_type=AssetType.FUTURE,
             quote_currency=quote_currency,
@@ -198,7 +198,7 @@ cdef class CryptoFuture(Instrument):
         cdef bytes info = values["info"]
         return CryptoFuture(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            native_symbol=Symbol(values["native_symbol"]),
+            raw_symbol=Symbol(values["raw_symbol"]),
             underlying=Currency.from_str_c(values["underlying"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             settlement_currency=Currency.from_str_c(values["settlement_currency"]),
@@ -228,7 +228,7 @@ cdef class CryptoFuture(Instrument):
         return {
             "type": "CryptoFuture",
             "id": obj.id.to_str(),
-            "native_symbol": obj.native_symbol.to_str(),
+            "raw_symbol": obj.raw_symbol.to_str(),
             "underlying": obj.underlying.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,

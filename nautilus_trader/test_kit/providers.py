@@ -83,7 +83,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("ADABTC"),
+            raw_symbol=Symbol("ADABTC"),
             base_currency=ADA,
             quote_currency=BTC,
             price_precision=8,
@@ -120,7 +120,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("BTCUSDT"),
+            raw_symbol=Symbol("BTCUSDT"),
             base_currency=BTC,
             quote_currency=USDT,
             price_precision=2,
@@ -157,7 +157,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("ETHUSDT"),
+            raw_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             price_precision=2,
@@ -194,7 +194,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETHUSDT-PERP"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("ETHUSDT"),
+            raw_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -239,7 +239,7 @@ class TestInstrumentProvider:
                 symbol=Symbol(f"BTCUSDT_{expiry.strftime('%y%m%d')}"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("BTCUSDT"),
+            raw_symbol=Symbol("BTCUSDT"),
             underlying=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -277,7 +277,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
-            native_symbol=Symbol("XBTUSD"),
+            raw_symbol=Symbol("XBTUSD"),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -315,7 +315,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
-            native_symbol=Symbol("ETHUSD"),
+            raw_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -383,7 +383,7 @@ class TestInstrumentProvider:
 
         return CurrencyPair(
             instrument_id=instrument_id,
-            native_symbol=Symbol(symbol),
+            raw_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
@@ -410,7 +410,7 @@ class TestInstrumentProvider:
     def equity(symbol: str = "AAPL", venue: str = "NASDAQ") -> Equity:
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
-            native_symbol=Symbol(symbol),
+            raw_symbol=Symbol(symbol),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -429,7 +429,7 @@ class TestInstrumentProvider:
     def es_future() -> FuturesContract:
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
-            native_symbol=Symbol("ESZ21"),
+            raw_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
@@ -446,7 +446,7 @@ class TestInstrumentProvider:
     def aapl_option() -> OptionsContract:
         return OptionsContract(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
-            native_symbol=Symbol("AAPL211217C00150000"),
+            raw_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
             currency=USD,
             price_precision=2,

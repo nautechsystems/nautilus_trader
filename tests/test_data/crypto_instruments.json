@@ -2,7 +2,7 @@
   {
     "type": "CurrencyPair",
     "id": "XRP/USD.BITFINEX",
-    "native_symbol": "XRPUSD",
+    "raw_symbol": "XRPUSD",
     "base_currency": "XRP",
     "quote_currency": "USD",
     "price_precision": 5,
@@ -27,7 +27,7 @@
   {
     "type": "CurrencyPair",
     "id": "BTC/USD.BITFINEX",
-    "native_symbol": "BTCUSD",
+    "raw_symbol": "BTCUSD",
     "base_currency": "BTC",
     "quote_currency": "USD",
     "price_precision": 5,
@@ -52,7 +52,7 @@
   {
     "type": "CurrencyPair",
     "id": "ETH/USD.BITFINEX",
-    "native_symbol": "ETHUSD",
+    "raw_symbol": "ETHUSD",
     "base_currency": "ETH",
     "quote_currency": "USD",
     "price_precision": 5,
@@ -77,7 +77,7 @@
   {
     "type": "CurrencyPair",
     "id": "BTC/AUD.BTCMARKETS",
-    "native_symbol": "BTCAUD",
+    "raw_symbol": "BTCAUD",
     "base_currency": "BTC",
     "quote_currency": "AUD",
     "price_precision": 5,
@@ -102,7 +102,7 @@
   {
     "type": "CurrencyPair",
     "id": "XRP/AUD.BTCMARKETS",
-    "native_symbol": "XRPAUD",
+    "raw_symbol": "XRPAUD",
     "base_currency": "XRP",
     "quote_currency": "AUD",
     "price_precision": 5,
@@ -127,7 +127,7 @@
   {
     "type": "CurrencyPair",
     "id": "ETH/AUD.BTCMARKETS",
-    "native_symbol": "ETHAUD",
+    "raw_symbol": "ETHAUD",
     "base_currency": "ETH",
     "quote_currency": "AUD",
     "price_precision": 5,

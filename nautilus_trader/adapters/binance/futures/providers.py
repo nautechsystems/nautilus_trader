@@ -234,8 +234,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             base_currency = symbol_info.parse_to_base_currency()
             quote_currency = symbol_info.parse_to_quote_currency()
 
-            native_symbol = Symbol(symbol_info.symbol)
-            parsed_symbol = BinanceSymbol(native_symbol.value).parse_as_nautilus(
+            raw_symbol = Symbol(symbol_info.symbol)
+            parsed_symbol = BinanceSymbol(raw_symbol.value).parse_as_nautilus(
                 self._account_type,
             )
             nautilus_symbol = Symbol(parsed_symbol)
@@ -287,7 +287,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             if contract_type == BinanceFuturesContractType.PERPETUAL:
                 instrument = CryptoPerpetual(
                     instrument_id=instrument_id,
-                    native_symbol=native_symbol,
+                    raw_symbol=raw_symbol,
                     base_currency=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
@@ -319,7 +319,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             ):
                 instrument = CryptoFuture(
                     instrument_id=instrument_id,
-                    native_symbol=native_symbol,
+                    raw_symbol=raw_symbol,
                     underlying=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,

@@ -34,7 +34,7 @@ use crate::{
 #[pyclass]
 pub struct OptionsContract {
     pub id: InstrumentId,
-    pub native_symbol: Symbol,
+    pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
     pub underlying: String,
     pub option_kind: OptionKind,
@@ -59,7 +59,7 @@ impl OptionsContract {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
-        native_symbol: Symbol,
+        raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
         option_kind: OptionKind,
@@ -80,7 +80,7 @@ impl OptionsContract {
     ) -> Self {
         Self {
             id,
-            native_symbol,
+            raw_symbol,
             asset_class,
             underlying,
             option_kind,
@@ -121,8 +121,8 @@ impl Instrument for OptionsContract {
         &self.id
     }
 
-    fn native_symbol(&self) -> &Symbol {
-        &self.native_symbol
+    fn raw_symbol(&self) -> &Symbol {
+        &self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {

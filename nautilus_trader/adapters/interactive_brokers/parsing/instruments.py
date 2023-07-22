@@ -148,7 +148,7 @@ def parse_equity_contract(details: IBContractDetails) -> Equity:
     instrument_id = ib_contract_to_instrument_id(details.contract)
     return Equity(
         instrument_id=instrument_id,
-        native_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(details.contract.localSymbol),
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
         price_increment=Price(details.minTick, price_precision),
@@ -169,7 +169,7 @@ def parse_futures_contract(
     instrument_id = ib_contract_to_instrument_id(details.contract)
     return FuturesContract(
         instrument_id=instrument_id,
-        native_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(details.contract.localSymbol),
         asset_class=sec_type_to_asset_class(details.underSecType),
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
@@ -200,7 +200,7 @@ def parse_options_contract(
     }[details.contract.right]
     return OptionsContract(
         instrument_id=instrument_id,
-        native_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(details.contract.localSymbol),
         asset_class=asset_class,
         currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
@@ -229,7 +229,7 @@ def parse_forex_contract(
     instrument_id = ib_contract_to_instrument_id(details.contract)
     return CurrencyPair(
         instrument_id=instrument_id,
-        native_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(details.contract.localSymbol),
         base_currency=Currency.from_str(details.contract.symbol),
         quote_currency=Currency.from_str(details.contract.currency),
         price_precision=price_precision,
@@ -262,7 +262,7 @@ def parse_crypto_contract(
     instrument_id = ib_contract_to_instrument_id(details.contract)
     return CryptoPerpetual(
         instrument_id=instrument_id,
-        native_symbol=Symbol(details.contract.localSymbol),
+        raw_symbol=Symbol(details.contract.localSymbol),
         base_currency=Currency.from_str(details.contract.symbol),
         quote_currency=Currency.from_str(details.contract.currency),
         settlement_currency=Currency.from_str(details.contract.currency),

@@ -37,8 +37,8 @@ cdef class Equity(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID.
-    native_symbol : Symbol
-        The native/local symbol on the exchange for the instrument.
+    raw_symbol : Symbol
+        The native/local/raw symbol for the instrument, assigned by the venue.
     currency : Currency
         The futures contract currency.
     price_precision : int
@@ -81,7 +81,7 @@ cdef class Equity(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol native_symbol not None,
+        Symbol raw_symbol not None,
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
@@ -98,7 +98,7 @@ cdef class Equity(Instrument):
     ):
         super().__init__(
             instrument_id=instrument_id,
-            native_symbol=native_symbol,
+            raw_symbol=raw_symbol,
             asset_class=AssetClass.EQUITY,
             asset_type=AssetType.SPOT,
             quote_currency=currency,
@@ -130,7 +130,7 @@ cdef class Equity(Instrument):
         Condition.not_none(values, "values")
         return Equity(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            native_symbol=Symbol(values["native_symbol"]),
+            raw_symbol=Symbol(values["raw_symbol"]),
             currency=Currency.from_str_c(values["currency"]),
             price_precision=values["price_precision"],
             price_increment=Price.from_str(values["price_increment"]),
@@ -151,7 +151,7 @@ cdef class Equity(Instrument):
         return {
             "type": "Equity",
             "id": obj.id.to_str(),
-            "native_symbol": obj.native_symbol.to_str(),
+            "raw_symbol": obj.raw_symbol.to_str(),
             "currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
