@@ -29,8 +29,6 @@ from nautilus_trader.core.rust.model cimport Venue_t
 from nautilus_trader.core.rust.model cimport VenueOrderId_t
 
 
-cdef show_stats()
-
 cdef class Identifier:
     cdef str to_str(self)
 
@@ -61,8 +59,6 @@ cdef class InstrumentId(Identifier):
     cdef InstrumentId from_str_c(str value)
 
     cpdef bint is_synthetic(self)
-
-    cdef show_pointers(self)
 
 
 cdef class ComponentId(Identifier):
