@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) library, thanks @twitu
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
 - Added `Cache` position and order state snapshots (configure via `CacheConfig`)
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
@@ -20,6 +21,7 @@ Released on TBD (UTC).
 - Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
 - Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
 - Improved `Binance` live clients logging
+- Upgraded Cython to 3.0.0 stable
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
@@ -51,7 +53,7 @@ Released on TBD (UTC).
 
 # NautilusTrader 1.175.0 Beta
 
-Released on 16th July 2023 (UTC).
+Released on 16th June 2023 (UTC).
 
 The Betfair adapter is broken for this release pending integration with the new Rust order book.
 We recommend you do not upgrade to this version if you're using the Betfair adapter.
