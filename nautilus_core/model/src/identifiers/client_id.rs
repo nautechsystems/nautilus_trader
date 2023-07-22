@@ -63,6 +63,7 @@ impl Display for ClientId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn client_id_new(ptr: *const c_char) -> ClientId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     ClientId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 

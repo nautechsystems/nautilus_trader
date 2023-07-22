@@ -29,6 +29,8 @@ use crate::string::cstr_to_string;
 /// - Assumes `ptr` is a valid C string pointer.
 #[must_use]
 pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+
     let c_str = CStr::from_ptr(ptr);
     let bytes = c_str.to_bytes();
     let json_string = std::str::from_utf8(bytes).unwrap();
@@ -102,6 +104,7 @@ pub fn precision_from_str(s: &str) -> u8 {
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     precision_from_str(&cstr_to_string(ptr))
 }
 

@@ -71,6 +71,7 @@ impl Display for TraderId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 

@@ -82,6 +82,7 @@ impl Display for Venue {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     Venue::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 

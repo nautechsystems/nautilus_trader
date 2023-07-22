@@ -63,6 +63,7 @@ impl Display for ComponentId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     ComponentId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 

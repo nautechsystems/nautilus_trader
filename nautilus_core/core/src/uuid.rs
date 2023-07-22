@@ -120,6 +120,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 /// - If `ptr` cannot be cast to a valid C string.
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     UUID4::from(
         CStr::from_ptr(ptr)
             .to_str()

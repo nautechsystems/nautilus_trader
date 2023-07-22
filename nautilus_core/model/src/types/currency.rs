@@ -130,15 +130,18 @@ pub unsafe extern "C" fn currency_from_py(
     name_ptr: *const c_char,
     currency_type: CurrencyType,
 ) -> Currency {
+    assert!(!code_ptr.is_null(), "`code_ptr` was NULL");
+    assert!(!name_ptr.is_null(), "`name_ptr` was NULL");
+
     Currency::new(
         CStr::from_ptr(code_ptr)
             .to_str()
-            .expect("CStr::from_ptr failed"),
+            .expect("CStr::from_ptr failed for `code_ptr`"),
         precision,
         iso4217,
         CStr::from_ptr(name_ptr)
             .to_str()
-            .expect("CStr::from_ptr failed"),
+            .expect("CStr::from_ptr failed for `name_ptr`"),
         currency_type,
     )
 }
