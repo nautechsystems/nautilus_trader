@@ -109,7 +109,7 @@ class ReportProvider:
         del report["quantity"]
         del report["quote_currency"]
         del report["base_currency"]
-        del report["cost_currency"]
+        del report["settlement_currency"]
         report["ts_opened"] = [unix_nanos_to_dt(ts_opened) for ts_opened in report["ts_opened"]]
         report["ts_closed"] = [
             unix_nanos_to_dt(ts_closed or 0) for ts_closed in report["ts_closed"]
