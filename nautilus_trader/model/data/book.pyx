@@ -68,8 +68,8 @@ cdef class BookOrder:
     def __init__(
         self,
         OrderSide side,
-        Price price,
-        Quantity size,
+        Price price not None,
+        Quantity size not None,
         uint64_t order_id,
     ):
         self._mem = book_order_from_raw(
