@@ -17,7 +17,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Build docker images
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v1
 
@@ -35,7 +34,6 @@ jobs:
         id: branch-name
         uses: tj-actions/branch-names@v6
 
-      # Build nautilus_trader docker image (develop)
       - name: Build nautilus_trader image (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
         id: docker_build_trader_develop
@@ -49,7 +47,6 @@ jobs:
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader_develop.outputs.digest }}
 
-      # Build nautilus_trader docker image (latest)
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         id: docker_build_trader_latest
@@ -63,7 +60,6 @@ jobs:
       - name: Digest nautilus_trader image
         run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
 
-      # Build jupyterlab docker image (develop)
       - name: Build jupyterlab image (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
         id: docker_build_jupyterlab_develop
@@ -79,7 +75,6 @@ jobs:
       - name: Digest jupyterlab image
         run: echo ${{ steps.docker_build_jupyterlab_develop.outputs.digest }}
 
-      # Build jupyterlab docker image (latest)
       - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         id: docker_build_jupyterlab_latest
