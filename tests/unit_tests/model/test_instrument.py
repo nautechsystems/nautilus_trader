@@ -70,8 +70,8 @@ class TestInstrument:
     def test_str_repr_returns_expected(self):
         # Arrange, Act, Assert
         expected = provider.read("binance-btcusdt-instrument-repr.txt").decode()
-        assert str(BTCUSDT_BINANCE) == expected
-        assert repr(BTCUSDT_BINANCE) == expected
+        assert str(BTCUSDT_BINANCE) + "\n" == expected
+        assert repr(BTCUSDT_BINANCE) + "\n" == expected
 
     def test_hash(self):
         # Arrange, Act, Assert
@@ -90,7 +90,7 @@ class TestInstrument:
         assert result == {
             "type": "Instrument",
             "id": "BTCUSDT.BINANCE",
-            "native_symbol": "BTCUSDT",
+            "raw_symbol": "BTCUSDT",
             "asset_class": "CRYPTOCURRENCY",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -121,7 +121,7 @@ class TestInstrument:
         values = {
             "type": "Instrument",
             "id": "BTCUSDT.BINANCE",
-            "native_symbol": "BTCUSDT",
+            "raw_symbol": "BTCUSDT",
             "asset_class": "CRYPTOCURRENCY",
             "asset_type": "SPOT",
             "quote_currency": "USDT",
@@ -162,7 +162,7 @@ class TestInstrument:
         assert result == {
             "type": "CryptoPerpetual",
             "id": "BTC/USD.BITMEX",
-            "native_symbol": "XBTUSD",
+            "raw_symbol": "XBTUSD",
             "base_currency": "BTC",
             "quote_currency": "USD",
             "settlement_currency": "BTC",
@@ -195,7 +195,7 @@ class TestInstrument:
         assert result == {
             "type": "CryptoFuture",
             "id": "BTCUSDT_220325.BINANCE",
-            "native_symbol": "BTCUSDT",
+            "raw_symbol": "BTCUSDT",
             "underlying": "BTC",
             "quote_currency": "USDT",
             "settlement_currency": "USDT",
@@ -228,7 +228,7 @@ class TestInstrument:
         assert result == {
             "type": "Equity",
             "id": "AAPL.NASDAQ",
-            "native_symbol": "AAPL",
+            "raw_symbol": "AAPL",
             "currency": "USD",
             "price_precision": 2,
             "price_increment": "0.01",
@@ -260,7 +260,7 @@ class TestInstrument:
             "margin_init": "0",
             "margin_maint": "0",
             "multiplier": "1",
-            "native_symbol": "ESZ21",
+            "raw_symbol": "ESZ21",
             "price_increment": "0.01",
             "price_precision": 2,
             "size_increment": "1",
@@ -287,7 +287,7 @@ class TestInstrument:
             "margin_init": "0",
             "margin_maint": "0",
             "multiplier": "100",
-            "native_symbol": "AAPL211217C00150000",
+            "raw_symbol": "AAPL211217C00150000",
             "price_increment": "0.01",
             "price_precision": 2,
             "size_increment": "1",

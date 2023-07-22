@@ -635,7 +635,7 @@ class _TestPersistenceCatalog:
         # Arrange
         instrument = Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
-            native_symbol=Symbol("AAPL"),
+            raw_symbol=Symbol("AAPL"),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),

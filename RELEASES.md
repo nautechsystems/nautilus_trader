@@ -27,6 +27,7 @@ Released on TBD (UTC).
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 - Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
+- Renamed `Instrument.native_symbol` to `raw_symbol` (you must manually migrate or flush your cached instruments)
 - Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
 - Changed `Order.ts_last` to represent the UNIX nanoseconds timestamp of the last _event_ (rather than fill)
 

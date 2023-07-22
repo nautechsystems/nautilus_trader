@@ -33,7 +33,7 @@ use crate::{
 #[pyclass]
 pub struct Equity {
     pub id: InstrumentId,
-    pub native_symbol: Symbol,
+    pub raw_symbol: Symbol,
     /// The instruments ISIN (International Securities Identification Number).
     pub isin: String,
     pub currency: Currency,
@@ -56,7 +56,7 @@ impl Equity {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
-        native_symbol: Symbol,
+        raw_symbol: Symbol,
         isin: String,
         currency: Currency,
         price_precision: u8,
@@ -74,7 +74,7 @@ impl Equity {
     ) -> Self {
         Self {
             id,
-            native_symbol,
+            raw_symbol,
             isin,
             currency,
             price_precision,
@@ -112,8 +112,8 @@ impl Instrument for Equity {
         &self.id
     }
 
-    fn native_symbol(&self) -> &Symbol {
-        &self.native_symbol
+    fn raw_symbol(&self) -> &Symbol {
+        &self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {

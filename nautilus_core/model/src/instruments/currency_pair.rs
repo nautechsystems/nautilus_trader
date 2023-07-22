@@ -33,7 +33,7 @@ use crate::{
 #[pyclass]
 pub struct CurrencyPair {
     pub id: InstrumentId,
-    pub native_symbol: Symbol,
+    pub raw_symbol: Symbol,
     pub base_currency: Currency,
     pub quote_currency: Currency,
     pub price_precision: u8,
@@ -56,7 +56,7 @@ impl CurrencyPair {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
-        native_symbol: Symbol,
+        raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
         price_precision: u8,
@@ -75,7 +75,7 @@ impl CurrencyPair {
     ) -> Self {
         Self {
             id,
-            native_symbol,
+            raw_symbol,
             quote_currency,
             base_currency,
             price_precision,
@@ -114,8 +114,8 @@ impl Instrument for CurrencyPair {
         &self.id
     }
 
-    fn native_symbol(&self) -> &Symbol {
-        &self.native_symbol
+    fn raw_symbol(&self) -> &Symbol {
+        &self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {

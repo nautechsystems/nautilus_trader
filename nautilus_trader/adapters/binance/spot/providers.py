@@ -232,8 +232,8 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             base_currency = symbol_info.parse_to_base_asset()
             quote_currency = symbol_info.parse_to_quote_asset()
 
-            native_symbol = Symbol(symbol_info.symbol)
-            instrument_id = InstrumentId(symbol=native_symbol, venue=BINANCE_VENUE)
+            raw_symbol = Symbol(symbol_info.symbol)
+            instrument_id = InstrumentId(symbol=raw_symbol, venue=BINANCE_VENUE)
 
             # Parse instrument filters
             filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
@@ -291,7 +291,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             # Create instrument
             instrument = CurrencyPair(
                 instrument_id=instrument_id,
-                native_symbol=native_symbol,
+                raw_symbol=raw_symbol,
                 base_currency=base_currency,
                 quote_currency=quote_currency,
                 price_precision=price_precision,

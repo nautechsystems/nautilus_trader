@@ -537,7 +537,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     CurrencyPair: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "native_symbol": pa.string(),
+            "raw_symbol": pa.string(),
             "base_currency": pa.dictionary(pa.int16(), pa.string()),
             "quote_currency": pa.dictionary(pa.int16(), pa.string()),
             "price_precision": pa.uint8(),
@@ -563,7 +563,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     CryptoPerpetual: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "native_symbol": pa.string(),
+            "raw_symbol": pa.string(),
             "base_currency": pa.dictionary(pa.int16(), pa.string()),
             "quote_currency": pa.dictionary(pa.int16(), pa.string()),
             "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
@@ -590,7 +590,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     CryptoFuture: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "native_symbol": pa.string(),
+            "raw_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int16(), pa.string()),
             "quote_currency": pa.dictionary(pa.int16(), pa.string()),
             "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
@@ -617,7 +617,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     Equity: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "native_symbol": pa.string(),
+            "raw_symbol": pa.string(),
             "currency": pa.dictionary(pa.int16(), pa.string()),
             "price_precision": pa.uint8(),
             "size_precision": pa.uint8(),
@@ -637,7 +637,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     FuturesContract: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "native_symbol": pa.string(),
+            "raw_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int16(), pa.string()),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int16(), pa.string()),
@@ -655,7 +655,7 @@ NAUTILUS_PARQUET_SCHEMA = {
     OptionsContract: pa.schema(
         {
             "id": pa.dictionary(pa.int64(), pa.string()),
-            "native_symbol": pa.string(),
+            "raw_symbol": pa.string(),
             "underlying": pa.dictionary(pa.int16(), pa.string()),
             "asset_class": pa.dictionary(pa.int8(), pa.string()),
             "currency": pa.dictionary(pa.int16(), pa.string()),
