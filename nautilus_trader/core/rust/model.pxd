@@ -331,9 +331,6 @@ cdef extern from "../includes/model.h":
         # Based on the index price for the instrument.
         INDEX_PRICE # = 9,
 
-    cdef struct Arc_String:
-        pass
-
     cdef struct Level:
         pass
 
@@ -558,10 +555,10 @@ cdef extern from "../includes/model.h":
         Level *_0;
 
     cdef struct Currency_t:
-        Arc_String *code;
+        char* code;
         uint8_t precision;
         uint16_t iso4217;
-        Arc_String *name;
+        char* name;
         CurrencyType currency_type;
 
     cdef struct Money_t:
@@ -1206,17 +1203,11 @@ cdef extern from "../includes/model.h":
                                 const char *name_ptr,
                                 CurrencyType currency_type);
 
-    Currency_t currency_clone(const Currency_t *currency);
-
-    void currency_drop(Currency_t currency);
-
     const char *currency_to_cstr(const Currency_t *currency);
 
     const char *currency_code_to_cstr(const Currency_t *currency);
 
     const char *currency_name_to_cstr(const Currency_t *currency);
-
-    uint8_t currency_eq(const Currency_t *lhs, const Currency_t *rhs);
 
     uint64_t currency_hash(const Currency_t *currency);
 
@@ -1235,8 +1226,6 @@ cdef extern from "../includes/model.h":
     Money_t money_new(double amount, Currency_t currency);
 
     Money_t money_from_raw(int64_t raw, Currency_t currency);
-
-    void money_drop(Money_t money);
 
     double money_as_f64(const Money_t *money);
 

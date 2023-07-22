@@ -12,7 +12,7 @@ You can install the package via PyPI:
 
 To profile using memray, first invoke the script using the memray CLI:
 
-    memray run --live-port 8100 --live-remote tests/performance_tests/memray_backtest.py
+    memray run --live-port 8100 --live-remote tests/mem_leak_tests/memray_backtest.py
 
 Then from another shell, connect to the memray profiler dashboard:
 

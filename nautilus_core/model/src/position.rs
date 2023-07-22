@@ -104,9 +104,9 @@ impl Position {
             size_precision: instrument.size_precision(),
             multiplier: instrument.multiplier(),
             is_inverse: instrument.is_inverse(),
-            base_currency: instrument.base_currency().clone().to_owned().cloned(),
-            quote_currency: instrument.quote_currency().clone(),
-            settlement_currency: instrument.settlement_currency().clone(),
+            base_currency: instrument.base_currency().to_owned().copied(),
+            quote_currency: *instrument.quote_currency(),
+            settlement_currency: *instrument.settlement_currency(),
             ts_init: fill.ts_init,
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,
@@ -148,14 +148,14 @@ impl Position {
         self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions
-        let commission_currency = fill.commission.currency.clone();
-        let commission_clone = fill.commission.clone();
+        let commission_currency = fill.commission.currency;
+        let commission_clone = fill.commission;
 
         if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
             *existing_commission += commission_clone;
         } else {
             self.commissions
-                .insert(commission_currency, fill.commission.clone());
+                .insert(commission_currency, fill.commission);
         }
 
         // Calculate avg prices, points, return, PnL

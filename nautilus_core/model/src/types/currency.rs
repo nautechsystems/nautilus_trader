@@ -14,11 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
-    ffi::c_char,
+    ffi::{c_char, CStr},
     hash::{Hash, Hasher},
     str::FromStr,
-    sync::Arc,
 };
 
 use nautilus_core::{
@@ -27,17 +25,18 @@ use nautilus_core::{
 };
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
+use ustr::Ustr;
 
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
-#[derive(Clone, Debug, Eq)]
+#[derive(Clone, Copy, Debug, Eq)]
 #[pyclass]
 pub struct Currency {
-    pub code: Box<Arc<String>>,
+    pub code: Ustr,
     pub precision: u8,
     pub iso4217: u16,
-    pub name: Box<Arc<String>>,
+    pub name: Ustr,
     pub currency_type: CurrencyType,
 }
 
@@ -55,10 +54,10 @@ impl Currency {
         correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
 
         Self {
-            code: Box::new(Arc::new(code.to_string())),
+            code: Ustr::from(code),
             precision,
             iso4217,
-            name: Box::new(Arc::new(name.to_string())),
+            name: Ustr::from(name),
             currency_type,
         }
     }
@@ -131,23 +130,17 @@ pub unsafe extern "C" fn currency_from_py(
     name_ptr: *const c_char,
     currency_type: CurrencyType,
 ) -> Currency {
-    Currency {
-        code: Box::from(Arc::new(cstr_to_string(code_ptr))),
+    Currency::new(
+        CStr::from_ptr(code_ptr)
+            .to_str()
+            .expect("CStr::from_ptr failed"),
         precision,
         iso4217,
-        name: Box::from(Arc::new(cstr_to_string(name_ptr))),
+        CStr::from_ptr(name_ptr)
+            .to_str()
+            .expect("CStr::from_ptr failed"),
         currency_type,
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn currency_clone(currency: &Currency) -> Currency {
-    currency.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn currency_drop(currency: Currency) {
-    drop(currency); // Memory freed here
+    )
 }
 
 #[no_mangle]
@@ -166,15 +159,8 @@ pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
 }
 
 #[no_mangle]
-pub extern "C" fn currency_eq(lhs: &Currency, rhs: &Currency) -> u8 {
-    u8::from(lhs.code == rhs.code)
-}
-
-#[no_mangle]
 pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
-    let mut h = DefaultHasher::new();
-    currency.hash(&mut h);
-    h.finish()
+    currency.code.precomputed_hash()
 }
 
 #[no_mangle]
@@ -208,26 +194,11 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::{
-        enums::CurrencyType,
-        types::currency::{currency_eq, Currency},
-    };
-
-    #[test]
-    fn test_currency_equality() {
-        let currency1 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
-        let currency2 = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
-        let currency3 = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
-        assert_eq!(currency1, currency2);
-        assert_ne!(currency1, currency3);
-        assert_eq!(currency_eq(&currency1, &currency2), 1);
-        assert_ne!(currency_eq(&currency1, &currency2), 0);
-    }
+    use crate::{enums::CurrencyType, types::currency::Currency};
 
     #[test]
     fn test_currency_new_for_fiat() {
         let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
-        assert_ne!(currency_eq(&currency, &currency), 0);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);

@@ -618,8 +618,6 @@ typedef enum TriggerType {
     INDEX_PRICE = 9,
 } TriggerType;
 
-typedef struct Arc_String Arc_String;
-
 typedef struct Level Level;
 
 typedef struct OrderBook OrderBook;
@@ -979,10 +977,10 @@ typedef struct Level_API {
 } Level_API;
 
 typedef struct Currency_t {
-    struct Arc_String *code;
+    char* code;
     uint8_t precision;
     uint16_t iso4217;
-    struct Arc_String *name;
+    char* name;
     enum CurrencyType currency_type;
 } Currency_t;
 
@@ -1743,17 +1741,11 @@ struct Currency_t currency_from_py(const char *code_ptr,
                                    const char *name_ptr,
                                    enum CurrencyType currency_type);
 
-struct Currency_t currency_clone(const struct Currency_t *currency);
-
-void currency_drop(struct Currency_t currency);
-
 const char *currency_to_cstr(const struct Currency_t *currency);
 
 const char *currency_code_to_cstr(const struct Currency_t *currency);
 
 const char *currency_name_to_cstr(const struct Currency_t *currency);
-
-uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
 
 uint64_t currency_hash(const struct Currency_t *currency);
 
@@ -1776,8 +1768,6 @@ struct Currency_t currency_from_cstr(const char *code_ptr);
 struct Money_t money_new(double amount, struct Currency_t currency);
 
 struct Money_t money_from_raw(int64_t raw, struct Currency_t currency);
-
-void money_drop(struct Money_t money);
 
 double money_as_f64(const struct Money_t *money);
 
