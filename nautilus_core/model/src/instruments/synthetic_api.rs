@@ -97,7 +97,7 @@ pub extern "C" fn synthetic_instrument_drop(synth: SyntheticInstrument_API) {
 
 #[no_mangle]
 pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument_API) -> InstrumentId {
-    synth.id.clone()
+    synth.id
 }
 
 #[no_mangle]

@@ -14,21 +14,20 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct PositionId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
 }
 
 impl PositionId {
@@ -37,7 +36,7 @@ impl PositionId {
         correctness::valid_string(s, "`PositionId` value");
 
         Self {
-            value: Box::new(Arc::new(s.to_string())),
+            value: Ustr::from(s),
         }
     }
 }
@@ -67,32 +66,8 @@ pub unsafe extern "C" fn position_id_new(ptr: *const c_char) -> PositionId {
 }
 
 #[no_mangle]
-pub extern "C" fn position_id_clone(position_id: &PositionId) -> PositionId {
-    position_id.clone()
-}
-
-/// Frees the memory for the given `position_id` by dropping.
-#[no_mangle]
-pub extern "C" fn position_id_drop(position_id: PositionId) {
-    drop(position_id); // Memory freed here
-}
-
-/// Returns a [`PositionId`] identifier as a C string pointer.
-#[no_mangle]
-pub extern "C" fn position_id_to_cstr(position_id: &PositionId) -> *const c_char {
-    str_to_cstr(&position_id.value)
-}
-
-#[no_mangle]
-pub extern "C" fn position_id_eq(lhs: &PositionId, rhs: &PositionId) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn position_id_hash(position_id: &PositionId) -> u64 {
-    let mut h = DefaultHasher::new();
-    position_id.hash(&mut h);
-    h.finish()
+pub extern "C" fn position_id_hash(id: &PositionId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -101,26 +76,11 @@ pub extern "C" fn position_id_hash(position_id: &PositionId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::PositionId;
-    use crate::identifiers::position_id::position_id_drop;
-
-    #[test]
-    fn test_equality() {
-        let id1 = PositionId::new("P-123456789");
-        let id2 = PositionId::new("P-234567890");
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let id = PositionId::new("P-123456789");
         assert_eq!(id.to_string(), "P-123456789");
         assert_eq!(format!("{id}"), "P-123456789");
-    }
-
-    #[test]
-    fn test_position_id_drop() {
-        let id = PositionId::new("001");
-        position_id_drop(id); // No panic
     }
 }

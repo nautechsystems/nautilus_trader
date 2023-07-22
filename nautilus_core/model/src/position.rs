@@ -88,12 +88,12 @@ impl Position {
             buy_qty: Quantity::zero(instrument.size_precision()),
             sell_qty: Quantity::zero(instrument.size_precision()),
             commissions: HashMap::<Currency, Money>::new(),
-            trader_id: fill.trader_id.clone(),
-            strategy_id: fill.strategy_id.clone(),
-            instrument_id: fill.instrument_id.clone(),
-            id: fill.position_id.clone().unwrap(), // TODO: Improve validation
-            account_id: fill.account_id.clone(),
-            opening_order_id: fill.client_order_id.clone(),
+            trader_id: fill.trader_id,
+            strategy_id: fill.strategy_id,
+            instrument_id: fill.instrument_id,
+            id: fill.position_id.unwrap(), // TODO: Improve validation
+            account_id: fill.account_id,
+            opening_order_id: fill.client_order_id,
             closing_order_id: None,
             entry: fill.order_side,
             side: PositionSide::Flat,
@@ -132,7 +132,7 @@ impl Position {
             self.buy_qty = Quantity::zero(self.size_precision);
             self.sell_qty = Quantity::zero(self.size_precision);
             self.commissions.clear();
-            self.opening_order_id = fill.client_order_id.clone();
+            self.opening_order_id = fill.client_order_id;
             self.closing_order_id = None;
             self.peak_qty = Quantity::zero(self.size_precision);
             self.ts_init = fill.ts_init;
@@ -145,7 +145,7 @@ impl Position {
         }
 
         self.events.push(fill.clone()); // Potentially do this last
-        self.trade_ids.push(fill.trade_id.clone());
+        self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions
         let commission_currency = fill.commission.currency.clone();
@@ -180,7 +180,7 @@ impl Position {
             self.side = PositionSide::Short;
         } else {
             self.side = PositionSide::Flat;
-            self.closing_order_id = Some(fill.client_order_id.clone());
+            self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
             self.duration_ns = Some(self.ts_closed.unwrap() - self.ts_opened);
         }

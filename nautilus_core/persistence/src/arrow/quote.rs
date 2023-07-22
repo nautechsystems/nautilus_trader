@@ -129,7 +129,7 @@ impl DecodeFromRecordBatch for QuoteTick {
             .zip(ts_init_values.iter())
             .map(
                 |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| Self {
-                    instrument_id: instrument_id.clone(),
+                    instrument_id,
                     bid: Price::from_raw(bid.unwrap(), price_precision),
                     ask: Price::from_raw(ask.unwrap(), price_precision),
                     bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),

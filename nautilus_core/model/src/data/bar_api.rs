@@ -98,16 +98,6 @@ pub extern "C" fn bar_type_new(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_drop(bar_type: BarType) {
-    drop(bar_type); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
-    bar_type.clone()
-}
-
-#[no_mangle]
 pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs == rhs)
 }
@@ -191,16 +181,6 @@ pub extern "C" fn bar_new_from_raw(
         ts_event,
         ts_init,
     }
-}
-
-#[no_mangle]
-pub extern "C" fn bar_drop(bar: Bar) {
-    drop(bar); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
-    bar.clone()
 }
 
 #[no_mangle]

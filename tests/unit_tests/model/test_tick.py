@@ -32,6 +32,12 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestQuoteTick:
+    def test_pickling_instrument_id_round_trip(self):
+        pickled = pickle.dumps(AUDUSD_SIM.id)
+        unpickled = pickle.loads(pickled)  # noqa
+
+        assert unpickled == AUDUSD_SIM.id
+
     def test_fully_qualified_name(self):
         # Arrange, Act, Assert
         assert QuoteTick.fully_qualified_name() == "nautilus_trader.model.data.tick:QuoteTick"

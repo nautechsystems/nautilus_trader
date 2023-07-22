@@ -134,7 +134,7 @@ impl DecodeFromRecordBatch for Bar {
             .zip(ts_init_values.iter())
             .map(
                 |((((((open, high), low), close), volume), ts_event), ts_init)| Self {
-                    bar_type: bar_type.clone(),
+                    bar_type,
                     open: Price::from_raw(open.unwrap(), price_precision),
                     high: Price::from_raw(high.unwrap(), price_precision),
                     low: Price::from_raw(low.unwrap(), price_precision),

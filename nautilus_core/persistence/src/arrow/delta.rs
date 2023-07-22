@@ -155,7 +155,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                     ts_init,
                 )| {
                     Self {
-                        instrument_id: instrument_id.clone(),
+                        instrument_id,
                         action: BookAction::from_u8(action.unwrap()).unwrap(),
                         order: BookOrder {
                             side: OrderSide::from_u8(side.unwrap()).unwrap(),
