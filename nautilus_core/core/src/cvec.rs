@@ -60,14 +60,16 @@ impl CVec {
 /// Note: drop the memory by reconstructing the vec using `from_raw_parts` method
 /// as shown in the test below.
 impl<T> From<Vec<T>> for CVec {
-    fn from(data: Vec<T>) -> Self {
+    fn from(mut data: Vec<T>) -> Self {
         if data.is_empty() {
             Self::empty()
         } else {
             let len = data.len();
             let cap = data.capacity();
+            let ptr = data.as_mut_ptr();
+            std::mem::forget(data);
             Self {
-                ptr: std::ptr::addr_of_mut!(data.leak()[0]).cast::<c_void>(),
+                ptr: ptr as *mut c_void,
                 len,
                 cap,
             }
@@ -133,7 +135,7 @@ mod tests {
 
         unsafe {
             // reconstruct the struct and drop the memory to deallocate
-            Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            let _ = Vec::from_raw_parts(ptr as *mut u64, len, cap);
         }
     }
 
