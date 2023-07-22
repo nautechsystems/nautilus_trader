@@ -27,7 +27,6 @@ from nautilus_trader.core.rust.common cimport time_event_name_to_cstr
 from nautilus_trader.core.rust.common cimport time_event_new
 from nautilus_trader.core.rust.common cimport time_event_to_cstr
 from nautilus_trader.core.rust.core cimport nanos_to_secs
-from nautilus_trader.core.rust.core cimport uuid4_clone
 from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -62,7 +61,7 @@ cdef class TimeEvent(Event):
 
         self._mem = time_event_new(
             pystr_to_cstr(name),
-            uuid4_clone(&event_id._mem),
+            event_id._mem,
             ts_event,
             ts_init,
         )

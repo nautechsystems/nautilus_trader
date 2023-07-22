@@ -15,31 +15,36 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
-    ffi::{c_char, CStr},
+    ffi::{c_char, CStr, CString},
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
     str::FromStr,
-    sync::Arc,
 };
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use crate::string::str_to_cstr;
-
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
 pub struct UUID4 {
-    pub value: Box<Arc<String>>,
+    value: [u8; 37],
 }
 
 impl UUID4 {
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
-        UUID4 {
-            value: Box::new(Arc::new(uuid.to_string())),
-        }
+        let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
+        let bytes = c_string.as_bytes_with_nul();
+        let mut value = [0; 37];
+        value[..bytes.len()].copy_from_slice(bytes);
+
+        UUID4 { value }
+    }
+
+    pub fn to_cstr(&self) -> &CStr {
+        // Safety: unwrap is safe here as we always store valid C strings
+        CStr::from_bytes_with_nul(&self.value).unwrap()
     }
 }
 
@@ -48,9 +53,12 @@ impl FromStr for UUID4 {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::parse_str(s).map_err(|_| "Invalid UUID string")?;
-        Ok(Self {
-            value: Box::new(Arc::new(uuid.to_string())),
-        })
+        let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
+        let bytes = c_string.as_bytes_with_nul();
+        let mut value = [0; 37];
+        value[..bytes.len()].copy_from_slice(bytes);
+
+        Ok(UUID4 { value })
     }
 }
 
@@ -68,7 +76,7 @@ impl Default for UUID4 {
 
 impl Display for UUID4 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.value)
+        write!(f, "{}", self.to_cstr().to_string_lossy())
     }
 }
 
@@ -91,22 +99,13 @@ impl<'de> Deserialize<'de> for UUID4 {
         Ok(uuid4)
     }
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
-}
-
-#[no_mangle]
-pub extern "C" fn uuid4_clone(uuid4: &UUID4) -> UUID4 {
-    uuid4.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn uuid4_drop(uuid4: UUID4) {
-    drop(uuid4); // Memory freed here
 }
 
 /// Returns a [`UUID4`] from C string pointer.
@@ -129,7 +128,7 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
 
 #[no_mangle]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
-    str_to_cstr(&uuid.value)
+    uuid.to_cstr().as_ptr()
 }
 
 #[no_mangle]
@@ -158,7 +157,7 @@ mod tests {
     #[test]
     fn test_uuid4_new() {
         let uuid = UUID4::new();
-        let uuid_string = uuid.value.to_string();
+        let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
         assert_eq!(uuid_parsed.to_string().len(), 36);
@@ -167,7 +166,7 @@ mod tests {
     #[test]
     fn test_uuid4_default() {
         let uuid: UUID4 = UUID4::default();
-        let uuid_string = uuid.value.to_string();
+        let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
     }
@@ -176,7 +175,7 @@ mod tests {
     fn test_uuid4_from_str() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
-        let result_string = uuid.value.to_string();
+        let result_string = uuid.to_string();
         let result_parsed = Uuid::parse_str(&result_string).expect("Uuid::parse_str failed");
         let expected_parsed = Uuid::parse_str(uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(result_parsed, expected_parsed);
@@ -201,24 +200,9 @@ mod tests {
     #[test]
     fn test_c_api_uuid4_new() {
         let uuid = uuid4_new();
-        let uuid_string = uuid.value.to_string();
+        let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
-    }
-
-    #[test]
-    fn test_c_api_uuid4_clone() {
-        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-        let uuid = UUID4::from(uuid_string);
-        let uuid_cloned = uuid4_clone(&uuid);
-        assert_eq!(uuid.value.to_string(), uuid_cloned.value.to_string());
-    }
-
-    #[test]
-    fn test_c_api_uuid4_drop() {
-        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-        let uuid = UUID4::from(uuid_string);
-        uuid4_drop(uuid);
     }
 
     #[test]
@@ -227,7 +211,7 @@ mod tests {
         let uuid_cstring = CString::new(uuid_string).expect("CString::new failed");
         let uuid_ptr = uuid_cstring.as_ptr();
         let uuid = unsafe { uuid4_from_cstr(uuid_ptr) };
-        assert_eq!(uuid_string, uuid.value.to_string());
+        assert_eq!(uuid_string, uuid.to_string());
     }
 
     #[test]
