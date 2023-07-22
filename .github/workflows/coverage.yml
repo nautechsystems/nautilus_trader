@@ -13,7 +13,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest]
-        python-version: ["3.10"]
+        python-version: ["3.11"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
@@ -21,24 +21,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up Rust tool-chain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: stable
           components: rustfmt, clippy
 
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
-      # Setup cached pre-commit
       - name: Setup cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v3
@@ -46,22 +42,11 @@ jobs:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      # Run pre-commit
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      # Setup Poetry caching
-      - name: Set output (Linux)
-        if: runner.os == 'Linux'
+      - name: Set poetry output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (macOS)
-        if: runner.os == 'macOS'
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (Windows)
-        if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
@@ -70,18 +55,14 @@ jobs:
           path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
-      # Install and run database dependencies
-      - name: Install Redis (Linux)
-        if: runner.os == 'Linux'
+      - name: Install Redis
         run: |
           sudo apt-get install redis-server
           redis-server --daemonize yes
 
-      # Run tests with coverage
       - name: Run tests with coverage
         run: make pytest-coverage
 
-      # Upload coverage report to codecov (Linux)
       - name: Upload coverage report
         uses: codecov/codecov-action@v3
         with:
