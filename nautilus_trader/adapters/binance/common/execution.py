@@ -151,9 +151,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
         self._binance_account_type = account_type
+        self._use_reduce_only = config.use_reduce_only
         self._use_position_ids = config.use_position_ids
         self._treat_expired_as_canceled = config.treat_expired_as_canceled
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
+        self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
         self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.treat_expired_as_canceled=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
@@ -553,6 +555,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return False
         return True
 
+    def _determine_reduce_only(self, order: Order) -> bool:
+        return order.is_reduce_only if self._use_reduce_only else False
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_inner(command.order)
 
@@ -632,7 +637,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             price=str(order.price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
+            reduce_only=str(self._determine_reduce_only(order)),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
         )
@@ -663,7 +668,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             stop_price=str(order.trigger_price),
             working_type=working_type,
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
-            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
+            reduce_only=str(self._determine_reduce_only(order)),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
         )
@@ -706,7 +711,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
             working_type=working_type,
-            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
+            reduce_only=str(self._determine_reduce_only(order)),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
         )
@@ -760,7 +765,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),
             working_type=working_type,
-            reduce_only=str(order.is_reduce_only) if order.is_reduce_only is True else None,
+            reduce_only=str(self._determine_reduce_only(order)),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
         )

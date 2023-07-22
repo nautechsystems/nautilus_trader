@@ -86,6 +86,9 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
+    use_reduce_only : bool, default True
+        If `reduce_only` instructions are sent through to the exchange.
+        If True then will assign the value on orders sent to the exchange, otherwise will always be False.
     use_position_ids: bool, default True
         If Binance Futures hedging position IDs should be used.
         If False then order event `position_id`(s) from the execution client will be `None`, which
@@ -109,6 +112,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     us: bool = False
     testnet: bool = False
     clock_sync_interval_secs: int = 0
+    use_reduce_only: bool = True
     use_position_ids: bool = True
     treat_expired_as_canceled: bool = False
     max_retries: Optional[PositiveInt] = None
