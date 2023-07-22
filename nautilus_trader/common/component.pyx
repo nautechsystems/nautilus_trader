@@ -32,6 +32,7 @@ from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
+from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.bus cimport MessageBus
 
@@ -121,7 +122,7 @@ cdef class Component:
         The logger for the component.
     trader_id : TraderId, optional
         The trader ID associated with the component.
-    component_id : ComponentId, optional
+    component_id : Identifier, optional
         The component ID. If ``None`` is passed then the identifier will be
         taken from `type(self).__name__`.
     component_name : str, optional
@@ -146,7 +147,7 @@ cdef class Component:
         Clock clock not None,
         Logger logger not None,
         TraderId trader_id = None,
-        ComponentId component_id = None,
+        Identifier component_id = None,
         str component_name = None,
         MessageBus msgbus = None,
         dict config = None,

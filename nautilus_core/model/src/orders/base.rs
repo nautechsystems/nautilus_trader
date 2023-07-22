@@ -379,11 +379,11 @@ impl OrderCore {
     }
 
     fn submitted(&mut self, event: &OrderSubmitted) {
-        self.account_id = Some(event.account_id.clone())
+        self.account_id = Some(event.account_id)
     }
 
     fn accepted(&mut self, event: &OrderAccepted) {
-        self.venue_order_id = Some(event.venue_order_id.clone());
+        self.venue_order_id = Some(event.venue_order_id);
     }
 
     fn rejected(&self, _event: &OrderRejected) {
@@ -418,8 +418,8 @@ impl OrderCore {
                 if self.venue_order_id.is_some()
                     && venue_order_id != self.venue_order_id.as_ref().unwrap()
                 {
-                    self.venue_order_id = Some(venue_order_id.clone());
-                    self.venue_order_ids.push(venue_order_id.clone()); // TODO(cs): Temporary clone
+                    self.venue_order_id = Some(*venue_order_id);
+                    self.venue_order_ids.push(*venue_order_id);
                 }
             }
             None => {}
@@ -447,10 +447,10 @@ impl OrderCore {
     }
 
     fn filled(&mut self, event: &OrderFilled) {
-        self.venue_order_id = Some(event.venue_order_id.clone());
-        self.position_id = event.position_id.clone();
-        self.trade_ids.push(event.trade_id.clone());
-        self.last_trade_id = Some(event.trade_id.clone());
+        self.venue_order_id = Some(event.venue_order_id);
+        self.position_id = event.position_id;
+        self.trade_ids.push(event.trade_id);
+        self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
         self.filled_qty += &event.last_qty;
         self.leaves_qty -= &event.last_qty;
@@ -636,7 +636,7 @@ mod tests {
     //         .build()
     //         .unwrap();
     //
-    //     let client_order_id = init.client_order_id.clone();
+    //     let client_order_id = init.client_order_id;
     //     let mut order: MarketOrder = init.into();
     //     let _ = order.apply(OrderEvent::OrderSubmitted(submitted));
     //     let _ = order.apply(OrderEvent::OrderAccepted(accepted));

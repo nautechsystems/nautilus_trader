@@ -71,7 +71,7 @@ pub extern "C" fn orderbook_reset(book: &mut OrderBook_API) {
 
 #[no_mangle]
 pub extern "C" fn orderbook_instrument_id(book: &OrderBook_API) -> InstrumentId {
-    book.instrument_id.clone()
+    book.instrument_id
 }
 
 #[no_mangle]

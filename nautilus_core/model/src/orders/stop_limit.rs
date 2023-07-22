@@ -167,35 +167,35 @@ impl Order for StopLimitOrder {
     }
 
     fn trader_id(&self) -> TraderId {
-        self.trader_id.clone()
+        self.trader_id
     }
 
     fn strategy_id(&self) -> StrategyId {
-        self.strategy_id.clone()
+        self.strategy_id
     }
 
     fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id.clone()
+        self.instrument_id
     }
 
     fn client_order_id(&self) -> ClientOrderId {
-        self.client_order_id.clone()
+        self.client_order_id
     }
 
     fn venue_order_id(&self) -> Option<VenueOrderId> {
-        self.venue_order_id.clone()
+        self.venue_order_id
     }
 
     fn position_id(&self) -> Option<PositionId> {
-        self.position_id.clone()
+        self.position_id
     }
 
     fn account_id(&self) -> Option<AccountId> {
-        self.account_id.clone()
+        self.account_id
     }
 
     fn last_trade_id(&self) -> Option<TradeId> {
-        self.last_trade_id.clone()
+        self.last_trade_id
     }
 
     fn side(&self) -> OrderSide {
@@ -251,7 +251,7 @@ impl Order for StopLimitOrder {
     }
 
     fn order_list_id(&self) -> Option<OrderListId> {
-        self.order_list_id.clone()
+        self.order_list_id
     }
 
     fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
@@ -259,11 +259,11 @@ impl Order for StopLimitOrder {
     }
 
     fn parent_order_id(&self) -> Option<ClientOrderId> {
-        self.parent_order_id.clone()
+        self.parent_order_id
     }
 
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
-        self.exec_algorithm_id.clone()
+        self.exec_algorithm_id
     }
 
     fn exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
@@ -271,7 +271,7 @@ impl Order for StopLimitOrder {
     }
 
     fn exec_spawn_id(&self) -> Option<ClientOrderId> {
-        self.exec_spawn_id.clone()
+        self.exec_spawn_id
     }
 
     fn tags(&self) -> Option<String> {
@@ -361,10 +361,10 @@ impl From<OrderInitialized> for StopLimitOrder {
 impl From<&StopLimitOrder> for OrderInitialized {
     fn from(order: &StopLimitOrder) -> Self {
         Self {
-            trader_id: order.trader_id.clone(),
-            strategy_id: order.strategy_id.clone(),
-            instrument_id: order.instrument_id.clone(),
-            client_order_id: order.client_order_id.clone(),
+            trader_id: order.trader_id,
+            strategy_id: order.strategy_id,
+            instrument_id: order.instrument_id,
+            client_order_id: order.client_order_id,
             order_side: order.side,
             order_type: order.order_type,
             quantity: order.quantity,
@@ -382,12 +382,12 @@ impl From<&StopLimitOrder> for OrderInitialized {
             trailing_offset_type: None,
             emulation_trigger: order.emulation_trigger,
             contingency_type: order.contingency_type,
-            order_list_id: order.order_list_id.clone(),
+            order_list_id: order.order_list_id,
             linked_order_ids: order.linked_order_ids.clone(),
-            parent_order_id: order.parent_order_id.clone(),
-            exec_algorithm_id: order.exec_algorithm_id.clone(),
+            parent_order_id: order.parent_order_id,
+            exec_algorithm_id: order.exec_algorithm_id,
             exec_algorithm_params: order.exec_algorithm_params.clone(),
-            exec_spawn_id: order.exec_spawn_id.clone(),
+            exec_spawn_id: order.exec_spawn_id,
             tags: order.tags.clone(),
             event_id: order.init_id.clone(),
             ts_event: order.ts_init,

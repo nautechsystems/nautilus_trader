@@ -24,16 +24,6 @@ use super::{delta::OrderBookDelta, order::BookOrder};
 use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
 
 #[no_mangle]
-pub extern "C" fn orderbook_delta_drop(delta: OrderBookDelta) {
-    drop(delta); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn orderbook_delta_clone(delta: &OrderBookDelta) -> OrderBookDelta {
-    delta.clone()
-}
-
-#[no_mangle]
 pub extern "C" fn orderbook_delta_new(
     instrument_id: InstrumentId,
     action: BookAction,

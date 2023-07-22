@@ -66,6 +66,11 @@ cdef inline str cstr_to_pystr(const char* ptr):
     return obj
 
 
+# Convert a Rust interned string to a Python string
+cdef inline str ustr_to_pystr(const char* ptr):
+    return PyUnicode_FromString(ptr)
+
+
 cdef inline bytes cstr_to_pybytes(const char* ptr):
     cdef bytes obj = PyBytes_FromString(ptr)
 

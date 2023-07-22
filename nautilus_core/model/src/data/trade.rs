@@ -31,7 +31,7 @@ use crate::{
 
 /// Represents a single trade tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[pyclass]
 pub struct TradeTick {
@@ -150,7 +150,7 @@ impl TradeTick {
 
     #[getter]
     fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id.clone()
+        self.instrument_id
     }
 
     #[getter]
@@ -170,7 +170,7 @@ impl TradeTick {
 
     #[getter]
     fn trade_id(&self) -> TradeId {
-        self.trade_id.clone()
+        self.trade_id
     }
 
     #[getter]
