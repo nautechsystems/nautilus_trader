@@ -54,12 +54,6 @@ from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
 
 
-cdef inline show_stats():
-    interned_string_stats()
-
-def show_string_stats():
-    show_stats()
-
 cdef class Identifier:
     """
     The abstract base class for all identifiers.
@@ -272,13 +266,6 @@ cdef class InstrumentId(Identifier):
 
     cdef str to_str(self):
         return cstr_to_pystr(instrument_id_to_cstr(&self._mem))
-
-    def print_pointers(self):
-        self.show_pointers()
-
-    cdef show_pointers(self):
-        printf("%p, %p\n", self._mem.symbol.value, self._mem.venue.value)
-        printf("%s, %s\n", self._mem.symbol.value, self._mem.venue.value)
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
