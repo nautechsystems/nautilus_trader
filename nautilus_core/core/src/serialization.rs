@@ -15,14 +15,14 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Represents types which are serializable for JSON and MsgPack specifications.
+/// Represents types which are serializable for JSON and `MsgPack` specifications.
 pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// Deserialize an object from JSON encoded bytes.
     fn from_json_bytes(data: Vec<u8>) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(&data)
     }
 
-    /// Deserialize an object from MsgPack encoded bytes.
+    /// Deserialize an object from `MsgPack` encoded bytes.
     fn from_msgpack_bytes(data: Vec<u8>) -> Result<Self, rmp_serde::decode::Error> {
         rmp_serde::from_slice(&data)
     }
@@ -32,7 +32,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
         serde_json::to_vec(self)
     }
 
-    /// Serialize an object to MsgPack encoded bytes.
+    /// Serialize an object to `MsgPack` encoded bytes.
     fn as_msgpack_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         rmp_serde::to_vec_named(self)
     }

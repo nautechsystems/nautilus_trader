@@ -126,7 +126,7 @@ impl DataTransformer {
 
         // Iterate over all objects calling the legacy 'to_dict' method
         let mut data_dicts: Vec<Py<PyDict>> = vec![];
-        for obj in data.into_iter() {
+        for obj in data {
             let dict: Py<PyDict> = obj
                 .call_method1(py, "to_dict", (obj.clone(),))?
                 .extract(py)?;

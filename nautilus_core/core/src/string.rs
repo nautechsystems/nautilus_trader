@@ -82,7 +82,7 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 #[no_mangle]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    let cstring = CString::from_raw(ptr as *mut c_char);
+    let cstring = CString::from_raw(ptr.cast_mut());
     drop(cstring);
 }
 

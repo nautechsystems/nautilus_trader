@@ -64,15 +64,15 @@ impl SocketClient {
         suffix: Vec<u8>,
         heartbeat: Option<(u64, Vec<u8>)>,
     ) -> io::Result<Self> {
-        let (reader, writer) = SocketClient::tls_connect_with_server(url, mode).await;
+        let (reader, writer) = Self::tls_connect_with_server(url, mode).await;
         let shared_writer = Arc::new(Mutex::new(writer));
 
         // Keep receiving messages from socket pass them as arguments to handler
-        let read_task = SocketClient::spawn_read_task(reader, handler, suffix.clone());
+        let read_task = Self::spawn_read_task(reader, handler, suffix.clone());
 
         // Optionally create heartbeat task
         let heartbeat_task =
-            SocketClient::spawn_heartbeat_task(heartbeat, shared_writer.clone(), suffix.clone());
+            Self::spawn_heartbeat_task(heartbeat, shared_writer.clone(), suffix.clone());
 
         Ok(Self {
             read_task,
@@ -94,6 +94,7 @@ impl SocketClient {
             .unwrap()
     }
 
+    #[must_use]
     pub fn spawn_read_task(
         mut reader: TcpReader,
         handler: PyObject,
@@ -192,6 +193,7 @@ impl SocketClient {
 
     /// Checks if the client is still connected.
     #[inline]
+    #[must_use]
     pub fn is_alive(&self) -> bool {
         !self.read_task.is_finished()
     }
@@ -322,7 +324,7 @@ mod tests {
                         {
                             debug!("socket:test Server sending message");
                             stream
-                                .write_all(&buf.drain(0..i + 2).as_slice())
+                                .write_all(buf.drain(0..i + 2).as_slice())
                                 .await
                                 .unwrap();
                         }

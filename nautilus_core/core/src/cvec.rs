@@ -42,6 +42,7 @@ pub struct CVec {
 unsafe impl Send for CVec {}
 
 impl CVec {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             // Explicitly type cast the pointer to some type to satisfy the
@@ -66,7 +67,7 @@ impl<T> From<Vec<T>> for CVec {
             let len = data.len();
             let cap = data.capacity();
             Self {
-                ptr: (&mut data.leak()[0] as *mut T).cast::<c_void>(),
+                ptr: std::ptr::addr_of_mut!(data.leak()[0]).cast::<c_void>(),
                 len,
                 cap,
             }

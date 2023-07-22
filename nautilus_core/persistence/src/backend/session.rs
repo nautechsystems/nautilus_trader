@@ -329,6 +329,7 @@ impl DataQueryResult {
 }
 
 impl DataQueryResult {
+    #[must_use]
     pub fn new(result: QueryResult<Data>) -> Self {
         Self {
             result,

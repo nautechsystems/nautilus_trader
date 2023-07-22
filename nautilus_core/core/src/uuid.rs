@@ -39,9 +39,10 @@ impl UUID4 {
         let mut value = [0; 37];
         value[..bytes.len()].copy_from_slice(bytes);
 
-        UUID4 { value }
+        Self { value }
     }
 
+    #[must_use]
     pub fn to_cstr(&self) -> &CStr {
         // Safety: unwrap is safe here as we always store valid C strings
         CStr::from_bytes_with_nul(&self.value).unwrap()
@@ -58,7 +59,7 @@ impl FromStr for UUID4 {
         let mut value = [0; 37];
         value[..bytes.len()].copy_from_slice(bytes);
 
-        Ok(UUID4 { value })
+        Ok(Self { value })
     }
 }
 
@@ -95,7 +96,7 @@ impl<'de> Deserialize<'de> for UUID4 {
         D: Deserializer<'de>,
     {
         let uuid4_str: &str = Deserialize::deserialize(_deserializer)?;
-        let uuid4: UUID4 = uuid4_str.into();
+        let uuid4: Self = uuid4_str.into();
         Ok(uuid4)
     }
 }

@@ -38,9 +38,10 @@ pub fn valid_string(s: &str, desc: &str) {
 ///
 /// - If `s` does not contain `pat`.
 pub fn string_contains(s: &str, pat: &str, desc: &str) {
-    if !s.contains(pat) {
-        panic!("{FAILED} invalid string for {desc} did not contain '{pat}', was '{s}'");
-    }
+    assert!(
+        s.contains(pat),
+        "{FAILED} invalid string for {desc} did not contain '{pat}', was '{s}'"
+    );
 }
 
 /// Check `u8`s are equal.
@@ -49,9 +50,10 @@ pub fn string_contains(s: &str, pat: &str, desc: &str) {
 ///
 /// - If `lhs` is not equal to `rhs`.
 pub fn u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) {
-    if lhs != rhs {
-        panic!("{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' `u8` of {rhs}");
-    }
+    assert!(
+        lhs == rhs,
+        "{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' `u8` of {rhs}"
+    );
 }
 
 /// Check `u8` value is in range (inclusive).
@@ -60,9 +62,10 @@ pub fn u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) {
 ///
 /// - If `value` is not within range [`l`, `r`].
 pub fn u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) {
-    if !(value.ge(&l) && value.le(&r)) {
-        panic!("{FAILED} invalid u8 for {desc} not in range [{l}, {r}], was {value}");
-    }
+    assert!(
+        (value.ge(&l) && value.le(&r)),
+        "{FAILED} invalid u8 for {desc} not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Check `u64` value is in range (inclusive).
@@ -71,9 +74,10 @@ pub fn u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) {
 ///
 /// - If `value` is not within range [`l`, `r`].
 pub fn u64_in_range_inclusive(value: u64, l: u64, r: u64, desc: &str) {
-    if !(value.ge(&l) && value.le(&r)) {
-        panic!("{FAILED} invalid u64 for {desc} not in range [{l}, {r}], was {value}");
-    }
+    assert!(
+        (value.ge(&l) && value.le(&r)),
+        "{FAILED} invalid u64 for {desc} not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Check `i64` value is in range (inclusive).
@@ -82,9 +86,10 @@ pub fn u64_in_range_inclusive(value: u64, l: u64, r: u64, desc: &str) {
 ///
 /// - If `value` is not within range [`l`, `r`].
 pub fn i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) {
-    if !(value.ge(&l) && value.le(&r)) {
-        panic!("{FAILED} invalid i64 for {desc} not in range [{l}, {r}], was {value}");
-    }
+    assert!(
+        (value.ge(&l) && value.le(&r)),
+        "{FAILED} invalid i64 for {desc} not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Check `f64` value is in range (inclusive).
@@ -93,9 +98,10 @@ pub fn i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) {
 ///
 /// - If `value` is not within range [`l`, `r`].
 pub fn f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) {
-    if !(value.ge(&l) && value.le(&r)) {
-        panic!("{FAILED} invalid f64 for {desc} not in range [{l}, {r}], was {value}");
-    }
+    assert!(
+        (value.ge(&l) && value.le(&r)),
+        "{FAILED} invalid f64 for {desc} not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Check `f64` value is non negative.
@@ -104,9 +110,10 @@ pub fn f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) {
 ///
 /// - If `value` is negative.
 pub fn f64_non_negative(value: f64, desc: &str) {
-    if value < 0.0 {
-        panic!("{FAILED} invalid f64 for {desc} negative, was {value}");
-    }
+    assert!(
+        value >= 0.0,
+        "{FAILED} invalid f64 for {desc} negative, was {value}"
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
