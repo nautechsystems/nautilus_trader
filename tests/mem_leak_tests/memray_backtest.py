@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     count = 0
     total_runs = 128
-    while count <= total_runs:
+    while count < total_runs:
         count += 1
         print(f"Run: {count}/{total_runs}")
 
