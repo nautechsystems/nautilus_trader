@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.rust.core cimport UUID4_t
-from nautilus_trader.core.rust.core cimport uuid4_clone
-from nautilus_trader.core.rust.core cimport uuid4_drop
 from nautilus_trader.core.rust.core cimport uuid4_eq
 from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.rust.core cimport uuid4_hash
@@ -52,10 +50,6 @@ cdef class UUID4:
             # `value` borrowed by Rust, `UUID4_t` owned from Rust
             self._mem = uuid4_from_cstr(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            uuid4_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -75,7 +69,7 @@ cdef class UUID4:
         return f"{type(self).__name__}('{self}')"
 
     cdef str to_str(self):
-        return cstr_to_pystr(uuid4_to_cstr(&self._mem))
+        return cstr_to_pystr(uuid4_to_cstr(&self._mem), False)
 
     @property
     def value(self) -> str:
@@ -84,5 +78,5 @@ cdef class UUID4:
     @staticmethod
     cdef UUID4 from_mem_c(UUID4_t mem):
         cdef UUID4 uuid4 = UUID4.__new__(UUID4)
-        uuid4._mem = uuid4_clone(&mem)
+        uuid4._mem = mem
         return uuid4

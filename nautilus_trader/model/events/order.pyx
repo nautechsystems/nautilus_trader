@@ -471,7 +471,7 @@ cdef class OrderDenied(OrderEvent):
             instrument_id._mem,
             client_order_id._mem,
             pystr_to_cstr(reason),
-            uuid4_clone(&event_id._mem),
+            event_id._mem,
             ts_init,
             ts_init,
         )
