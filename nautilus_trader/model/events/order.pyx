@@ -22,7 +22,6 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.core cimport uuid4_clone
 from nautilus_trader.core.rust.model cimport order_denied_new
 from nautilus_trader.core.rust.model cimport order_denied_reason_to_cstr
 from nautilus_trader.core.rust.model cimport strategy_id_new
