@@ -33,12 +33,12 @@ class LiveDataEngineConfig(DataEngineConfig, frozen=True):
 
     Parameters
     ----------
-    qsize : PositiveInt, default 10_000
+    qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
     """
 
-    qsize: PositiveInt = 10_000
+    qsize: PositiveInt = 100_000
 
 
 class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
@@ -47,12 +47,12 @@ class LiveRiskEngineConfig(RiskEngineConfig, frozen=True):
 
     Parameters
     ----------
-    qsize : PositiveInt, default 10_000
+    qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
     """
 
-    qsize: PositiveInt = 10_000
+    qsize: PositiveInt = 100_000
 
 
 class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
@@ -85,7 +85,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         is checked with the venue.
         As a rule of thumb, you shouldn't consider reducing this setting unless you
         are colocated with the venue (to avoid the potential for race conditions).
-    qsize : PositiveInt, default 10_000
+    qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
     """
@@ -96,7 +96,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     filter_position_reports: bool = False
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
-    qsize: PositiveInt = 10_000
+    qsize: PositiveInt = 100_000
 
 
 class RoutingConfig(NautilusConfig, frozen=True):

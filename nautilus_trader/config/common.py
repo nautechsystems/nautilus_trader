@@ -114,9 +114,9 @@ class CacheConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    tick_capacity : PositiveInt
+    tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
-    bar_capacity : PositiveInt
+    bar_capacity : PositiveInt, default 10_000
         The maximum length for internal bar dequeues.
     snapshot_orders : bool, default False
         If order state snapshot lists should be persisted.
@@ -134,8 +134,8 @@ class CacheConfig(NautilusConfig, frozen=True):
 
     """
 
-    tick_capacity: PositiveInt = 1000
-    bar_capacity: PositiveInt = 1000
+    tick_capacity: PositiveInt = 10_000
+    bar_capacity: PositiveInt = 10_000
     snapshot_orders: bool = False
     snapshot_positions: bool = False
     snapshot_positions_interval: Optional[PositiveFloat] = None
