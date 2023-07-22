@@ -750,7 +750,7 @@ cdef class Portfolio(PortfolioFacade):
             Position position
             Instrument instrument
             Price last
-            Currency cost_currency
+            Currency settlement_currency
             double xrate
         for position in positions_open:
             instrument = self._cache.instrument(position.instrument_id)
@@ -783,20 +783,20 @@ cdef class Portfolio(PortfolioFacade):
                 return None  # Cannot calculate
 
             if account.base_currency is not None:
-                cost_currency = account.base_currency
+                settlement_currency = account.base_currency
             else:
-                cost_currency = instrument.get_settlement_currency()
+                settlement_currency = instrument.get_settlement_currency()
 
             net_exposure = instrument.notional_value(
                 position.quantity,
                 last,
             ).as_f64_c()
-            net_exposure = round(net_exposure * xrate, cost_currency.get_precision())
+            net_exposure = round(net_exposure * xrate, settlement_currency._mem.precision)
 
-            total_net_exposure = net_exposures.get(cost_currency, 0.0)
+            total_net_exposure = net_exposures.get(settlement_currency, 0.0)
             total_net_exposure += net_exposure
 
-            net_exposures[cost_currency] = total_net_exposure
+            net_exposures[settlement_currency] = total_net_exposure
 
         return {k: Money(v, k) for k, v in net_exposures.items()}
 

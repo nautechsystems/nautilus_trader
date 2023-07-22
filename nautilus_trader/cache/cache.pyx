@@ -905,7 +905,7 @@ cdef class Cache(CacheFacade):
 
         cdef Price last
         if position.side == PositionSide.FLAT:
-            return Money(0.0, position.cost_currency)
+            return Money(0.0, position.settlement_currency)
         elif position.side == PositionSide.LONG:
             last = quote.ask
         else:

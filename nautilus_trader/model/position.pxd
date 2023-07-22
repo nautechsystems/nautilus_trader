@@ -75,8 +75,8 @@ cdef class Position:
     """The position quote currency.\n\n:returns: `Currency`"""
     cdef readonly Currency base_currency
     """The position base currency (if applicable).\n\n:returns: `Currency` or ``None``"""
-    cdef readonly Currency cost_currency
-    """The position cost currency (for PnL).\n\n:returns: `Currency`"""
+    cdef readonly Currency settlement_currency
+    """The position settlement currency (for PnL).\n\n:returns: `Currency`"""
     cdef readonly uint64_t ts_init
     """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_opened
