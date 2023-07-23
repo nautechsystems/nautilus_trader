@@ -21,6 +21,7 @@ pub type UnixNanos = u64;
 /// Represents a timedelta in nanoseconds.
 pub type TimedeltaNanos = i64;
 
+#[must_use]
 pub fn duration_since_unix_epoch() -> Duration {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

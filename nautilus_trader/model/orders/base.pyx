@@ -185,7 +185,7 @@ cdef class Order:
         self.tags = init.tags
 
         # Execution
-        self.filled_qty = Quantity.zero_c(precision=0)
+        self.filled_qty = Quantity.zero_c(self.quantity._mem.precision)
         self.leaves_qty = init.quantity
         self.avg_px = 0.0  # No fills yet
         self.slippage = 0.0
@@ -193,7 +193,7 @@ cdef class Order:
         # Timestamps
         self.init_id = init.id
         self.ts_init = init.ts_init
-        self.ts_last = 0  # No fills yet
+        self.ts_last = init.ts_init
 
     def __eq__(self, Order other) -> bool:
         return self.client_order_id == other.client_order_id
@@ -224,6 +224,17 @@ cdef class Order:
             f"{exec_spawn_id_str}"
             f", tags={self.tags})"
         )
+
+    cpdef str status_string(self):
+        """
+        Return a string representation of the current order status.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.status_string_c()
 
     cpdef str info(self):
         """
@@ -942,6 +953,7 @@ cdef class Order:
             self._previous_status = previous_status
 
         self._events.append(event)
+        self.ts_last = event.ts_event
 
     cdef void _denied(self, OrderDenied event):
         pass  # Do nothing else
@@ -992,7 +1004,6 @@ cdef class Order:
             )
         self.filled_qty.add_assign(fill.last_qty)
         self.leaves_qty = Quantity.from_raw_c(<uint64_t>raw_leaves_qty, fill.last_qty._mem.precision)
-        self.ts_last = fill.ts_event
         self.avg_px = self._calculate_avg_px(fill.last_qty.as_f64_c(), fill.last_px.as_f64_c())
         self.liquidity_side = fill.liquidity_side
         self._set_slippage()

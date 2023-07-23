@@ -22,14 +22,9 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
-from nautilus_trader.core.rust.core cimport uuid4_clone
-from nautilus_trader.core.rust.model cimport client_order_id_clone
-from nautilus_trader.core.rust.model cimport component_id_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport order_denied_new
 from nautilus_trader.core.rust.model cimport order_denied_reason_to_cstr
 from nautilus_trader.core.rust.model cimport strategy_id_new
-from nautilus_trader.core.rust.model cimport trade_id_clone
 from nautilus_trader.core.rust.model cimport trader_id_new
 from nautilus_trader.core.string cimport cstr_to_pybytes
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -470,12 +465,12 @@ cdef class OrderDenied(OrderEvent):
         )
 
         self._mem = order_denied_new(
-            trader_id_new(component_id_to_cstr(&trader_id._mem)),
-            strategy_id_new(component_id_to_cstr(&strategy_id._mem)),
-            instrument_id_clone(&instrument_id._mem),
-            client_order_id_clone(&client_order_id._mem),
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
             pystr_to_cstr(reason),
-            uuid4_clone(&event_id._mem),
+            event_id._mem,
             ts_init,
             ts_init,
         )

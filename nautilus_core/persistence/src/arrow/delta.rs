@@ -155,7 +155,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                     ts_init,
                 )| {
                     Self {
-                        instrument_id: instrument_id.clone(),
+                        instrument_id,
                         action: BookAction::from_u8(action.unwrap()).unwrap(),
                         order: BookOrder {
                             side: OrderSide::from_u8(side.unwrap()).unwrap(),
@@ -180,7 +180,7 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Vec<Data> {
-        let deltas: Vec<OrderBookDelta> = OrderBookDelta::decode_batch(metadata, record_batch);
+        let deltas: Vec<Self> = Self::decode_batch(metadata, record_batch);
         deltas.into_iter().map(Data::from).collect()
     }
 }
@@ -222,7 +222,7 @@ mod tests {
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let delta1 = OrderBookDelta {
-            instrument_id: instrument_id.clone(),
+            instrument_id: instrument_id,
             action: BookAction::Add,
             order: BookOrder {
                 side: OrderSide::Buy,
@@ -273,11 +273,11 @@ mod tests {
         assert_eq!(side_values.value(0), 1);
         assert_eq!(side_values.value(1), 2);
         assert_eq!(price_values.len(), 2);
-        assert_eq!(price_values.value(0), 100100000000);
-        assert_eq!(price_values.value(1), 101200000000);
+        assert_eq!(price_values.value(0), 100_100_000_000);
+        assert_eq!(price_values.value(1), 101_200_000_000);
         assert_eq!(size_values.len(), 2);
-        assert_eq!(size_values.value(0), 100000000000);
-        assert_eq!(size_values.value(1), 200000000000);
+        assert_eq!(size_values.value(0), 100_000_000_000);
+        assert_eq!(size_values.value(1), 200_000_000_000);
         assert_eq!(order_id_values.len(), 2);
         assert_eq!(order_id_values.value(0), 1);
         assert_eq!(order_id_values.value(1), 2);
@@ -302,7 +302,7 @@ mod tests {
 
         let action = UInt8Array::from(vec![1, 2]);
         let side = UInt8Array::from(vec![1, 1]);
-        let price = Int64Array::from(vec![100100000000, 100100000000]);
+        let price = Int64Array::from(vec![100_100_000_000, 100_100_000_000]);
         let size = UInt64Array::from(vec![10000, 9000]);
         let order_id = UInt64Array::from(vec![1, 2]);
         let flags = UInt8Array::from(vec![0, 0]);

@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
@@ -158,6 +160,8 @@ cdef class Cache(CacheFacade):
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
     cpdef void add_position(self, Position position, OmsType oms_type)
     cpdef void snapshot_position(self, Position position)
+    cpdef void snapshot_position_state(self, Position position)
+    cpdef void snapshot_order_state(self, Order order)
 
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
@@ -166,3 +170,5 @@ cdef class Cache(CacheFacade):
     cpdef void delete_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
     cpdef void delete_strategy(self, Strategy strategy)
+
+    cpdef void heartbeat(self, datetime timestamp)

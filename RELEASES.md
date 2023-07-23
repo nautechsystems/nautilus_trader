@@ -3,11 +3,15 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) library, thanks @twitu
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
 - Added `Cache` position and order state snapshots (configure via `CacheConfig`)
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
+- Added` BinanceExecClientConfig.max_retries` (for retrying order submit and cancel requests)
+- Added` BinanceExecClientConfig.retry_delay` (the delay between retry attempts)
+- Added `BinanceExecClientConfig.use_reduce_only` (default true to retain current behavior)
 - Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
 - Added `MessageBus.is_pending_request(...)` method
@@ -18,12 +22,16 @@ Released on TBD (UTC).
 - Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
 - Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
 - Improved `Binance` live clients logging
+- Upgraded Cython to 3.0.0 stable
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
 - All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
 - Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
+- Renamed `Instrument.native_symbol` to `raw_symbol` (you must manually migrate or flush your cached instruments)
+- Renamed `Position.cost_currency` to `settlement_currency` (standardize terminology)
 - Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
+- Changed `Order.ts_last` to represent the UNIX nanoseconds timestamp of the last _event_ (rather than fill)
 
 ### Fixes
 - Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
@@ -48,7 +56,7 @@ Released on TBD (UTC).
 
 # NautilusTrader 1.175.0 Beta
 
-Released on 16th July 2023 (UTC).
+Released on 16th June 2023 (UTC).
 
 The Betfair adapter is broken for this release pending integration with the new Rust order book.
 We recommend you do not upgrade to this version if you're using the Betfair adapter.

@@ -27,7 +27,6 @@ from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport ERROR_PRICE
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport SyntheticInstrument_API
-from nautilus_trader.core.rust.model cimport symbol_clone
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport synthetic_instrument_calculate
 from nautilus_trader.core.rust.model cimport synthetic_instrument_change_formula
@@ -48,6 +47,7 @@ from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 
 
@@ -110,37 +110,39 @@ cdef class SyntheticInstrument(Data):
             raise ValueError(f"invalid `formula`, was '{formula}'")
 
         self._mem = synthetic_instrument_new(
-            symbol_clone(&symbol._mem),
+            symbol._mem,
             price_precision,
             pybytes_to_cstr(msgspec.json.encode([c.value for c in components])),
             pystr_to_cstr(formula),
             ts_event,
             ts_init,
         )
+        self.id = InstrumentId(symbol, Venue("SYNTH"))
 
     def __del__(self) -> None:
         if self._mem._0 != NULL:
             synthetic_instrument_drop(self._mem)
 
-    def __getstate__(self):
-        return (
-            self.id.symbol.value,
-            self.price_precision,
-            msgspec.json.encode([c.value for c in self.components]),
-            self.formula,
-            self.ts_event,
-            self.ts_init,
-        )
-
-    def __setstate__(self, state):
-        self._mem = synthetic_instrument_new(
-            symbol_new(pystr_to_cstr(state[0])),
-            state[1],
-            pybytes_to_cstr(state[2]),
-            pystr_to_cstr(state[3]),
-            state[4],
-            state[5],
-        )
+    # TODO: It's currently not safe to pickle synthetic instruments
+    # def __getstate__(self):
+    #     return (
+    #         self.id.symbol.value,
+    #         self.price_precision,
+    #         msgspec.json.encode([c.value for c in self.components]),
+    #         self.formula,
+    #         self.ts_event,
+    #         self.ts_init,
+    #     )
+    #
+    # def __setstate__(self, state):
+    #     self._mem = synthetic_instrument_new(
+    #         symbol_new(pystr_to_cstr(state[0])),
+    #         state[1],
+    #         pybytes_to_cstr(state[2]),
+    #         pystr_to_cstr(state[3]),
+    #         state[4],
+    #         state[5],
+    #     )
 
     def __eq__(self, SyntheticInstrument other) -> bool:
         return self.id == other.id
@@ -148,17 +150,17 @@ cdef class SyntheticInstrument(Data):
     def __hash__(self) -> int:
         return hash(self.id)
 
-    @property
-    def id(self) -> InstrumentId:
-        """
-        Return the synthetic instruments ID.
-
-        Returns
-        -------
-        InstrumentId
-
-        """
-        return InstrumentId.from_mem_c(synthetic_instrument_id(&self._mem))
+    # @property
+    # def id(self) -> InstrumentId:
+    #     """
+    #     Return the synthetic instruments ID.
+    #
+    #     Returns
+    #     -------
+    #     InstrumentId
+    #
+    #     """
+    #     return InstrumentId.from_mem_c(synthetic_instrument_id(&self._mem))
 
     @property
     def price_precision(self) -> int:

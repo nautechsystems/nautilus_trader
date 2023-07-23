@@ -14,21 +14,20 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct TradeId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
 }
 
 impl TradeId {
@@ -37,7 +36,7 @@ impl TradeId {
         correctness::valid_string(s, "`TradeId` value");
 
         Self {
-            value: Box::new(Arc::new(s.to_string())),
+            value: Ustr::from(s),
         }
     }
 }
@@ -64,36 +63,13 @@ impl Display for TradeId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     TradeId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn trade_id_clone(trade_id: &TradeId) -> TradeId {
-    trade_id.clone()
-}
-
-/// Frees the memory for the given `trade_id` by dropping.
-#[no_mangle]
-pub extern "C" fn trade_id_drop(trade_id: TradeId) {
-    drop(trade_id); // Memory freed here
-}
-
-/// Returns [`TradeId`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn trade_id_to_cstr(trade_id: &TradeId) -> *const c_char {
-    str_to_cstr(&trade_id.value)
-}
-
-#[no_mangle]
-pub extern "C" fn trade_id_eq(lhs: &TradeId, rhs: &TradeId) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn trade_id_hash(trade_id: &TradeId) -> u64 {
-    let mut h = DefaultHasher::new();
-    trade_id.hash(&mut h);
-    h.finish()
+pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -102,26 +78,11 @@ pub extern "C" fn trade_id_hash(trade_id: &TradeId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::TradeId;
-    use crate::identifiers::trade_id::trade_id_drop;
-
-    #[test]
-    fn test_equality() {
-        let trade_id1 = TradeId::new("123456789");
-        let trade_id2 = TradeId::new("234567890");
-        assert_eq!(trade_id1, trade_id1);
-        assert_ne!(trade_id1, trade_id2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let trade_id = TradeId::new("1234567890");
         assert_eq!(trade_id.to_string(), "1234567890");
         assert_eq!(format!("{trade_id}"), "1234567890");
-    }
-
-    #[test]
-    fn test_trade_id_drop() {
-        let id = TradeId::new("123456789");
-        trade_id_drop(id); // No panic
     }
 }

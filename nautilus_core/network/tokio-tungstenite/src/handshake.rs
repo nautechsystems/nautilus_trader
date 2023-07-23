@@ -1,7 +1,7 @@
 #[cfg(feature = "handshake")]
 use crate::compat::SetWaker;
 use crate::{compat::AllowStd, WebSocketStream};
-use log::*;
+use log::trace;
 use std::{
     future::Future,
     io::{Read, Write},
@@ -19,7 +19,7 @@ use tungstenite::{
     ClientHandshake, ServerHandshake,
 };
 
-pub(crate) async fn without_handshake<F, S>(stream: S, f: F) -> WebSocketStream<S>
+pub async fn without_handshake<F, S>(stream: S, f: F) -> WebSocketStream<S>
 where
     F: FnOnce(AllowStd<S>) -> WebSocket<AllowStd<S>> + Unpin,
     S: AsyncRead + AsyncWrite + Unpin,
@@ -91,7 +91,7 @@ where
 }
 
 #[cfg(feature = "handshake")]
-pub(crate) async fn client_handshake<F, S>(
+pub async fn client_handshake<F, S>(
     stream: S,
     f: F,
 ) -> Result<(WebSocketStream<S>, Response), Error<ClientHandshake<AllowStd<S>>>>
@@ -110,7 +110,7 @@ where
 }
 
 #[cfg(feature = "handshake")]
-pub(crate) async fn server_handshake<C, F, S>(
+pub async fn server_handshake<C, F, S>(
     stream: S,
     f: F,
 ) -> Result<WebSocketStream<S>, Error<ServerHandshake<AllowStd<S>, C>>>

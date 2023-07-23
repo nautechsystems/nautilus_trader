@@ -27,6 +27,7 @@ from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport contingency_type_to_str
+from nautilus_trader.model.enums_c cimport liquidity_side_to_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.enums_c cimport time_in_force_to_str
@@ -265,8 +266,9 @@ cdef class MarketToLimitOrder(Order):
             "is_quote_quantity": self.is_quote_quantity,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
             "filled_qty": str(self.filled_qty),
-            "avg_px": str(self.avg_px) if self.avg_px is not None else None,
-            "slippage": str(self.slippage) if self.slippage is not None else None,
+            "liquidity_side": liquidity_side_to_str(self.liquidity_side),
+            "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
             "status": self._fsm.state_string_c(),
             "contingency_type": contingency_type_to_str(self.contingency_type),
             "order_list_id": self.order_list_id.to_str() if self.order_list_id is not None else None,
@@ -276,8 +278,8 @@ cdef class MarketToLimitOrder(Order):
             "exec_algorithm_params": msgspec.json.encode(self.exec_algorithm_params) if self.exec_algorithm_params is not None else None,  # noqa
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
-            "ts_last": self.ts_last if self.ts_last > 0 else None,
             "ts_init": self.ts_init,
+            "ts_last": self.ts_last,
         }
 
     @staticmethod

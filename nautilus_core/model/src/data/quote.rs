@@ -32,7 +32,7 @@ use crate::{
 
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[pyclass]
 pub struct QuoteTick {
     /// The quotes instrument ID.
@@ -170,7 +170,7 @@ impl QuoteTick {
 
     #[getter]
     fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id.clone()
+        self.instrument_id
     }
 
     #[getter]

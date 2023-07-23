@@ -38,7 +38,7 @@ pub trait Instrument {
     fn venue(&self) -> &Venue {
         &self.id().venue
     }
-    fn native_symbol(&self) -> &Symbol;
+    fn raw_symbol(&self) -> &Symbol;
     fn asset_class(&self) -> AssetClass;
     fn asset_type(&self) -> AssetType;
     fn base_currency(&self) -> Option<&Currency>;

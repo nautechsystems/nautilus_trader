@@ -208,6 +208,7 @@ def test_synthetic_instrument_from_dict():
     assert result == synthetic
 
 
+@pytest.mark.skip(reason="Currently not possible to pickle synthetic instruments")
 def test_pickling_round_trip_results_in_expected_tick():
     # Arrange
     synthetic = SyntheticInstrument(

@@ -114,9 +114,9 @@ class CacheConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    tick_capacity : PositiveInt
+    tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
-    bar_capacity : PositiveInt
+    bar_capacity : PositiveInt, default 10_000
         The maximum length for internal bar dequeues.
     snapshot_orders : bool, default False
         If order state snapshot lists should be persisted.
@@ -126,7 +126,7 @@ class CacheConfig(NautilusConfig, frozen=True):
         Snapshots will be taken at position opened, changed and closed (when events are applied).
         To include the unrealized PnL in the snapshot then quotes for the positions instrument must
         be available in the cache.
-    snapshot_positions_interval : float, optional
+    snapshot_positions_interval : PositiveFloat, optional
         The interval (seconds) at which additional position state snapshots are persisted.
         If ``None`` then no additional snapshots will be taken.
         To include the unrealized PnL in the snapshot then quotes for the positions instrument must
@@ -134,11 +134,11 @@ class CacheConfig(NautilusConfig, frozen=True):
 
     """
 
-    tick_capacity: PositiveInt = 1000
-    bar_capacity: PositiveInt = 1000
+    tick_capacity: PositiveInt = 10_000
+    bar_capacity: PositiveInt = 10_000
     snapshot_orders: bool = False
     snapshot_positions: bool = False
-    snapshot_positions_interval: Optional[float] = None
+    snapshot_positions_interval: Optional[PositiveFloat] = None
 
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):

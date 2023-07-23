@@ -331,9 +331,6 @@ cdef extern from "../includes/model.h":
         # Based on the index price for the instrument.
         INDEX_PRICE # = 9,
 
-    cdef struct Arc_String:
-        pass
-
     cdef struct Level:
         pass
 
@@ -349,10 +346,10 @@ cdef extern from "../includes/model.h":
         pass
 
     cdef struct Symbol_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct Venue_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct InstrumentId_t:
         Symbol_t symbol;
@@ -412,7 +409,7 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct TradeId_t:
-        Arc_String *value;
+        char* value;
 
     # Represents a single trade tick in a financial market.
     cdef struct TradeTick_t:
@@ -484,13 +481,13 @@ cdef extern from "../includes/model.h":
         Bar_t bar;
 
     cdef struct TraderId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct StrategyId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct ClientOrderId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct OrderDenied_t:
         TraderId_t trader_id;
@@ -503,25 +500,25 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
 
     cdef struct AccountId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct ClientId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct ComponentId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct ExecAlgorithmId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct OrderListId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct PositionId_t:
-        Arc_String *value;
+        char* value;
 
     cdef struct VenueOrderId_t:
-        Arc_String *value;
+        char* value;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying
     # [`SyntheticInstrument`].
@@ -558,20 +555,20 @@ cdef extern from "../includes/model.h":
         Level *_0;
 
     cdef struct Currency_t:
-        Arc_String *code;
+        char* code;
         uint8_t precision;
         uint16_t iso4217;
-        Arc_String *name;
+        char* name;
         CurrencyType currency_type;
 
     cdef struct Money_t:
         int64_t raw;
         Currency_t currency;
 
+    const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }
+
     # Sentinel Price for errors.
     const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }
-
-    void data_drop(Data_t data);
 
     Data_t data_clone(const Data_t *data);
 
@@ -597,10 +594,6 @@ cdef extern from "../includes/model.h":
     BarType_t bar_type_new(InstrumentId_t instrument_id,
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
-
-    void bar_type_drop(BarType_t bar_type);
-
-    BarType_t bar_type_clone(const BarType_t *bar_type);
 
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
@@ -637,20 +630,12 @@ cdef extern from "../includes/model.h":
                            uint64_t ts_event,
                            uint64_t ts_init);
 
-    void bar_drop(Bar_t bar);
-
-    Bar_t bar_clone(const Bar_t *bar);
-
     uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
 
     uint64_t bar_hash(const Bar_t *bar);
 
     # Returns a [`Bar`] as a C string.
     const char *bar_to_cstr(const Bar_t *bar);
-
-    void orderbook_delta_drop(OrderBookDelta_t delta);
-
-    OrderBookDelta_t orderbook_delta_clone(const OrderBookDelta_t *delta);
 
     OrderBookDelta_t orderbook_delta_new(InstrumentId_t instrument_id,
                                          BookAction action,
@@ -697,10 +682,6 @@ cdef extern from "../includes/model.h":
                                uint64_t ts_event,
                                uint64_t ts_init);
 
-    void quote_tick_drop(QuoteTick_t tick);
-
-    QuoteTick_t quote_tick_clone(const QuoteTick_t *tick);
-
     uint8_t quote_tick_eq(const QuoteTick_t *lhs, const QuoteTick_t *rhs);
 
     uint64_t quote_tick_hash(const QuoteTick_t *delta);
@@ -717,10 +698,6 @@ cdef extern from "../includes/model.h":
                                TradeId_t trade_id,
                                uint64_t ts_event,
                                uint64_t ts_init);
-
-    void trade_tick_drop(TradeTick_t tick);
-
-    TradeTick_t trade_tick_clone(const TradeTick_t *tick);
 
     uint8_t trade_tick_eq(const TradeTick_t *lhs, const TradeTick_t *rhs);
 
@@ -940,6 +917,8 @@ cdef extern from "../includes/model.h":
 
     const char *order_denied_reason_to_cstr(const OrderDenied_t *event);
 
+    void interned_string_stats();
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
@@ -947,17 +926,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     AccountId_t account_id_new(const char *ptr);
 
-    AccountId_t account_id_clone(const AccountId_t *account_id);
-
-    # Frees the memory for the given `account_id` by dropping.
-    void account_id_drop(AccountId_t account_id);
-
-    # Returns an [`AccountId`] as a C string pointer.
-    const char *account_id_to_cstr(const AccountId_t *account_id);
-
-    uint8_t account_id_eq(const AccountId_t *lhs, const AccountId_t *rhs);
-
-    uint64_t account_id_hash(const AccountId_t *account_id);
+    uint64_t account_id_hash(const AccountId_t *id);
 
     # Returns a Nautilus identifier from C string pointer.
     #
@@ -966,17 +935,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     ClientId_t client_id_new(const char *ptr);
 
-    ClientId_t client_id_clone(const ClientId_t *client_id);
-
-    # Frees the memory for the given `client_id` by dropping.
-    void client_id_drop(ClientId_t client_id);
-
-    # Returns a [`ClientId`] identifier as a C string pointer.
-    const char *client_id_to_cstr(const ClientId_t *client_id);
-
-    uint8_t client_id_eq(const ClientId_t *lhs, const ClientId_t *rhs);
-
-    uint64_t client_id_hash(const ClientId_t *client_id);
+    uint64_t client_id_hash(const ClientId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -985,17 +944,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     ClientOrderId_t client_order_id_new(const char *ptr);
 
-    ClientOrderId_t client_order_id_clone(const ClientOrderId_t *client_order_id);
-
-    # Frees the memory for the given `client_order_id` by dropping.
-    void client_order_id_drop(ClientOrderId_t client_order_id);
-
-    # Returns a [`ClientOrderId`] as a C string pointer.
-    const char *client_order_id_to_cstr(const ClientOrderId_t *client_order_id);
-
-    uint8_t client_order_id_eq(const ClientOrderId_t *lhs, const ClientOrderId_t *rhs);
-
-    uint64_t client_order_id_hash(const ClientOrderId_t *client_order_id);
+    uint64_t client_order_id_hash(const ClientOrderId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1004,17 +953,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     ComponentId_t component_id_new(const char *ptr);
 
-    ComponentId_t component_id_clone(const ComponentId_t *component_id);
-
-    # Frees the memory for the given `component_id` by dropping.
-    void component_id_drop(ComponentId_t component_id);
-
-    # Returns a [`ComponentId`] identifier as a C string pointer.
-    const char *component_id_to_cstr(const ComponentId_t *component_id);
-
-    uint8_t component_id_eq(const ComponentId_t *lhs, const ComponentId_t *rhs);
-
-    uint64_t component_id_hash(const ComponentId_t *component_id);
+    uint64_t component_id_hash(const ComponentId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1023,19 +962,9 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
-    ExecAlgorithmId_t exec_algorithm_id_clone(const ExecAlgorithmId_t *exec_algorithm_id);
+    uint64_t exec_algorithm_id_hash(const ExecAlgorithmId_t *id);
 
-    # Frees the memory for the given `exec_algorithm_id` by dropping.
-    void exec_algorithm_id_drop(ExecAlgorithmId_t exec_algorithm_id);
-
-    # Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
-    const char *exec_algorithm_id_to_cstr(const ExecAlgorithmId_t *exec_algorithm_id);
-
-    uint8_t exec_algorithm_id_eq(const ExecAlgorithmId_t *lhs, const ExecAlgorithmId_t *rhs);
-
-    uint64_t exec_algorithm_id_hash(const ExecAlgorithmId_t *exec_algorithm_id);
-
-    InstrumentId_t instrument_id_new(const Symbol_t *symbol, const Venue_t *venue);
+    InstrumentId_t instrument_id_new(Symbol_t symbol, Venue_t venue);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1044,15 +973,8 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
 
-    InstrumentId_t instrument_id_clone(const InstrumentId_t *instrument_id);
-
-    # Frees the memory for the given `instrument_id` by dropping.
-    void instrument_id_drop(InstrumentId_t instrument_id);
-
     # Returns an [`InstrumentId`] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);
-
-    uint8_t instrument_id_eq(const InstrumentId_t *lhs, const InstrumentId_t *rhs);
 
     uint64_t instrument_id_hash(const InstrumentId_t *instrument_id);
 
@@ -1065,17 +987,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     OrderListId_t order_list_id_new(const char *ptr);
 
-    OrderListId_t order_list_id_clone(const OrderListId_t *order_list_id);
-
-    # Frees the memory for the given `order_list_id` by dropping.
-    void order_list_id_drop(OrderListId_t order_list_id);
-
-    # Returns an [`OrderListId`] as a C string pointer.
-    const char *order_list_id_to_cstr(const OrderListId_t *order_list_id);
-
-    uint8_t order_list_id_eq(const OrderListId_t *lhs, const OrderListId_t *rhs);
-
-    uint64_t order_list_id_hash(const OrderListId_t *order_list_id);
+    uint64_t order_list_id_hash(const OrderListId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1084,17 +996,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     PositionId_t position_id_new(const char *ptr);
 
-    PositionId_t position_id_clone(const PositionId_t *position_id);
-
-    # Frees the memory for the given `position_id` by dropping.
-    void position_id_drop(PositionId_t position_id);
-
-    # Returns a [`PositionId`] identifier as a C string pointer.
-    const char *position_id_to_cstr(const PositionId_t *position_id);
-
-    uint8_t position_id_eq(const PositionId_t *lhs, const PositionId_t *rhs);
-
-    uint64_t position_id_hash(const PositionId_t *position_id);
+    uint64_t position_id_hash(const PositionId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1103,13 +1005,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     StrategyId_t strategy_id_new(const char *ptr);
 
-    StrategyId_t strategy_id_clone(const StrategyId_t *strategy_id);
-
-    # Frees the memory for the given `strategy_id` by dropping.
-    void strategy_id_drop(StrategyId_t strategy_id);
-
-    # Returns a [`StrategyId`] as a C string pointer.
-    const char *strategy_id_to_cstr(const StrategyId_t *strategy_id);
+    uint64_t strategy_id_hash(const StrategyId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1118,17 +1014,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     Symbol_t symbol_new(const char *ptr);
 
-    Symbol_t symbol_clone(const Symbol_t *symbol);
-
-    # Frees the memory for the given [Symbol] by dropping.
-    void symbol_drop(Symbol_t symbol);
-
-    # Returns a [`Symbol`] as a C string pointer.
-    const char *symbol_to_cstr(const Symbol_t *symbol);
-
-    uint8_t symbol_eq(const Symbol_t *lhs, const Symbol_t *rhs);
-
-    uint64_t symbol_hash(const Symbol_t *symbol);
+    uint64_t symbol_hash(const Symbol_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1137,17 +1023,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     TradeId_t trade_id_new(const char *ptr);
 
-    TradeId_t trade_id_clone(const TradeId_t *trade_id);
-
-    # Frees the memory for the given `trade_id` by dropping.
-    void trade_id_drop(TradeId_t trade_id);
-
-    # Returns [`TradeId`] as a C string pointer.
-    const char *trade_id_to_cstr(const TradeId_t *trade_id);
-
-    uint8_t trade_id_eq(const TradeId_t *lhs, const TradeId_t *rhs);
-
-    uint64_t trade_id_hash(const TradeId_t *trade_id);
+    uint64_t trade_id_hash(const TradeId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1156,13 +1032,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     TraderId_t trader_id_new(const char *ptr);
 
-    TraderId_t trader_id_clone(const TraderId_t *trader_id);
-
-    # Frees the memory for the given `trader_id` by dropping.
-    void trader_id_drop(TraderId_t trader_id);
-
-    # Returns a [`TraderId`] as a C string pointer.
-    const char *trader_id_to_cstr(const TraderId_t *trader_id);
+    uint64_t trader_id_hash(const TraderId_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #
@@ -1171,17 +1041,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     Venue_t venue_new(const char *ptr);
 
-    Venue_t venue_clone(const Venue_t *venue);
-
-    # Frees the memory for the given `venue` by dropping.
-    void venue_drop(Venue_t venue);
-
-    # Returns a [`Venue`] identifier as a C string pointer.
-    const char *venue_to_cstr(const Venue_t *venue);
-
-    uint8_t venue_eq(const Venue_t *lhs, const Venue_t *rhs);
-
-    uint64_t venue_hash(const Venue_t *venue);
+    uint64_t venue_hash(const Venue_t *id);
 
     uint8_t venue_is_synthetic(const Venue_t *venue);
 
@@ -1192,16 +1052,7 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     VenueOrderId_t venue_order_id_new(const char *ptr);
 
-    VenueOrderId_t venue_order_id_clone(const VenueOrderId_t *venue_order_id);
-
-    # Frees the memory for the given `venue_order_id` by dropping.
-    void venue_order_id_drop(VenueOrderId_t venue_order_id);
-
-    const char *venue_order_id_to_cstr(const VenueOrderId_t *venue_order_id);
-
-    uint8_t venue_order_id_eq(const VenueOrderId_t *lhs, const VenueOrderId_t *rhs);
-
-    uint64_t venue_order_id_hash(const VenueOrderId_t *venue_order_id);
+    uint64_t venue_order_id_hash(const VenueOrderId_t *id);
 
     # # Safety
     #
@@ -1352,17 +1203,11 @@ cdef extern from "../includes/model.h":
                                 const char *name_ptr,
                                 CurrencyType currency_type);
 
-    Currency_t currency_clone(const Currency_t *currency);
-
-    void currency_drop(Currency_t currency);
-
     const char *currency_to_cstr(const Currency_t *currency);
 
     const char *currency_code_to_cstr(const Currency_t *currency);
 
     const char *currency_name_to_cstr(const Currency_t *currency);
-
-    uint8_t currency_eq(const Currency_t *lhs, const Currency_t *rhs);
 
     uint64_t currency_hash(const Currency_t *currency);
 
@@ -1381,8 +1226,6 @@ cdef extern from "../includes/model.h":
     Money_t money_new(double amount, Currency_t currency);
 
     Money_t money_from_raw(int64_t raw, Currency_t currency);
-
-    void money_drop(Money_t money);
 
     double money_as_f64(const Money_t *money);
 

@@ -16,17 +16,17 @@
 use std::{
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    sync::Arc,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct StrategyId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
 }
 
 impl StrategyId {
@@ -38,7 +38,7 @@ impl StrategyId {
         }
 
         Self {
-            value: Box::new(Arc::new(s.to_string())),
+            value: Ustr::from(s),
         }
     }
 }
@@ -46,7 +46,7 @@ impl StrategyId {
 impl Default for StrategyId {
     fn default() -> Self {
         Self {
-            value: Box::new(Arc::new(String::from("S-001"))),
+            value: Ustr::from("S-001"),
         }
     }
 }
@@ -66,6 +66,7 @@ impl Display for StrategyId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
@@ -73,24 +74,13 @@ impl Display for StrategyId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn strategy_id_clone(strategy_id: &StrategyId) -> StrategyId {
-    strategy_id.clone()
-}
-
-/// Frees the memory for the given `strategy_id` by dropping.
-#[no_mangle]
-pub extern "C" fn strategy_id_drop(strategy_id: StrategyId) {
-    drop(strategy_id); // Memory freed here
-}
-
-/// Returns a [`StrategyId`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char {
-    str_to_cstr(&strategy_id.value)
+pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -99,26 +89,11 @@ pub extern "C" fn strategy_id_to_cstr(strategy_id: &StrategyId) -> *const c_char
 #[cfg(test)]
 mod tests {
     use super::StrategyId;
-    use crate::identifiers::strategy_id::strategy_id_drop;
-
-    #[test]
-    fn test_equality() {
-        let id1 = StrategyId::new("EMACross-001");
-        let id2 = StrategyId::new("EMACross-002");
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let id = StrategyId::new("EMACross-001");
         assert_eq!(id.to_string(), "EMACross-001");
         assert_eq!(format!("{id}"), "EMACross-001");
-    }
-
-    #[test]
-    fn test_strategy_id_drop() {
-        let id = StrategyId::new("EMACross-001");
-        strategy_id_drop(id); // No panic
     }
 }

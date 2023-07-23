@@ -22,6 +22,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.bar_aggregation import BarAggregation
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
@@ -38,6 +39,7 @@ __all__ = [
     "BarSpecification",
     "BarType",
     "GenericData",
+    "NULL_ORDER",
     "BarAggregation",
     "DataType",
     "BookOrder",

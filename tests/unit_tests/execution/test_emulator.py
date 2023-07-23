@@ -291,6 +291,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.is_canceled
         assert not self.emulator.get_submit_order_commands()
         assert not self.emulator.subscribed_trades
+        assert order not in self.cache.orders_emulated()
 
     def test_submit_limit_order_with_instrument_not_found_then_cancels(self) -> None:
         # Arrange
@@ -701,6 +702,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
         assert self.exec_client.calls == ["_start", "submit_order"]
+        assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
         ("order_side", "expected_trigger_price"),
@@ -860,6 +862,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert len(order.events) == 2
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderInitialized)
+        assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
         ("order_side", "price", "expected_trigger_price"),
@@ -1032,6 +1035,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderTriggered)
         assert isinstance(order.events[2], OrderInitialized)
+        assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
         ("order_side", "trigger_price", "price"),
@@ -1089,6 +1093,7 @@ class TestOrderEmulatorWithSingleOrders:
         assert isinstance(order.events[1], OrderTriggered)
         assert isinstance(order.events[2], OrderInitialized)
         assert self.exec_client.calls == ["_start", "submit_order"]
+        assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
         ("order_side"),

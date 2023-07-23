@@ -18,6 +18,8 @@ from typing import Optional
 
 from nautilus_trader.config import CacheDatabaseConfig
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
@@ -25,6 +27,7 @@ from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
@@ -78,6 +81,7 @@ cdef str _INDEX_ORDER_POSITION = "index:order_position"
 cdef str _INDEX_ORDER_CLIENT = "index:order_client"
 cdef str _SNAPSHOTS_ORDERS = "snapshots:orders"
 cdef str _SNAPSHOTS_POSITIONS = "snapshots:positions"
+cdef str _HEARTBEAT = "health:heartbeat"
 
 
 cdef class RedisCacheDatabase(CacheDatabase):
@@ -138,11 +142,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
 
-        self._key_index_order_position = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"  # noqa
-        self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"  # noqa
+        self._key_index_order_position = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"
+        self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"
 
-        self._key_snapshots_orders = f"{self._key_trader}:{_SNAPSHOTS_ORDERS}:"  # noqa
-        self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"  # noqa
+        self._key_snapshots_orders = f"{self._key_trader}:{_SNAPSHOTS_ORDERS}:"
+        self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"
+        self._key_heartbeat = f"{self._key_trader}:{_HEARTBEAT}"
 
         # Serializers
         self._serializer = serializer
@@ -984,7 +989,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Updated {position}.")
 
-    cpdef void snapshot_order(self, Order order):
+    cpdef void snapshot_order_state(self, Order order):
         """
         Snapshot the state of the given `order`.
 
@@ -1001,9 +1006,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._redis.rpush(self._key_snapshots_orders + order.client_order_id.to_str(), snapshot_bytes)
 
-        self._log.debug(f"Snapshot {order}.")
+        self._log.debug(f"Added state snapshot {order}.")
 
-    cpdef void snapshot_position(self, Position position, Money unrealized_pnl):
+    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl = None):
         """
         Snapshot the state of the given `position`.
 
@@ -1025,4 +1030,21 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef bytes snapshot_bytes = self._serializer.serialize(position_state)
         self._redis.rpush(self._key_snapshots_positions + position.id.to_str(), snapshot_bytes)
 
-        self._log.debug(f"Snapshot {position}.")
+        self._log.debug(f"Added state snapshot {position}.")
+
+    cpdef void heartbeat(self, datetime timestamp):
+        """
+        Add a heartbeat at the given `timestamp`.
+
+        Parameters
+        ----------
+        timestamp : datetime
+            The timestamp for the heartbeat.
+
+        """
+        Condition.not_none(timestamp, "timestamp")
+
+        cdef timestamp_str = format_iso8601(timestamp)
+        self._redis.set(self._key_heartbeat, timestamp_str)
+
+        self._log.debug(f"Set last heartbeat {timestamp_str}.")

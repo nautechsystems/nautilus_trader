@@ -123,14 +123,14 @@ impl DecodeFromRecordBatch for TradeTick {
         // Construct iterator of values from arrays
         let values = price_values
             .into_iter()
-            .zip(size_values.into_iter())
-            .zip(aggressor_side_values.into_iter())
-            .zip(trade_id_values_values.into_iter())
-            .zip(ts_event_values.into_iter())
-            .zip(ts_init_values.into_iter())
+            .zip(size_values)
+            .zip(aggressor_side_values)
+            .zip(trade_id_values_values)
+            .zip(ts_event_values)
+            .zip(ts_init_values)
             .map(
                 |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| Self {
-                    instrument_id: instrument_id.clone(),
+                    instrument_id,
                     price: Price::from_raw(price.unwrap(), price_precision),
                     size: Quantity::from_raw(size.unwrap(), size_precision),
                     aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)
@@ -150,7 +150,7 @@ impl DecodeDataFromRecordBatch for TradeTick {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Vec<Data> {
-        let ticks: Vec<TradeTick> = TradeTick::decode_batch(metadata, record_batch);
+        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch);
         ticks.into_iter().map(Data::from).collect()
     }
 }
@@ -193,7 +193,7 @@ mod tests {
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let tick1 = TradeTick {
-            instrument_id: instrument_id.clone(),
+            instrument_id: instrument_id,
             price: Price::new(100.10, 2),
             size: Quantity::new(1000.0, 0),
             aggressor_side: AggressorSide::Buyer,
@@ -226,11 +226,11 @@ mod tests {
 
         assert_eq!(columns.len(), 6);
         assert_eq!(price_values.len(), 2);
-        assert_eq!(price_values.value(0), 100100000000);
-        assert_eq!(price_values.value(1), 100500000000);
+        assert_eq!(price_values.value(0), 100_100_000_000);
+        assert_eq!(price_values.value(1), 100_500_000_000);
         assert_eq!(size_values.len(), 2);
-        assert_eq!(size_values.value(0), 1000000000000);
-        assert_eq!(size_values.value(1), 500000000000);
+        assert_eq!(size_values.value(0), 1_000_000_000_000);
+        assert_eq!(size_values.value(1), 500_000_000_000);
         assert_eq!(aggressor_side_values.len(), 2);
         assert_eq!(aggressor_side_values.value(0), 1);
         assert_eq!(aggressor_side_values.value(1), 2);
@@ -250,7 +250,7 @@ mod tests {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
-        let price = Int64Array::from(vec![1000000000000, 1010000000000]);
+        let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);
         let size = UInt64Array::from(vec![1000, 900]);
         let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
         let trade_id = StringArray::from(vec!["1", "2"]);

@@ -27,7 +27,10 @@ use crate::string::cstr_to_string;
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
 pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+
     let c_str = CStr::from_ptr(ptr);
     let bytes = c_str.to_bytes();
     let json_string = std::str::from_utf8(bytes).unwrap();
@@ -45,6 +48,7 @@ pub unsafe fn bytes_to_string_vec(ptr: *const c_char) -> Vec<String> {
     }
 }
 
+#[must_use]
 pub fn string_vec_to_bytes(strings: Vec<String>) -> *const c_char {
     let json_string = serde_json::to_string(&strings).unwrap();
     let c_string = CString::new(json_string).unwrap();
@@ -68,7 +72,7 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
         match result {
             Ok(map) => Some(map),
             Err(err) => {
-                eprintln!("Error parsing JSON: {}", err);
+                eprintln!("Error parsing JSON: {err}");
                 None
             }
         }
@@ -76,6 +80,7 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
 }
 
 /// Return the decimal precision inferred from the given string.
+#[must_use]
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
     // Handle scientific notation
@@ -99,6 +104,7 @@ pub fn precision_from_str(s: &str) -> u8 {
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     precision_from_str(&cstr_to_string(ptr))
 }
 

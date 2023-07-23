@@ -26,10 +26,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain (Linux/Windows)
-        if: runner.os != 'macOS'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up Rust tool-chain (Linux, Windows) stable
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -42,17 +41,14 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
-      # Test pip installation
       - name: Test pip installation
         run: pip install .
 
@@ -69,25 +65,21 @@ jobs:
         with:
           fetch-depth: 2
 
-      # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up Rust tool-chain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: stable
           components: rustfmt, clippy
 
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
-      # Setup Poetry caching
-      - name: Set output
+      - name: Set poetry caching
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
 
       - name: Poetry cache
@@ -97,17 +89,14 @@ jobs:
           path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
-      # Install
       - name: Install
         run: poetry install
 
-      # Tag the commit with the library version
       - name: Create git tag
         uses: salsify/action-detect-and-tag-new-version@v2
         with:
           version-command: poetry version --short
 
-      # Set release output variables
       - name: Set output
         id: vars
         run: |
@@ -115,8 +104,7 @@ jobs:
           echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
           sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
 
-      # Create GitHub release
-      - name: Create release
+      - name: Create GitHub release
         id: create-release
         uses: actions/create-release@v1
         env:
@@ -141,25 +129,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up Rust tool-chain (stable)
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: stable
           components: rustfmt, clippy
 
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
 
-      # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
-      # Setup Poetry caching
-      - name: Set output
+      - name: Set poety output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
 
       - name: Poetry cache
@@ -169,21 +153,18 @@ jobs:
           path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
-      # Install / Build
       - name: Install / Build
         run: |
           poetry install
           poetry build --format sdist
 
-      # Set release output
-      - name: Set output
+      - name: Set release output
         id: vars
         run: |
           echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
           cd dist
           echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
-      # Upload release asset
       - name: Upload release asset
         id: upload-release-asset
         uses: actions/upload-release-asset@v1
@@ -197,8 +178,7 @@ jobs:
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
 
-      # Publish
-      - name: Publish to production PyPI
+      - name: Publish to PyPI
         env:
           POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
           POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
@@ -221,10 +201,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Rust setup (ensures latest stable)
-      - name: Set up Rust tool-chain (Linux/Windows)
-        if: runner.os != 'macOS'
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Set up Rust tool-chain (Linux, Windows) stable
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: stable
           components: rustfmt, clippy
@@ -237,26 +216,19 @@ jobs:
           override: true
           components: rustfmt, clippy
 
-      # Python setup
       - name: Set up Python environment
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
 
-      # Install build dependencies
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
-      # Setup Poetry caching
-      - name: Set output (Linux)
-        if: runner.os == 'Linux'
+      - name: Set poetry output (Linux, macOS)
+        if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
 
-      - name: Set output (macOS)
-        if: runner.os == 'macOS'
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set output (Windows)
+      - name: Set poetry output (Windows)
         if: runner.os == 'Windows'
         run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
@@ -267,14 +239,12 @@ jobs:
           path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
-      # Install / Build
       - name: Install / Build
         run: |
           poetry install
           poetry build --format wheel
 
-      # Upload release asset (UNIX)
-      - name: Set output (UNIX)
+      - name: Set output for release (Linux, macOS)
         id: vars-unix
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
         run: |
@@ -282,7 +252,7 @@ jobs:
           cd dist
           echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
-      - name: Upload release asset (UNIX)
+      - name: Upload release asset (Linux, macOS)
         id: upload-release-asset-unix
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
         uses: actions/upload-release-asset@v1
@@ -296,8 +266,7 @@ jobs:
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
 
-      # Upload release asset (Windows)
-      - name: Set output (Windows)
+      - name: Set output for release (Windows)
         id: vars-windows
         if: runner.os == 'Windows'
         run: |
@@ -318,8 +287,7 @@ jobs:
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
 
-      # Publish
-      - name: Publish to production PyPI
+      - name: Publish to PyPI
         env:
           POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
           POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}

@@ -134,7 +134,7 @@ impl DecodeFromRecordBatch for Bar {
             .zip(ts_init_values.iter())
             .map(
                 |((((((open, high), low), close), volume), ts_event), ts_init)| Self {
-                    bar_type: bar_type.clone(),
+                    bar_type,
                     open: Price::from_raw(open.unwrap(), price_precision),
                     high: Price::from_raw(high.unwrap(), price_precision),
                     low: Price::from_raw(low.unwrap(), price_precision),
@@ -154,7 +154,7 @@ impl DecodeDataFromRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Vec<Data> {
-        let bars: Vec<Bar> = Bar::decode_batch(metadata, record_batch);
+        let bars: Vec<Self> = Self::decode_batch(metadata, record_batch);
         bars.into_iter().map(Data::from).collect()
     }
 }
@@ -194,7 +194,7 @@ mod tests {
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let bar1 = Bar::new(
-            bar_type.clone(),
+            bar_type,
             Price::new(100.10, 2),
             Price::new(102.00, 2),
             Price::new(100.00, 2),
@@ -228,20 +228,20 @@ mod tests {
 
         assert_eq!(columns.len(), 7);
         assert_eq!(open_values.len(), 2);
-        assert_eq!(open_values.value(0), 100100000000);
-        assert_eq!(open_values.value(1), 100000000000);
+        assert_eq!(open_values.value(0), 100_100_000_000);
+        assert_eq!(open_values.value(1), 100_000_000_000);
         assert_eq!(high_values.len(), 2);
-        assert_eq!(high_values.value(0), 102000000000);
-        assert_eq!(high_values.value(1), 100000000000);
+        assert_eq!(high_values.value(0), 102_000_000_000);
+        assert_eq!(high_values.value(1), 100_000_000_000);
         assert_eq!(low_values.len(), 2);
-        assert_eq!(low_values.value(0), 100000000000);
-        assert_eq!(low_values.value(1), 100000000000);
+        assert_eq!(low_values.value(0), 100_000_000_000);
+        assert_eq!(low_values.value(1), 100_000_000_000);
         assert_eq!(close_values.len(), 2);
-        assert_eq!(close_values.value(0), 101000000000);
-        assert_eq!(close_values.value(1), 100100000000);
+        assert_eq!(close_values.value(0), 101_000_000_000);
+        assert_eq!(close_values.value(1), 100_100_000_000);
         assert_eq!(volume_values.len(), 2);
-        assert_eq!(volume_values.value(0), 1100000000000);
-        assert_eq!(volume_values.value(1), 1110000000000);
+        assert_eq!(volume_values.value(0), 1_100_000_000_000);
+        assert_eq!(volume_values.value(1), 1_110_000_000_000);
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
         assert_eq!(ts_event_values.value(1), 2);
@@ -255,11 +255,11 @@ mod tests {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
-        let open = Int64Array::from(vec![100100000000, 10000000000]);
-        let high = Int64Array::from(vec![102000000000, 10000000000]);
-        let low = Int64Array::from(vec![100000000000, 10000000000]);
-        let close = Int64Array::from(vec![101000000000, 10010000000]);
-        let volume = UInt64Array::from(vec![11000000000, 10000000000]);
+        let open = Int64Array::from(vec![100_100_000_000, 10_000_000_000]);
+        let high = Int64Array::from(vec![102_000_000_000, 10_000_000_000]);
+        let low = Int64Array::from(vec![100_000_000_000, 10_000_000_000]);
+        let close = Int64Array::from(vec![101_000_000_000, 10_010_000_000]);
+        let volume = UInt64Array::from(vec![11_000_000_000, 10_000_000_000]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 

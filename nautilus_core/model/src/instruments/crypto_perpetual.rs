@@ -33,7 +33,7 @@ use crate::{
 #[pyclass]
 pub struct CryptoPerpetual {
     pub id: InstrumentId,
-    pub native_symbol: Symbol,
+    pub raw_symbol: Symbol,
     pub quote_currency: Currency,
     pub base_currency: Currency,
     pub settlement_currency: Currency,
@@ -57,7 +57,7 @@ impl CryptoPerpetual {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
-        native_symbol: Symbol,
+        raw_symbol: Symbol,
         base_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
@@ -77,7 +77,7 @@ impl CryptoPerpetual {
     ) -> Self {
         Self {
             id,
-            native_symbol,
+            raw_symbol,
             base_currency,
             quote_currency,
             settlement_currency,
@@ -117,8 +117,8 @@ impl Instrument for CryptoPerpetual {
         &self.id
     }
 
-    fn native_symbol(&self) -> &Symbol {
-        &self.native_symbol
+    fn raw_symbol(&self) -> &Symbol {
+        &self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {

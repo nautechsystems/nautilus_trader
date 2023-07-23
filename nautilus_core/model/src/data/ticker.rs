@@ -99,7 +99,7 @@ impl Ticker {
 
     #[getter]
     fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id.clone()
+        self.instrument_id
     }
 
     #[getter]

@@ -28,7 +28,7 @@ use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
 #[pyclass]
 pub struct OrderBookDelta {
@@ -149,7 +149,7 @@ impl OrderBookDelta {
 
     #[getter]
     fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id.clone()
+        self.instrument_id
     }
 
     #[getter]

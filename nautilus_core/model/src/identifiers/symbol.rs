@@ -14,21 +14,20 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct Symbol {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
 }
 
 impl Symbol {
@@ -37,7 +36,7 @@ impl Symbol {
         correctness::valid_string(s, "`Symbol` value");
 
         Self {
-            value: Box::new(Arc::new(s.to_string())),
+            value: Ustr::from(s),
         }
     }
 }
@@ -45,7 +44,7 @@ impl Symbol {
 impl Default for Symbol {
     fn default() -> Self {
         Self {
-            value: Box::new(Arc::new(String::from("AUD/USD"))),
+            value: Ustr::from("AUD/USD"),
         }
     }
 }
@@ -72,36 +71,13 @@ impl Display for Symbol {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     Symbol::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn symbol_clone(symbol: &Symbol) -> Symbol {
-    symbol.clone()
-}
-
-/// Frees the memory for the given [Symbol] by dropping.
-#[no_mangle]
-pub extern "C" fn symbol_drop(symbol: Symbol) {
-    drop(symbol); // Memory freed here
-}
-
-/// Returns a [`Symbol`] as a C string pointer.
-#[no_mangle]
-pub extern "C" fn symbol_to_cstr(symbol: &Symbol) -> *const c_char {
-    str_to_cstr(&symbol.value)
-}
-
-#[no_mangle]
-pub extern "C" fn symbol_eq(lhs: &Symbol, rhs: &Symbol) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn symbol_hash(symbol: &Symbol) -> u64 {
-    let mut h = DefaultHasher::new();
-    symbol.hash(&mut h);
-    h.finish()
+pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -110,26 +86,11 @@ pub extern "C" fn symbol_hash(symbol: &Symbol) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::Symbol;
-    use crate::identifiers::symbol::symbol_drop;
-
-    #[test]
-    fn test_equality() {
-        let symbol1 = Symbol::new("XRD/USD");
-        let symbol2 = Symbol::new("BTC/USD");
-        assert_eq!(symbol1, symbol1);
-        assert_ne!(symbol1, symbol2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let symbol = Symbol::new("ETH-PERP");
         assert_eq!(symbol.to_string(), "ETH-PERP");
         assert_eq!(format!("{symbol}"), "ETH-PERP");
-    }
-
-    #[test]
-    fn test_symbol_drop() {
-        let id = Symbol::new("ETH-PERP");
-        symbol_drop(id); // No panic
     }
 }

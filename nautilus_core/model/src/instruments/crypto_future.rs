@@ -34,7 +34,7 @@ use crate::{
 #[pyclass]
 pub struct CryptoFuture {
     pub id: InstrumentId,
-    pub native_symbol: Symbol,
+    pub raw_symbol: Symbol,
     pub underlying: String,
     pub expiration: UnixNanos,
     pub currency: Currency,
@@ -58,7 +58,7 @@ impl CryptoFuture {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
-        native_symbol: Symbol,
+        raw_symbol: Symbol,
         underlying: String,
         expiration: UnixNanos,
         currency: Currency,
@@ -78,7 +78,7 @@ impl CryptoFuture {
     ) -> Self {
         Self {
             id,
-            native_symbol,
+            raw_symbol,
             underlying,
             expiration,
             currency,
@@ -118,8 +118,8 @@ impl Instrument for CryptoFuture {
         &self.id
     }
 
-    fn native_symbol(&self) -> &Symbol {
-        &self.native_symbol
+    fn raw_symbol(&self) -> &Symbol {
+        &self.raw_symbol
     }
 
     fn asset_class(&self) -> AssetClass {

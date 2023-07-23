@@ -615,14 +615,14 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         if report.order_status == OrderStatus.CANCELED:
-            if order.status != OrderStatus.CANCELED:
+            if order.status != OrderStatus.CANCELED and order.is_open:
                 if report.ts_triggered > 0:
                     self._generate_order_triggered(order, report)
                 self._generate_order_canceled(order, report)
             return True  # Reconciled
 
         if report.order_status == OrderStatus.EXPIRED:
-            if order.status != OrderStatus.EXPIRED:
+            if order.status != OrderStatus.EXPIRED and order.is_open:
                 if report.ts_triggered > 0:
                     self._generate_order_triggered(order, report)
                 self._generate_order_expired(order, report)

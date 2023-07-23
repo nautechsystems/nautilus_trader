@@ -43,8 +43,8 @@ cdef class CurrencyPair(Instrument):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the instrument.
-    native_symbol : Symbol
-        The native/local symbol on the exchange for the instrument.
+    raw_symbol : Symbol
+        The native/local/raw symbol for the instrument, assigned by the venue.
     base_currency : Currency
         The base currency.
     quote_currency : Currency
@@ -123,7 +123,7 @@ cdef class CurrencyPair(Instrument):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol native_symbol not None,
+        Symbol raw_symbol not None,
         Currency base_currency not None,
         Currency quote_currency not None,
         int price_precision,
@@ -156,7 +156,7 @@ cdef class CurrencyPair(Instrument):
             asset_class = AssetClass.FX
         super().__init__(
             instrument_id=instrument_id,
-            native_symbol=native_symbol,
+            raw_symbol=raw_symbol,
             asset_class=asset_class,
             asset_type=AssetType.SPOT,
             quote_currency=quote_currency,
@@ -209,7 +209,7 @@ cdef class CurrencyPair(Instrument):
         cdef bytes info = values["info"]
         return CurrencyPair(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            native_symbol=Symbol(values["native_symbol"]),
+            raw_symbol=Symbol(values["raw_symbol"]),
             base_currency=Currency.from_str_c(values["base_currency"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             price_precision=values["price_precision"],
@@ -238,7 +238,7 @@ cdef class CurrencyPair(Instrument):
         return {
             "type": "CurrencyPair",
             "id": obj.id.to_str(),
-            "native_symbol": obj.native_symbol.to_str(),
+            "raw_symbol": obj.raw_symbol.to_str(),
             "base_currency": obj.base_currency.code,
             "quote_currency": obj.quote_currency.code,
             "price_precision": obj.price_precision,

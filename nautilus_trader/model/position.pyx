@@ -94,7 +94,7 @@ cdef class Position:
         self.is_inverse = instrument.is_inverse
         self.quote_currency = instrument.quote_currency
         self.base_currency = instrument.get_base_currency()  # Can be None
-        self.cost_currency = instrument.get_settlement_currency()
+        self.settlement_currency = instrument.get_settlement_currency()
 
         self.realized_return = 0.0
         self.realized_pnl = None
@@ -144,13 +144,14 @@ cdef class Position:
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
             "ts_opened": self.ts_opened,
+            "ts_last": self.ts_last,
             "ts_closed": self.ts_closed if self.ts_closed > 0 else None,
             "duration_ns": self.duration_ns if self.duration_ns > 0 else None,
             "avg_px_open": str(self.avg_px_open),
             "avg_px_close": str(self.avg_px_close) if self.avg_px_close > 0 else None,
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code if self.base_currency is not None else None,
-            "cost_currency": self.cost_currency.code,
+            "settlement_currency": self.settlement_currency.code,
             "commissions": str([c.to_str() for c in self.commissions()]),
             "realized_return": str(round(self.realized_return, 5)),
             "realized_pnl": self.realized_pnl.to_str(),
@@ -544,6 +545,7 @@ cdef class Position:
         Returns
         -------
         Money
+            In settlement currency.
 
         """
         cdef double pnl = self._calculate_pnl(
@@ -552,7 +554,7 @@ cdef class Position:
             quantity=quantity.as_f64_c(),
         )
 
-        return Money(pnl, self.cost_currency)
+        return Money(pnl, self.settlement_currency)
 
     cpdef Money unrealized_pnl(self, Price last):
         """
@@ -574,7 +576,7 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         if self.side == PositionSide.FLAT:
-            return Money(0, self.cost_currency)
+            return Money(0, self.settlement_currency)
 
         cdef double pnl = self._calculate_pnl(
             avg_px_open=self.avg_px_open,
@@ -582,7 +584,7 @@ cdef class Position:
             quantity=self.quantity.as_f64_c(),
         )
 
-        return Money(pnl, self.cost_currency)
+        return Money(pnl, self.settlement_currency)
 
     cpdef Money total_pnl(self, Price last):
         """
@@ -604,7 +606,7 @@ cdef class Position:
         Condition.not_none(last, "last")
 
         cdef double realized_pnl = self.realized_pnl.as_f64_c() if self.realized_pnl is not None else 0.0
-        return Money(realized_pnl + self.unrealized_pnl(last).as_f64_c(), self.cost_currency)
+        return Money(realized_pnl + self.unrealized_pnl(last).as_f64_c(), self.settlement_currency)
 
     cpdef list commissions(self):
         """
@@ -620,7 +622,7 @@ cdef class Position:
     cdef void _handle_buy_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
         cdef double realized_pnl
-        if fill.commission.currency == self.cost_currency:
+        if fill.commission.currency == self.settlement_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
             realized_pnl = 0.0
@@ -641,9 +643,9 @@ cdef class Position:
             realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
         if self.realized_pnl is None:
-            self.realized_pnl = Money(realized_pnl, self.cost_currency)
+            self.realized_pnl = Money(realized_pnl, self.settlement_currency)
         else:
-            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
+            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.settlement_currency)
 
         self._buy_qty.add_assign(last_qty_obj)
         self.signed_qty += last_qty
@@ -652,7 +654,7 @@ cdef class Position:
     cdef void _handle_sell_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
         cdef double realized_pnl
-        if fill.commission.currency == self.cost_currency:
+        if fill.commission.currency == self.settlement_currency:
             realized_pnl = -fill.commission.as_f64_c()
         else:
             realized_pnl = 0.0
@@ -673,9 +675,9 @@ cdef class Position:
             realized_pnl += self._calculate_pnl(self.avg_px_open, last_px, last_qty)
 
         if self.realized_pnl is None:
-            self.realized_pnl = Money(realized_pnl, self.cost_currency)
+            self.realized_pnl = Money(realized_pnl, self.settlement_currency)
         else:
-            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.cost_currency)
+            self.realized_pnl = Money(self.realized_pnl.as_f64_c() + realized_pnl, self.settlement_currency)
 
         self._sell_qty.add_assign(last_qty_obj)
         self.signed_qty -= last_qty

@@ -42,11 +42,12 @@ pub struct CVec {
 unsafe impl Send for CVec {}
 
 impl CVec {
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             // Explicitly type cast the pointer to some type to satisfy the
             // compiler. Since the pointer is null it works for any type.
-            ptr: null() as *const bool as *mut c_void,
+            ptr: null::<bool>() as *mut c_void,
             len: 0,
             cap: 0,
         }
@@ -59,14 +60,16 @@ impl CVec {
 /// Note: drop the memory by reconstructing the vec using `from_raw_parts` method
 /// as shown in the test below.
 impl<T> From<Vec<T>> for CVec {
-    fn from(data: Vec<T>) -> Self {
+    fn from(mut data: Vec<T>) -> Self {
         if data.is_empty() {
             Self::empty()
         } else {
             let len = data.len();
             let cap = data.capacity();
+            let ptr = data.as_mut_ptr();
+            std::mem::forget(data);
             Self {
-                ptr: (&mut data.leak()[0] as *mut T).cast::<c_void>(),
+                ptr: ptr as *mut c_void,
                 len,
                 cap,
             }
@@ -132,7 +135,7 @@ mod tests {
 
         unsafe {
             // reconstruct the struct and drop the memory to deallocate
-            Vec::from_raw_parts(ptr as *mut u64, len, cap);
+            let _ = Vec::from_raw_parts(ptr as *mut u64, len, cap);
         }
     }
 

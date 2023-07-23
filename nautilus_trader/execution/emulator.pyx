@@ -427,7 +427,7 @@ cdef class OrderEmulator(Actor):
         if matching_core is None:
             raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for trigger instrument {trigger_instrument_id}.")  # pragma: no cover (design-time error)
 
-        if not matching_core.order_exists(order.client_order_id):
+        if not matching_core.order_exists(order.client_order_id) and order.is_open_c() and not order.is_pending_cancel_c():
             # Order not held in the emulator
             self._send_exec_command(command)
         else:
@@ -768,6 +768,7 @@ cdef class OrderEmulator(Actor):
 
         matching_core.delete_order(order)
 
+        order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
 
         # Cast to writable cache
@@ -815,6 +816,7 @@ cdef class OrderEmulator(Actor):
 
         matching_core.delete_order(order)
 
+        order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef LimitOrder transformed = LimitOrder.transform(order, self.clock.timestamp_ns())
 
         # Cast to writable cache

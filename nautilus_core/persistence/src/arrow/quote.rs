@@ -129,7 +129,7 @@ impl DecodeFromRecordBatch for QuoteTick {
             .zip(ts_init_values.iter())
             .map(
                 |(((((bid, ask), ask_size), bid_size), ts_event), ts_init)| Self {
-                    instrument_id: instrument_id.clone(),
+                    instrument_id,
                     bid: Price::from_raw(bid.unwrap(), price_precision),
                     ask: Price::from_raw(ask.unwrap(), price_precision),
                     bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
@@ -148,7 +148,7 @@ impl DecodeDataFromRecordBatch for QuoteTick {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Vec<Data> {
-        let ticks: Vec<QuoteTick> = QuoteTick::decode_batch(metadata, record_batch);
+        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch);
         ticks.into_iter().map(Data::from).collect()
     }
 }
@@ -186,7 +186,7 @@ mod tests {
         // Create test data
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let tick1 = QuoteTick {
-            instrument_id: instrument_id.clone(),
+            instrument_id: instrument_id,
             bid: Price::new(100.10, 2),
             ask: Price::new(101.50, 2),
             bid_size: Quantity::new(1000.0, 0),
@@ -220,17 +220,17 @@ mod tests {
 
         assert_eq!(columns.len(), 6);
         assert_eq!(bid_values.len(), 2);
-        assert_eq!(bid_values.value(0), 100100000000);
-        assert_eq!(bid_values.value(1), 100750000000);
+        assert_eq!(bid_values.value(0), 100_100_000_000);
+        assert_eq!(bid_values.value(1), 100_750_000_000);
         assert_eq!(ask_values.len(), 2);
-        assert_eq!(ask_values.value(0), 101500000000);
-        assert_eq!(ask_values.value(1), 100200000000);
+        assert_eq!(ask_values.value(0), 101_500_000_000);
+        assert_eq!(ask_values.value(1), 100_200_000_000);
         assert_eq!(bid_size_values.len(), 2);
-        assert_eq!(bid_size_values.value(0), 1000000000000);
-        assert_eq!(bid_size_values.value(1), 750000000000);
+        assert_eq!(bid_size_values.value(0), 1_000_000_000_000);
+        assert_eq!(bid_size_values.value(1), 750_000_000_000);
         assert_eq!(ask_size_values.len(), 2);
-        assert_eq!(ask_size_values.value(0), 500000000000);
-        assert_eq!(ask_size_values.value(1), 300000000000);
+        assert_eq!(ask_size_values.value(0), 500_000_000_000);
+        assert_eq!(ask_size_values.value(1), 300_000_000_000);
         assert_eq!(ts_event_values.len(), 2);
         assert_eq!(ts_event_values.value(0), 1);
         assert_eq!(ts_event_values.value(1), 2);

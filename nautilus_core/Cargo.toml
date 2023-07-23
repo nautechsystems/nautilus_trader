@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "backtest",
     "common",
@@ -27,16 +28,16 @@ pyo3 = "0.19.1"
 pyo3-asyncio = { git = "https://github.com/nautechsystems/pyo3-asyncio.git", features = ["tokio-runtime", "tokio", "attributes"] }
 pyo3-macros = "0.19.1"
 rand = "0.8.5"
-rmp-serde = "1.1.1"
+rmp-serde = "1.1.2"
 rust_decimal = "1.30.0"
 rust_decimal_macros = "1.29.1"
-serde = { version = "1.0.171", features = ["derive"] }
+serde = { version = "1.0.174", features = ["derive"] }
 serde_json = "1.0.103"
 strum = { version = "0.25.0", features = ["derive"] }
-thiserror = "1.0.43"
+thiserror = "1.0.44"
 tracing = "0.1.37"
 tokio = { version = "1.29.1", features = ["full"] }
-uuid = { version = "1.4.0", features = ["v4"] }
+uuid = { version = "1.4.1", features = ["v4"] }
 
 # dev-dependencies
 criterion = "0.4.0"

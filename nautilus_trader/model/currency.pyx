@@ -17,19 +17,15 @@ from libc.stdint cimport uint8_t
 from libc.stdint cimport uint16_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport currency_clone
-from nautilus_trader.core.rust.model cimport currency_code_to_cstr
-from nautilus_trader.core.rust.model cimport currency_drop
-from nautilus_trader.core.rust.model cimport currency_eq
 from nautilus_trader.core.rust.model cimport currency_exists
 from nautilus_trader.core.rust.model cimport currency_from_cstr
 from nautilus_trader.core.rust.model cimport currency_from_py
 from nautilus_trader.core.rust.model cimport currency_hash
-from nautilus_trader.core.rust.model cimport currency_name_to_cstr
 from nautilus_trader.core.rust.model cimport currency_register
 from nautilus_trader.core.rust.model cimport currency_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.enums_c cimport CurrencyType
 
 
@@ -85,10 +81,6 @@ cdef class Currency:
             currency_type,
         )
 
-    def __del__(self) -> None:
-        if self._mem.code != NULL:
-            currency_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return (
             self.code,
@@ -108,19 +100,21 @@ cdef class Currency:
         )
 
     def __eq__(self, Currency other) -> bool:
-        return currency_eq(&self._mem, &other._mem)
+        if other is None:
+            raise RuntimeError("other was None in __eq__")
+        return self._mem.code == other._mem.code
 
     def __hash__(self) -> int:
         return currency_hash(&self._mem)
 
     def __str__(self) -> str:
-        return cstr_to_pystr(currency_code_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.code)
 
     def __repr__(self) -> str:
         return cstr_to_pystr(currency_to_cstr(&self._mem))
 
     @property
-    def code(self) -> int:
+    def code(self) -> str:
         """
         Return the currency code.
 
@@ -129,10 +123,10 @@ cdef class Currency:
         str
 
         """
-        return cstr_to_pystr(currency_code_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.code)
 
     @property
-    def name(self) -> int:
+    def name(self) -> str:
         """
         Return the currency name.
 
@@ -141,7 +135,7 @@ cdef class Currency:
         str
 
         """
-        return cstr_to_pystr(currency_name_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.name)
 
     @property
     def precision(self) -> int:
@@ -187,7 +181,7 @@ cdef class Currency:
         cdef Currency existing = Currency.from_internal_map_c(currency.code)
         if existing is not None and not overwrite:
             return  # Already exists in internal map
-        currency_register(currency_clone(&currency._mem))
+        currency_register(currency._mem)
 
     @staticmethod
     cdef Currency from_internal_map_c(str code):
@@ -215,7 +209,7 @@ cdef class Currency:
             currency_type=CurrencyType.CRYPTO,
         )
         print(f"Currency '{code}' not found, created {repr(currency)}")
-        currency_register(currency_clone(&currency._mem))
+        currency_register(currency._mem)
 
         return currency
 
