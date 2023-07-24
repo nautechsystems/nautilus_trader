@@ -428,12 +428,7 @@ cdef class OrderBookDelta(Data):
     cdef OrderBookDelta from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef BookAction action = book_action_from_str(values["action"])
-        cdef BookOrder order = BookOrder.from_dict_c({
-            "side": values["side"],
-            "price": values["price"],
-            "size": values["size"],
-            "order_id": values["order_id"],
-        }) if values["action"] != "CLEAR" else None
+        cdef BookOrder order = BookOrder.from_dict_c(values["order"])
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             action=action,
@@ -452,10 +447,12 @@ cdef class OrderBookDelta(Data):
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.value,
             "action": book_action_to_str(obj._mem.action),
-            "side": order_side_to_str(order.side) if order else None,
-            "price": str(obj.order.price) if order else None,
-            "size": str(obj.order.size) if order else None,
-            "order_id": order._mem.order_id if order else None,
+            "order": {
+                "side": order_side_to_str(order._mem.side),
+                "price": str(order.price),
+                "size": str(order.size),
+                "order_id": order._mem.order_id,
+            },
             "flags": obj._mem.flags,
             "sequence": obj._mem.sequence,
             "ts_event": obj._mem.ts_event,
