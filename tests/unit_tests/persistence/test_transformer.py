@@ -20,6 +20,7 @@ import pandas as pd
 import pyarrow as pa
 
 from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -64,5 +65,36 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
 
     # Assert
     assert len(ticks) == 69_806
+    assert len(reader.read_all()) == len(ticks)
+    reader.close()
+
+
+def test_legacy_deltas_to_record_batch_reader() -> None:
+    # Arrange
+    ticks = [
+        OrderBookDelta.from_dict(
+            {
+                "action": "CLEAR",
+                "flags": 0,
+                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
+                "order_id": 0,
+                "price": "0",
+                "sequence": 0,
+                "side": "NO_ORDER_SIDE",
+                "size": "0",
+                "ts_event": 1576840503572000000,
+                "ts_init": 1576840503572000000,
+                "type": "OrderBookDelta",
+            },
+        ),
+    ]
+
+    # Act
+    batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)
+    batches_stream = BytesIO(batches_bytes)
+    reader = pa.ipc.open_stream(batches_stream)
+
+    # Assert
+    assert len(ticks) == 1
     assert len(reader.read_all()) == len(ticks)
     reader.close()

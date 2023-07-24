@@ -20,7 +20,6 @@ from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-@pytest.mark.skip(reason="Reimplementing")
 class TestBetfairPersistence:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory")
