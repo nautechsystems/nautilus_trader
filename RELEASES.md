@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) library, thanks @twitu
 - Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `Order.commissions()` convenience method (also added to state snapshot dictionaries)
 - Added `Cache` position and order state snapshots (configure via `CacheConfig`)
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation

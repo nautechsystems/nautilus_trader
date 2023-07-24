@@ -398,6 +398,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,
@@ -479,6 +480,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -593,6 +595,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": True,
@@ -681,6 +684,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -767,6 +771,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "display_qty": None,
             "contingency_type": "NO_CONTINGENCY",
@@ -845,6 +850,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": False,
@@ -935,6 +941,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1053,6 +1060,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": False,
@@ -1105,6 +1113,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_reduce_only": False,
             "is_quote_quantity": False,
@@ -1223,6 +1232,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1279,6 +1289,7 @@ class TestOrders:
             "liquidity_side": "NO_LIQUIDITY_SIDE",
             "avg_px": None,
             "slippage": None,
+            "commissions": None,
             "status": "INITIALIZED",
             "is_post_only": False,
             "is_reduce_only": False,
@@ -1950,6 +1961,7 @@ class TestOrders:
         assert order.filled_qty == Quantity.from_int(100_000)
         assert order.signed_decimal_qty() == Decimal()
         assert order.avg_px == 1.00001
+        assert order.commissions() == [Money(2.0, USD)]
         assert len(order.trade_ids) == 1
         assert not order.is_inflight
         assert not order.is_open
@@ -1999,6 +2011,7 @@ class TestOrders:
         assert order.leaves_qty == Quantity.from_int(40_000)
         assert order.signed_decimal_qty() == Decimal(40_000)
         assert order.avg_px == 1.000014
+        assert order.commissions() == [Money(4.0, USD)]
         assert len(order.trade_ids) == 2
         assert not order.is_inflight
         assert order.is_open
@@ -2055,6 +2068,7 @@ class TestOrders:
         assert order.status == OrderStatus.FILLED
         assert order.filled_qty == Quantity.from_int(100_000)
         assert order.avg_px == pytest.approx(1.0000185714285712, rel=1e-9)
+        assert order.commissions() == [Money(6.0, USD)]
         assert len(order.trade_ids) == 3
         assert not order.is_inflight
         assert not order.is_open

@@ -293,6 +293,7 @@ cdef class StopMarketOrder(Order):
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
             "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
             "status": self._fsm.state_string_c(),
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,
