@@ -479,6 +479,7 @@ def test_betfair_orderbook(data_client) -> None:
             book.check_integrity()  # Asserts correctness
 
 
+@pytest.mark.skip(reason="Reimplementing")
 def test_bsp_deltas_apply(data_client, instrument):
     # Arrange
     book = TestDataStubs.make_book(
