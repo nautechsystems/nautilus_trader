@@ -782,8 +782,49 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return instrument_id
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        self._log.error("Cannot modify order: not supported by the venue.")
-        # TODO: This will be implemented for LIMIT orders shortly
+        if self._binance_account_type.is_spot_or_margin:
+            self._log.error(
+                "Cannot modify order: only supported for `USDT_FUTURE` and `COIN_FUTURE` account types.",
+            )
+            return
+
+        order: Optional[Order] = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found to modify.")
+            return
+
+        if order.order_type != OrderType.LIMIT:
+            self._log.error(
+                "Cannot modify order: "
+                f"only LIMIT orders supported by the venue (was {order.type_string()}).",
+            )
+            return
+
+        while True:
+            try:
+                await self._http_account.modify_order(
+                    symbol=order.instrument_id.symbol.value,
+                    order_id=int(order.venue_order_id.value) if order.venue_order_id else None,
+                    side=self._enum_parser.parse_internal_order_side(order.side),
+                    quantity=str(command.quantity) if command.quantity else str(order.quantity),
+                    price=str(command.price) if command.price else str(order.price),
+                )
+                self._order_retries.pop(command.client_order_id, None)
+                break  # Successful request
+            except BinanceError as e:
+                error_code = BinanceErrorCode(e.message["code"])
+
+                retries = self._order_retries.get(command.client_order_id, 0) + 1
+                self._order_retries[command.client_order_id] = retries
+
+                if not self._should_retry(error_code, retries):
+                    break
+
+                self._log.warning(
+                    f"{error_code.name}: retrying {command.client_order_id!r} "
+                    f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                )
+                await asyncio.sleep(self._retry_delay)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         while True:
@@ -864,16 +905,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         try:
-            if venue_order_id is not None:
-                await self._http_account.cancel_order(
-                    symbol=instrument_id.symbol.value,
-                    order_id=int(venue_order_id.value),
-                )
-            else:
-                await self._http_account.cancel_order(
-                    symbol=instrument_id.symbol.value,
-                    orig_client_order_id=client_order_id.value,
-                )
+            await self._http_account.cancel_order(
+                symbol=instrument_id.symbol.value,
+                order_id=int(venue_order_id.value) if venue_order_id else None,
+                orig_client_order_id=client_order_id.value if client_order_id else None,
+            )
         except BinanceError as e:
             self._log.exception(
                 f"Cannot cancel order "

@@ -264,10 +264,10 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             ts_init=ts_init,
         )
 
-    def handle_order_trade_update(
+    def handle_order_trade_update(  # noqa: C901 (too complex)
         self,
         exec_client: BinanceCommonExecutionClient,
-    ):
+    ) -> None:
         """
         Handle BinanceFuturesOrderData as payload of ORDER_TRADE_UPDATE event.
         """
@@ -337,6 +337,21 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
+                ts_event=ts_event,
+            )
+        elif self.x == BinanceExecutionType.AMENDMENT:
+            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+            if instrument is None:
+                raise ValueError(f"Cannot handle amendment: instrument {instrument_id} not found")
+
+            exec_client.generate_order_updated(
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                quantity=Quantity(float(self.q), instrument.size_precision),
+                price=Price(float(self.p), instrument.price_precision),
+                trigger_price=None,
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.EXPIRED:
