@@ -103,6 +103,8 @@ cdef class SimulatedExchange:
         If orders with GTD time in force will be supported by the venue.
     use_random_ids : bool, default False
         If venue order and position IDs will be randomly generated UUID4s.
+    use_reduce_only : bool, default True
+        If the `reduce_only` execution instruction on orders will be honored.
 
     Raises
     ------
@@ -143,6 +145,7 @@ cdef class SimulatedExchange:
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint use_random_ids = False,
+        bint use_reduce_only = True,
     ):
         Condition.list_type(instruments, Instrument, "instruments", "Instrument")
         Condition.not_empty(starting_balances, "starting_balances")
@@ -181,6 +184,7 @@ cdef class SimulatedExchange:
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
         self.use_random_ids = use_random_ids
+        self.use_reduce_only = use_reduce_only
         self.fill_model = fill_model
         self.latency_model = latency_model
 
@@ -327,6 +331,7 @@ cdef class SimulatedExchange:
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
             use_random_ids=self.use_random_ids,
+            use_reduce_only=self.use_reduce_only,
         )
 
         self._matching_engines[instrument.id] = matching_engine

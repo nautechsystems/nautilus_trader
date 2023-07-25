@@ -87,7 +87,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
     use_reduce_only : bool, default True
-        If `reduce_only` instructions are sent through to the exchange.
+        If the `reduce_only` execution instruction on orders is sent through to the exchange.
         If True then will assign the value on orders sent to the exchange, otherwise will always be False.
     use_position_ids: bool, default True
         If Binance Futures hedging position IDs should be used.

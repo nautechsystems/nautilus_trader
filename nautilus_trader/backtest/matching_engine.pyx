@@ -123,6 +123,8 @@ cdef class OrderMatchingEngine:
         If orders with GTD time in force will be supported by the venue.
     use_random_ids : bool, default False
         If venue order and position IDs will be randomly generated UUID4s.
+    use_reduce_only : bool, default True
+        If the `reduce_only` execution instruction on orders will be honored.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
         The auction matching algorithm.
     """
@@ -142,6 +144,7 @@ cdef class OrderMatchingEngine:
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
         bint use_random_ids = False,
+        bint use_reduce_only = True,
         # auction_match_algo = default_auction_match
     ):
         self._clock = clock
@@ -163,6 +166,7 @@ cdef class OrderMatchingEngine:
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
         self._use_random_ids = use_random_ids
+        self._use_reduce_only = use_reduce_only
         # self._auction_match_algo = auction_match_algo
         self._fill_model = fill_model
         self._book = OrderBook(
@@ -635,7 +639,7 @@ cdef class OrderMatchingEngine:
 
         # Check reduce-only instruction
         cdef Position position
-        if order.is_reduce_only and not order.is_closed_c():
+        if self._use_reduce_only and order.is_reduce_only and not order.is_closed_c():
             position = self.cache.position_for_order(order.client_order_id)
             if (
                 not position
@@ -1347,7 +1351,7 @@ cdef class OrderMatchingEngine:
         cdef Position position = None
         if venue_position_id is not None:
             position = self.cache.position(venue_position_id)
-        if order.is_reduce_only and position is None:
+        if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
                 f"as would increase position.",
@@ -1394,7 +1398,7 @@ cdef class OrderMatchingEngine:
         cdef Position position = None
         if venue_position_id is not None:
             position = self.cache.position(venue_position_id)
-        if order.is_reduce_only and position is None:
+        if self._use_reduce_only and order.is_reduce_only and position is None:
             self._log.warning(
                 f"Canceling REDUCE_ONLY {order.type_string_c()} "
                 f"as would increase position.",
@@ -1507,7 +1511,7 @@ cdef class OrderMatchingEngine:
                     )
 
             # Check reduce only order
-            if order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
+            if self._use_reduce_only and order.is_reduce_only and fill_qty._mem.raw > position.quantity._mem.raw:
                 if position.quantity._mem.raw == 0:
                     return  # Done
 
@@ -1703,7 +1707,8 @@ cdef class OrderMatchingEngine:
         # Check reduce only orders for position
         for order in self.cache.orders_for_position(position.id):
             if (
-                order.is_reduce_only
+                self._use_reduce_only
+                and order.is_reduce_only
                 and order.is_open_c()
                 and order.is_passive_c()
             ):

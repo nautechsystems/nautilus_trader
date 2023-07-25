@@ -10,11 +10,12 @@ Released on TBD (UTC).
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
-- Added` BinanceExecClientConfig.max_retries` (for retrying order submit and cancel requests)
-- Added` BinanceExecClientConfig.retry_delay` (the delay between retry attempts)
-- Added `BinanceExecClientConfig.use_reduce_only` (default true to retain current behavior)
-- Added `BinanceExecClientConfig.use_position_ids` (default true to retain current behavior)
-- Added `BinanceExecClientConfig.treat_expired_as_canceled` (default false to retain current behavior)
+- Added` BinanceExecClientConfig.max_retries` option (for retrying order submit and cancel requests)
+- Added` BinanceExecClientConfig.retry_delay` option (the delay between retry attempts)
+- Added `BinanceExecClientConfig.use_reduce_only` option (default true to retain current behavior)
+- Added `BinanceExecClientConfig.use_position_ids` option (default true to retain current behavior)
+- Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default false to retain current behavior)
+- Added `BacktestVenueConfig.use_reduct_only` option (default true to retain current behaviour)
 - Added `MessageBus.is_pending_request(...)` method
 - Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
 - Added `Actor.is_pending_request(...)` convenience method
@@ -258,7 +259,7 @@ Released on 18th February 2023 (UTC).
 ### Enhancements
 - Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
-- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
+- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (true by default)
 - Added `OrderFactory.generate_client_order_id()` (calls internal generator)
 - Added `OrderFactory.generate_order_list_id()` (calls internal generator)
 - Added `OrderFactory.create_list(...)` as easier method for creating order lists
