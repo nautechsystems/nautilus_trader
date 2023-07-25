@@ -362,6 +362,7 @@ cdef class BacktestEngine:
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
         use_random_ids: bool = False,
+        use_reduce_only: bool = True,
     ) -> None:
         """
         Add a `SimulatedExchange` with the given parameters to the backtest engine.
@@ -403,6 +404,8 @@ cdef class BacktestEngine:
             If orders with GTD time in force will be supported by the venue.
         use_random_ids : bool, default False
             If venue order and position IDs will be randomly generated UUID4s.
+        use_reduce_only : bool, default True
+            If the `reduce_only` execution instruction on orders will be honored.
 
         Raises
         ------

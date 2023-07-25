@@ -51,6 +51,9 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     frozen_account: bool = False
     bar_execution: bool = True
     reject_stop_orders: bool = True
+    support_gtd_orders: bool = True
+    use_random_ids: bool = False
+    use_reduce_only: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     modules: Optional[list[ImportableConfig]] = None
 
