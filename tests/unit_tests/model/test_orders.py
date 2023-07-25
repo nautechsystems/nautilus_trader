@@ -288,7 +288,8 @@ class TestOrders:
         assert order.venue == AUDUSD_SIM.id.venue
         assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
-        assert order.side_string == "BUY"
+        assert order.side_string() == "BUY"
+        assert order.type_string() == "MARKET"
         assert order.signed_decimal_qty() == Decimal(100_000)
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
@@ -321,7 +322,9 @@ class TestOrders:
         # Assert
         assert order.order_type == OrderType.MARKET
         assert order.status == OrderStatus.INITIALIZED
-        assert order.side_string == "SELL"
+        assert order.status_string() == "INITIALIZED"
+        assert order.side_string() == "SELL"
+        assert order.type_string() == "MARKET"
         assert order.signed_decimal_qty() == -Decimal(100_000)
         assert order.event_count == 1
         assert isinstance(order.last_event, OrderInitialized)
