@@ -132,6 +132,8 @@ cdef class Order:
 
     cpdef str info(self)
     cpdef str status_string(self)
+    cpdef str side_string(self)
+    cpdef str type_string(self)
     cpdef dict to_dict(self)
 
     cdef void set_triggered_price_c(self, Price triggered_price)

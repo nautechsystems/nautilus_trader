@@ -230,7 +230,7 @@ cdef class Order:
 
     cpdef str status_string(self):
         """
-        Return a string representation of the current order status.
+        Return the orders current status as a string.
 
         Returns
         -------
@@ -238,6 +238,28 @@ cdef class Order:
 
         """
         return self.status_string_c()
+
+    cpdef str side_string(self):
+        """
+        Return the orders side as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.side_string_c()
+
+    cpdef str type_string(self):
+        """
+        Return the orders type as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.type_string_c()
 
     cpdef str info(self):
         """
@@ -398,18 +420,6 @@ cdef class Order:
 
         """
         return self.instrument_id.venue
-
-    @property
-    def side_string(self) -> str:
-        """
-        Return the orders side as a string.
-
-        Returns
-        -------
-        str
-
-        """
-        return self.side_string_c()
 
     @property
     def status(self):
