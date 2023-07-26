@@ -42,11 +42,7 @@ impl BookPrice {
 
 impl PartialOrd for BookPrice {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match self.side {
-            OrderSide::Buy => Some(other.value.cmp(&self.value)),
-            OrderSide::Sell => Some(self.value.cmp(&other.value)),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
-        }
+        Some(self.cmp(other))
     }
 }
 
