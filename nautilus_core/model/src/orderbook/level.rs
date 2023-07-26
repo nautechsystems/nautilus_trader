@@ -143,7 +143,7 @@ impl PartialEq for Level {
 
 impl PartialOrd for Level {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.price.partial_cmp(&other.price)
+        Some(self.cmp(other))
     }
 
     fn lt(&self, other: &Self) -> bool {
