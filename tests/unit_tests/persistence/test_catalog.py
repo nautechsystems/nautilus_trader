@@ -40,7 +40,7 @@ class _TestPersistenceCatalog:
         expected = [
             "betfair_ticker",
             "instrument_status_update",
-            "order_book_deltas",
+            "order_book_delta",
             "trade_tick",
         ]
         assert data_types == expected

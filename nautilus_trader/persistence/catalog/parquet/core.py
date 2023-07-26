@@ -205,11 +205,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
                 continue
             table = f"{file_prefix}_{idx}"
-            # query = self._build_query(table, instrument_ids=instrument_ids, start=start, end=end)
-            session.add_file(table, fn, data_type)
-            result = session.to_query_result()
-            for r in result:
-                print(r)
+            query = self._build_query(table, instrument_ids=instrument_ids, start=start, end=end)
+            session.add_file_with_query(table, fn, query, data_type)
+
+        result = session.to_query_result()
 
         # Gather data
         data = []
