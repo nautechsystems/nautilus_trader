@@ -58,6 +58,7 @@ cdef class Order:
     cdef list _events
     cdef list _venue_order_ids
     cdef list _trade_ids
+    cdef dict _commissions
     cdef FiniteStateMachine _fsm
     cdef OrderStatus _previous_status
     cdef Price _triggered_price
@@ -131,6 +132,8 @@ cdef class Order:
 
     cpdef str info(self)
     cpdef str status_string(self)
+    cpdef str side_string(self)
+    cpdef str type_string(self)
     cpdef dict to_dict(self)
 
     cdef void set_triggered_price_c(self, Price triggered_price)
@@ -173,6 +176,7 @@ cdef class Order:
 
     cpdef signed_decimal_qty(self)
     cpdef bint would_reduce_only(self, PositionSide position_side, Quantity position_qty)
+    cpdef list commissions(self)
 
     cpdef void apply(self, OrderEvent event)
 

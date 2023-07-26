@@ -250,6 +250,10 @@ class VolatilityMarketMaker(Strategy):
         """
         self.log.info(repr(bar), LogColor.CYAN)
 
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
@@ -265,11 +269,21 @@ class VolatilityMarketMaker(Strategy):
 
         # Maintain buy orders
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
+            # price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
+            # self.modify_order(
+            #     order=self.buy_order,
+            #     price=self.instrument.make_price(price),
+            # )
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
         # Maintain sell orders
         if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
+            # price = last.ask + (self.atr.value * self.atr_multiple)
+            # self.modify_order(
+            #     order=self.sell_order,
+            #     price=self.instrument.make_price(price),
+            # )
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 

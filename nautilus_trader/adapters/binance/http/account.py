@@ -50,11 +50,20 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
     `DELETE /fapi/v1/order`
     `DELETE /dapi/v1/order`
 
+    `PUT /fapi/v1/order`
+    `PUT /dapi/v1/order`
+
+    Notes
+    -----
+    `PUT` method is not available for Spot/Margin.
+
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
     https://binance-docs.github.io/apidocs/futures/en/#new-order-trade
     https://binance-docs.github.io/apidocs/delivery/en/#new-order-trade
+    https://binance-docs.github.io/apidocs/futures/en/#modify-order-trade
+    https://binance-docs.github.io/apidocs/delivery/en/#modify-order-trade
 
     """
 
@@ -68,15 +77,19 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
             BinanceMethodType.POST: BinanceSecurityType.TRADE,
             BinanceMethodType.DELETE: BinanceSecurityType.TRADE,
+            BinanceMethodType.PUT: BinanceSecurityType.TRADE,
         }
         url_path = base_endpoint + "order"
+
         if testing_endpoint:
             url_path = url_path + "/test"
+
         super().__init__(
             client,
             methods,
             url_path,
         )
+
         self._resp_decoder = msgspec.json.Decoder(BinanceOrder)
 
     class GetDeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
@@ -90,11 +103,11 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         timestamp : str
             The millisecond timestamp of the request
         orderId : int, optional
-            the order identifier
+            The order identifier.
         origClientOrderId : str, optional
-            the client specified order identifier
+            The client specified order identifier.
         recvWindow : str, optional
-            the millisecond timeout window.
+            The millisecond timeout window.
 
         Warnings
         --------
@@ -216,6 +229,41 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         newOrderRespType: Optional[BinanceNewOrderRespType] = None
         recvWindow: Optional[str] = None
 
+    class PutParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        Order amendment PUT endpoint parameters.
+
+        Parameters
+        ----------
+        orderId : int, optional
+            The order ID for the request.
+        origClientOrderId : str, optional
+            The client specified order identifier.
+        symbol : BinanceSymbol
+            The symbol of the order.
+        side : BinanceOrderSide
+            The market side of the order (BUY, SELL).
+        quantity : str, optional
+            The order quantity in base asset units for the request.
+        price : str, optional
+            The order price for the request.
+        recvWindow : str, optional
+            The response receive window in milliseconds for the request.
+            Cannot exceed 60000.
+        timestamp : str
+            The millisecond timestamp of the request.
+
+        """
+
+        symbol: BinanceSymbol
+        side: BinanceOrderSide
+        quantity: str
+        price: str
+        timestamp: str
+        orderId: Optional[int] = None
+        origClientOrderId: Optional[str] = None
+        recvWindow: Optional[str] = None
+
     async def _get(self, parameters: GetDeleteParameters) -> BinanceOrder:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
@@ -228,6 +276,11 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
 
     async def _post(self, parameters: PostParameters) -> BinanceOrder:
         method_type = BinanceMethodType.POST
+        raw = await self._method(method_type, parameters)
+        return self._resp_decoder.decode(raw)
+
+    async def _put(self, parameters: PutParameters) -> BinanceOrder:
+        method_type = BinanceMethodType.PUT
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
@@ -601,6 +654,33 @@ class BinanceAccountHttpAPI:
                 workingType=working_type,
                 priceProtect=price_protect,
                 newOrderRespType=new_order_resp_type,
+                recvWindow=recv_window,
+            ),
+        )
+        return binance_order
+
+    async def modify_order(
+        self,
+        symbol: str,
+        side: BinanceOrderSide,
+        quantity: str,
+        price: str,
+        order_id: Optional[int] = None,
+        orig_client_order_id: Optional[str] = None,
+        recv_window: Optional[str] = None,
+    ) -> BinanceOrder:
+        """
+        Modify a LIMIT order with Binance.
+        """
+        binance_order = await self._endpoint_order._put(
+            parameters=self._endpoint_order.PutParameters(
+                symbol=BinanceSymbol(symbol),
+                timestamp=self._timestamp(),
+                orderId=order_id,
+                origClientOrderId=orig_client_order_id,
+                side=side,
+                quantity=quantity,
+                price=price,
                 recvWindow=recv_window,
             ),
         )

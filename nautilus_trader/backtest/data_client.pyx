@@ -168,6 +168,12 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_instrument(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
+        if not self._cache.instrument(instrument_id):
+            self._log.error(
+                f"Cannot find instrument {instrument_id} to subscribe for `Instrument` data.",
+            )
+            return
+
         self._add_subscription_instrument(instrument_id)
         # Do nothing else for backtest
 
@@ -179,6 +185,13 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         dict kwargs = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
+
+        if not self._cache.instrument(instrument_id):
+            self._log.error(
+                f"Cannot find instrument {instrument_id} to subscribe for `OrderBookDelta` data. "
+                "No data has been loaded for this instrument.",
+            )
+            return
 
         self._add_subscription_order_book_deltas(instrument_id)
         # Do nothing else for backtest
@@ -192,11 +205,25 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     ):
         Condition.not_none(instrument_id, "instrument_id")
 
+        if not self._cache.instrument(instrument_id):
+            self._log.error(
+                f"Cannot find instrument {instrument_id} to subscribe for `OrderBook` data. "
+                "No data has been loaded for this instrument.",
+            )
+            return
+
         self._add_subscription_order_book_snapshots(instrument_id)
         # Do nothing else for backtest
 
     cpdef void subscribe_ticker(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
+
+        if not self._cache.instrument(instrument_id):
+            self._log.error(
+                f"Cannot find instrument {instrument_id} to subscribe for `Ticker` data. "
+                "No data has been loaded for this instrument.",
+            )
+            return
 
         self._add_subscription_ticker(instrument_id)
         # Do nothing else for backtest
@@ -204,17 +231,38 @@ cdef class BacktestMarketDataClient(MarketDataClient):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
+        if not self._cache.instrument(instrument_id):
+            self._log.error(
+                f"Cannot find instrument {instrument_id} to subscribe for `QuoteTick` data. "
+                "No data has been loaded for this instrument.",
+            )
+            return
+
         self._add_subscription_quote_ticks(instrument_id)
         # Do nothing else for backtest
 
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
+        if not self._cache.instrument(instrument_id):
+            self._log.error(
+                f"Cannot find instrument {instrument_id} to subscribe for `TradeTick` data. "
+                "No data has been loaded for this instrument.",
+            )
+            return
+
         self._add_subscription_trade_ticks(instrument_id)
         # Do nothing else for backtest
 
     cpdef void subscribe_bars(self, BarType bar_type):
         Condition.not_none(bar_type, "bar_type")
+
+        if not self._cache.instrument(bar_type.instrument_id):
+            self._log.error(
+                f"Cannot find instrument {bar_type.instrument_id} to subscribe for `Bar` data. "
+                "No data has been loaded for this instrument.",
+            )
+            return
 
         self._add_subscription_bars(bar_type)
         # Do nothing else for backtest

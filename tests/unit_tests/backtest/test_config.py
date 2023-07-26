@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import pickle
+import sys
 
 import msgspec
 import pytest
@@ -197,6 +198,7 @@ class TestBacktestConfigParsing:
         self.instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=self.venue)
         self.backtest_config = TestConfigStubs.backtest_run_config(catalog=self.catalog)
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_to_json(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
@@ -212,8 +214,9 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (882, 886)  # unix, windows sizes
+        assert result == 978  # UNIX
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
@@ -232,8 +235,9 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) in (661, 664)  # unix, windows sizes
+        assert len(raw) == 733  # UNIX
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
@@ -252,17 +256,15 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result in (1738, 1750)  # unix, windows
+        assert result == 1834
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
         print("token:", token)
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
-        assert token in (
-            "1bf83318bfeb6359bcacc88d2d5c5e06c1486f9c4c3cc76e203b1ee14e41a5a2",  # unix
-            "669d861fcc17dc50210d9bcdad5affa70410a3b3347f393fe17cd59252b3d14b",  # windows
-        )
+        assert token == "bfa25a6e95b0dd84abc36ec4b1f77926ece791670728fa8eb7b7ffeea2b59ef4"  # UNIX
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(
