@@ -13,8 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::cvec::CVec;
 use nautilus_model::data::{delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data};
-use nautilus_persistence::backend::session::{DataBackendSession, QueryResult};
+use nautilus_persistence::{
+    arrow::NautilusDataType,
+    backend::session::{DataBackendSession, QueryResult},
+};
+use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 
 #[tokio::test]
 async fn test_quote_ticks() {
@@ -75,6 +80,33 @@ async fn test_order_book_delta() {
 
     assert_eq!(ticks.len(), 1077);
     assert!(is_ascending_by_init(&ticks));
+}
+
+#[test]
+fn test_order_book_delta_py() {
+    pyo3::prepare_freethreaded_python();
+
+    let file_path = "../../tests/test_data/order_book_deltas.parquet";
+    let catalog = DataBackendSession::new(2000);
+    Python::with_gil(|py| {
+        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        pycatalog
+            .call_method1(
+                py,
+                "add_file",
+                (
+                    "order_book_deltas",
+                    file_path,
+                    NautilusDataType::OrderBookDelta,
+                ),
+            )
+            .unwrap();
+        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+        let chunk = result.call_method0(py, "__next__").unwrap();
+        let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+        let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+        assert_eq!(cvec.len, 1077);
+    });
 }
 
 // NOTE: is_sorted_by_key is unstable otherwise use
