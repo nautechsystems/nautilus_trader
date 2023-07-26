@@ -10,8 +10,9 @@ Released on TBD (UTC).
 - Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
 - Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
 - Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
-- Added` BinanceExecClientConfig.max_retries` option (for retrying order submit and cancel requests)
-- Added` BinanceExecClientConfig.retry_delay` option (the delay between retry attempts)
+- Added Binance Futures support for modifying `LIMIT` orders
+- Added `BinanceExecClientConfig.max_retries` option (for retrying order submit and cancel requests)
+- Added `BinanceExecClientConfig.retry_delay` option (the delay between retry attempts)
 - Added `BinanceExecClientConfig.use_reduce_only` option (default true to retain current behavior)
 - Added `BinanceExecClientConfig.use_position_ids` option (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default false to retain current behavior)
