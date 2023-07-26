@@ -103,10 +103,9 @@ cdef class Actor(Component):
         else:
             component_id = None
 
-        clock = LiveClock()
         super().__init__(
-            clock=clock,
-            logger=Logger(clock=clock),
+            clock=Clock(),  # Use placeholder abstract clock until registered
+            logger=Logger(clock=Clock(), dummy=True),  # Use dummy logger until registered
             component_id=component_id,
             config=config.dict(),
         )
@@ -556,8 +555,6 @@ cdef class Actor(Component):
         Condition.not_none(event, "event")
 
         self._warning_events.add(event)
-
-        self._log.debug(f"Registered `{event.__name__}` for warning log levels.")
 
     cpdef void deregister_warning_event(self, type event):
         """
