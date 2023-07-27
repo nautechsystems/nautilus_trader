@@ -15,6 +15,8 @@
 
 import os
 
+import pandas as pd
+
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
@@ -65,5 +67,21 @@ def test_python_catalog_quotes():
 
     assert len(ticks) == 9500
     assert str(ticks[-1]) == "EUR/USD.SIM,1.12130,1.12132,0,0,1577919652000000125"
+    is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
+    assert is_ascending
+
+
+def test_python_catalog_order_book():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/order_book_deltas.parquet")
+    assert pd.read_parquet(parquet_data_path).shape[0] == 1077
+    session = DataBackendSession()
+    session.add_file("order_book_deltas", parquet_data_path, NautilusDataType.OrderBookDelta)
+    result = session.to_query_result()
+
+    ticks = []
+    for chunk in result:
+        ticks.extend(list_from_capsule(chunk))
+
+    assert len(ticks) == 1077
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
     assert is_ascending

@@ -70,7 +70,7 @@ impl Iterator for QueryResult {
 #[pyclass]
 pub struct DataBackendSession {
     session_ctx: SessionContext,
-    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin>>,
+    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin + Send + 'static>>,
     pub chunk_size: usize,
 }
 
@@ -173,13 +173,11 @@ impl DataBackendSession {
     // Passes the output of the query though the a KMerge which sorts the
     // queries in ascending order of `ts_init`.
     // QueryResult is an iterator that return Vec<Data>.
-    pub fn get_query_result(&mut self) -> QueryResult<Data> {
+    pub async fn get_query_result(&mut self) -> QueryResult<Data> {
         // TODO: No need to kmerge if there is only one batch stream
         let mut kmerge: KMerge<_, _, _> = KMerge::new(TsInitComparator);
 
-        Iterator::for_each(self.batch_streams.drain(..), |batch_stream| {
-            block_on(kmerge.push_stream(batch_stream));
-        });
+        kmerge.push_iter_stream(self.batch_streams.drain(..)).await;
 
         QueryResult {
             data: Box::new(kmerge.chunks(self.chunk_size)),
@@ -294,9 +292,7 @@ impl DataBackendSession {
     #[must_use]
     pub fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
         let rt = get_runtime();
-        let _guard = rt.enter();
-
-        let query_result = slf.get_query_result();
+        let query_result = rt.block_on(slf.get_query_result());
         DataQueryResult::new(query_result)
     }
 }
