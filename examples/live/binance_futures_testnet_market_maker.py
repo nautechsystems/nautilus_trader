@@ -51,7 +51,7 @@ config_node = TradingNodeConfig(
         filter_position_reports=True,
     ),
     cache_database=CacheDatabaseConfig(
-        type="redis",
+        type="in-memory",
         timestamps_as_iso8601=True,
     ),
     data_clients={
