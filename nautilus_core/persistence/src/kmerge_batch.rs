@@ -17,7 +17,7 @@ use std::{task::Poll, vec::IntoIter};
 
 use binary_heap_plus::BinaryHeap;
 use compare::Compare;
-use futures::{ready, FutureExt, Stream, StreamExt};
+use futures::{future::join_all, ready, FutureExt, Stream, StreamExt};
 use pin_project_lite::pin_project;
 
 pub struct PeekElementBatchStream<S, I>
@@ -63,8 +63,9 @@ pin_project! {
 
 impl<S, I, C> KMerge<S, I, C>
 where
-    S: Stream<Item = IntoIter<I>> + Unpin,
+    S: Stream<Item = IntoIter<I>> + Unpin + Send + 'static,
     C: Compare<PeekElementBatchStream<S, I>>,
+    I: Send + 'static,
 {
     pub fn new(cmp: C) -> Self {
         Self {
@@ -72,10 +73,33 @@ where
         }
     }
 
-    pub async fn push_stream(&mut self, s: S) {
+    #[cfg(test)]
+    async fn push_stream(&mut self, s: S) {
         if let Some(heap_elem) = PeekElementBatchStream::new_from_stream(s).await {
             self.heap.push(heap_elem)
         }
+    }
+
+    /// Push elements on to the heap
+    ///
+    /// Takes a Iterator of Streams. It concurrently converts all the streams
+    /// to heap elements and then pushes them onto the heap.
+    pub async fn push_iter_stream<L>(&mut self, l: L)
+    where
+        L: Iterator<Item = S>,
+    {
+        let tasks = l.map(|batch| {
+            tokio::spawn(async move { PeekElementBatchStream::new_from_stream(batch).await })
+        });
+
+        join_all(tasks)
+            .await
+            .into_iter()
+            .for_each(|heap_elem| match heap_elem {
+                Ok(Some(heap_elem)) => self.heap.push(heap_elem),
+                Ok(None) => (),
+                Err(err) => panic!("Failed to create heap element because of error: {}", err),
+            });
     }
 }
 
