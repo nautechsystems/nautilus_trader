@@ -193,6 +193,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instrument_ids=None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
+        where: Optional[str] = None,
         **kwargs,
     ):
         name = cls.__name__
@@ -205,7 +206,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
                 continue
             table = f"{file_prefix}_{idx}"
-            query = self._build_query(table, instrument_ids=instrument_ids, start=start, end=end)
+            query = self._build_query(
+                table,
+                instrument_ids=instrument_ids,
+                start=start,
+                end=end,
+                where=where,
+            )
             session.add_file_with_query(table, fn, query, data_type)
 
         result = session.to_query_result()
@@ -229,12 +236,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         instrument_ids=None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
+        where: Optional[str] = None,
     ) -> str:
         """
         Build datafusion sql query.
         """
         q = f"SELECT * FROM {table}"  # noqa
-        conditions: list[str] = []
+        conditions: list[str] = [] + ([where] if where else [])
         if instrument_ids:
             conditions.append(f"instrument_id in {tuple(instrument_ids)}")
         if start:
