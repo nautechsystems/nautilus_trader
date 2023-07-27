@@ -33,6 +33,7 @@ from nautilus_trader.core.rust.model cimport Data_t
 from nautilus_trader.core.rust.model cimport Data_t_Tag
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
@@ -54,6 +55,8 @@ cdef inline list capsule_to_data_list(object capsule):
             ticks.append(TradeTick.from_mem_c(ptr[i].trade))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
             ticks.append(QuoteTick.from_mem_c(ptr[i].quote))
+        elif ptr[i].tag == Data_t_Tag.DELTA:
+            ticks.append(OrderBookDelta.from_mem_c(ptr[i].delta))
 
     return ticks
 

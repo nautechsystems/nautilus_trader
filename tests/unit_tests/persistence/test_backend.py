@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-import pathlib
+
+import pandas as pd
 
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
@@ -70,10 +71,9 @@ def test_python_catalog_quotes():
     assert is_ascending
 
 
-def test_python_catalog_order_book(load_betfair_data):
-    fn = "tests/unit_tests/persistence/data_catalog/data/order_book_delta/1.166564490-60424-0.0.BETFAIR/part-0.parquet"
-    parquet_data_path = os.path.join(PACKAGE_ROOT, fn)
-    assert pathlib.Path(parquet_data_path).exists()
+def test_python_catalog_order_book():
+    parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/order_book_deltas.parquet")
+    assert pd.read_parquet(parquet_data_path).shape[0] == 1077
     session = DataBackendSession()
     session.add_file("order_book_deltas", parquet_data_path, NautilusDataType.OrderBookDelta)
     result = session.to_query_result()
