@@ -38,9 +38,12 @@ from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
 from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.serializers import RUST_SERIALIZERS
@@ -187,7 +190,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
-    def query(
+    def query_rust(
         self,
         cls,
         instrument_ids=None,
@@ -221,6 +224,53 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = []
         for chunk in result:
             data.extend(list_from_capsule(chunk))
+        return data
+
+    def query_pyarrow(
+        self,
+        cls,
+        instrument_ids=None,
+        start: Optional[timestamp_like] = None,
+        end: Optional[timestamp_like] = None,
+        where: Optional[str] = None,
+        **kwargs,
+    ):
+        file_prefix = class_to_filename(cls)
+        data = []
+        for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
+            assert pathlib.Path(fn).exists()
+            if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
+                continue
+            d = pyarrow.dataset.dataset()
+            data.extend(d)
+
+    def query(
+        self,
+        cls,
+        instrument_ids=None,
+        start: Optional[timestamp_like] = None,
+        end: Optional[timestamp_like] = None,
+        where: Optional[str] = None,
+        **kwargs,
+    ):
+        if cls in (QuoteTick, TradeTick, Bar, OrderBookDeltas):
+            data = self.query_rust(
+                cls=cls,
+                instrument_ids=instrument_ids,
+                start=start,
+                end=end,
+                where=where,
+                **kwargs,
+            )
+        else:
+            data = self.query_pyarrow(
+                cls=cls,
+                instrument_ids=instrument_ids,
+                start=start,
+                end=end,
+                where=where,
+                **kwargs,
+            )
 
         if not is_nautilus_class(cls):
             # Special handling for generic data
@@ -323,7 +373,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        kwargs["clean_instrument_keys"] = False
         return super().instruments(
             instrument_type=instrument_type,
             instrument_ids=instrument_ids,

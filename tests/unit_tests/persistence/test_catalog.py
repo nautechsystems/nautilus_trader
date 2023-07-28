@@ -99,10 +99,11 @@ class _TestPersistenceCatalog:
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 2384
 
+    def test_data_catalog_query_custom_filtered(self, load_betfair_data):
         filtered_deltas = self.catalog.order_book_deltas(where="action = 'DELETE'")
         assert len(filtered_deltas) == 351
 
-    def test_data_catalog_instruments_df(self):
+    def test_data_catalog_instruments_df(self, load_betfair_data):
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 

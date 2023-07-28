@@ -16,6 +16,7 @@
 from typing import Optional
 
 import fsspec
+import msgspec
 from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Status
@@ -26,6 +27,7 @@ from betfair_parser.util import iter_stream
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.instruments import BettingInstrument
 
 
 class BetfairParser:
@@ -65,3 +67,19 @@ def parse_betfair_file(uri: str):  # noqa
     with fsspec.open(uri, compression="infer") as f:
         for mcm in iter_stream(f):
             yield from parser.parse(mcm)
+
+
+def betting_instruments_from_file(uri: str) -> list[BettingInstrument]:
+    from nautilus_trader.adapters.betfair.providers import make_instruments
+
+    instruments: list[BettingInstrument] = []
+
+    with fsspec.open(uri, compression="infer") as f:
+        for mcm in iter_stream(f):
+            for mc in mcm.mc:
+                if mc.market_definition:
+                    market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
+                    mc = msgspec.structs.replace(mc, market_definition=market_def)
+                    instruments = make_instruments(mc.market_definition, currency="GBP")
+                    instruments.extend(instruments)
+    return instruments
