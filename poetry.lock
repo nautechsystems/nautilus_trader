@@ -1039,6 +1039,21 @@ eventkit = "*"
 nest-asyncio = "*"
 
 [[package]]
+name = "ibapi"
+version = "1019.01"
+description = "Python IB API"
+optional = true
+python-versions = ">=3.9,<3.12"
+files = []
+develop = false
+
+[package.source]
+type = "git"
+url = "https://github.com/nautechsystems/ibapi.git"
+reference = "HEAD"
+resolved_reference = "d970b05145197b39a89a5c2c6d95ed9085eae4ba"
+
+[[package]]
 name = "identify"
 version = "2.5.26"
 description = "File identification library for Python"
@@ -2874,10 +2889,10 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [extras]
 betfair = ["betfair_parser"]
 docker = ["docker"]
-ib = ["ib_insync"]
+ib = ["ib_insync", "ibapi"]
 redis = ["hiredis", "redis"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "09198057de36e3a74fb6ba537a0094299f4e0fbee65d850164a09a17833e1f96"
+content-hash = "e35ce2d83530d2707e2b3cc6c9019d27e5013fa7b4254dbcfae3d17d6a39a5af"

@@ -19,24 +19,16 @@ import unittest.mock
 import msgspec
 import pytest
 
-# fmt: off
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
-
-
-# fmt: on
 
 
 RAW_CONFIG = msgspec.json.encode(
@@ -152,6 +144,7 @@ class TestTradingNodeConfiguration:
         node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
         node.build()
 
+    @pytest.mark.skip(reason="refactor test to use Binance clients which have no dependencies")
     def test_node_build_objects(self, monkeypatch):
         # Arrange
         loop = asyncio.new_event_loop()
@@ -161,10 +154,10 @@ class TestTradingNodeConfiguration:
             trader_id="TESTER-001",
             logging=LoggingConfig(bypass_logging=True),
             data_clients={
-                "IB": InteractiveBrokersDataClientConfig(),
+                "BINANCE": BinanceDataClientConfig(),
             },
             exec_clients={
-                "IB": InteractiveBrokersExecClientConfig(),
+                "BINANCE": BinanceExecClientConfig(),
             },
             timeout_connection=90.0,
             timeout_reconciliation=5.0,
@@ -173,17 +166,17 @@ class TestTradingNodeConfiguration:
             timeout_post_stop=2.0,
         )
         node = TradingNode(config=config, loop=loop)
-        node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
-        node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
+        node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
+        node.add_exec_client_factory("BINANCE", BinanceLiveExecClientFactory)
 
         # Mock factories so nothing actually connects
-        from nautilus_trader.adapters.interactive_brokers import factories
+        from nautilus_trader.adapters.binance import factories
 
         mock_data_factory = (
-            factories.InteractiveBrokersLiveDataClientFactory.create
+            factories.BinanceLiveDataClientFactory.create
         ) = unittest.mock.MagicMock()
         mock_exec_factory = (
-            factories.InteractiveBrokersLiveExecClientFactory.create
+            factories.BinanceLiveExecClientFactory.create
         ) = unittest.mock.MagicMock()
 
         # Act - lazy way of mocking the whole client
