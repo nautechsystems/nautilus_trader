@@ -31,7 +31,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
 
       - name: Build project
         run: poetry install --with docs --all-extras

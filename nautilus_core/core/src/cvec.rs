@@ -69,7 +69,7 @@ impl<T> From<Vec<T>> for CVec {
             let ptr = data.as_mut_ptr();
             std::mem::forget(data);
             Self {
-                ptr: ptr as *mut c_void,
+                ptr: ptr.cast::<std::ffi::c_void>(),
                 len,
                 cap,
             }
