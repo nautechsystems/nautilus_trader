@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-# import pytest
-#
-#
-# pytest.importorskip("ibapi")
+import pytest
+
+
+pytest.importorskip("ibapi")
