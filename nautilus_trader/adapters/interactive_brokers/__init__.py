@@ -24,5 +24,5 @@ if importlib.util.find_spec("ibapi") is None:
         "This module requires the 'ibapi' package, which isn't included by default due to package "
         "distribution limitations on PyPI with dependencies on GitHub repositories. "
         "You can manually install 'ibapi' using the following command: "
-        "`pip install git+https://github.com/nautechsystems/ibapi.git`"
+        "`pip install git+https://github.com/nautechsystems/ibapi.git`",
     )
