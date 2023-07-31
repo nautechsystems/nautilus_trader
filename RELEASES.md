@@ -53,7 +53,7 @@ Released on 31st July 2023 (UTC).
 - Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
 - Fixed Binance order parsing of invalid orders in execution reports #1157, thanks for reporting @graceyangfan
-- Fixed `BinanceOrderType` members to include undocumented `INSURANCE_FUND`, thanks for reporting @Tzumx
+- Extended `BinanceOrderType` enum members to include undocumented `INSURANCE_FUND`, thanks for reporting @Tzumx
 - Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
 
 ---
