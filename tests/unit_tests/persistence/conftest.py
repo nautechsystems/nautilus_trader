@@ -17,7 +17,7 @@ def data_catalog():
 
 
 @pytest.fixture
-def load_betfair_data(data_catalog):
+def betfair_catalog(data_catalog):
     fn = TEST_DATA_DIR + "/betfair/1.166564490.bz2"
 
     # Write betting instruments

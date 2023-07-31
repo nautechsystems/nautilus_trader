@@ -19,7 +19,6 @@ import pyarrow as pa
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
-from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import Ticker
@@ -62,19 +61,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.uint64(),
         },
         metadata={"type": "Ticker"},
-    ),
-    Bar: pa.schema(
-        {
-            "bar_type": pa.dictionary(pa.int16(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "open": pa.string(),
-            "high": pa.string(),
-            "low": pa.string(),
-            "close": pa.string(),
-            "volume": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
     ),
     VenueStatusUpdate: pa.schema(
         {

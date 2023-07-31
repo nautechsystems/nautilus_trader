@@ -82,4 +82,4 @@ def betting_instruments_from_file(uri: str) -> list[BettingInstrument]:
                     mc = msgspec.structs.replace(mc, market_definition=market_def)
                     instruments = make_instruments(mc.market_definition, currency="GBP")
                     instruments.extend(instruments)
-    return instruments
+    return list(set(instruments))

@@ -25,6 +25,7 @@ import fsspec
 import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset
+import pyarrow.dataset as pds
 import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
 from fsspec.implementations.memory import MemoryFileSystem
@@ -236,13 +237,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs,
     ):
         file_prefix = class_to_filename(cls)
-        data = []
-        for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
-            assert pathlib.Path(fn).exists()
-            if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
-                continue
-            d = pyarrow.dataset.dataset()
-            data.extend(d)
+        dataset_path = f"{self.path}/data/{file_prefix}"
+        if not self.fs.exists(dataset_path):
+            return
+        dataset = pds.dataset(dataset_path)
+        table = dataset.to_table()
+        return self._handle_table_nautilus(table, cls=cls)
 
     def query(
         self,
@@ -305,26 +305,6 @@ class ParquetDataCatalog(BaseDataCatalog):
             q += f" WHERE {' AND '.join(conditions)}"
         q += " ORDER BY ts_init"
         return q
-
-    @staticmethod
-    def _handle_table_dataframe(
-        table: pa.Table,
-        mappings: Optional[dict],
-        raise_on_empty: bool = True,
-        sort_columns: Optional[list] = None,
-        as_type: Optional[dict] = None,
-    ):
-        df = table.to_pandas().drop_duplicates()
-        for col in mappings:
-            df.loc[:, col] = df[col].map(mappings[col])
-
-        if df.empty and raise_on_empty:
-            raise ValueError("Data empty")
-        if sort_columns:
-            df = df.sort_values(sort_columns)
-        if as_type:
-            df = df.astype(as_type)
-        return df
 
     @staticmethod
     def _handle_table_nautilus(

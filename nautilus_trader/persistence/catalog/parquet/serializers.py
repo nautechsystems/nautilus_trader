@@ -175,6 +175,13 @@ def make_dict_serializer(schema: pa.Schema):
     return inner
 
 
+def make_dict_deserializer(cls):
+    def inner(table: pa.Table) -> list[DATA_OR_EVENTS]:
+        return [cls.from_dict(d) for d in table.to_pylist()]
+
+    return inner
+
+
 def dicts_to_table(data: list[dict], schema: pa.Schema) -> pa.Table:
     return pa.Table.from_pylist(data, schema=schema)
 
@@ -191,4 +198,9 @@ assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_PARQUET_SCHEMA))
 
 for cls in NAUTILUS_PARQUET_SCHEMA:
     schema = NAUTILUS_PARQUET_SCHEMA[cls]
-    register_parquet(cls=cls, schema=schema, serializer=make_dict_serializer(schema))
+    register_parquet(
+        cls=cls,
+        schema=schema,
+        serializer=make_dict_serializer(schema),
+        deserializer=make_dict_deserializer(cls),
+    )
