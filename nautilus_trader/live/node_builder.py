@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 
 from nautilus_trader.cache.cache import Cache
@@ -56,6 +58,7 @@ class TradingNodeBuilder:
         The logger for building clients.
     log : LoggerAdapter
         The trading nodes logger.
+
     """
 
     def __init__(

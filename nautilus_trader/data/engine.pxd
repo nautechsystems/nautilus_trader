@@ -39,6 +39,9 @@ from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class DataEngine(Component):
@@ -51,6 +54,10 @@ cdef class DataEngine(Component):
     cdef readonly dict _routing_map
     cdef readonly dict _order_book_intervals
     cdef readonly dict _bar_aggregators
+    cdef readonly dict _synthetic_quote_feeds
+    cdef readonly dict _synthetic_trade_feeds
+    cdef readonly list _subscribed_synthetic_quotes
+    cdef readonly list _subscribed_synthetic_trades
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly bint _validate_data_sequence
@@ -93,6 +100,8 @@ cdef class DataEngine(Component):
     cpdef list subscribed_bars(self)
     cpdef list subscribed_instrument_status_updates(self)
     cpdef list subscribed_instrument_close(self)
+    cpdef list subscribed_synthetic_quotes(self)
+    cpdef list subscribed_synthetic_trades(self)
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -112,7 +121,9 @@ cdef class DataEngine(Component):
     cpdef void _setup_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, bint only_deltas)  # noqa
     cpdef void _handle_subscribe_ticker(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type)
     cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
     cpdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue)
@@ -159,3 +170,7 @@ cdef class DataEngine(Component):
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)
+    cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)
+    cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update)
+    cpdef void _update_synthetics_with_trade(self, list synthetics, TradeTick update)
+    cpdef void _update_synthetic_with_trade(self, SyntheticInstrument synthetic, TradeTick update)

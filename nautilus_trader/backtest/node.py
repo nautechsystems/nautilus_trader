@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -57,6 +58,7 @@ class BacktestNode:
         If `configs` is ``None`` or empty.
     ValueError
         If `configs` contains a type other than `BacktestRunConfig`.
+
     """
 
     def __init__(self, configs: list[BacktestRunConfig]):
@@ -85,10 +87,9 @@ class BacktestNode:
         """
         return self._configs
 
-    def get_engine(self, run_config_id: str) -> Optional[BacktestEngine]:
+    def get_engine(self, run_config_id: str) -> BacktestEngine | None:
         """
-        Return the backtest engine associated with the given run config ID
-        (if found).
+        Return the backtest engine associated with the given run config ID (if found).
 
         Parameters
         ----------
@@ -165,7 +166,7 @@ class BacktestNode:
 
         # Add venues (must be added prior to instruments)
         for config in venue_configs:
-            base_currency: Optional[str] = config.base_currency
+            base_currency: str | None = config.base_currency
             leverages = (
                 {InstrumentId.from_str(i): Decimal(v) for i, v in config.leverages.items()}
                 if config.leverages
@@ -184,6 +185,9 @@ class BacktestNode:
                 modules=[ActorFactory.create(module) for module in (config.modules or [])],
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
+                support_gtd_orders=config.support_gtd_orders,
+                use_random_ids=config.use_random_ids,
+                use_reduce_only=config.use_reduce_only,
             )
 
         # Add instruments
@@ -215,7 +219,7 @@ class BacktestNode:
         engine_config: BacktestEngineConfig,
         venue_configs: list[BacktestVenueConfig],
         data_configs: list[BacktestDataConfig],
-        batch_size_bytes: Optional[int] = None,
+        batch_size_bytes: int | None = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             run_config_id=run_config_id,

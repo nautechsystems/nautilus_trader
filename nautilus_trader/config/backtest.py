@@ -51,6 +51,9 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     frozen_account: bool = False
     bar_execution: bool = True
     reject_stop_orders: bool = True
+    support_gtd_orders: bool = True
+    use_random_ids: bool = False
+    use_reduce_only: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
     modules: Optional[list[ImportableConfig]] = None
 
@@ -218,6 +221,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         The data configurations for the backtest run.
     batch_size_bytes : optional
         The batch block size in bytes (will then run in streaming mode).
+
     """
 
     engine: Optional[BacktestEngineConfig] = None
@@ -256,7 +260,7 @@ def parse_filters_expr(s: Optional[str]):
         for name in code.co_names:
             if name not in allowed_names:
                 raise NameError(f"Use of {name} not allowed")
-        return eval(code, {}, allowed_names)
+        return eval(code, {}, allowed_names)  # noqa
 
     return safer_eval(s)  # Only allow use of the field object
 

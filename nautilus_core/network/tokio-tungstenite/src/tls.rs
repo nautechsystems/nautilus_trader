@@ -170,7 +170,7 @@ pub mod encryption {
     }
 }
 
-/// Creates a WebSocket handshake from a request and a stream,
+/// Creates a `WebSocket` handshake from a request and a stream,
 /// upgrading the stream to TLS if required.
 #[cfg(any(feature = "native-tls", feature = "__rustls-tls"))]
 pub async fn client_async_tls<R, S>(

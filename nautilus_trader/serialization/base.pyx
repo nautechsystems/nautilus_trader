@@ -58,6 +58,7 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
 from nautilus_trader.model.instruments.options_contract cimport OptionsContract
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 
 
 # Default mappings for Nautilus objects
@@ -87,6 +88,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     PositionChanged.__name__: PositionChanged.to_dict_c,
     PositionClosed.__name__: PositionClosed.to_dict_c,
     Instrument.__name__: Instrument.base_to_dict_c,
+    SyntheticInstrument.__name__: SyntheticInstrument.to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
     Equity.__name__: Equity.to_dict_c,
     FuturesContract.__name__: FuturesContract.to_dict_c,
@@ -133,6 +135,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     PositionChanged.__name__: PositionChanged.from_dict_c,
     PositionClosed.__name__: PositionClosed.from_dict_c,
     Instrument.__name__: Instrument.base_from_dict_c,
+    SyntheticInstrument.__name__: SyntheticInstrument.from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
     Equity.__name__: Equity.from_dict_c,
     FuturesContract.__name__: FuturesContract.from_dict_c,

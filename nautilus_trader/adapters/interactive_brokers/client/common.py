@@ -71,7 +71,7 @@ class Base:
         self._req_id_to_cancel: dict[int, Callable] = {}  # type: ignore
 
     def __repr__(self):
-        return f"{self.__class__.__name__}:\n{[self.get(req_id=k) for k in self._req_id_to_name.keys()]!r}"
+        return f"{self.__class__.__name__}:\n{[self.get(req_id=k) for k in self._req_id_to_name]!r}"
 
     def _name_to_req_id(self, name: Any):
         try:
@@ -82,7 +82,7 @@ class Base:
             pass
 
     def _validation_check(self, req_id: int, name: Any):
-        if req_id in self._req_id_to_name.keys():
+        if req_id in self._req_id_to_name:
             raise KeyError(
                 f"Duplicate entry not allowed for {req_id=}, found {self.get(req_id=req_id)}",
             )
@@ -101,14 +101,14 @@ class Base:
 
     def get_all(self):
         result = []
-        for req_id in self._req_id_to_name.keys():
+        for req_id in self._req_id_to_name:
             result.append(self.get(req_id=req_id))
         return result
 
     def get(
         self,
         req_id: Optional[int] = None,
-        name: Union[str, tuple] = None,
+        name: Optional[Union[str, tuple]] = None,
     ):
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -139,7 +139,7 @@ class Subscriptions(Base):
     def get(
         self,
         req_id: Optional[int] = None,
-        name: Union[str, tuple] = None,
+        name: Optional[Union[str, tuple]] = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)
@@ -188,7 +188,7 @@ class Requests(Base):
     def get(
         self,
         req_id: Optional[int] = None,
-        name: Union[str, tuple] = None,
+        name: Optional[Union[str, tuple]] = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)

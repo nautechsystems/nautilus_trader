@@ -203,8 +203,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         success: Optional[str] = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -260,7 +260,9 @@ class InteractiveBrokersClient(Component, EWrapper):
                 self._log.info(success, LogColor.GREEN)
 
     def _next_req_id(self) -> int:
-        """Get next available request ID."""
+        """
+        Get next available request ID.
+        """
         new_id = self._request_id_seq
         self._request_id_seq += 1
         return new_id
@@ -284,7 +286,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._accounts = set()
 
     def _stop(self):
-        if not self.registered_nautilus_clients == set():
+        if self.registered_nautilus_clients != set():
             self._log.warning(
                 f"Any registered Clients from {self.registered_nautilus_clients} will disconnect.",
             )
@@ -307,12 +309,12 @@ class InteractiveBrokersClient(Component, EWrapper):
     ##########################################################################
     # Connectivity
     ##########################################################################
-    def error(  # noqa: too complex, Override the EWrapper
+    def error(  # noqa: C901 too complex
         self,
-        req_id,
-        error_code,
-        error_string,
-        advanced_order_reject_json="",
+        req_id: int,
+        error_code: int,
+        error_string: str,
+        advanced_order_reject_json: str = "",
     ) -> None:
         warning_codes = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
         is_warning = error_code in warning_codes or 2100 <= error_code < 2200
@@ -320,7 +322,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # 2104, 2158, 2106: Data connectivity restored
         # 10197: No market data during competing live session
-        if not req_id == -1:
+        if req_id != -1:
             # TODO: Order events & Cleanup/split the Error method
             # Error 10147 req_id=195: OrderId 195 that needs to be cancelled is not found.  # Send cancel event
             # Warning 202 req_id=2078: Order Canceled - reason:  # Send cancel event
@@ -352,7 +354,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             elif request := self.requests.get(req_id=req_id):
                 self._log.warning(f"{error_code}: {error_string}, {request}")
                 self._end_request(req_id, success=False)
-            elif req_id in self._order_id_to_order.keys():
+            elif req_id in self._order_id_to_order:
                 if error_code == 321:
                     # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
                     order = self._order_id_to_order.get(req_id, None)
@@ -504,7 +506,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     async def _socket_connect(self):
         """
-        Create socket connection with TWS/Gateway
+        Create socket connection with TWS/Gateway.
         """
         try:
             self._client.host = self._host
@@ -922,14 +924,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
 
         name = f"execDetails-{execution.acctNumber}"
-        if handler := self._event_subscriptions.get(name, None):
-            if cache.get("commission_report"):
-                handler(
-                    order_ref=cache["order_ref"],
-                    execution=cache["execution"],
-                    commission_report=cache["commission_report"],
-                )
-                cache.pop(execution.execId, None)
+        if (handler := self._event_subscriptions.get(name, None)) and cache.get(
+            "commission_report",
+        ):
+            handler(
+                order_ref=cache["order_ref"],
+                execution=cache["execution"],
+                commission_report=cache["commission_report"],
+            )
+            cache.pop(execution.execId, None)
 
     def commissionReport(  # : Override the EWrapper
         self,
@@ -1045,7 +1048,9 @@ class InteractiveBrokersClient(Component, EWrapper):
         return self._accounts.copy()
 
     def managedAccounts(self, accounts_list: str):  # : Override the EWrapper
-        """Received once the connection is established."""
+        """
+        Received once the connection is established.
+        """
         self.logAnswer(current_fn_name(), vars())
         self._accounts = {a for a in accounts_list.split(",") if a}
         if self._next_valid_order_id >= 0 and not self.is_ib_ready.is_set():
@@ -1476,7 +1481,9 @@ class InteractiveBrokersClient(Component, EWrapper):
     def _end_request(self, req_id, success=True, exception=None):
         """
         Finish the future of corresponding key with the given result.
+
         If no result is given then it will be popped of the general results.
+
         """
         if not (request := self.requests.get(req_id=req_id)):
             return

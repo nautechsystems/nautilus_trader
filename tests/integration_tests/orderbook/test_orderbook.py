@@ -18,7 +18,6 @@ import pytest
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orderbook.error import BookIntegrityError
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
@@ -88,7 +87,7 @@ class TestOrderBook:
                 book.update(order=m["order"])
                 try:
                     book.check_integrity()
-                except BookIntegrityError:
+                except RuntimeError:  # BookIntegrityError was removed
                     book.delete(order=m["order"])
                     skip_deletes.append(m["order"].order_id)
             elif m["op"] == "delete" and m["order"].order_id not in skip_deletes:

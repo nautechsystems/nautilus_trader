@@ -12,18 +12,21 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+The `LiveDataClient` class is responsible for interfacing with a particular API which
+may be presented directly by an exchange, or broker intermediary.
+
+It could also be possible to write clients for specialized data publishers.
 
 """
-The `LiveDataClient` class is responsible for interfacing with a particular API
-which may be presented directly by an exchange, or broker intermediary. It
-could also be possible to write clients for specialized data publishers.
-"""
+
+from __future__ import annotations
 
 import asyncio
 import functools
 from asyncio import Task
 from collections.abc import Coroutine
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -71,18 +74,19 @@ class LiveDataClient(DataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
-        venue: Optional[Venue],
+        venue: Venue | None,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             client_id=client_id,
@@ -118,13 +122,13 @@ class LiveDataClient(DataClient):
     def create_task(
         self,
         coro: Coroutine,
-        log_msg: Optional[str] = None,
-        actions: Optional[Callable] = None,
-        success: Optional[str] = None,
+        log_msg: str | None = None,
+        actions: Callable | None = None,
+        success: str | None = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -159,8 +163,8 @@ class LiveDataClient(DataClient):
 
     def _on_task_completed(
         self,
-        actions: Optional[Callable],
-        success: Optional[str],
+        actions: Callable | None,
+        success: str | None,
         task: Task,
     ) -> None:
         if task.exception():
@@ -283,19 +287,20 @@ class LiveMarketDataClient(MarketDataClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
-        venue: Optional[Venue],
+        venue: Venue | None,
         instrument_provider: InstrumentProvider,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
@@ -334,13 +339,13 @@ class LiveMarketDataClient(MarketDataClient):
     def create_task(
         self,
         coro: Coroutine,
-        log_msg: Optional[str] = None,
-        actions: Optional[Callable] = None,
-        success: Optional[str] = None,
+        log_msg: str | None = None,
+        actions: Callable | None = None,
+        success: str | None = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -375,8 +380,8 @@ class LiveMarketDataClient(MarketDataClient):
 
     def _on_task_completed(
         self,
-        actions: Optional[Callable],
-        success: Optional[str],
+        actions: Callable | None,
+        success: str | None,
         task: Task,
     ) -> None:
         if task.exception():
@@ -445,8 +450,8 @@ class LiveMarketDataClient(MarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict[str, Any]] = None,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.create_task(
             self._subscribe_order_book_deltas(
@@ -463,8 +468,8 @@ class LiveMarketDataClient(MarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict[str, Any]] = None,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.create_task(
             self._subscribe_order_book_snapshots(
@@ -623,8 +628,8 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         self._log.debug(f"Request quote ticks {instrument_id}.")
         self.create_task(
@@ -642,8 +647,8 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         self._log.debug(f"Request trade ticks {instrument_id}.")
         self.create_task(
@@ -661,8 +666,8 @@ class LiveMarketDataClient(MarketDataClient):
         bar_type: BarType,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         self._log.debug(f"Request bars {bar_type}.")
         self.create_task(
@@ -707,8 +712,8 @@ class LiveMarketDataClient(MarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict[str, Any]] = None,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -718,8 +723,8 @@ class LiveMarketDataClient(MarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict[str, Any]] = None,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
@@ -830,8 +835,8 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_quote_ticks` coroutine",  # pragma: no cover
@@ -842,8 +847,8 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
@@ -854,8 +859,8 @@ class LiveMarketDataClient(MarketDataClient):
         bar_type: BarType,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover

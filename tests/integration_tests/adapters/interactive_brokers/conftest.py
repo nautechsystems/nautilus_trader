@@ -27,6 +27,7 @@ from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBr
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestProviderStubs
 
@@ -160,5 +161,5 @@ def exec_client(mocker, exec_client_config, venue, event_loop, msgbus, cache, cl
 
 
 @pytest.fixture()
-def account_state(venue) -> AccountState:
+def account_state(venue: Venue) -> AccountState:
     return TestEventStubs.cash_account_state(account_id=AccountId(f"{venue.value}-001"))

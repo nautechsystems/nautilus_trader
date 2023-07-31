@@ -69,7 +69,9 @@ class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotBalance(msgspec.Struct, frozen=True):
-    """Inner struct for `Binance Spot/Margin` balances."""
+    """
+    Inner struct for `Binance Spot/Margin` balances.
+    """
 
     a: str  # Asset
     f: str  # Free
@@ -88,7 +90,9 @@ class BinanceSpotBalance(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
-    """WebSocket message for `Binance Spot/Margin` Account Update events."""
+    """
+    WebSocket message for `Binance Spot/Margin` Account Update events.
+    """
 
     e: str  # Event Type
     E: int  # Event Time
@@ -99,7 +103,9 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
         return [balance.parse_to_account_balance() for balance in self.B]
 
     def handle_account_update(self, exec_client: BinanceCommonExecutionClient):
-        """Handle BinanceSpotAccountUpdateMsg as payload of outboundAccountPosition."""
+        """
+        Handle BinanceSpotAccountUpdateMsg as payload of outboundAccountPosition.
+        """
         exec_client.generate_account_state(
             balances=self.parse_to_account_balances(),
             margins=[],
@@ -109,7 +115,9 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
 
 
 class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
-    """WebSocket message wrapper for `Binance Spot/Margin` Account Update events."""
+    """
+    WebSocket message wrapper for `Binance Spot/Margin` Account Update events.
+    """
 
     stream: str
     data: BinanceSpotAccountUpdateMsg
@@ -118,7 +126,6 @@ class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
 class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     """
     WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update events.
-
     """
 
     e: BinanceSpotEventType
@@ -206,7 +213,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
         self,
         exec_client: BinanceCommonExecutionClient,
     ):
-        """Handle BinanceSpotOrderUpdateData as payload of executionReport event."""
+        """
+        Handle BinanceSpotOrderUpdateData as payload of executionReport event.
+        """
         client_order_id_str: str = self.c
         if not client_order_id_str or not client_order_id_str.startswith("O"):
             client_order_id_str = self.C
@@ -284,7 +293,9 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
 
 class BinanceSpotOrderUpdateWrapper(msgspec.Struct, frozen=True):
-    """WebSocket message wrapper for `Binance Spot/Margin` Order Update events."""
+    """
+    WebSocket message wrapper for `Binance Spot/Margin` Order Update events.
+    """
 
     stream: str
     data: BinanceSpotOrderUpdateData

@@ -20,7 +20,6 @@ import traceback
 from platform import python_version
 from typing import Optional
 
-import aiohttp
 import msgspec
 import numpy as np
 import pandas as pd
@@ -93,8 +92,10 @@ cdef class Logger:
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
-    bypass : bool
+    bypass : bool, default False
         If the log output is bypassed.
+    dummy : bool, default False
+        If logger is a 'dummy' logger (intended as a placeholder during initialization).
     """
 
     def __init__(
@@ -111,6 +112,7 @@ cdef class Logger:
         str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
         bint bypass = False,
+        bint dummy = False,
     ):
         if trader_id is None:
             trader_id = TraderId("TRADER-000")
@@ -123,6 +125,10 @@ cdef class Logger:
 
         cdef str trader_id_str = trader_id.to_str()
         cdef str instance_id_str = instance_id.to_str()
+
+        if dummy:
+            return  # Do not initialize core Rust logger
+
         self._mem = logger_new(
             pystr_to_cstr(trader_id_str),
             pystr_to_cstr(machine_id),
@@ -151,6 +157,8 @@ cdef class Logger:
         TraderId
 
         """
+        if self._mem._0 == NULL:
+            return None  # Not initialized
         return TraderId(cstr_to_pystr(logger_get_trader_id_cstr(&self._mem)))
 
     @property
@@ -163,6 +171,8 @@ cdef class Logger:
         str
 
         """
+        if self._mem._0 == NULL:
+            return None  # Not initialized
         return cstr_to_pystr(logger_get_machine_id_cstr(&self._mem))
 
     @property
@@ -175,6 +185,8 @@ cdef class Logger:
         UUID4
 
         """
+        if self._mem._0 == NULL:
+            return None  # Not initialized
         return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
 
     @property
@@ -187,6 +199,8 @@ cdef class Logger:
         bool
 
         """
+        if self._mem._0 == NULL:
+            return False  # Not initialized
         return logger_is_bypassed(&self._mem)
 
     cpdef void change_clock(self, Clock clock):
@@ -229,6 +243,10 @@ cdef class Logger:
         str message,
         dict annotations,
     ):
+        if self._mem._0 == NULL:
+            print("ERROR: Logger has not been initialized.")
+            return  # Not initialized
+
         logger_log(
             &self._mem,
             timestamp,
@@ -577,7 +595,6 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
     logger.info(f"pandas {pd.__version__}")
-    logger.info(f"aiohttp {aiohttp.__version__}")
     logger.info(f"msgspec {msgspec.__version__}")
     logger.info(f"psutil {psutil.__version__}")
     logger.info(f"pyarrow {pyarrow.__version__}")

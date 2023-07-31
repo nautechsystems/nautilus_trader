@@ -32,7 +32,8 @@ from nautilus_trader.model.objects import Money
 
 class BinanceSpotBalanceInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/account (HMAC SHA256).
+    HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/account (HMAC
+    SHA256).
     """
 
     asset: str
@@ -75,8 +76,10 @@ class BinanceSpotAccountInfo(msgspec.Struct, frozen=True):
 class BinanceSpotOrderOco(msgspec.Struct, frozen=True):
     """
     HTTP response from `Binance Spot/Margin` GET /api/v3/orderList (HMAC SHA256).
-    HTTP response from `Binance Spot/Margin` POST /api/v3/order/oco (HMAC SHA256).
-    HTTP response from `Binance Spot/Margin` DELETE /api/v3/orderList (HMAC SHA256).
+
+    HTTP response from `Binance Spot/Margin` POST /api/v3/order/oco (HMAC SHA256). HTTP
+    response from `Binance Spot/Margin` DELETE /api/v3/orderList (HMAC SHA256).
+
     """
 
     orderListId: int

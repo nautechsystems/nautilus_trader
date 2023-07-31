@@ -67,6 +67,7 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     instrument_id: str
@@ -79,8 +80,8 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
 
 class VolatilityMarketMaker(Strategy):
     """
-    A very dumb market maker which brackets the current market based on
-    volatility measured by an ATR indicator.
+    A very dumb market maker which brackets the current market based on volatility
+    measured by an ATR indicator.
 
     Cancels all orders and closes all positions on stop.
 
@@ -88,6 +89,7 @@ class VolatilityMarketMaker(Strategy):
     ----------
     config : VolatilityMarketMakerConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: VolatilityMarketMakerConfig) -> None:
@@ -110,7 +112,9 @@ class VolatilityMarketMaker(Strategy):
         self.sell_order: Union[LimitOrder, None] = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -144,8 +148,7 @@ class VolatilityMarketMaker(Strategy):
 
     def on_data(self, data: Data) -> None:
         """
-        Actions to be performed when the strategy is running and receives generic
-        data.
+        Actions to be performed when the strategy is running and receives generic data.
 
         Parameters
         ----------
@@ -158,8 +161,7 @@ class VolatilityMarketMaker(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------
@@ -185,7 +187,8 @@ class VolatilityMarketMaker(Strategy):
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
-        Actions to be performed when the strategy is running and receives order book deltas.
+        Actions to be performed when the strategy is running and receives order book
+        deltas.
 
         Parameters
         ----------
@@ -220,7 +223,7 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        # self.log.info(repr(tick), LogColor.CYAN)
+        self.log.info(repr(tick), LogColor.CYAN)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -247,6 +250,10 @@ class VolatilityMarketMaker(Strategy):
         """
         self.log.info(repr(bar), LogColor.CYAN)
 
+        if not self.instrument:
+            self.log.error("No instrument loaded.")
+            return
+
         # Check if indicators ready
         if not self.indicators_initialized():
             self.log.info(
@@ -262,11 +269,21 @@ class VolatilityMarketMaker(Strategy):
 
         # Maintain buy orders
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
+            # price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
+            # self.modify_order(
+            #     order=self.buy_order,
+            #     price=self.instrument.make_price(price),
+            # )
             self.cancel_order(self.buy_order)
         self.create_buy_order(last)
 
         # Maintain sell orders
         if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
+            # price = last.ask + (self.atr.value * self.atr_multiple)
+            # self.modify_order(
+            #     order=self.sell_order,
+            #     price=self.instrument.make_price(price),
+            # )
             self.cancel_order(self.sell_order)
         self.create_sell_order(last)
 
@@ -331,7 +348,7 @@ class VolatilityMarketMaker(Strategy):
             self.log.info("No quotes yet...")
             return
 
-        # If order filled then replace order at atr multiple distance from the market
+        # If order filled then replace order at ATR multiple distance from the market
         if isinstance(event, OrderFilled):
             if self.buy_order and event.order_side == OrderSide.BUY:
                 if self.buy_order.is_closed:

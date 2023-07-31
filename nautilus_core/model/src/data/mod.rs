@@ -15,21 +15,21 @@
 
 pub mod bar;
 pub mod bar_api;
-pub mod book;
-pub mod book_api;
-pub mod tick;
-pub mod tick_api;
+pub mod delta;
+pub mod delta_api;
+pub mod order;
+pub mod order_api;
+pub mod quote;
+pub mod quote_api;
+pub mod trade;
+pub mod trade_api;
 
 use nautilus_core::time::UnixNanos;
 
-use self::{
-    bar::Bar,
-    book::OrderBookDelta,
-    tick::{QuoteTick, TradeTick},
-};
+use self::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub enum Data {
     Delta(OrderBookDelta),
     Quote(QuoteTick),
@@ -71,4 +71,9 @@ impl From<Bar> for Data {
     fn from(value: Bar) -> Self {
         Self::Bar(value)
     }
+}
+
+#[no_mangle]
+pub extern "C" fn data_clone(data: &Data) -> Data {
+    *data
 }

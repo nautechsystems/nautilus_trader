@@ -50,11 +50,21 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
     `DELETE /fapi/v1/order`
     `DELETE /dapi/v1/order`
 
+    `PUT /fapi/v1/order`
+    `PUT /dapi/v1/order`
+
+    Notes
+    -----
+    `PUT` method is not available for Spot/Margin.
+
     References
     ----------
     https://binance-docs.github.io/apidocs/spot/en/#new-order-trade
     https://binance-docs.github.io/apidocs/futures/en/#new-order-trade
     https://binance-docs.github.io/apidocs/delivery/en/#new-order-trade
+    https://binance-docs.github.io/apidocs/futures/en/#modify-order-trade
+    https://binance-docs.github.io/apidocs/delivery/en/#modify-order-trade
+
     """
 
     def __init__(
@@ -67,20 +77,24 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
             BinanceMethodType.POST: BinanceSecurityType.TRADE,
             BinanceMethodType.DELETE: BinanceSecurityType.TRADE,
+            BinanceMethodType.PUT: BinanceSecurityType.TRADE,
         }
         url_path = base_endpoint + "order"
+
         if testing_endpoint:
             url_path = url_path + "/test"
+
         super().__init__(
             client,
             methods,
             url_path,
         )
+
         self._resp_decoder = msgspec.json.Decoder(BinanceOrder)
 
     class GetDeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
-        Order management GET & DELETE endpoint parameters
+        Order management GET & DELETE endpoint parameters.
 
         Parameters
         ----------
@@ -89,15 +103,16 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         timestamp : str
             The millisecond timestamp of the request
         orderId : int, optional
-            the order identifier
+            The order identifier.
         origClientOrderId : str, optional
-            the client specified order identifier
+            The client specified order identifier.
         recvWindow : str, optional
-            the millisecond timeout window.
+            The millisecond timeout window.
 
         Warnings
         --------
         Either orderId or origClientOrderId must be sent.
+
         """
 
         symbol: BinanceSymbol
@@ -188,6 +203,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
+
         """
 
         symbol: BinanceSymbol
@@ -213,6 +229,41 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         newOrderRespType: Optional[BinanceNewOrderRespType] = None
         recvWindow: Optional[str] = None
 
+    class PutParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        Order amendment PUT endpoint parameters.
+
+        Parameters
+        ----------
+        orderId : int, optional
+            The order ID for the request.
+        origClientOrderId : str, optional
+            The client specified order identifier.
+        symbol : BinanceSymbol
+            The symbol of the order.
+        side : BinanceOrderSide
+            The market side of the order (BUY, SELL).
+        quantity : str, optional
+            The order quantity in base asset units for the request.
+        price : str, optional
+            The order price for the request.
+        recvWindow : str, optional
+            The response receive window in milliseconds for the request.
+            Cannot exceed 60000.
+        timestamp : str
+            The millisecond timestamp of the request.
+
+        """
+
+        symbol: BinanceSymbol
+        side: BinanceOrderSide
+        quantity: str
+        price: str
+        timestamp: str
+        orderId: Optional[int] = None
+        origClientOrderId: Optional[str] = None
+        recvWindow: Optional[str] = None
+
     async def _get(self, parameters: GetDeleteParameters) -> BinanceOrder:
         method_type = BinanceMethodType.GET
         raw = await self._method(method_type, parameters)
@@ -225,6 +276,11 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
 
     async def _post(self, parameters: PostParameters) -> BinanceOrder:
         method_type = BinanceMethodType.POST
+        raw = await self._method(method_type, parameters)
+        return self._resp_decoder.decode(raw)
+
+    async def _put(self, parameters: PutParameters) -> BinanceOrder:
+        method_type = BinanceMethodType.PUT
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
@@ -242,6 +298,7 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#all-orders-user_data
     https://binance-docs.github.io/apidocs/futures/en/#all-orders-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#all-orders-user_data
+
     """
 
     def __init__(
@@ -282,6 +339,7 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
             Default 500, max 1000
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         symbol: BinanceSymbol
@@ -316,6 +374,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#current-open-orders-user_data
     https://binance-docs.github.io/apidocs/futures/en/#current-all-open-orders-user_data
     https://binance-docs.github.io/apidocs/futures/en/#current-all-open-orders-user_data
+
     """
 
     def __init__(
@@ -348,6 +407,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
             The symbol of the orders
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         timestamp: str
@@ -373,6 +433,7 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
     https://binance-docs.github.io/apidocs/spot/en/#account-trade-list-user_data
     https://binance-docs.github.io/apidocs/futures/en/#account-trade-list-user_data
     https://binance-docs.github.io/apidocs/delivery/en/#account-trade-list-user_data
+
     """
 
     def __init__(
@@ -414,6 +475,7 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
             Default 500, max 1000
         recvWindow : str, optional
             The response receive window for the request (cannot be greater than 60000).
+
         """
 
         symbol: BinanceSymbol
@@ -445,6 +507,7 @@ class BinanceAccountHttpAPI:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
@@ -478,7 +541,9 @@ class BinanceAccountHttpAPI:
         self._endpoint_user_trades = BinanceUserTradesHttp(client, user_trades_url)
 
     def _timestamp(self) -> str:
-        """Create Binance timestamp from internal clock."""
+        """
+        Create Binance timestamp from internal clock.
+        """
         return str(self._clock.timestamp_ms())
 
     async def query_order(
@@ -488,7 +553,9 @@ class BinanceAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
-        """Check an order status."""
+        """
+        Check an order status.
+        """
         if order_id is None and orig_client_order_id is None:
             raise RuntimeError(
                 "Either orderId or origClientOrderId must be sent.",
@@ -519,7 +586,9 @@ class BinanceAccountHttpAPI:
         orig_client_order_id: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
-        """Cancel an active order."""
+        """
+        Cancel an active order.
+        """
         if order_id is None and orig_client_order_id is None:
             raise RuntimeError(
                 "Either orderId or origClientOrderId must be sent.",
@@ -559,7 +628,9 @@ class BinanceAccountHttpAPI:
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
-        """Send in a new order to Binance."""
+        """
+        Send in a new order to Binance.
+        """
         binance_order = await self._endpoint_order._post(
             parameters=self._endpoint_order.PostParameters(
                 symbol=BinanceSymbol(symbol),
@@ -588,6 +659,33 @@ class BinanceAccountHttpAPI:
         )
         return binance_order
 
+    async def modify_order(
+        self,
+        symbol: str,
+        side: BinanceOrderSide,
+        quantity: str,
+        price: str,
+        order_id: Optional[int] = None,
+        orig_client_order_id: Optional[str] = None,
+        recv_window: Optional[str] = None,
+    ) -> BinanceOrder:
+        """
+        Modify a LIMIT order with Binance.
+        """
+        binance_order = await self._endpoint_order._put(
+            parameters=self._endpoint_order.PutParameters(
+                symbol=BinanceSymbol(symbol),
+                timestamp=self._timestamp(),
+                orderId=order_id,
+                origClientOrderId=orig_client_order_id,
+                side=side,
+                quantity=quantity,
+                price=price,
+                recvWindow=recv_window,
+            ),
+        )
+        return binance_order
+
     async def query_all_orders(
         self,
         symbol: str,
@@ -597,7 +695,9 @@ class BinanceAccountHttpAPI:
         limit: Optional[int] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceOrder]:
-        """Query all orders, active or filled."""
+        """
+        Query all orders, active or filled.
+        """
         return await self._endpoint_all_orders._get(
             parameters=self._endpoint_all_orders.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -615,7 +715,9 @@ class BinanceAccountHttpAPI:
         symbol: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceOrder]:
-        """Query open orders."""
+        """
+        Query open orders.
+        """
         return await self._endpoint_open_orders._get(
             parameters=self._endpoint_open_orders.GetParameters(
                 symbol=BinanceSymbol(symbol),
@@ -634,7 +736,9 @@ class BinanceAccountHttpAPI:
         limit: Optional[int] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceUserTrade]:
-        """Query user's trade history for a symbol, with provided filters."""
+        """
+        Query user's trade history for a symbol, with provided filters.
+        """
         if (order_id or from_id) is not None and (start_time or end_time) is not None:
             raise RuntimeError(
                 "Cannot specify both order_id/from_id AND start_time/end_time parameters.",

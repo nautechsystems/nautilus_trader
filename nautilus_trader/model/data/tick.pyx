@@ -20,18 +20,18 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport instrument_id_clone
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
-from nautilus_trader.core.rust.model cimport quote_tick_clone
-from nautilus_trader.core.rust.model cimport quote_tick_drop
+from nautilus_trader.core.rust.model cimport quote_tick_eq
+from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new
 from nautilus_trader.core.rust.model cimport quote_tick_to_cstr
-from nautilus_trader.core.rust.model cimport trade_id_clone
+from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport trade_id_new
-from nautilus_trader.core.rust.model cimport trade_tick_clone
-from nautilus_trader.core.rust.model cimport trade_tick_drop
+from nautilus_trader.core.rust.model cimport trade_tick_eq
+from nautilus_trader.core.rust.model cimport trade_tick_hash
 from nautilus_trader.core.rust.model cimport trade_tick_new
 from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
+from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.enums_c cimport AggressorSide
@@ -40,6 +40,8 @@ from nautilus_trader.model.enums_c cimport aggressor_side_from_str
 from nautilus_trader.model.enums_c cimport aggressor_side_to_str
 from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
@@ -89,7 +91,7 @@ cdef class QuoteTick(Data):
         Condition.equal(bid_size._mem.precision, ask_size._mem.precision, "bid_size.precision", "ask_size.precision")
 
         self._mem = quote_tick_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             bid._mem.raw,
             ask._mem.raw,
             bid._mem.precision,
@@ -101,10 +103,6 @@ cdef class QuoteTick(Data):
             ts_event,
             ts_init,
         )
-
-    def __del__(self) -> None:
-        if self._mem.instrument_id.symbol.value != NULL:
-            quote_tick_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -122,10 +120,9 @@ cdef class QuoteTick(Data):
         )
 
     def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = quote_tick_new(
-            instrument_id_new_from_cstr(
-                pystr_to_cstr(state[0]),
-            ),
+            instrument_id._mem,
             state[1],
             state[2],
             state[3],
@@ -139,10 +136,10 @@ cdef class QuoteTick(Data):
         )
 
     def __eq__(self, QuoteTick other) -> bool:
-        return self.to_str() == other.to_str()
+        return quote_tick_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return quote_tick_hash(&self._mem)
 
     def __str__(self) -> str:
         return self.to_str()
@@ -280,7 +277,7 @@ cdef class QuoteTick(Data):
     ):
         cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
         tick._mem = quote_tick_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             raw_bid,
             raw_ask,
             bid_price_prec,
@@ -297,7 +294,7 @@ cdef class QuoteTick(Data):
     @staticmethod
     cdef QuoteTick from_mem_c(QuoteTick_t mem):
         cdef QuoteTick quote_tick = QuoteTick.__new__(QuoteTick)
-        quote_tick._mem = quote_tick_clone(&mem)
+        quote_tick._mem = mem
         return quote_tick
 
     # Safety: Do NOT deallocate the capsule here
@@ -531,20 +528,16 @@ cdef class TradeTick(Data):
         uint64_t ts_init,
     ):
         self._mem = trade_tick_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             price._mem.raw,
             price._mem.precision,
             size._mem.raw,
             size._mem.precision,
             aggressor_side,
-            trade_id_clone(&trade_id._mem),
+            trade_id._mem,
             ts_event,
             ts_init,
         )
-
-    def __del__(self) -> None:
-        if self._mem.instrument_id.symbol.value != NULL:
-            trade_tick_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __getstate__(self):
         return (
@@ -560,25 +553,24 @@ cdef class TradeTick(Data):
         )
 
     def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
         self._mem = trade_tick_new(
-            instrument_id_new_from_cstr(
-                pystr_to_cstr(state[0]),
-            ),
+            instrument_id._mem,
             state[1],
             state[2],
             state[3],
             state[4],
             state[5],
-            trade_id_new(pystr_to_cstr(state[6])),
+            TradeId(state[6])._mem,
             state[7],
             state[8],
         )
 
     def __eq__(self, TradeTick other) -> bool:
-        return self.to_str() == other.to_str()
+        return trade_tick_eq(&self._mem, &other._mem)
 
     def __hash__(self) -> int:
-        return hash(self.to_str())
+        return trade_tick_hash(&self._mem)
 
     def __str__(self) -> str:
         return self.to_str()
@@ -687,13 +679,13 @@ cdef class TradeTick(Data):
     ):
         cdef TradeTick tick = TradeTick.__new__(TradeTick)
         tick._mem = trade_tick_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             raw_price,
             price_prec,
             raw_size,
             size_prec,
             aggressor_side,
-            trade_id_clone(&trade_id._mem),
+            trade_id._mem,
             ts_event,
             ts_init,
         )
@@ -702,7 +694,7 @@ cdef class TradeTick(Data):
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem):
         cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
-        trade_tick._mem = trade_tick_clone(&mem)
+        trade_tick._mem = mem
         return trade_tick
 
     # Safety: Do NOT deallocate the capsule here

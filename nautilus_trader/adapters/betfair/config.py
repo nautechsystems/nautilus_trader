@@ -32,7 +32,8 @@ class BetfairDataClientConfig(LiveDataClientConfig, frozen=True):
     app_key : str, optional
         The betfair application key.
     cert_dir : str, optional
-        The local directory that contains the betfair certificates
+        The local directory that contains the betfair certificates.
+
     """
 
     username: Optional[str] = None
@@ -55,7 +56,8 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     app_key : str, optional
         The betfair application key.
     cert_dir : str, optional
-        The local directory that contains the betfair certificates
+        The local directory that contains the betfair certificates.
+
     """
 
     base_currency: str

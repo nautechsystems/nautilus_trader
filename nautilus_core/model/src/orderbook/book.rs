@@ -18,10 +18,7 @@ use thiserror::Error;
 
 use super::{ladder::BookPrice, level::Level};
 use crate::{
-    data::{
-        book::{BookOrder, OrderBookDelta},
-        tick::{QuoteTick, TradeTick},
-    },
+    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::{BookAction, BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
     orderbook::ladder::Ladder,
@@ -38,7 +35,7 @@ pub struct OrderBook {
     pub count: u64,
 }
 
-#[derive(Error, Debug)]
+#[derive(thiserror::Error, Debug)]
 pub enum InvalidBookOperation {
     #[error("Invalid book operation: cannot pre-process order for {0} book")]
     PreProcessOrder(BookType),
@@ -165,6 +162,14 @@ impl OrderBook {
         }
     }
 
+    pub fn bids(&self) -> Vec<&Level> {
+        self.bids.levels.values().collect()
+    }
+
+    pub fn asks(&self) -> Vec<&Level> {
+        self.asks.levels.values().collect()
+    }
+
     pub fn has_bid(&self) -> bool {
         match self.bids.top() {
             Some(top) => !top.orders.is_empty(),
@@ -215,6 +220,32 @@ impl OrderBook {
         }
     }
 
+    pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
+            _ => panic!("Invalid `OrderSide` {}", order_side),
+        };
+        let mut cumulative_volume_raw = 0u64;
+        let mut cumulative_value = 0.0;
+
+        for (book_price, level) in levels {
+            let volume_this_level = level.volume_raw().min(qty.raw - cumulative_volume_raw);
+            cumulative_volume_raw += volume_this_level;
+            cumulative_value += book_price.value.as_f64() * volume_this_level as f64;
+
+            if cumulative_volume_raw >= qty.raw {
+                break;
+            }
+        }
+
+        if cumulative_volume_raw == 0 {
+            0.0
+        } else {
+            cumulative_value / cumulative_volume_raw as f64
+        }
+    }
+
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
         self.update_bid(BookOrder::from_quote_tick(tick, OrderSide::Buy));
         self.update_ask(BookOrder::from_quote_tick(tick, OrderSide::Sell));
@@ -242,10 +273,7 @@ impl OrderBook {
 
         ask_levels.reverse();
 
-        let levels: Vec<(&BookPrice, &Level)> = ask_levels
-            .into_iter()
-            .chain(bid_levels.into_iter())
-            .collect();
+        let levels: Vec<(&BookPrice, &Level)> = ask_levels.into_iter().chain(bid_levels).collect();
 
         let data: Vec<OrderLevelDisplay> = levels
             .iter()
@@ -442,7 +470,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        data::book::BookOrder,
+        data::order::BookOrder,
         enums::{AggressorSide, OrderSide},
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
         types::{price::Price, quantity::Quantity},
@@ -576,6 +604,61 @@ mod tests {
         book.add(ask1.clone(), 200, 2);
 
         assert_eq!(book.midpoint(), Some(1.5));
+    }
+
+    #[test]
+    fn test_get_price_for_quantity_no_market() {
+        let book = create_stub_book(BookType::L2_MBP);
+        let qty = Quantity::new(1.0, 0);
+
+        assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Buy), 0.0);
+        assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Sell), 0.0);
+    }
+
+    #[test]
+    fn test_get_price_for_quantity() {
+        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let ask2 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.010"),
+            Quantity::from("2.0"),
+            0, // order_id not applicable
+        );
+        let ask1 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("0.990"),
+            Quantity::from("2.0"),
+            0, // order_id not applicable
+        );
+        book.add(bid1.clone(), 0, 1);
+        book.add(bid2.clone(), 0, 1);
+        book.add(ask1.clone(), 0, 1);
+        book.add(ask2.clone(), 0, 1);
+
+        let qty = Quantity::from("1.5");
+
+        assert_eq!(
+            book.get_avg_px_for_quantity(qty, OrderSide::Buy),
+            2.0033333333333334
+        );
+        assert_eq!(
+            book.get_avg_px_for_quantity(qty, OrderSide::Sell),
+            0.9966666666666667
+        );
     }
 
     #[test]

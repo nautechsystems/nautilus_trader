@@ -21,7 +21,9 @@ from nautilus_trader.persistence.external.core import write_objects
 
 
 def create_temp_table(func):
-    """Make a temporary copy of any parquet dataset class called by `write_tables`"""
+    """
+    Make a temporary copy of any parquet dataset class called by `write_tables`
+    """
 
     def inner(*args, **kwargs):
         try:
@@ -37,4 +39,6 @@ write_objects = create_temp_table(write_objects)
 
 
 def migrate(catalog: BaseDataCatalog, version_from: str, version_to: str):
-    """Migrate the `catalog` between versions `version_from` and `version_to`"""
+    """
+    Migrate the `catalog` between versions `version_from` and `version_to`
+    """

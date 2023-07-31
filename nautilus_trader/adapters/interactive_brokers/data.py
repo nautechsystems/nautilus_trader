@@ -87,6 +87,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             Client ID used to connect TWS/Gateway.
         config : InteractiveBrokersDataClientConfig
             Configuration for the client.
+
         """
         super().__init__(
             loop=loop,
@@ -149,7 +150,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -160,7 +161,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict[str, Any] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
@@ -419,10 +420,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not end:
             end = pd.Timestamp.utcnow()
 
-        if bar_type.spec.timedelta.total_seconds() >= 60:
-            duration_str = "7 D"
-        else:
-            duration_str = "1 D"
+        duration_str = "7 D" if bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
         bars: list[Bar] = []
         while (start and end > start) or (len(bars) < limit):
             self._log.info(f"{start=}", LogColor.MAGENTA)

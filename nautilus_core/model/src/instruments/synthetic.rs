@@ -13,37 +13,48 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+};
 
+use anyhow;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
+use nautilus_core::time::UnixNanos;
+use pyo3::prelude::*;
 
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
     types::price::Price,
 };
 
-pub const SYNTHETIC_VENUE: &str = "SYNTH";
-
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
+#[derive(Clone, Debug)]
+#[pyclass]
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
-    pub precision: u8,
+    pub price_precision: u8,
+    pub price_increment: Price,
     pub components: Vec<InstrumentId>,
     pub formula: String,
-    pub variables: Vec<String>,
     pub context: HashMapContext,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+    variables: Vec<String>,
     operator_tree: Node,
 }
 
 impl SyntheticInstrument {
     pub fn new(
         symbol: Symbol,
-        precision: u8,
+        price_precision: u8,
         components: Vec<InstrumentId>,
         formula: String,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let context = HashMapContext::new();
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Result<Self, anyhow::Error> {
+        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
 
         // Extract variables from the component instruments
         let variables: Vec<String> = components
@@ -54,13 +65,16 @@ impl SyntheticInstrument {
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
 
         Ok(SyntheticInstrument {
-            id: InstrumentId::new(symbol, Venue::new(SYNTHETIC_VENUE)),
-            precision,
+            id: InstrumentId::new(symbol, Venue::synthetic()),
+            price_precision,
+            price_increment,
             components,
             formula,
+            context: HashMapContext::new(),
             variables,
-            context,
             operator_tree,
+            ts_event,
+            ts_init,
         })
     }
 
@@ -68,7 +82,7 @@ impl SyntheticInstrument {
         evalexpr::build_operator_tree(formula).is_ok()
     }
 
-    pub fn change_formula(&mut self, formula: String) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn change_formula(&mut self, formula: String) -> Result<(), anyhow::Error> {
         let operator_tree = evalexpr::build_operator_tree(&formula)?;
         self.formula = formula;
         self.operator_tree = operator_tree;
@@ -81,7 +95,7 @@ impl SyntheticInstrument {
     pub fn calculate_from_map(
         &mut self,
         inputs: &HashMap<String, f64>,
-    ) -> Result<Price, Box<dyn std::error::Error>> {
+    ) -> Result<Price, anyhow::Error> {
         let mut input_values = Vec::new();
 
         for variable in &self.variables {
@@ -99,9 +113,9 @@ impl SyntheticInstrument {
 
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
-    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, Box<dyn std::error::Error>> {
+    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, anyhow::Error> {
         if inputs.len() != self.variables.len() {
-            return Err("Invalid number of input values".into());
+            return Err(anyhow::anyhow!("Invalid number of input values"));
         }
 
         for (variable, input) in self.variables.iter().zip(inputs) {
@@ -112,9 +126,25 @@ impl SyntheticInstrument {
         let result: Value = self.operator_tree.eval_with_context(&self.context)?;
 
         match result {
-            Value::Float(price) => Ok(Price::new(price, self.precision)),
-            _ => Err("Failed to evaluate formula to a floating point number".into()),
+            Value::Float(price) => Ok(Price::new(price, self.price_precision)),
+            _ => Err(anyhow::anyhow!(
+                "Failed to evaluate formula to a floating point number"
+            )),
         }
+    }
+}
+
+impl PartialEq<Self> for SyntheticInstrument {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Eq for SyntheticInstrument {}
+
+impl Hash for SyntheticInstrument {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
     }
 }
 
@@ -135,6 +165,8 @@ mod tests {
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
+            0,
+            0,
         )
         .unwrap();
 
@@ -158,6 +190,8 @@ mod tests {
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
+            0,
+            0,
         )
         .unwrap();
 
@@ -178,6 +212,8 @@ mod tests {
             2,
             vec![btc_binance, ltc_binance],
             formula.clone(),
+            0,
+            0,
         )
         .unwrap();
 

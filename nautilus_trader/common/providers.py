@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
-from typing import Optional
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
@@ -42,13 +43,14 @@ class InstrumentProvider:
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
         self,
         venue: Venue,
         logger: Logger,
-        config: Optional[InstrumentProviderConfig] = None,
+        config: InstrumentProviderConfig | None = None,
     ) -> None:
         PyCondition.not_none(venue, "venue")
         PyCondition.not_none(logger, "logger")
@@ -94,7 +96,7 @@ class InstrumentProvider:
         """
         return len(self._instruments)
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         """
         Load the latest instruments into the provider asynchronously, optionally
         applying the given filters.
@@ -104,11 +106,11 @@ class InstrumentProvider:
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
+        Load the instruments for the given IDs into the provider, optionally applying
+        the given filters.
 
         Parameters
         ----------
@@ -128,11 +130,11 @@ class InstrumentProvider:
     async def load_async(
         self,
         instrument_id: InstrumentId,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         """
-        Load the instrument for the given ID into the provider asynchronously, optionally
-        applying the given filters.
+        Load the instrument for the given ID into the provider asynchronously,
+        optionally applying the given filters.
 
         Parameters
         ----------
@@ -154,6 +156,7 @@ class InstrumentProvider:
         Initialize the instrument provider.
 
         If `initialize()` then will immediately return.
+
         """
         if self._loaded:
             return  # Already loaded
@@ -177,10 +180,10 @@ class InstrumentProvider:
         self._loading = False
         self._loaded = True
 
-    def load_all(self, filters: Optional[dict] = None) -> None:
+    def load_all(self, filters: dict | None = None) -> None:
         """
-        Load the latest instruments into the provider, optionally applying the
-        given filters.
+        Load the latest instruments into the provider, optionally applying the given
+        filters.
 
         Parameters
         ----------
@@ -197,11 +200,11 @@ class InstrumentProvider:
     def load_ids(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         """
-        Load the instruments for the given IDs into the provider, optionally
-        applying the given filters.
+        Load the instruments for the given IDs into the provider, optionally applying
+        the given filters.
 
         Parameters
         ----------
@@ -222,11 +225,11 @@ class InstrumentProvider:
     def load(
         self,
         instrument_id: InstrumentId,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         """
-        Load the instrument for the given ID into the provider, optionally
-        applying the given filters.
+        Load the instrument for the given ID into the provider, optionally applying the
+        given filters.
 
         Parameters
         ----------
@@ -323,7 +326,7 @@ class InstrumentProvider:
         """
         return self._currencies.copy()
 
-    def currency(self, code: str) -> Optional[Currency]:
+    def currency(self, code: str) -> Currency | None:
         """
         Return the currency with the given code (if found).
 
@@ -349,7 +352,7 @@ class InstrumentProvider:
             ccy = Currency.from_str(code)
         return ccy
 
-    def find(self, instrument_id: InstrumentId) -> Optional[Instrument]:
+    def find(self, instrument_id: InstrumentId) -> Instrument | None:
         """
         Return the instrument for the given instrument ID (if found).
 

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Optional
 
 import pandas as pd
 
@@ -24,12 +25,15 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport Symbol
+from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
+from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
+from nautilus_trader.model.tick_scheme.implementations.tiered cimport TieredTickScheme
 
 
 cdef class BettingInstrument(Instrument):
@@ -59,7 +63,7 @@ cdef class BettingInstrument(Instrument):
         str selection_handicap,
         uint64_t ts_event,
         uint64_t ts_init,
-        str tick_scheme_name="BETFAIR",
+        str tick_scheme_name=None,
         int price_precision=7,  # TODO(bm): pending refactor
         Price min_price = None,
         Price max_price = None,
@@ -92,13 +96,12 @@ cdef class BettingInstrument(Instrument):
         self.selection_id = selection_id
         self.selection_name = selection_name
         self.selection_handicap = selection_handicap
-        instrument_id = betfair_instrument_id(
-            market_id=market_id, selection_id=selection_id, selection_handicap=selection_handicap
-        )
+
+        cdef Symbol symbol = make_symbol(market_id, selection_id, selection_handicap)
 
         super().__init__(
-            instrument_id=instrument_id,
-            native_symbol=instrument_id.symbol,
+            instrument_id=InstrumentId(symbol=symbol, venue=Venue(venue_name)),
+            raw_symbol=symbol,
             asset_class=AssetClass.SPORTS_BETTING,
             asset_type=AssetType.SPOT,
             quote_currency=Currency.from_str_c(currency),
@@ -143,7 +146,7 @@ cdef class BettingInstrument(Instrument):
         return {
             "type": "BettingInstrument",
             "id": obj.id.to_str(),
-            "venue_name": obj.id.venue.to_str(),
+            "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
             "competition_id": obj.competition_id,
@@ -198,3 +201,26 @@ cdef class BettingInstrument(Instrument):
         Condition.not_none(quantity, "quantity")
         cdef double bet_price = 1.0 / price.as_f64_c()
         return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)
+
+
+def make_symbol(
+    market_id: str,
+    selection_id: str,
+    selection_handicap: Optional[str],
+) -> Symbol:
+    """
+    Make symbol.
+
+    >>> make_symbol(market_id="1.201070830", selection_id="123456", selection_handicap=None)
+    Symbol('1.201070830|123456|None')
+
+    """
+
+    def _clean(s):
+        return str(s).replace(" ", "").replace(":", "")
+
+    value: str = "|".join(
+        [_clean(k) for k in (market_id, selection_id, selection_handicap)],
+    )
+    assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
+    return Symbol(value)

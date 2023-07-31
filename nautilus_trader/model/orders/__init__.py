@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Provides a full range of standard order types, as well as more advanced types and order lists."""
+"""
+Provides a full range of standard order types, as well as more advanced types and order
+lists.
+"""
 
 from nautilus_trader.model.orders.base import Order
 from nautilus_trader.model.orders.limit import LimitOrder

@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 members = [
     "backtest",
     "common",
@@ -12,29 +13,31 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.70.0"
-version = "0.6.0"
+rust-version = "1.71.0"
+version = "0.7.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
+anyhow = "1.0.72"
 chrono = "0.4.26"
 futures = "0.3.28"
-pyo3 = "0.18.3"
-pyo3-asyncio = { version = "0.18.0", features = [ "tokio-runtime", "tokio", "attributes" ] }
-pyo3-macros = "0.18.3"
+pyo3 = "0.19.1"
+pyo3-asyncio = { git = "https://github.com/nautechsystems/pyo3-asyncio.git", features = ["tokio-runtime", "tokio", "attributes"] }
+pyo3-macros = "0.19.1"
 rand = "0.8.5"
-rmp-serde = "1.1.1"
-rust_decimal = "1.30.0"
+rmp-serde = "1.1.2"
+rust_decimal = "1.31.0"
 rust_decimal_macros = "1.29.1"
-serde = { version = "1.0.164", features = ["derive"] }
-serde_json = "1.0.97"
-strum = { version = "0.24.1", features = ["derive"] }
-thiserror = "1.0.40"
-tokio = { version = "1.28.2", features = ["full"] }
-uuid = { version = "1.3.4", features = ["v4"] }
+serde = { version = "1.0.178", features = ["derive"] }
+serde_json = "1.0.104"
+strum = { version = "0.25.0", features = ["derive"] }
+thiserror = "1.0.44"
+tracing = "0.1.37"
+tokio = { version = "1.29.1", features = ["full"] }
+uuid = { version = "1.4.1", features = ["v4"] }
 
 # dev-dependencies
 criterion = "0.4.0"

@@ -16,8 +16,6 @@
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-import uuid
-
 import msgspec
 
 from nautilus_trader.core.correctness cimport Condition
@@ -28,24 +26,27 @@ from nautilus_trader.core.rust.model cimport book_order_exposure
 from nautilus_trader.core.rust.model cimport book_order_from_raw
 from nautilus_trader.core.rust.model cimport book_order_hash
 from nautilus_trader.core.rust.model cimport book_order_signed_size
-from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport orderbook_delta_clone
-from nautilus_trader.core.rust.model cimport orderbook_delta_drop
 from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport book_action_from_str
 from nautilus_trader.model.enums_c cimport book_action_to_str
-from nautilus_trader.model.enums_c cimport book_type_from_str
-from nautilus_trader.model.enums_c cimport book_type_to_str
 from nautilus_trader.model.enums_c cimport order_side_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+# Represents a 'NULL' order (used for 'CLEAR' actions by OrderBookDelta)
+NULL_ORDER = BookOrder(
+    side=OrderSide.NO_ORDER_SIDE,
+    price=Price(0, 0),
+    size=Quantity(0, 0),
+    order_id=0,
+)
 
 
 cdef class BookOrder:
@@ -67,8 +68,8 @@ cdef class BookOrder:
     def __init__(
         self,
         OrderSide side,
-        Price price,
-        Quantity size,
+        Price price not None,
+        Quantity size not None,
         uint64_t order_id,
     ):
         self._mem = book_order_from_raw(
@@ -226,7 +227,7 @@ cdef class OrderBookDelta(Data):
         The instrument ID for the book.
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
-    order : Order
+    order : BookOrder
         The order to apply.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
@@ -234,8 +235,8 @@ cdef class OrderBookDelta(Data):
         The UNIX timestamp (nanoseconds) when the data object was initialized.
     sequence : uint64_t, default 0
         The unique sequence number for the update. If default 0 then will increment the `sequence`.
-    flags : uint8_t, default 0
-        The unique sequence number for the update. If default 0 then will increment the `sequence`.
+    flags : uint8_t, default 0 (no flags)
+        A combination of packet end with matching engine status.
     """
 
     def __init__(
@@ -258,7 +259,7 @@ cdef class OrderBookDelta(Data):
             0,
         )
         self._mem = orderbook_delta_new(
-            instrument_id_clone(&instrument_id._mem),
+            instrument_id._mem,
             action,
             book_order,
             flags,
@@ -266,10 +267,6 @@ cdef class OrderBookDelta(Data):
             ts_event,
             ts_init,
         )
-
-    def __del__(self) -> None:
-        if self._mem.instrument_id.symbol.value != NULL:
-            orderbook_delta_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
 
     def __eq__(self, OrderBookDelta other) -> bool:
         return orderbook_delta_eq(&self._mem, &other._mem)
@@ -424,19 +421,14 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem):
         cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
-        delta._mem = orderbook_delta_clone(&mem)
+        delta._mem = mem
         return delta
 
     @staticmethod
     cdef OrderBookDelta from_dict_c(dict values):
         Condition.not_none(values, "values")
         cdef BookAction action = book_action_from_str(values["action"])
-        cdef BookOrder order = BookOrder.from_dict_c({
-            "side": values["side"],
-            "price": values["price"],
-            "size": values["size"],
-            "order_id": values["order_id"],
-        }) if values["action"] != "CLEAR" else None
+        cdef BookOrder order = BookOrder.from_dict_c(values["order"])
         return OrderBookDelta(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             action=action,
@@ -455,10 +447,12 @@ cdef class OrderBookDelta(Data):
             "type": "OrderBookDelta",
             "instrument_id": obj.instrument_id.value,
             "action": book_action_to_str(obj._mem.action),
-            "side": order_side_to_str(order.side) if order else None,
-            "price": str(obj.order.price) if order else None,
-            "size": str(obj.order.size) if order else None,
-            "order_id": order._mem.order_id if order else None,
+            "order": {
+                "side": order_side_to_str(order._mem.side),
+                "price": str(order.price),
+                "size": str(order.size),
+                "order_id": order._mem.order_id,
+            },
             "flags": obj._mem.flags,
             "sequence": obj._mem.sequence,
             "ts_event": obj._mem.ts_event,
@@ -557,7 +551,6 @@ cdef class OrderBookDeltas(Data):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"{self.deltas}, "
-            f"sequence={self.sequence}, "
             f"is_snapshot={self.is_snapshot}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"

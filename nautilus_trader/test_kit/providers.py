@@ -14,27 +14,37 @@
 # -------------------------------------------------------------------------------------------------
 
 import pathlib
+import random
 from datetime import date
 from decimal import Decimal
-from typing import Optional
+from typing import Any, Optional
 
 import fsspec
+import numpy as np
 import pandas as pd
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import ADA
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CryptoFuture
@@ -43,6 +53,7 @@ from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -72,7 +83,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ADABTC"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("ADABTC"),
+            raw_symbol=Symbol("ADABTC"),
             base_currency=ADA,
             quote_currency=BTC,
             price_precision=8,
@@ -109,7 +120,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTCUSDT"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("BTCUSDT"),
+            raw_symbol=Symbol("BTCUSDT"),
             base_currency=BTC,
             quote_currency=USDT,
             price_precision=2,
@@ -146,7 +157,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETHUSDT"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("ETHUSDT"),
+            raw_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             price_precision=2,
@@ -183,7 +194,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETHUSDT-PERP"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("ETHUSDT"),
+            raw_symbol=Symbol("ETHUSDT"),
             base_currency=ETH,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -228,7 +239,7 @@ class TestInstrumentProvider:
                 symbol=Symbol(f"BTCUSDT_{expiry.strftime('%y%m%d')}"),
                 venue=Venue("BINANCE"),
             ),
-            native_symbol=Symbol("BTCUSDT"),
+            raw_symbol=Symbol("BTCUSDT"),
             underlying=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
@@ -266,7 +277,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("BTC/USD"),
                 venue=Venue("BITMEX"),
             ),
-            native_symbol=Symbol("XBTUSD"),
+            raw_symbol=Symbol("XBTUSD"),
             base_currency=BTC,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -304,7 +315,7 @@ class TestInstrumentProvider:
                 symbol=Symbol("ETH/USD"),
                 venue=Venue("BITMEX"),
             ),
-            native_symbol=Symbol("ETHUSD"),
+            raw_symbol=Symbol("ETHUSD"),
             base_currency=ETH,
             quote_currency=USD,
             settlement_currency=BTC,
@@ -328,7 +339,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Venue = None) -> CurrencyPair:
+    def default_fx_ccy(symbol: str, venue: Optional[Venue] = None) -> CurrencyPair:
         """
         Return a default FX currency pair instrument from the given symbol and venue.
 
@@ -372,7 +383,7 @@ class TestInstrumentProvider:
 
         return CurrencyPair(
             instrument_id=instrument_id,
-            native_symbol=Symbol(symbol),
+            raw_symbol=Symbol(symbol),
             base_currency=Currency.from_str(base_currency),
             quote_currency=Currency.from_str(quote_currency),
             price_precision=price_precision,
@@ -396,10 +407,10 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def equity(symbol: str = "AAPL", venue: str = "NASDAQ"):
+    def equity(symbol: str = "AAPL", venue: str = "NASDAQ") -> Equity:
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
-            native_symbol=Symbol(symbol),
+            raw_symbol=Symbol(symbol),
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
@@ -418,7 +429,7 @@ class TestInstrumentProvider:
     def es_future() -> FuturesContract:
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
-            native_symbol=Symbol("ESZ21"),
+            raw_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
@@ -435,7 +446,7 @@ class TestInstrumentProvider:
     def aapl_option() -> OptionsContract:
         return OptionsContract(
             instrument_id=InstrumentId(symbol=Symbol("AAPL211217C00150000"), venue=Venue("OPRA")),
-            native_symbol=Symbol("AAPL211217C00150000"),
+            raw_symbol=Symbol("AAPL211217C00150000"),
             asset_class=AssetClass.EQUITY,
             currency=USD,
             price_precision=2,
@@ -475,6 +486,7 @@ class TestInstrumentProvider:
             selection_id=selection_id,
             selection_name="Kansas City Chiefs",
             currency="GBP",
+            tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             ts_event=0,
             ts_init=0,
         )
@@ -506,18 +518,34 @@ class TestInstrumentProvider:
             },
         )
 
+    @staticmethod
+    def synthetic_instrument() -> SyntheticInstrument:
+        return SyntheticInstrument(
+            symbol=Symbol("BTC-ETH"),
+            price_precision=8,
+            components=[
+                TestInstrumentProvider.btcusdt_binance().id,
+                TestInstrumentProvider.ethusdt_binance().id,
+            ],
+            formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+            ts_event=0,
+            ts_init=0,
+        )
+
 
 class TestDataProvider:
     """
-    Provides an API to load data from either the 'test/' directory or the projects GitHub repo.
+    Provides an API to load data from either the 'test/' directory or the projects
+    GitHub repo.
 
     Parameters
     ----------
     branch : str
         The NautilusTrader GitHub branch for the path.
+
     """
 
-    def __init__(self, branch="develop") -> None:
+    def __init__(self, branch: str = "develop") -> None:
         self.fs: Optional[fsspec.AbstractFileSystem] = None
         self.root: Optional[str] = None
         self._determine_filesystem()
@@ -584,3 +612,100 @@ class TestDataProvider:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return ParquetBarDataLoader.load(file_path=f)
+
+
+class TestDataGenerator:
+    @staticmethod
+    def simulate_value_diffs(
+        count: int,
+        max_diff: float = 10,
+        prob_increase: float = 0.25,
+        prob_decrease: float = 0.25,
+    ) -> pd.Series:
+        gen = np.random.default_rng()
+
+        def sim():
+            if random.random() <= prob_increase:  # noqa: S311
+                return gen.uniform(0, max_diff)
+            elif random.random() <= prob_decrease:  # noqa: S311
+                return -gen.uniform(0, max_diff)
+            else:
+                return 0
+
+        return pd.Series([sim() for _ in range(count)])
+
+    @staticmethod
+    def generate_time_series_index(
+        start_timestamp: str = "2020-01-01",
+        max_freq: str = "1s",
+        count: int = 100_000,
+    ) -> pd.DatetimeIndex:
+        gen = np.random.default_rng()
+        start = dt_to_unix_nanos(pd.Timestamp(start_timestamp))
+        freq_in_nanos = secs_to_nanos(pd.Timedelta(max_freq).total_seconds())
+        diffs = gen.uniform(0, freq_in_nanos, size=count - 1)
+        srs = pd.Series([start, *diffs.tolist()])
+        return pd.to_datetime(srs.cumsum(), unit="us")
+
+    @staticmethod
+    def generate_time_series(
+        start_timestamp: str = "2020-01-01",
+        start_price: float = 100.0,
+        default_quantity: int = 10,
+        max_freq: str = "1s",
+        count: int = 100_000,
+    ) -> pd.DataFrame:
+        gen = np.random.default_rng()
+        price_diffs = gen.uniform(-1, 1, size=count - 1)
+        prices = pd.Series([start_price, *price_diffs.tolist()]).cumsum()
+
+        quantity_diffs = TestDataGenerator.simulate_value_diffs(count)
+        quantity = pd.Series(default_quantity + quantity_diffs).astype(int)
+
+        index = TestDataGenerator.generate_time_series_index(start_timestamp, max_freq, count)
+        return pd.DataFrame(
+            index=index,
+            data={"price": prices.to_numpy(), "quantity": quantity.to_numpy()},
+        )
+
+    @staticmethod
+    def generate_quote_ticks(
+        instrument_id: str,
+        price_prec: int = 4,
+        quantity_prec: int = 4,
+        **kwargs: Any,
+    ) -> list[QuoteTick]:
+        df: pd.DataFrame = TestDataGenerator.generate_time_series(**kwargs)
+        return [
+            QuoteTick(
+                InstrumentId.from_str(instrument_id),
+                Price(row["price"] + 1, price_prec),
+                Price(row["price"] - 1, price_prec),
+                Quantity(row["quantity"], quantity_prec),
+                Quantity(row["quantity"], quantity_prec),
+                dt_to_unix_nanos(idx),
+                dt_to_unix_nanos(idx),
+            )
+            for idx, row in df.iterrows()
+        ]
+
+    @staticmethod
+    def generate_trade_ticks(
+        instrument_id: str,
+        price_prec: int = 4,
+        quantity_prec: int = 4,
+        **kwargs: Any,
+    ) -> list[TradeTick]:
+        df: pd.DataFrame = TestDataGenerator.generate_time_series(**kwargs)
+        return [
+            TradeTick(
+                InstrumentId.from_str(instrument_id),
+                Price(row["price"], price_prec),
+                Quantity(row["quantity"], quantity_prec),
+                AggressorSide.NO_AGGRESSOR,
+                TradeId(UUID4().value),
+                dt_to_unix_nanos(idx),
+                dt_to_unix_nanos(idx),
+            )
+            for idx, row in df.iterrows()
+        ]

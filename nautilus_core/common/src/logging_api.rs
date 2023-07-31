@@ -112,7 +112,7 @@ pub extern "C" fn logger_get_machine_id_cstr(logger: &Logger_API) -> *const c_ch
 
 #[no_mangle]
 pub extern "C" fn logger_get_instance_id(logger: &Logger_API) -> UUID4 {
-    logger.instance_id.clone()
+    logger.instance_id
 }
 
 #[no_mangle]

@@ -15,7 +15,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
+from typing import ClassVar, Optional
 
 import pandas as pd
 
@@ -68,9 +68,10 @@ class SandboxExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+
     """
 
-    INSTRUMENTS: list[Instrument] = []
+    INSTRUMENTS: ClassVar[list[Instrument]] = []
 
     def __init__(
         self,

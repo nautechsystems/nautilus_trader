@@ -8,20 +8,21 @@ documentation.workspace = true
 
 [lib]
 name = "nautilus_network"
-crate-type = ["rlib", "staticlib", "cdylib" ]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
+anyhow.workspace = true
 criterion.workspace = true
 futures.workspace = true
 pyo3.workspace = true
 pyo3-asyncio.workspace = true
+tracing.workspace = true
 tokio.workspace = true
-hyper = { version = "0.14.26", features = ["client", "http1", "server"] }
+futures-util = "0.3.28"
+hyper = { version = "0.14.27", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
-futures-util = "0.3.28"
-tracing = "0.1.37"
 
 [dev-dependencies]
 serde_json.workspace = true

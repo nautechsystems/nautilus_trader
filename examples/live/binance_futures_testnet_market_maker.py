@@ -48,8 +48,12 @@ config_node = TradingNodeConfig(
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
+        filter_position_reports=True,
     ),
-    cache_database=CacheDatabaseConfig(type="in-memory"),
+    cache_database=CacheDatabaseConfig(
+        type="in-memory",
+        timestamps_as_iso8601=True,
+    ),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"

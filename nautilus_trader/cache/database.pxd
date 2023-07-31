@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -20,6 +22,7 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -27,6 +30,8 @@ from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.trading.strategy cimport Strategy
@@ -39,13 +44,15 @@ cdef class CacheDatabase:
     cpdef dict load(self)
     cpdef dict load_currencies(self)
     cpdef dict load_instruments(self)
+    cpdef dict load_synthetics(self)
     cpdef dict load_accounts(self)
     cpdef dict load_orders(self)
     cpdef dict load_positions(self)
-    cpdef dict load_submit_order_commands(self)
-    cpdef dict load_submit_order_list_commands(self)
+    cpdef dict load_index_order_position(self)
+    cpdef dict load_index_order_client(self)
     cpdef Currency load_currency(self, str code)
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
@@ -53,20 +60,24 @@ cdef class CacheDatabase:
     cpdef void delete_actor(self, ComponentId component_id)
     cpdef dict load_strategy(self, StrategyId strategy_id)
     cpdef void delete_strategy(self, StrategyId strategy_id)
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
     cpdef void add(self, str key, bytes value)
     cpdef void add_currency(self, Currency currency)
     cpdef void add_instrument(self, Instrument instrument)
+    cpdef void add_synthetic(self, SyntheticInstrument instrument)
     cpdef void add_account(self, Account account)
-    cpdef void add_order(self, Order order)
+    cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
     cpdef void add_position(self, Position position)
-    cpdef void add_submit_order_command(self, SubmitOrder command)
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command)
+
+    cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id)
 
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
+
+    cpdef void snapshot_order_state(self, Order order)
+    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl=*)
+
+    cpdef void heartbeat(self, datetime timestamp)

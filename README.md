@@ -15,10 +15,10 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.70.0+ | 3.9+   |
-| `macOS (x86_64)`   | 1.70.0+ | 3.9+   |
-| `macOS (arm64)`    | 1.70.0+ | 3.9+   |
-| `Windows (x86_64)` | 1.70.0+ | 3.9+   |
+| `Linux (x86_64)`   | 1.71.0+ | 3.9+   |
+| `macOS (x86_64)`   | 1.71.0+ | 3.9+   |
+| `macOS (arm64)`    | 1.71.0+ | 3.9+   |
+| `Windows (x86_64)` | 1.71.0+ | 3.9+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -313,7 +313,9 @@ class EMACross(Strategy):
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         # Get instrument
         self.instrument = self.cache.instrument(self.instrument_id)
 
@@ -328,7 +330,9 @@ class EMACross(Strategy):
         self.subscribe_bars(self.bar_type)
 
     def on_bar(self, bar: Bar) -> None:
-        """Actions to be performed when the strategy receives a bar."""
+        """
+        Actions to be performed when the strategy receives a bar.
+        """
         # BUY LOGIC
         if self.fast_ema.value >= self.slow_ema.value:
             if self.portfolio.is_flat(self.instrument_id):
@@ -345,7 +349,9 @@ class EMACross(Strategy):
                 self.sell()
 
     def buy(self) -> None:
-        """Users simple buy method (example)."""
+        """
+        Users simple buy method (example).
+        """
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -355,7 +361,9 @@ class EMACross(Strategy):
         self.submit_order(order)
 
     def sell(self) -> None:
-        """Users simple sell method (example)."""
+        """
+        Users simple sell method (example).
+        """
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
@@ -365,7 +373,9 @@ class EMACross(Strategy):
         self.submit_order(order)
 
     def on_stop(self) -> None:
-        """Actions to be performed when the strategy is stopped."""
+        """
+        Actions to be performed when the strategy is stopped.
+        """
         # Cleanup orders and positions
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
@@ -374,7 +384,9 @@ class EMACross(Strategy):
         self.unsubscribe_bars(self.bar_type)
 
     def on_reset(self) -> None:
-        """Actions to be performed when the strategy is reset."""
+        """
+        Actions to be performed when the strategy is reset.
+        """
         # Reset indicators here
         self.fast_ema.reset()
         self.slow_ema.reset()

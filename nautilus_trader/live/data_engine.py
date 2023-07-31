@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
-from typing import Optional
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -53,6 +54,7 @@ class LiveDataEngine(DataEngine):
     ------
     TypeError
         If `config` is not of type `LiveDataEngineConfig`.
+
     """
 
     _sentinel = None
@@ -64,7 +66,7 @@ class LiveDataEngine(DataEngine):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[LiveDataEngineConfig] = None,
+        config: LiveDataEngineConfig | None = None,
     ) -> None:
         if config is None:
             config = LiveDataEngineConfig()
@@ -84,10 +86,10 @@ class LiveDataEngine(DataEngine):
         self._data_queue: Queue = Queue(maxsize=config.qsize)
 
         # Async tasks
-        self._cmd_queue_task: Optional[asyncio.Task] = None
-        self._req_queue_task: Optional[asyncio.Task] = None
-        self._res_queue_task: Optional[asyncio.Task] = None
-        self._data_queue_task: Optional[asyncio.Task] = None
+        self._cmd_queue_task: asyncio.Task | None = None
+        self._req_queue_task: asyncio.Task | None = None
+        self._res_queue_task: asyncio.Task | None = None
+        self._data_queue_task: asyncio.Task | None = None
         self._kill: bool = False
 
     def connect(self) -> None:
@@ -106,7 +108,7 @@ class LiveDataEngine(DataEngine):
         for client in self._clients.values():
             client.disconnect()
 
-    def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
+    def get_cmd_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal command queue task for the engine.
 
@@ -117,7 +119,7 @@ class LiveDataEngine(DataEngine):
         """
         return self._cmd_queue_task
 
-    def get_req_queue_task(self) -> Optional[asyncio.Task]:
+    def get_req_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal request queue task for the engine.
 
@@ -128,7 +130,7 @@ class LiveDataEngine(DataEngine):
         """
         return self._req_queue_task
 
-    def get_res_queue_task(self) -> Optional[asyncio.Task]:
+    def get_res_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal response queue task for the engine.
 
@@ -139,7 +141,7 @@ class LiveDataEngine(DataEngine):
         """
         return self._res_queue_task
 
-    def get_data_queue_task(self) -> Optional[asyncio.Task]:
+    def get_data_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal data queue task for the engine.
 
@@ -372,7 +374,7 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                command: Optional[DataCommand] = await self._cmd_queue.get()
+                command: DataCommand | None = await self._cmd_queue.get()
                 if command is self._sentinel:
                     break
                 self._execute_command(command)
@@ -391,7 +393,7 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                request: Optional[DataRequest] = await self._req_queue.get()
+                request: DataRequest | None = await self._req_queue.get()
                 if request is self._sentinel:
                     break
                 self._handle_request(request)
@@ -410,7 +412,7 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                response: Optional[DataRequest] = await self._res_queue.get()
+                response: DataRequest | None = await self._res_queue.get()
                 if response is self._sentinel:
                     break
                 self._handle_response(response)
@@ -427,7 +429,7 @@ class LiveDataEngine(DataEngine):
         self._log.debug(f"Data queue processing starting (qsize={self.data_qsize()})...")
         try:
             while True:
-                data: Optional[Data] = await self._data_queue.get()
+                data: Data | None = await self._data_queue.get()
                 if data is self._sentinel:
                     break
                 self._handle_data(data)

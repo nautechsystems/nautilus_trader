@@ -44,6 +44,7 @@ class AccountMarginExceeded(AccountError):
     Raised when the account margin for a currency is exceeded.
 
     In this scenario some form of liquidation event will occur.
+
     """
 
     def __init__(self, balance: Decimal, margin: Decimal, currency: Currency):

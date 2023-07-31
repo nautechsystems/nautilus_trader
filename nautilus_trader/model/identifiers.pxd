@@ -14,13 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.rust.model cimport AccountId_t
+from nautilus_trader.core.rust.model cimport ClientId_t
 from nautilus_trader.core.rust.model cimport ClientOrderId_t
 from nautilus_trader.core.rust.model cimport ComponentId_t
+from nautilus_trader.core.rust.model cimport ExecAlgorithmId_t
 from nautilus_trader.core.rust.model cimport InstrumentId_t
 from nautilus_trader.core.rust.model cimport OrderListId_t
 from nautilus_trader.core.rust.model cimport PositionId_t
+from nautilus_trader.core.rust.model cimport StrategyId_t
 from nautilus_trader.core.rust.model cimport Symbol_t
 from nautilus_trader.core.rust.model cimport TradeId_t
+from nautilus_trader.core.rust.model cimport TraderId_t
 from nautilus_trader.core.rust.model cimport Venue_t
 from nautilus_trader.core.rust.model cimport VenueOrderId_t
 
@@ -33,14 +37,16 @@ cdef class Symbol(Identifier):
     cdef Symbol_t _mem
 
     @staticmethod
-    cdef Symbol from_mem_c(Symbol_t* mem)
+    cdef Symbol from_mem_c(Symbol_t mem)
 
 
 cdef class Venue(Identifier):
     cdef Venue_t _mem
 
     @staticmethod
-    cdef Venue from_mem_c(Venue_t* mem)
+    cdef Venue from_mem_c(Venue_t mem)
+
+    cpdef bint is_synthetic(self)
 
 
 cdef class InstrumentId(Identifier):
@@ -52,20 +58,26 @@ cdef class InstrumentId(Identifier):
     @staticmethod
     cdef InstrumentId from_str_c(str value)
 
+    cpdef bint is_synthetic(self)
+
 
 cdef class ComponentId(Identifier):
     cdef ComponentId_t _mem
 
 
-cdef class ClientId(ComponentId):
-    pass
+cdef class ClientId(Identifier):
+    cdef ClientId_t _mem
 
 
-cdef class TraderId(ComponentId):
+cdef class TraderId(Identifier):
+    cdef TraderId_t _mem
+
     cpdef str get_tag(self)
 
 
-cdef class StrategyId(ComponentId):
+cdef class StrategyId(Identifier):
+    cdef StrategyId_t _mem
+
     cpdef str get_tag(self)
     cpdef bint is_external(self)
 
@@ -73,8 +85,8 @@ cdef class StrategyId(ComponentId):
     cdef StrategyId external_c()
 
 
-cdef class ExecAlgorithmId(ComponentId):
-    pass
+cdef class ExecAlgorithmId(Identifier):
+    cdef ExecAlgorithmId_t _mem
 
 
 cdef class AccountId(Identifier):

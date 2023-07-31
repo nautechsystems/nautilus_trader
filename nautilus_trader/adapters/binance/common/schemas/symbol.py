@@ -25,7 +25,9 @@ from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 
 
 class BinanceSymbol(str):
-    """Binance compatible symbol."""
+    """
+    Binance compatible symbol.
+    """
 
     def __new__(cls, symbol: Optional[str]):
         if symbol is not None:
@@ -35,7 +37,7 @@ class BinanceSymbol(str):
                 symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
             )
 
-    def parse_binance_to_internal(self, account_type: BinanceAccountType) -> str:
+    def parse_as_nautilus(self, account_type: BinanceAccountType) -> str:
         if account_type.is_spot_or_margin:
             return str(self)
 
@@ -49,7 +51,9 @@ class BinanceSymbol(str):
 
 
 class BinanceSymbols(str):
-    """Binance compatible list of symbols."""
+    """
+    Binance compatible list of symbols.
+    """
 
     def __new__(cls, symbols: Optional[list[str]]):
         if symbols is not None:

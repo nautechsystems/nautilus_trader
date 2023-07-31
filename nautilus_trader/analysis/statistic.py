@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import re
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -29,6 +31,7 @@ class PortfolioStatistic:
     Notes
     -----
     The return value should be a JSON serializable primitive.
+
     """
 
     @classmethod
@@ -61,7 +64,7 @@ class PortfolioStatistic:
         matches = re.finditer(".+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)", klass)
         return " ".join([m.group(0) for m in matches])
 
-    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+    def calculate_from_returns(self, returns: pd.Series) -> Any | None:
         """
         Calculate the statistic value from the given raw returns.
 
@@ -78,7 +81,7 @@ class PortfolioStatistic:
         """
         # Override in implementation
 
-    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
+    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Any | None:
         """
         Calculate the statistic value from the given raw realized PnLs.
 
@@ -95,7 +98,7 @@ class PortfolioStatistic:
         """
         # Override in implementation
 
-    def calculate_from_orders(self, orders: list[Order]) -> Optional[Any]:
+    def calculate_from_orders(self, orders: list[Order]) -> Any | None:
         """
         Calculate the statistic value from the given orders.
 
@@ -112,7 +115,7 @@ class PortfolioStatistic:
         """
         # Override in implementation
 
-    def calculate_from_positions(self, positions: list[Position]) -> Optional[Any]:
+    def calculate_from_positions(self, positions: list[Position]) -> Any | None:
         """
         Calculate the statistic value from the given positions.
 
@@ -130,7 +133,7 @@ class PortfolioStatistic:
         ...  # Override in implementation
 
     def _check_valid_returns(self, returns: pd.Series) -> bool:
-        if returns is None or returns.empty or returns.isnull().all():
+        if returns is None or returns.empty or returns.isna().all():
             return False
         else:
             return True

@@ -48,6 +48,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     References
     ----------
     https://binance-docs.github.io/apidocs/futures/en/#mark-price-stream
+
     """
 
     def __init__(

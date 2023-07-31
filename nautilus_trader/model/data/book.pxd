@@ -20,10 +20,6 @@ from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -67,8 +63,6 @@ cdef class OrderBookDelta(Data):
 cdef class OrderBookDeltas(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID for the order book.\n\n:returns: `InstrumentId`"""
-    cdef readonly uint64_t sequence
-    """The unique sequence number.\n\n:returns: `uint64`"""
     cdef readonly list deltas
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
     cdef readonly bint is_snapshot

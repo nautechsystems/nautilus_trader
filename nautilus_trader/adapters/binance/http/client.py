@@ -45,6 +45,7 @@ class BinanceHttpClient:
     secret : str
         The Binance API secret for signed requests.
     base_url : str, optional
+
     """
 
     def __init__(
@@ -149,13 +150,13 @@ class BinanceHttpClient:
         if 400 <= response.status < 500:
             raise BinanceClientError(
                 status=response.status,
-                message=response.body.decode(),
+                message=msgspec.json.decode(response.body) if response.body else None,
                 headers=response.headers,
             )
         elif response.status >= 500:
             raise BinanceServerError(
                 status=response.status,
-                message=response.body.decode(),
+                message=msgspec.json.decode(response.body) if response.body else None,
                 headers=response.headers,
             )
 

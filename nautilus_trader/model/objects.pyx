@@ -40,10 +40,7 @@ from nautilus_trader.core.rust.model cimport PRICE_MIN as RUST_PRICE_MIN
 from nautilus_trader.core.rust.model cimport QUANTITY_MAX as RUST_QUANTITY_MAX
 from nautilus_trader.core.rust.model cimport QUANTITY_MIN as RUST_QUANTITY_MIN
 from nautilus_trader.core.rust.model cimport Currency_t
-from nautilus_trader.core.rust.model cimport currency_clone
 from nautilus_trader.core.rust.model cimport currency_code_to_cstr
-from nautilus_trader.core.rust.model cimport currency_eq
-from nautilus_trader.core.rust.model cimport money_drop
 from nautilus_trader.core.rust.model cimport money_from_raw
 from nautilus_trader.core.rust.model cimport money_new
 from nautilus_trader.core.rust.model cimport price_from_raw
@@ -840,40 +837,34 @@ cdef class Money:
                 f"invalid `value` less than `MONEY_MIN` {MONEY_MIN:_}, was {value:_}",
             )
 
-        cdef Currency_t currency_t = currency._mem
-        self._mem = money_new(value_f64, currency_clone(&currency_t))
-
-    def __del__(self) -> None:
-        if self._mem.currency.code != NULL:
-            money_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
+        self._mem = money_new(value_f64, currency._mem)
 
     def __getstate__(self):
         return self._mem.raw, self.currency_code_c()
 
     def __setstate__(self, state):
         cdef Currency currency = Currency.from_str_c(state[1])
-        cdef Currency_t currency_t = currency._mem
-        self._mem = money_from_raw(state[0], currency_clone(&currency_t))
+        self._mem = money_from_raw(state[0], currency._mem)
 
     def __eq__(self, Money other) -> bool:
-        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
-        return self._mem.raw == other.raw_int64_c()
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        return self._mem.raw == other._mem.raw
 
     def __lt__(self, Money other) -> bool:
-        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
-        return self._mem.raw < other.raw_int64_c()
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        return self._mem.raw < other._mem.raw
 
     def __le__(self, Money other) -> bool:
-        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
-        return self._mem.raw <= other.raw_int64_c()
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        return self._mem.raw <= other._mem.raw
 
     def __gt__(self, Money other) -> bool:
-        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
-        return self._mem.raw > other.raw_int64_c()
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        return self._mem.raw > other._mem.raw
 
     def __ge__(self, Money other) -> bool:
-        Condition.true(currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency")
-        return self._mem.raw >= other.raw_int64_c()
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
+        return self._mem.raw >= other._mem.raw
 
     def __add__(a, b) -> Union[decimal.Decimal, float]:
         if isinstance(a, float) or isinstance(b, float):
@@ -979,19 +970,19 @@ cdef class Money:
         return self._mem.raw > 0
 
     cdef Money add(self, Money other):
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return Money.from_raw_c(self._mem.raw + other._mem.raw, self.currency)
 
     cdef Money sub(self, Money other):
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         return Money.from_raw_c(self._mem.raw - other._mem.raw, self.currency)
 
     cdef void add_assign(self, Money other):
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         self._mem.raw += other._mem.raw
 
     cdef void sub_assign(self, Money other):
-        assert currency_eq(&self._mem.currency, &other._mem.currency), "currency != other.currency"
+        Condition.true(self._mem.currency.code == other._mem.currency.code, "currency != other.currency")
         self._mem.raw -= other._mem.raw
 
     cdef int64_t raw_int64_c(self):
@@ -1011,8 +1002,7 @@ cdef class Money:
     @staticmethod
     cdef Money from_raw_c(uint64_t raw, Currency currency):
         cdef Money money = Money.__new__(Money)
-        cdef Currency_t currency_t = currency._mem
-        money._mem = money_from_raw(raw, currency_clone(&currency_t))
+        money._mem = money_from_raw(raw, currency._mem)
         return money
 
     @staticmethod

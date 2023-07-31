@@ -25,6 +25,7 @@ pub mod enums;
 pub mod events;
 pub mod identifiers;
 pub mod instruments;
+pub mod macros;
 pub mod orderbook;
 pub mod orders;
 pub mod position;
@@ -33,6 +34,13 @@ pub mod types;
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<data::bar::BarSpecification>()?;
+    m.add_class::<data::bar::BarType>()?;
+    m.add_class::<data::bar::Bar>()?;
+    m.add_class::<data::order::BookOrder>()?;
+    m.add_class::<data::delta::OrderBookDelta>()?;
+    m.add_class::<data::quote::QuoteTick>()?;
+    m.add_class::<data::trade::TradeTick>()?;
     m.add_class::<enums::AccountType>()?;
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::BarAggregation>()?;

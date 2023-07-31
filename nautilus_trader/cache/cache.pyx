@@ -22,6 +22,7 @@ from typing import Optional
 
 from nautilus_trader.config import CacheConfig
 
+from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -46,6 +47,7 @@ from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -58,6 +60,8 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -100,6 +104,8 @@ cdef class Cache(CacheFacade):
         # Configuration
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
+        self.snapshot_orders = config.snapshot_orders
+        self.snapshot_positions = config.snapshot_positions
 
         # Caches
         self._general: dict[str, bytes] = {}
@@ -113,13 +119,12 @@ cdef class Cache(CacheFacade):
         self._bars_ask: dict[InstrumentId, Bar] = {}
         self._currencies: dict[str, Currency] = {}
         self._instruments: dict[InstrumentId, Instrument] = {}
+        self._synthetics: dict[InstrumentId, SyntheticInstrument] = {}
         self._accounts: dict[AccountId, Account] = {}
         self._orders: dict[ClientOrderId, Order] = {}
         self._order_lists: dict[OrderListId, OrderList] = {}
         self._positions: dict[PositionId, Position] = {}
         self._position_snapshots: dict[PositionId, list[bytes]] = {}
-        self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
-        self._submit_order_list_commands: dict[OrderListId, SubmitOrderList] = {}
 
         # Cache index
         self._index_venue_account: dict[Venue, AccountId] = {}
@@ -128,6 +133,7 @@ cdef class Cache(CacheFacade):
         self._index_order_ids: dict[VenueOrderId, ClientOrderId] = {}
         self._index_order_position: dict[ClientOrderId, PositionId] = {}
         self._index_order_strategy: dict[ClientOrderId, StrategyId] = {}
+        self._index_order_client: dict[ClientOrderId, ClientId] = {}
         self._index_position_strategy: dict[PositionId, StrategyId] = {}
         self._index_position_orders: dict[PositionId, set[ClientOrderId]] = {}
         self._index_instrument_orders: dict[InstrumentId, set[ClientOrderId]] = {}
@@ -211,6 +217,24 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._instruments else LogColor.NORMAL,
         )
 
+    cpdef void cache_synthetics(self):
+        """
+        Clear the current synthetic instruments cache and load synthetic instruments from the cache
+        database.
+        """
+        self._log.debug(f"Loading synthetic instruments from database...")
+
+        if self._database is not None:
+            self._synthetics = self._database.load_synthetics()
+        else:
+            self._synthetics = {}
+
+        cdef int count = len(self._synthetics)
+        self._log.info(
+            f"Cached {count} synthetic instrument{'' if count == 1 else 's'} from database.",
+            color=LogColor.BLUE if self._synthetics else LogColor.NORMAL,
+        )
+
     cpdef void cache_accounts(self):
         """
         Clear the current accounts cache and load accounts from the cache
@@ -237,24 +261,16 @@ cdef class Cache(CacheFacade):
 
         if self._database is not None:
             self._orders = self._database.load_orders()
+            self._index_order_position = self._database.load_index_order_position()
+            self._index_order_client = self._database.load_index_order_client()
         else:
             self._orders = {}
 
         # Assign position IDs to contingent orders
         cdef Order order
-        cdef Order contingent_order
-        cdef ClientOrderId client_order_id
         for order in self._orders.values():
-            if order.contingency_type == ContingencyType.OTO:
-                for client_order_id in order.linked_order_ids or []:
-                    contingent_order = self._orders.get(client_order_id)
-                    if contingent_order is None:
-                        self._log.error(f"Contingency order {client_order_id!r} not found.")
-                        continue
-                    # Assign the parents position ID
-                    if contingent_order.position_id is None:
-                        self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
-                        contingent_order.position_id = order.position_id
+            if order.contingency_type == ContingencyType.OTO and order.position_id is not None:
+                self._assign_position_id_to_contingencies(order)
 
         cdef int count = len(self._orders)
         self._log.info(
@@ -317,32 +333,6 @@ cdef class Cache(CacheFacade):
             color=LogColor.BLUE if self._positions else LogColor.NORMAL
         )
 
-    cpdef void cache_commands(self):
-        """
-        Clear the current submit order commands cache and load commands from the
-        cache database.
-        """
-        self._log.debug(f"Loading commands from database...")
-
-        if self._database is not None:
-            self._submit_order_commands = self._database.load_submit_order_commands()
-            self._submit_order_list_commands = self._database.load_submit_order_list_commands()
-        else:
-            self._submit_order_commands = {}
-            self._submit_order_list_commands = {}
-
-        cdef int count = len(self._submit_order_commands)
-        self._log.info(
-            f"Cached {count} submit_order command{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._submit_order_commands else LogColor.NORMAL
-        )
-
-        count = len(self._submit_order_list_commands)
-        self._log.info(
-            f"Cached {count} submit_order_list command{'' if count == 1 else 's'} from database.",
-            color=LogColor.BLUE if self._submit_order_list_commands else LogColor.NORMAL
-        )
-
     cpdef void build_index(self):
         """
         Clear the current cache index and re-build.
@@ -382,9 +372,10 @@ cdef class Cache(CacheFacade):
 
         # Needed type defs
         # ----------------
-        cdef AccountId account_id
-        cdef Order order
-        cdef Position position
+        cdef:
+            AccountId account_id
+            Order order
+            Position position
 
         # Check object caches
         # -------------------
@@ -689,6 +680,7 @@ cdef class Cache(CacheFacade):
         self._index_order_ids.clear()
         self._index_order_position.clear()
         self._index_order_strategy.clear()
+        self._index_order_client.clear()
         self._index_position_strategy.clear()
         self._index_position_orders.clear()
         self._index_instrument_orders.clear()
@@ -730,13 +722,12 @@ cdef class Cache(CacheFacade):
         self._bars_ask.clear()
         self._currencies.clear()
         self._instruments.clear()
+        self._synthetics.clear()
         self._accounts.clear()
         self._orders.clear()
         self._order_lists.clear()
         self._positions.clear()
         self._position_snapshots.clear()
-        self._submit_order_commands.clear()
-        self._submit_order_list_commands.clear()
         self.clear_index()
 
         self._log.debug(f"Reset cache.")
@@ -882,6 +873,46 @@ cdef class Cache(CacheFacade):
             # 9: Build _index_strategies -> {StrategyId}
             self._index_strategies.add(position.strategy_id)
 
+    cdef void _assign_position_id_to_contingencies(self, Order order):
+        cdef:
+            ClientOrderId client_order_id
+            Order contingent_order
+        for client_order_id in order.linked_order_ids or []:
+            contingent_order = self._orders.get(client_order_id)
+            if contingent_order is None:
+                self._log.error(f"Contingency order {client_order_id!r} not found.")
+                continue
+            if contingent_order.position_id is None:
+                # Assign the parents position ID
+                contingent_order.position_id = order.position_id
+
+                self.add_position_id(
+                    order.position_id,
+                    order.instrument_id.venue,
+                    contingent_order.client_order_id,
+                    order.strategy_id,
+                )
+                self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
+
+    cdef Money _calculate_unrealized_pnl(self, Position position):
+        cdef QuoteTick quote = self.quote_tick(position.instrument_id)
+        if quote is None:
+            self._log.warning(
+                f"Cannot calculate unrealized PnL for {position.id!r}, "
+                f"no quotes for {position.instrument_id}.",
+            )
+            return None
+
+        cdef Price last
+        if position.side == PositionSide.FLAT:
+            return Money(0.0, position.settlement_currency)
+        elif position.side == PositionSide.LONG:
+            last = quote.ask
+        else:
+            last = quote.bid
+
+        return position.unrealized_pnl(last)
+
     cpdef void load_actor(self, Actor actor):
         """
         Load the state dictionary into the given actor.
@@ -941,7 +972,7 @@ cdef class Cache(CacheFacade):
 
         Returns
         -------
-        Account or ``None``
+        Instrument or ``None``
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -953,6 +984,36 @@ cdef class Cache(CacheFacade):
                 self._instruments[instrument.id] = instrument
 
         return instrument
+
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id):
+        """
+        Load the synthetic instrument associated with the given `instrument_id` (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The synthetic instrument ID to load.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not a synthetic instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+
+        cdef SyntheticInstrument synthetic = self._synthetics.get(instrument_id)
+        if synthetic is None and self._database is not None:
+            synthetic = self._database.load_synthetic(instrument_id)
+            if synthetic is not None:
+                self._synthetics[synthetic.id] = synthetic
+
+        return synthetic
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -1007,42 +1068,6 @@ cdef class Cache(CacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._positions.get(position_id)
-
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
-        """
-        Load the command associated with the given client order ID (if found).
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order ID for the command to load.
-
-        Returns
-        -------
-        SubmitOrder or ``None``
-
-        """
-        Condition.not_none(client_order_id, "client_order_id")
-
-        return self._submit_order_commands.get(client_order_id)
-
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
-        """
-        Load the command associated with the given order list ID (if found).
-
-        Parameters
-        ----------
-        order_list_id : OrderListId
-            The order list ID for the command to load.
-
-        Returns
-        -------
-        SubmitOrderList or ``None``
-
-        """
-        Condition.not_none(order_list_id, "order_list_id")
-
-        return self._submit_order_list_commands.get(order_list_id)
 
     cpdef void add(self, str key, bytes value):
         """
@@ -1337,6 +1362,24 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_instrument(instrument)
 
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Add the given synthetic instrument to the cache.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to add.
+
+        """
+        self._synthetics[synthetic.id] = synthetic
+
+        self._log.debug(f"Added synthetic instrument {synthetic.id}.")
+
+        # Update database
+        if self._database is not None:
+            self._database.add_synthetic(synthetic)
+
     cpdef void add_account(self, Account account):
         """
         Add the given account to the cache.
@@ -1365,7 +1408,13 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.add_account(account)
 
-    cpdef void add_order(self, Order order, PositionId position_id, bint override = False):
+    cpdef void add_order(
+        self,
+        Order order,
+        PositionId position_id = None,
+        ClientId client_id = None,
+        bint override = False,
+    ):
         """
         Add the given order to the cache indexed with the given position
         ID.
@@ -1374,8 +1423,10 @@ cdef class Cache(CacheFacade):
         ----------
         order : Order
             The order to add.
-        position_id : PositionId
+        position_id : PositionId, optional
             The position ID to index for the order.
+        client_id : ClientId, optional
+            The execution client ID for order routing.
         override : bool, default False
             If the added order should 'override' any existing order and replace
             it in the cache. This is currently used for emulated orders which are
@@ -1456,11 +1507,10 @@ cdef class Cache(CacheFacade):
         else:
             self._index_orders_emulated.add(order.client_order_id)
 
-        # Update database
-        if self._database is not None:
-            self._database.add_order(order)  # Logs
+        self._log.debug(f"Added {order}.")
 
         if position_id is not None:
+            # Index position ID
             self.add_position_id(
                 position_id,
                 order.instrument_id.venue,
@@ -1468,8 +1518,18 @@ cdef class Cache(CacheFacade):
                 order.strategy_id,
             )
 
-        cdef str position_id_str = f", for {position_id.to_str()}" if position_id is not None else ""
-        self._log.debug(f"Added {order}{position_id_str}.")
+        # Index: ClientOrderId -> ClientId (execution client routing)
+        if client_id is not None:
+            self._index_order_client[order.client_order_id] = client_id
+            self._log.debug(f"Indexed {client_id!r}.")
+
+        if self._database is None:
+            return
+
+        # Update database
+        self._database.add_order(order, position_id, client_id)
+        if self.snapshot_orders:
+            self._database.snapshot_order_state(order)
 
     cpdef void add_order_list(self, OrderList order_list):
         """
@@ -1522,6 +1582,8 @@ cdef class Cache(CacheFacade):
 
         # Index: ClientOrderId -> PositionId
         self._index_order_position[client_order_id] = position_id
+        if self._database is not None:
+            self._database.index_order_position(client_order_id, position_id)
 
         # Index: PositionId -> StrategyId
         self._index_position_strategy[position_id] = strategy_id
@@ -1541,7 +1603,7 @@ cdef class Cache(CacheFacade):
             strategy_positions.add(position_id)
 
         self._log.debug(
-            f"Indexed {repr(position_id)}, "
+            f"Indexed {position_id!r}, "
             f"client_order_id={client_order_id}, "
             f"strategy_id={strategy_id}).",
         )
@@ -1598,9 +1660,16 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Added Position(id={position.id.to_str()}, strategy_id={position.strategy_id.to_str()}).")
 
+        if self._database is None:
+            return
+
         # Update database
-        if self._database is not None:
-            self._database.add_position(position)
+        self._database.add_position(position)
+        if self.snapshot_positions:
+            self._database.snapshot_position_state(
+                position,
+                self._calculate_unrealized_pnl(position),
+            )
 
     cpdef void snapshot_position(self, Position position):
         """
@@ -1629,57 +1698,52 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
 
-    cpdef void add_submit_order_command(self, SubmitOrder command):
+    cpdef void snapshot_position_state(self, Position position):
         """
-        Add the given command to the cache.
+        Snapshot the state dictionary for the given `position`.
+
+        This method will persist to the backing cache database.
 
         Parameters
         ----------
-        command : SubmitOrder
-            The command to add to the cache.
+        position : Position
+            The position to snapshot the state for.
 
         """
-        Condition.not_none(command, "command")
-        Condition.not_in(
-            command.order.client_order_id,
-            self._submit_order_commands,
-            "command.order.client_order_id",
-            "self._submit_order_commands",
+        Condition.not_none(position, "position")
+
+        if self._database is None:
+            self._log.warning(
+                "Cannot snapshot position state for {position.id:r!} (no database configured).",
+            )
+            return
+
+        self._database.snapshot_position_state(
+            position,
+            self._calculate_unrealized_pnl(position),
         )
 
-        self._submit_order_commands[command.order.client_order_id] = command
-
-        self._log.debug(f"Added command {command}")
-
-        # Update database
-        if self._database is not None:
-            self._database.add_submit_order_command(command)
-
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
+    cpdef void snapshot_order_state(self, Order order):
         """
-        Add the given command to the cache.
+        Snapshot the state dictionary for the given `order`.
+
+        This method will persist to the backing cache database.
 
         Parameters
         ----------
-        command : SubmitOrderList
-            The command to add to the cache.
+        order : Order
+            The order to snapshot the state for.
 
         """
-        Condition.not_none(command, "command")
-        Condition.not_in(
-            command.order_list.id,
-            self._submit_order_list_commands,
-            "command.order_list.id",
-            "self._submit_order_list_commands",
-        )
+        Condition.not_none(order, "order")
 
-        self._submit_order_list_commands[command.order_list.id] = command
+        if self._database is None:
+            self._log.warning(
+                "Cannot snapshot order state for {order.client_order_id:r!} (no database configured).",
+            )
+            return
 
-        self._log.debug(f"Added command {command}")
-
-        # Update database
-        if self._database is not None:
-            self._database.add_submit_order_list_command(command)
+        self._database.snapshot_order_state(order)
 
     cpdef void update_account(self, Account account):
         """
@@ -1708,6 +1772,7 @@ cdef class Cache(CacheFacade):
         """
         Condition.not_none(order, "order")
 
+        # Update venue order ID
         if order.venue_order_id is not None:
             # Assumes order_id does not change
             self._index_order_ids[order.venue_order_id] = order.client_order_id
@@ -1732,9 +1797,13 @@ cdef class Cache(CacheFacade):
         else:
             self._index_orders_emulated.add(order.client_order_id)
 
+        if self._database is None:
+            return
+
         # Update database
-        if self._database is not None:
-            self._database.update_order(order)
+        self._database.update_order(order)
+        if self.snapshot_orders:
+            self._database.snapshot_order_state(order)
 
     cpdef void update_position(self, Position position):
         """
@@ -1755,9 +1824,16 @@ cdef class Cache(CacheFacade):
             self._index_positions_closed.add(position.id)
             self._index_positions_open.discard(position.id)
 
+        if self._database is None:
+            return
+
         # Update database
-        if self._database is not None:
-            self._database.update_position(position)
+        self._database.update_position(position)
+        if self.snapshot_positions:
+            self._database.snapshot_position_state(
+                position,
+                self._calculate_unrealized_pnl(position),
+            )
 
     cpdef void update_actor(self, Actor actor):
         """
@@ -2444,6 +2520,54 @@ cdef class Cache(CacheFacade):
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
+# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+
+    cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id):
+        """
+        Return the synthetic instrument corresponding to the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID of the synthetic instrument to return.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not a synthetic instrument ID.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+
+        return self._synthetics.get(instrument_id)
+
+    cpdef list synthetic_ids(self):
+        """
+        Return all synthetic instrument IDs held by the cache.
+
+        Returns
+        -------
+        list[InstrumentId]
+
+        """
+        return sorted(self._synthetics.keys())
+
+    cpdef list synthetics(self):
+        """
+        Return all synthetic instruments held by the cache.
+
+        Returns
+        -------
+        list[SyntheticInstrument]
+
+        """
+        return list(self._synthetics.values())
+
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id):
@@ -2939,6 +3063,19 @@ cdef class Cache(CacheFacade):
         if order is None:
             return None
         return order.venue_order_id
+
+    cpdef ClientId client_id(self, ClientOrderId client_order_id):
+        """
+        Return the specific execution client ID matching the given client order ID (if found).
+
+        Returns
+        -------
+        ClientId or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        self._index_order_client.get(client_order_id)
 
     cpdef list orders(
         self,
@@ -3820,3 +3957,21 @@ cdef class Cache(CacheFacade):
         Condition.not_none(position_id, "position_id")
 
         return self._index_position_strategy.get(position_id)
+
+    cpdef void heartbeat(self, datetime timestamp):
+        """
+        Add a heartbeat at the given `timestamp`.
+
+        Parameters
+        ----------
+        timestamp : datetime
+            The timestamp for the heartbeat.
+
+        """
+        Condition.not_none(timestamp, "timestamp")
+
+        if self._database is None:
+            self._log.warning(f"Cannot set heartbeat {timestamp} (no database configured).")
+            return
+
+        self._database.heartbeat(timestamp)

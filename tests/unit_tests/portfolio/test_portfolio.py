@@ -18,7 +18,6 @@ from decimal import Decimal
 import pytest
 
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
@@ -56,7 +55,7 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 SIM = Venue("SIM")
 BINANCE = Venue("BINANCE")
 BITMEX = Venue("BITMEX")
-BETFAIR = BETFAIR_VENUE
+BETFAIR = Venue("BETFAIR")
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
@@ -765,7 +764,7 @@ class TestPortfolio:
         }
         assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(7987.77875000, USDT)
         assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(-262.77875000, USDT)
-        assert self.portfolio.net_position(order.instrument_id) == -0.515
+        assert self.portfolio.net_position(order.instrument_id) == Decimal("-0.515000")
         assert not self.portfolio.is_net_long(order.instrument_id)
         assert self.portfolio.is_net_short(order.instrument_id)
         assert not self.portfolio.is_flat(order.instrument_id)

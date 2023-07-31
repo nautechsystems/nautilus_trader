@@ -43,6 +43,7 @@ class MarketMaker(Strategy):
         The position size per trade.
     max_size : Decimal
         The maximum inventory size allowed.
+
     """
 
     def __init__(

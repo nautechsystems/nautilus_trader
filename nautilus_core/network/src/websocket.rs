@@ -33,7 +33,7 @@ type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
 type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 
-/// WebSocketClient connects to a websocket server to read and send messages.
+/// `WebSocketClient` connects to a websocket server to read and send messages.
 ///
 /// The client is opinionated about how messages are read and written. It
 /// assumes that data can only have one reader but multiple writers.
@@ -64,14 +64,14 @@ impl WebSocketClientInner {
         handler: PyObject,
         heartbeat: Option<u64>,
     ) -> Result<Self, Error> {
-        let (writer, reader) = WebSocketClientInner::connect_with_server(url).await?;
+        let (writer, reader) = Self::connect_with_server(url).await?;
         let writer = Arc::new(Mutex::new(writer));
         let handler_clone = handler.clone();
 
         // Keep receiving messages from socket and pass them as arguments to handler
-        let read_task = WebSocketClientInner::spawn_read_task(reader, handler);
+        let read_task = Self::spawn_read_task(reader, handler);
 
-        let heartbeat_task = WebSocketClientInner::spawn_heartbeat_task(heartbeat, writer.clone());
+        let heartbeat_task = Self::spawn_heartbeat_task(heartbeat, writer.clone());
 
         Ok(Self {
             read_task,
@@ -187,14 +187,13 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        let (new_writer, reader) = WebSocketClientInner::connect_with_server(&self.url).await?;
+        let (new_writer, reader) = Self::connect_with_server(&self.url).await?;
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
 
-        self.read_task = WebSocketClientInner::spawn_read_task(reader, self.handler.clone());
-        self.heartbeat_task =
-            WebSocketClientInner::spawn_heartbeat_task(self.heartbeat, self.writer.clone());
+        self.read_task = Self::spawn_read_task(reader, self.handler.clone());
+        self.heartbeat_task = Self::spawn_heartbeat_task(self.heartbeat, self.writer.clone());
 
         Ok(())
     }
@@ -249,7 +248,7 @@ impl WebSocketClient {
         let inner = WebSocketClientInner::connect_url(url, handler, heartbeat).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(Mutex::new(false));
-        let controller_task = WebSocketClient::spawn_controller_task(
+        let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
             post_reconnection,
@@ -283,6 +282,7 @@ impl WebSocketClient {
         guard.send(Message::Binary(data)).await
     }
 
+    #[must_use]
     pub fn is_disconnected(&self) -> bool {
         self.controller_task.is_finished()
     }
@@ -367,7 +367,7 @@ impl WebSocketClient {
         py: Python<'_>,
     ) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            WebSocketClient::connect_client(
+            Self::connect_client(
                 &url,
                 handler,
                 heartbeat,

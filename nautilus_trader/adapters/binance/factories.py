@@ -105,6 +105,7 @@ def get_cached_binance_spot_instrument_provider(
     logger: Logger,
     clock: LiveClock,
     account_type: BinanceAccountType,
+    is_testnet: bool,
     config: InstrumentProviderConfig,
 ) -> BinanceSpotInstrumentProvider:
     """
@@ -122,6 +123,8 @@ def get_cached_binance_spot_instrument_provider(
         The clock for the instrument provider.
     account_type : BinanceAccountType
         The Binance account type for the instrument provider.
+    is_testnet : bool, default False
+        If the provider is for the Spot testnet.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
 
@@ -135,6 +138,7 @@ def get_cached_binance_spot_instrument_provider(
         logger=logger,
         clock=clock,
         account_type=account_type,
+        is_testnet=is_testnet,
         config=config,
     )
 
@@ -250,6 +254,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 logger=logger,
                 clock=clock,
                 account_type=config.account_type,
+                is_testnet=config.testnet,
                 config=config.instrument_provider,
             )
 
@@ -264,7 +269,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
-                use_agg_trade_ticks=config.use_agg_trade_ticks,
+                config=config,
             )
         else:
             # Get instrument provider singleton
@@ -287,7 +292,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 instrument_provider=provider,
                 account_type=config.account_type,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
-                use_agg_trade_ticks=config.use_agg_trade_ticks,
+                config=config,
             )
 
 
@@ -362,6 +367,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 logger=logger,
                 clock=clock,
                 account_type=config.account_type,
+                is_testnet=config.testnet,
                 config=config.instrument_provider,
             )
 
@@ -376,7 +382,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
-                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
+                config=config,
             )
         else:
             # Get instrument provider singleton
@@ -399,7 +405,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 instrument_provider=provider,
                 base_url_ws=config.base_url_ws or default_base_url_ws,
                 account_type=config.account_type,
-                warn_gtd_to_gtc=config.warn_gtd_to_gtc,
+                config=config,
             )
 
 

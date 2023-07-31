@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 chrono.workspace = true
 pyo3.workspace = true
+rmp-serde.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 uuid.workspace = true

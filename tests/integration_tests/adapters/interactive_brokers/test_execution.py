@@ -122,8 +122,8 @@ def on_cancel_order_setup(client, status, order_id, manual_cancel_order_time):
     )
 
 
-@pytest.mark.asyncio
-async def test_factory(mocker, exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
+@pytest.mark.asyncio()
+async def test_factory(exec_client_config, venue, event_loop, msgbus, cache, clock, logger):
     # Act
     exec_client = InteractiveBrokersLiveExecClientFactory.create(
         loop=event_loop,
@@ -139,7 +139,7 @@ async def test_factory(mocker, exec_client_config, venue, event_loop, msgbus, ca
     assert exec_client is not None
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_connect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
@@ -156,7 +156,7 @@ async def test_connect(mocker, exec_client):
     assert exec_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_disconnect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
@@ -176,7 +176,7 @@ async def test_disconnect(mocker, exec_client):
     assert not exec_client.is_connected
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_submit_order(
     mocker,
     exec_client,
@@ -222,7 +222,7 @@ async def test_submit_order(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_submit_order_what_if(
     mocker,
     exec_client,
@@ -261,7 +261,7 @@ async def test_submit_order_what_if(
     assert cache.order(client_order_id).status == OrderStatus.REJECTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_submit_order_rejected(
     mocker,
     exec_client,
@@ -274,7 +274,7 @@ async def test_submit_order_rejected(
     pass
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_submit_order_list(
     mocker,
     exec_client,
@@ -325,7 +325,7 @@ async def test_submit_order_list(
     assert cache.order(sl_client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_modify_order(
     mocker,
     exec_client,
@@ -374,7 +374,7 @@ async def test_modify_order(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_modify_order_quantity(
     mocker,
     exec_client,
@@ -421,7 +421,7 @@ async def test_modify_order_quantity(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_modify_order_price(
     mocker,
     exec_client,
@@ -467,7 +467,7 @@ async def test_modify_order_price(
     assert cache.order(client_order_id).status == OrderStatus.ACCEPTED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_cancel_order(
     mocker,
     exec_client,
@@ -514,7 +514,7 @@ async def test_cancel_order(
     assert cache.order(client_order_id).status == OrderStatus.CANCELED
 
 
-@pytest.mark.asyncio
+@pytest.mark.asyncio()
 async def test_on_exec_details(
     mocker,
     exec_client,
@@ -566,7 +566,7 @@ async def test_on_exec_details(
     assert cache.order(client_order_id).avg_px == Price(50, 0)
     assert cache.order(client_order_id).status == OrderStatus.FILLED
 
-    @pytest.mark.asyncio
+    @pytest.mark.asyncio()
     async def test_on_account_update(mocker, exec_client):
         # TODO:
         pass

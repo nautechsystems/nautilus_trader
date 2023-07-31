@@ -12,18 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+The `LiveExecutionClient` class is responsible for interfacing with a particular API
+which may be presented directly by an exchange, or broker intermediary.
+"""
 
-"""
-The `LiveExecutionClient` class is responsible for interfacing with a particular
-API which may be presented directly by an exchange, or broker intermediary.
-"""
+from __future__ import annotations
 
 import asyncio
 import functools
 from asyncio import Task
 from collections.abc import Coroutine
 from datetime import timedelta
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -93,22 +94,23 @@ class LiveExecutionClient(ExecutionClient):
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
+
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
-        venue: Optional[Venue],
+        venue: Venue | None,
         oms_type: OmsType,
         account_type: AccountType,
-        base_currency: Optional[Currency],
+        base_currency: Currency | None,
         instrument_provider: InstrumentProvider,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[dict[str, Any]] = None,
+        config: dict[str, Any] | None = None,
     ) -> None:
         PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
 
@@ -152,13 +154,13 @@ class LiveExecutionClient(ExecutionClient):
     def create_task(
         self,
         coro: Coroutine,
-        log_msg: Optional[str] = None,
-        actions: Optional[Callable] = None,
-        success: Optional[str] = None,
+        log_msg: str | None = None,
+        actions: Callable | None = None,
+        success: str | None = None,
     ) -> asyncio.Task:
         """
-        Run the given coroutine with error handling and optional callback
-        actions when done.
+        Run the given coroutine with error handling and optional callback actions when
+        done.
 
         Parameters
         ----------
@@ -193,8 +195,8 @@ class LiveExecutionClient(ExecutionClient):
 
     def _on_task_completed(
         self,
-        actions: Optional[Callable],
-        success: Optional[str],
+        actions: Callable | None,
+        success: str | None,
         task: Task,
     ) -> None:
         if task.exception():
@@ -274,9 +276,9 @@ class LiveExecutionClient(ExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ) -> Optional[OrderStatusReport]:
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None:
         """
         Generate an `OrderStatusReport` for the given order identifier parameter(s).
 
@@ -305,9 +307,9 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         """
@@ -335,10 +337,10 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_trade_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[TradeReport]:
         """
         Generate a list of `TradeReport`s with optional query filters.
@@ -365,9 +367,9 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         """
         Generate a list of `PositionStatusReport`s with optional query filters.
@@ -392,8 +394,8 @@ class LiveExecutionClient(ExecutionClient):
 
     async def generate_mass_status(
         self,
-        lookback_mins: Optional[int] = None,
-    ) -> ExecutionMassStatus:
+        lookback_mins: int | None = None,
+    ) -> ExecutionMassStatus | None:
         """
         Generate an `ExecutionMassStatus` report.
 
@@ -404,10 +406,10 @@ class LiveExecutionClient(ExecutionClient):
 
         Returns
         -------
-        ExecutionMassStatus
+        ExecutionMassStatus or ``None``
 
         """
-        self._log.info(f"Generating ExecutionMassStatus for {self.id}...")
+        self._log.info("Generating ExecutionMassStatus...")
 
         self.reconciliation_active = True
 
@@ -419,7 +421,7 @@ class LiveExecutionClient(ExecutionClient):
             ts_init=self._clock.timestamp_ns(),
         )
 
-        since: Optional[pd.Timestamp] = None
+        since: pd.Timestamp | None = None
         if lookback_mins is not None:
             since = self._clock.utc_now() - timedelta(minutes=lookback_mins)
 
@@ -439,11 +441,12 @@ class LiveExecutionClient(ExecutionClient):
             return mass_status
         except Exception as e:
             self._log.exception("Cannot reconcile execution state", e)
+        return None
 
     async def _query_order(self, command: QueryOrder) -> None:
         self._log.debug(f"Synchronizing order status {command}.")
 
-        report: OrderStatusReport = await self.generate_order_status_report(
+        report: OrderStatusReport | None = await self.generate_order_status_report(
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
             venue_order_id=command.venue_order_id,

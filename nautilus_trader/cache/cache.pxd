@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
@@ -30,6 +32,7 @@ from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
@@ -37,6 +40,8 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -60,13 +65,12 @@ cdef class Cache(CacheFacade):
     cdef dict _bars_ask
     cdef dict _currencies
     cdef dict _instruments
+    cdef dict _synthetics
     cdef dict _accounts
     cdef dict _orders
     cdef dict _order_lists
     cdef dict _positions
     cdef dict _position_snapshots
-    cdef dict _submit_order_commands
-    cdef dict _submit_order_list_commands
 
     cdef dict _index_venue_account
     cdef dict _index_venue_orders
@@ -74,6 +78,7 @@ cdef class Cache(CacheFacade):
     cdef dict _index_order_ids
     cdef dict _index_order_position
     cdef dict _index_order_strategy
+    cdef dict _index_order_client
     cdef dict _index_position_strategy
     cdef dict _index_position_orders
     cdef dict _index_instrument_orders
@@ -98,15 +103,19 @@ cdef class Cache(CacheFacade):
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
+    cdef readonly bint snapshot_orders
+    """If order state snapshots should be taken.\n\n:returns: `bool`"""
+    cdef readonly bint snapshot_positions
+    """If position state snapshots should be taken.\n\n:returns: `bool`"""
 
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
     cpdef void cache_instruments(self)
+    cpdef void cache_synthetics(self)
     cpdef void cache_accounts(self)
     cpdef void cache_orders(self)
     cpdef void cache_order_lists(self)
     cpdef void cache_positions(self)
-    cpdef void cache_commands(self)
     cpdef void build_index(self)
     cpdef bint check_integrity(self)
     cpdef bint check_residuals(self)
@@ -123,15 +132,16 @@ cdef class Cache(CacheFacade):
     cdef set _build_position_query_filter_set(self, Venue venue, InstrumentId instrument_id, StrategyId strategy_id)
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
+    cdef void _assign_position_id_to_contingencies(self, Order order)
+    cdef Money _calculate_unrealized_pnl(self, Position position)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)
     cpdef Account load_account(self, AccountId account_id)
     cpdef Order load_order(self, ClientOrderId order_id)
     cpdef Position load_position(self, PositionId position_id)
     cpdef void load_actor(self, Actor actor)
     cpdef void load_strategy(self, Strategy strategy)
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id)
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id)
 
     cpdef void add_order_book(self, OrderBook order_book)
     cpdef void add_ticker(self, Ticker ticker)
@@ -143,14 +153,15 @@ cdef class Cache(CacheFacade):
     cpdef void add_bars(self, list bars)
     cpdef void add_currency(self, Currency currency)
     cpdef void add_instrument(self, Instrument instrument)
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic)
     cpdef void add_account(self, Account account)
-    cpdef void add_order(self, Order order, PositionId position_id, bint override=*)
+    cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*, bint override=*)
     cpdef void add_order_list(self, OrderList order_list)
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
     cpdef void add_position(self, Position position, OmsType oms_type)
     cpdef void snapshot_position(self, Position position)
-    cpdef void add_submit_order_command(self, SubmitOrder command)
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command)
+    cpdef void snapshot_position_state(self, Position position)
+    cpdef void snapshot_order_state(self, Order order)
 
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
@@ -159,3 +170,5 @@ cdef class Cache(CacheFacade):
     cpdef void delete_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
     cpdef void delete_strategy(self, Strategy strategy)
+
+    cpdef void heartbeat(self, datetime timestamp)

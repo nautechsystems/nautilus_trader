@@ -76,6 +76,7 @@ config_node = TradingNodeConfig(
     timeout_disconnection=10.0,
     timeout_post_stop=5.0,
 )
+
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
@@ -91,6 +92,7 @@ strat_config = EMACrossBracketConfig(
     order_id_tag="001",
     emulation_trigger="BID_ASK",
 )
+
 # Instantiate your strategy
 strategy = EMACrossBracket(config=strat_config)
 

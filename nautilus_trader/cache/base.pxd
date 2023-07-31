@@ -24,6 +24,7 @@ from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -33,6 +34,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
@@ -42,7 +44,7 @@ from nautilus_trader.model.position cimport Position
 
 cdef class CacheFacade:
 
-# -- GENERAL --------------------------------------------------------------------------------------  # noqa
+# -- GENERAL --------------------------------------------------------------------------------------
 
     cpdef bytes get(self, str key)
     cpdef void add(self, str key, bytes value)
@@ -84,6 +86,12 @@ cdef class CacheFacade:
     cpdef list instrument_ids(self, Venue venue=*)
     cpdef list instruments(self, Venue venue=*)
 
+# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+
+    cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id)
+    cpdef list synthetic_ids(self)
+    cpdef list synthetics(self)
+
 # -- ACCOUNT QUERIES ------------------------------------------------------------------------------
 
     cpdef Account account(self, AccountId account_id)
@@ -111,6 +119,7 @@ cdef class CacheFacade:
     cpdef Order order(self, ClientOrderId client_order_id)
     cpdef ClientOrderId client_order_id(self, VenueOrderId venue_order_id)
     cpdef VenueOrderId venue_order_id(self, ClientOrderId client_order_id)
+    cpdef ClientId client_id(self, ClientOrderId client_order_id)
     cpdef list orders(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef list orders_open(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef list orders_closed(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)

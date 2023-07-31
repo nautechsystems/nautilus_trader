@@ -286,8 +286,9 @@ cdef class LimitOrder(Order):
             "expire_time_ns": self.expire_time_ns,
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
-            "avg_px": str(self.avg_px),
-            "slippage": str(self.slippage),
+            "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "slippage": str(self.slippage) if self.filled_qty.as_f64_c() > 0.0 else None,
+            "commissions": str([c.to_str() for c in self.commissions()]) if self._commissions else None,
             "status": self._fsm.state_string_c(),
             "is_post_only": self.is_post_only,
             "is_reduce_only": self.is_reduce_only,
@@ -303,8 +304,8 @@ cdef class LimitOrder(Order):
             "exec_algorithm_params": msgspec.json.encode(self.exec_algorithm_params) if self.exec_algorithm_params is not None else None,  # noqa
             "exec_spawn_id": self.exec_spawn_id.to_str() if self.exec_spawn_id is not None else None,
             "tags": self.tags,
-            "ts_last": self.ts_last,
             "ts_init": self.ts_init,
+            "ts_last": self.ts_last,
         }
 
     @staticmethod

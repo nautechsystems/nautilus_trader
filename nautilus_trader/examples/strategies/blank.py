@@ -38,6 +38,7 @@ class MyStrategyConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     instrument_id: str
@@ -51,6 +52,7 @@ class MyStrategy(Strategy):
     ----------
     config : MyStrategyConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: MyStrategyConfig) -> None:
@@ -60,15 +62,21 @@ class MyStrategy(Strategy):
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
 
     def on_start(self) -> None:
-        """Actions to be performed when the strategy is started."""
+        """
+        Actions to be performed when the strategy is started.
+        """
         # Optionally implement
 
     def on_stop(self) -> None:
-        """Actions to be performed when the strategy is stopped."""
+        """
+        Actions to be performed when the strategy is stopped.
+        """
         # Optionally implement
 
     def on_reset(self) -> None:
-        """Actions to be performed when the strategy is reset."""
+        """
+        Actions to be performed when the strategy is reset.
+        """
         # Optionally implement
 
     def on_dispose(self) -> None:
@@ -110,8 +118,7 @@ class MyStrategy(Strategy):
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
-        Actions to be performed when the strategy is running and receives an
-        instrument.
+        Actions to be performed when the strategy is running and receives an instrument.
 
         Parameters
         ----------

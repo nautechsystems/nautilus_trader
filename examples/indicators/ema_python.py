@@ -32,8 +32,7 @@ from nautilus_trader.model.enums import PriceType
 
 class PyExponentialMovingAverage(Indicator):
     """
-    An indicator which calculates an exponential moving average across a
-    rolling window.
+    An indicator which calculates an exponential moving average across a rolling window.
 
     Parameters
     ----------
@@ -46,6 +45,7 @@ class PyExponentialMovingAverage(Indicator):
     ------
     ValueError
         If `period` is not positive (> 0).
+
     """
 
     def __init__(self, period: int, price_type: PriceType = PriceType.LAST):

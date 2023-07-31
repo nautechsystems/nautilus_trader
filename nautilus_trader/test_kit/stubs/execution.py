@@ -19,7 +19,6 @@ from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.accounting.factory import AccountFactory
-from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import ContingencyType
@@ -99,6 +98,7 @@ class TestExecStubs:
             tags=tags,
         )
 
+    @staticmethod
     def limit_with_stop_market(
         instrument_id=None,
         order_side=None,
@@ -149,7 +149,7 @@ class TestExecStubs:
             time_in_force=TimeInForce.GTC,
             order_list_id=order_list_id or TestIdStubs.order_list_id(),
             parent_order_id=entry_order.client_order_id,
-            tags=IBOrderTags(outsideRth=True).value,
+            tags=None,
         )
         return OrderList(order_list_id or TestIdStubs.order_list_id(), [entry_order, sl_order])
 

@@ -18,6 +18,7 @@ from typing import Optional
 
 import msgspec
 
+from libc.math cimport pow
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -45,8 +46,8 @@ cdef class Instrument(Data):
     ----------
     instrument_id : InstrumentId
         The instrument ID for the instrument.
-    native_symbol : Symbol
-        The native/local symbol on the exchange for the instrument.
+    raw_symbol : Symbol
+        The native/local/raw symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
         The instrument asset class.
     asset_type : AssetType
@@ -133,7 +134,7 @@ cdef class Instrument(Data):
     def __init__(
         self,
         InstrumentId instrument_id not None,
-        Symbol native_symbol not None,
+        Symbol raw_symbol not None,
         AssetClass asset_class,
         AssetType asset_type,
         Currency quote_currency not None,
@@ -194,13 +195,13 @@ cdef class Instrument(Data):
         Condition.type(taker_fee, Decimal, "taker_fee")
 
         self.id = instrument_id
-        self.native_symbol = native_symbol
+        self.raw_symbol = raw_symbol
         self.asset_class = asset_class
         self.asset_type = asset_type
         self.quote_currency = quote_currency
         self.is_inverse = is_inverse
         self.price_precision = price_precision
-        self.price_increment = price_increment
+        self.price_increment = price_increment or Price(pow(10.0, -price_precision), price_precision)
         self.tick_scheme_name = tick_scheme_name
         self.size_precision = size_precision
         self.size_increment = size_increment
@@ -234,7 +235,7 @@ cdef class Instrument(Data):
         return (
             f"{type(self).__name__}"
             f"(id={self.id.to_str()}, "
-            f"native_symbol={self.native_symbol}, "
+            f"raw_symbol={self.raw_symbol}, "
             f"asset_class={asset_class_to_str(self.asset_class)}, "
             f"asset_type={asset_type_to_str(self.asset_type)}, "
             f"quote_currency={self.quote_currency}, "
@@ -264,7 +265,7 @@ cdef class Instrument(Data):
         cdef bytes info = values["info"]
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
-            native_symbol=Symbol(values["native_symbol"]),
+            raw_symbol=Symbol(values["raw_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
             asset_type=asset_type_from_str(values["asset_type"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
@@ -295,7 +296,7 @@ cdef class Instrument(Data):
         return {
             "type": "Instrument",
             "id": obj.id.to_str(),
-            "native_symbol": obj.native_symbol.to_str(),
+            "raw_symbol": obj.raw_symbol.to_str(),
             "asset_class": asset_class_to_str(obj.asset_class),
             "asset_type": asset_type_to_str(obj.asset_type),
             "quote_currency": obj.quote_currency.code,

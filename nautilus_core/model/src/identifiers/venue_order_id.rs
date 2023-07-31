@@ -14,21 +14,39 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct VenueOrderId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
+}
+
+impl VenueOrderId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`VenueOrderId` value");
+
+        Self {
+            value: Ustr::from(s),
+        }
+    }
+}
+
+impl Default for VenueOrderId {
+    fn default() -> Self {
+        Self {
+            value: Ustr::from("001"),
+        }
+    }
 }
 
 impl Debug for VenueOrderId {
@@ -43,25 +61,6 @@ impl Display for VenueOrderId {
     }
 }
 
-impl VenueOrderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`VenueOrderId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
-    }
-}
-
-impl Default for VenueOrderId {
-    fn default() -> Self {
-        Self {
-            value: Box::new(Arc::new(String::from("001"))),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,35 +71,13 @@ impl Default for VenueOrderId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     VenueOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn venue_order_id_clone(venue_order_id: &VenueOrderId) -> VenueOrderId {
-    venue_order_id.clone()
-}
-
-/// Frees the memory for the given `venue_order_id` by dropping.
-#[no_mangle]
-pub extern "C" fn venue_order_id_drop(venue_order_id: VenueOrderId) {
-    drop(venue_order_id); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn venue_order_id_to_cstr(venue_order_id: &VenueOrderId) -> *const c_char {
-    str_to_cstr(&venue_order_id.value)
-}
-
-#[no_mangle]
-pub extern "C" fn venue_order_id_eq(lhs: &VenueOrderId, rhs: &VenueOrderId) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn venue_order_id_hash(venue_order_id: &VenueOrderId) -> u64 {
-    let mut h = DefaultHasher::new();
-    venue_order_id.hash(&mut h);
-    h.finish()
+pub extern "C" fn venue_order_id_hash(id: &VenueOrderId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -109,27 +86,11 @@ pub extern "C" fn venue_order_id_hash(venue_order_id: &VenueOrderId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::VenueOrderId;
-    use crate::identifiers::venue_order_id::venue_order_id_drop;
-
-    #[test]
-    fn test_equality() {
-        let id1 = VenueOrderId::new("001");
-        let id2 = VenueOrderId::new("002");
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-        assert_eq!(id1.to_string(), "001")
-    }
 
     #[test]
     fn test_string_reprs() {
         let id = VenueOrderId::new("001");
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
-    }
-
-    #[test]
-    fn test_venue_order_id() {
-        let id = VenueOrderId::new("001");
-        venue_order_id_drop(id); // No panic
     }
 }

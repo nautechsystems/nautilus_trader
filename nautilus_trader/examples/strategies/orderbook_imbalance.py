@@ -57,6 +57,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     instrument_id: str
@@ -70,8 +71,8 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
 
 class OrderBookImbalance(Strategy):
     """
-    A simple strategy that sends FOK limit orders when there is a bid/ask
-    imbalance in the order book.
+    A simple strategy that sends FOK limit orders when there is a bid/ask imbalance in
+    the order book.
 
     Cancels all orders and closes all positions on stop.
 
@@ -79,6 +80,7 @@ class OrderBookImbalance(Strategy):
     ----------
     config : OrderbookImbalanceConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: OrderBookImbalanceConfig) -> None:
@@ -97,7 +99,9 @@ class OrderBookImbalance(Strategy):
         self._book = None  # type: Optional[OrderBook]
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")
@@ -118,7 +122,9 @@ class OrderBookImbalance(Strategy):
         )
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
-        """Actions to be performed when order book deltas are received."""
+        """
+        Actions to be performed when order book deltas are received.
+        """
         if not self._book:
             self.log.error("No book being maintained.")
             return
@@ -128,7 +134,9 @@ class OrderBookImbalance(Strategy):
             self.check_trigger()
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
-        """Actions to be performed when a delta is received."""
+        """
+        Actions to be performed when a delta is received.
+        """
         bid = BookOrder(
             price=tick.bid.as_double(),
             size=tick.bid_size.as_double(),
@@ -147,13 +155,17 @@ class OrderBookImbalance(Strategy):
             self.check_trigger()
 
     def on_order_book(self, order_book: OrderBook) -> None:
-        """Actions to be performed when an order book update is received."""
+        """
+        Actions to be performed when an order book update is received.
+        """
         self._book = order_book
         if self._book.spread():
             self.check_trigger()
 
     def check_trigger(self) -> None:
-        """Check for trigger conditions."""
+        """
+        Check for trigger conditions.
+        """
         if not self._book:
             self.log.error("No book being maintained.")
             return
@@ -198,7 +210,9 @@ class OrderBookImbalance(Strategy):
                 self.submit_order(order)
 
     def on_stop(self) -> None:
-        """Actions to be performed when the strategy is stopped."""
+        """
+        Actions to be performed when the strategy is stopped.
+        """
         if self.instrument is None:
             return
         self.cancel_all_orders(self.instrument.id)

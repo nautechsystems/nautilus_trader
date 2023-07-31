@@ -98,16 +98,6 @@ pub extern "C" fn bar_type_new(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_drop(bar_type: BarType) {
-    drop(bar_type); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_clone(bar_type: &BarType) -> BarType {
-    bar_type.clone()
-}
-
-#[no_mangle]
 pub extern "C" fn bar_type_eq(lhs: &BarType, rhs: &BarType) -> u8 {
     u8::from(lhs == rhs)
 }
@@ -194,22 +184,6 @@ pub extern "C" fn bar_new_from_raw(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_drop(bar: Bar) {
-    drop(bar); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn bar_clone(bar: &Bar) -> Bar {
-    bar.clone()
-}
-
-/// Returns a [`Bar`] as a C string.
-#[no_mangle]
-pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
-    str_to_cstr(&bar.to_string())
-}
-
-#[no_mangle]
 pub extern "C" fn bar_eq(lhs: &Bar, rhs: &Bar) -> u8 {
     u8::from(lhs == rhs)
 }
@@ -219,4 +193,10 @@ pub extern "C" fn bar_hash(bar: &Bar) -> u64 {
     let mut h = DefaultHasher::new();
     bar.hash(&mut h);
     h.finish()
+}
+
+/// Returns a [`Bar`] as a C string.
+#[no_mangle]
+pub extern "C" fn bar_to_cstr(bar: &Bar) -> *const c_char {
+    str_to_cstr(&bar.to_string())
 }

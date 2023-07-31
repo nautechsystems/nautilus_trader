@@ -45,6 +45,7 @@ def dict_of_lists_to_list_of_dicts(dict_lists: dict[Any, list]) -> list[dict]:
 
     >>> dict_of_lists_to_list_of_dicts({'a': [1, 2], 'b': [3, 4]})
     [{'a': 1, 'b': 3}, {'a': 2, 'b': 4}]
+
     """
     return [dict(zip(dict_lists, t)) for t in zip(*dict_lists.values())]
 
@@ -67,6 +68,7 @@ def check_partition_columns(
     characters. This function generates a mapping of {illegal: legal} that is
     used to "clean" the values before they are written to the filename (and also
     saving this mapping for reversing the process on reload).
+
     """
     if partition_columns:
         missing = [c for c in partition_columns if c not in df.columns]
@@ -102,6 +104,7 @@ def clean_partition_cols(df: pd.DataFrame, mappings: dict[str, dict[str, str]]):
     The values in `partition_cols` may have characters that are illegal in
     filenames. Strip them out and return a dataframe we can write into a parquet
     file.
+
     """
     for col, val_map in mappings.items():
         df[col] = df[col].map(val_map)

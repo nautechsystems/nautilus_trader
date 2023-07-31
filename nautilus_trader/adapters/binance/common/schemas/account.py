@@ -31,6 +31,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -52,12 +53,9 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceUserTrade(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Spot/Margin`
-        `GET /api/v3/myTrades`
-    HTTP response from `Binance USD-M Futures`
-        `GET /fapi/v1/userTrades`
-    HTTP response from `Binance COIN-M Futures`
-        `GET /dapi/v1/userTrades`
+    HTTP response from `Binance Spot/Margin` `GET /api/v3/myTrades` HTTP response from
+    `Binance USD-M Futures` `GET /fapi/v1/userTrades` HTTP response from `Binance COIN-M
+    Futures` `GET /dapi/v1/userTrades`
     """
 
     commission: str
@@ -94,9 +92,10 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         report_id: UUID4,
         ts_init: int,
+        use_position_ids: bool = True,
     ) -> TradeReport:
-        venue_position_id = None
-        if self.positionSide is not None:
+        venue_position_id: Optional[PositionId] = None
+        if self.positionSide is not None and use_position_ids:
             venue_position_id = PositionId(f"{instrument_id}-{self.positionSide}")
 
         order_side = OrderSide.BUY if self.isBuyer or self.buyer else OrderSide.SELL
@@ -121,12 +120,9 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
 
 class BinanceOrder(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Spot/Margin`
-        `GET /api/v3/order`
-    HTTP response from `Binance USD-M Futures`
-        `GET /fapi/v1/order`
-    HTTP response from `Binance COIN-M Futures`
-        `GET /dapi/v1/order`
+    HTTP response from `Binance Spot/Margin` `GET /api/v3/order` HTTP response from
+    `Binance USD-M Futures` `GET /fapi/v1/order` HTTP response from `Binance COIN-M
+    Futures` `GET /dapi/v1/order`
     """
 
     symbol: str
@@ -176,6 +172,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         instrument_id: InstrumentId,
         report_id: UUID4,
         enum_parser: BinanceEnumParser,
+        treat_expired_as_canceled: bool,
         ts_init: int,
     ) -> OrderStatusReport:
         if self.price is None:
@@ -191,12 +188,12 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             else ContingencyType.NO_CONTINGENCY
         )
 
-        trigger_price = Decimal(self.stopPrice)
-        trigger_type = None
+        trigger_price = Decimal(self.stopPrice) if self.stopPrice is not None else Decimal()
+        trigger_type = TriggerType.NO_TRIGGER
         if self.workingType is not None:
             trigger_type = enum_parser.parse_binance_trigger_type(self.workingType)
         elif trigger_price > 0:
-            trigger_type = TriggerType.LAST_TRADE if trigger_price > 0 else None
+            trigger_type = TriggerType.LAST_TRADE
 
         trailing_offset = None
         trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
@@ -210,6 +207,19 @@ class BinanceOrder(msgspec.Struct, frozen=True):
         )
         reduce_only = self.reduceOnly if self.reduceOnly is not None else False
 
+        if self.side is None:
+            raise ValueError("`side` was `None` when a value was expected")
+        if self.type is None:
+            raise ValueError("`type` was `None` when a value was expected")
+        if self.timeInForce is None:
+            raise ValueError("`timeInForce` was `None` when a value was expected")
+        if self.status is None:
+            raise ValueError("`status` was `None` when a value was expected")
+
+        order_status = enum_parser.parse_binance_order_status(self.status)
+        if treat_expired_as_canceled and order_status == OrderStatus.EXPIRED:
+            order_status = OrderStatus.CANCELED
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -220,8 +230,8 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             order_type=enum_parser.parse_binance_order_type(self.type),
             contingency_type=contingency_type,
             time_in_force=enum_parser.parse_binance_time_in_force(self.timeInForce),
-            order_status=enum_parser.parse_binance_order_status(self.status),
-            price=Price.from_str(str(Decimal(self.price))),
+            order_status=order_status,
+            price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
@@ -240,7 +250,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
 
 class BinanceStatusCode(msgspec.Struct, frozen=True):
     """
-    HTTP response status code
+    HTTP response status code.
     """
 
     code: int

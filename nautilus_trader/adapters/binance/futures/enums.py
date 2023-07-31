@@ -12,7 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+"""
+Defines `Binance` Futures specific enums.
 
+References
+----------
+https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
+
+"""
+
+
+from decimal import Decimal
 from enum import Enum
 from enum import unique
 
@@ -25,18 +35,11 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.orders import Order
 
 
-"""
-Defines `Binance` Futures specific enums.
-
-References
-----------
-https://binance-docs.github.io/apidocs/futures/en/#public-endpoints-info
-"""
-
-
 @unique
 class BinanceFuturesContractType(Enum):
-    """Represents a `Binance Futures` derivatives contract type."""
+    """
+    Represents a `Binance Futures` derivatives contract type.
+    """
 
     PERPETUAL = "PERPETUAL"
     CURRENT_MONTH = "CURRENT_MONTH"
@@ -47,7 +50,9 @@ class BinanceFuturesContractType(Enum):
 
 @unique
 class BinanceFuturesContractStatus(Enum):
-    """Represents a `Binance Futures` contract status."""
+    """
+    Represents a `Binance Futures` contract status.
+    """
 
     PENDING_TRADING = "PENDING_TRADING"
     TRADING = "TRADING"
@@ -61,7 +66,9 @@ class BinanceFuturesContractStatus(Enum):
 
 @unique
 class BinanceFuturesPositionSide(Enum):
-    """Represents a `Binance Futures` position side."""
+    """
+    Represents a `Binance Futures` position side.
+    """
 
     BOTH = "BOTH"
     LONG = "LONG"
@@ -70,7 +77,9 @@ class BinanceFuturesPositionSide(Enum):
 
 @unique
 class BinanceFuturesWorkingType(Enum):
-    """Represents a `Binance Futures` working type."""
+    """
+    Represents a `Binance Futures` working type.
+    """
 
     MARK_PRICE = "MARK_PRICE"
     CONTRACT_PRICE = "CONTRACT_PRICE"
@@ -78,7 +87,9 @@ class BinanceFuturesWorkingType(Enum):
 
 @unique
 class BinanceFuturesMarginType(Enum):
-    """Represents a `Binance Futures` margin type."""
+    """
+    Represents a `Binance Futures` margin type.
+    """
 
     ISOLATED = "isolated"
     CROSS = "cross"
@@ -86,7 +97,9 @@ class BinanceFuturesMarginType(Enum):
 
 @unique
 class BinanceFuturesPositionUpdateReason(Enum):
-    """Represents a `Binance Futures` position and balance update reason."""
+    """
+    Represents a `Binance Futures` position and balance update reason.
+    """
 
     DEPOSIT = "DEPOSIT"
     WITHDRAW = "WITHDRAW"
@@ -107,7 +120,9 @@ class BinanceFuturesPositionUpdateReason(Enum):
 
 @unique
 class BinanceFuturesEventType(Enum):
-    """Represents a `Binance Futures` event type."""
+    """
+    Represents a `Binance Futures` event type.
+    """
 
     LISTEN_KEY_EXPIRED = "listenKeyExpired"
     MARGIN_CALL = "MARGIN_CALL"
@@ -137,15 +152,9 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
             b: a for a, b in self.futures_ext_to_int_order_type.items()
         }
 
-        self.futures_ext_to_int_position_side = {
-            BinanceFuturesPositionSide.BOTH: PositionSide.FLAT,
-            BinanceFuturesPositionSide.LONG: PositionSide.LONG,
-            BinanceFuturesPositionSide.SHORT: PositionSide.SHORT,
-        }
-
         self.futures_valid_time_in_force = {
             TimeInForce.GTC,
-            TimeInForce.GTD,  # Will be transformed to GTC with warning
+            TimeInForce.GTD,  # Will be transformed to GTC
             TimeInForce.FOK,
             TimeInForce.IOC,
         }
@@ -186,11 +195,11 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
 
     def parse_futures_position_side(
         self,
-        position_side: BinanceFuturesPositionSide,
+        net_size: Decimal,
     ) -> PositionSide:
-        try:
-            return self.futures_ext_to_int_position_side[position_side]
-        except KeyError:
-            raise RuntimeError(  # pragma: no cover (design-time error)
-                f"unrecognized binance futures position side, was {position_side}",  # pragma: no cover
-            )
+        if net_size > 0:
+            return PositionSide.LONG
+        elif net_size < 0:
+            return PositionSide.SHORT
+        else:
+            return PositionSide.FLAT

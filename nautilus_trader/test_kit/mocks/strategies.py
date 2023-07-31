@@ -31,6 +31,7 @@ class MockStrategy(Strategy):
     ----------
     bar_type : BarType
         The bar type for the strategy.
+
     """
 
     def __init__(self, bar_type: BarType) -> None:

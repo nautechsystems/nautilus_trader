@@ -12,11 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `indicator` subpackage provides a set of efficient indicators and analyzers.
 
-These are classes which can be used for signal discovery and filtering. The idea
-is to use the provided indicators as is, or as inspiration for a trader to
-implement their own proprietary indicator algorithms with the platform.
+These are classes which can be used for signal discovery and filtering. The idea is to
+use the provided indicators as is, or as inspiration for a trader to implement their own
+proprietary indicator algorithms with the platform.
+
 """

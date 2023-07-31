@@ -31,6 +31,12 @@ use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
+/// Sentinel Price for errors.
+pub const ERROR_PRICE: Price = Price {
+    raw: i64::MAX,
+    precision: 0,
+};
+
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
 #[pyclass]
@@ -53,6 +59,27 @@ impl Price {
     #[must_use]
     pub fn from_raw(raw: i64, precision: u8) -> Self {
         Self { raw, precision }
+    }
+
+    #[must_use]
+    pub fn max(precision: u8) -> Self {
+        Self {
+            raw: (PRICE_MAX * FIXED_SCALAR) as i64,
+            precision,
+        }
+    }
+
+    #[must_use]
+    pub fn min(precision: u8) -> Self {
+        Self {
+            raw: (PRICE_MIN * FIXED_SCALAR) as i64,
+            precision,
+        }
+    }
+
+    #[must_use]
+    pub fn zero(precision: u8) -> Self {
+        Self { raw: 0, precision }
     }
 
     #[must_use]
@@ -110,7 +137,7 @@ impl PartialEq for Price {
 
 impl PartialOrd for Price {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.raw.partial_cmp(&other.raw)
+        Some(self.cmp(other))
     }
 
     fn lt(&self, other: &Self) -> bool {
@@ -240,7 +267,7 @@ impl Serialize for Price {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{}", self))
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -293,24 +320,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_price_new() {
+    fn test_new() {
         let price = Price::new(0.00812, 8);
         assert_eq!(price, price);
         assert_eq!(price.raw, 8_120_000);
         assert_eq!(price.precision, 8);
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
+        assert!(!price.is_zero());
     }
 
     #[test]
-    fn test_price_minimum() {
+    fn test_with_maximum_value() {
+        let price = Price::new(PRICE_MAX, 9);
+        assert_eq!(price.raw, 9_223_372_036_000_000_000);
+        assert_eq!(price.to_string(), "9223372036.000000000");
+    }
+
+    #[test]
+    fn test_with_minimum_positive_value() {
         let price = Price::new(0.000_000_001, 9);
         assert_eq!(price.raw, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
 
     #[test]
-    fn test_price_is_zero() {
+    fn test_with_minimum_value() {
+        let price = Price::new(PRICE_MIN, 9);
+        assert_eq!(price.raw, -9_223_372_036_000_000_000);
+        assert_eq!(price.to_string(), "-9223372036.000000000");
+    }
+
+    #[test]
+    fn test_max() {
+        let price = Price::max(9);
+        assert_eq!(price.raw, 9_223_372_036_000_000_000);
+        assert_eq!(price.to_string(), "9223372036.000000000");
+    }
+
+    #[test]
+    fn test_min() {
+        let price = Price::min(9);
+        assert_eq!(price.raw, -9_223_372_036_000_000_000);
+        assert_eq!(price.to_string(), "-9223372036.000000000");
+    }
+
+    #[test]
+    fn test_zero() {
+        let price = Price::zero(0);
+        assert_eq!(price.raw, 0);
+        assert_eq!(price.to_string(), "0");
+        assert!(price.is_zero());
+    }
+
+    #[test]
+    fn test_is_zero() {
         let price = Price::new(0.0, 8);
         assert_eq!(price, price);
         assert_eq!(price.raw, 0);
@@ -321,14 +385,14 @@ mod tests {
     }
 
     #[test]
-    fn test_price_precision() {
+    fn test_precision() {
         let price = Price::new(1.001, 2);
         assert_eq!(price.raw, 1_000_000_000);
         assert_eq!(price.to_string(), "1.00");
     }
 
     #[test]
-    fn test_price_new_from_str() {
+    fn test_new_from_str() {
         let price = Price::from_str("0.00812000").unwrap();
         assert_eq!(price, price);
         assert_eq!(price.raw, 8_120_000);
@@ -338,7 +402,7 @@ mod tests {
     }
 
     #[test]
-    fn test_price_from_str_valid_input() {
+    fn test_from_str_valid_input() {
         let input = "10.5";
         let expected_price = Price::new(10.5, precision_from_str(input));
         let result = Price::from_str(input).unwrap();
@@ -346,14 +410,14 @@ mod tests {
     }
 
     #[test]
-    fn test_price_from_str_invalid_input() {
+    fn test_from_str_invalid_input() {
         let input = "invalid";
         let result = Price::from_str(input);
         assert!(result.is_err());
     }
 
     #[test]
-    fn test_price_equality() {
+    fn test_equality() {
         assert_eq!(Price::new(1.0, 1), Price::new(1.0, 1));
         assert_eq!(Price::new(1.0, 1), Price::new(1.0, 2));
         assert_ne!(Price::new(1.1, 1), Price::new(1.0, 1));
@@ -414,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn test_price_display_works() {
+    fn test_display_works() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let price = Price::from_str(input_string).unwrap();
@@ -424,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn test_price_display() {
+    fn test_display() {
         let input_string = "44.123456";
         let price = Price::from_str(input_string).unwrap();
         assert_eq!(price.raw, 44_123_456_000);

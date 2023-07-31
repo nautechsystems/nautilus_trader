@@ -12,10 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from functools import lru_cache
 from typing import Optional
 
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -31,10 +32,11 @@ def make_symbol(
     selection_handicap: Optional[str],
 ) -> Symbol:
     """
-    Make symbol
+    Make symbol.
 
     >>> make_symbol(market_id="1.201070830", selection_id="123456", selection_handicap=None)
     Symbol('1.201070830|123456|None')
+
     """
 
     def _clean(s):
@@ -54,7 +56,7 @@ def betfair_instrument_id(
     selection_handicap: Optional[str],
 ) -> InstrumentId:
     """
-    Create an instrument ID from betfair fields
+    Create an instrument ID from betfair fields.
 
     >>> betfair_instrument_id(market_id="1.201070830", selection_id="123456", selection_handicap=None)
     InstrumentId('1.201070830|123456|None.BETFAIR')

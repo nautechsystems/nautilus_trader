@@ -13,34 +13,38 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from betfair_parser.spec.betting.enums import PersistenceType
+from betfair_parser.spec.betting.enums import Side
+from betfair_parser.spec.betting.enums import TimeInForce as BetfairTimeInForce
+from betfair_parser.spec.common import OrderType
+
+from nautilus_trader.core.rust.model import OrderType as NautilusOrderType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.tick_scheme import register_tick_scheme
 from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 
 
-BETFAIR_VENUE = Venue("BETFAIR")
-BETFAIR_PRICE_PRECISION = 2
-BETFAIR_QUANTITY_PRECISION = 4
-
 # ------------------------------- MAPPINGS ------------------------------- #
-
 # Mappings between Nautilus and betfair - prefixes:
 #     N2B = {NAUTILUS: BETFAIR}
 #     B2N = {BETFAIR: NAUTILUS}
 
-
 N2B_SIDE = {
-    OrderSide.BUY: "BACK",
-    OrderSide.SELL: "LAY",
+    OrderSide.BUY: Side.BACK,
+    OrderSide.SELL: Side.LAY,
 }
 
 N2B_TIME_IN_FORCE = {
-    TimeInForce.FOK: "FILL_OR_KILL",
+    TimeInForce.FOK: BetfairTimeInForce.FILL_OR_KILL,
 }
 
-B2N_MARKET_STREAM_SIDE = {
+N2B_PERSISTENCE = {
+    TimeInForce.GTC: PersistenceType.PERSIST,
+    TimeInForce.DAY: PersistenceType.MARKET_ON_CLOSE,
+}
+
+B2N_MARKET_SIDE = {
     "atb": OrderSide.SELL,  # Available to Back / Sell order
     "batb": OrderSide.SELL,  # Best available to Back / Sell order
     "bdatb": OrderSide.SELL,  # Best display to Back / Sell order
@@ -51,16 +55,22 @@ B2N_MARKET_STREAM_SIDE = {
     "spl": OrderSide.BUY,  # Starting Price LAY
 }
 
-B2N_ORDER_STREAM_SIDE = {
+B2N_ORDER_SIDE = {
+    Side.BACK: OrderSide.BUY,
+    Side.LAY: OrderSide.SELL,
     "B": OrderSide.BUY,
-    "L": OrderSide.SELL,
-    "BACK": OrderSide.BUY,
-    "LAY": OrderSide.SELL,
+    "L": OrderSide.BUY,
 }
 
 B2N_TIME_IN_FORCE = {
-    "LAPSE": TimeInForce.DAY,
-    "PERSIST": TimeInForce.GTC,
+    PersistenceType.LAPSE: TimeInForce.DAY,
+    PersistenceType.PERSIST: TimeInForce.GTC,
+}
+
+B2N_ORDER_TYPE = {
+    OrderType.LIMIT: NautilusOrderType.LIMIT,
+    OrderType.LIMIT_ON_CLOSE: NautilusOrderType.LIMIT,
+    OrderType.MARKET_ON_CLOSE: NautilusOrderType.MARKET,
 }
 
 BETFAIR_PRICE_TIERS = [
@@ -76,7 +86,7 @@ BETFAIR_PRICE_TIERS = [
     (100, 1010, 10),
 ]
 
-BETFAIR_TICK_SCHEME = TieredTickScheme(name="BETFAIR", tiers=BETFAIR_PRICE_TIERS)
+BETFAIR_TICK_SCHEME = TieredTickScheme("BETFAIR", BETFAIR_PRICE_TIERS)
 BETFAIR_FLOAT_TO_PRICE = {price.as_double(): price for price in BETFAIR_TICK_SCHEME.ticks}
 MAX_BET_PRICE = max(BETFAIR_TICK_SCHEME.ticks)
 MIN_BET_PRICE = min(BETFAIR_TICK_SCHEME.ticks)

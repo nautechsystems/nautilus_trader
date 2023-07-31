@@ -22,15 +22,15 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_parquet
 
 
-def _parse_delta(delta: OrderBookDelta, cls):
-    return dict(**OrderBookDelta.to_dict(delta), _type=cls.__name__)
+def _parse_delta(delta: OrderBookDelta):
+    return dict(**OrderBookDelta.to_dict(delta))
 
 
 def serialize(data: Union[OrderBookDelta, OrderBookDeltas]):
     if isinstance(data, OrderBookDelta):
-        result = [_parse_delta(delta=data, cls=OrderBookDelta)]
+        result = [_parse_delta(delta=data)]
     elif isinstance(data, OrderBookDeltas):
-        result = [_parse_delta(delta=delta, cls=OrderBookDeltas) for delta in data.deltas]
+        result = [_parse_delta(delta=delta) for delta in data.deltas]
     else:  # pragma: no cover (design-time error)
         raise TypeError(f"invalid order book data, was {type(data)}")
     # Add a "last" message to let downstream consumers know the end of this group of messages

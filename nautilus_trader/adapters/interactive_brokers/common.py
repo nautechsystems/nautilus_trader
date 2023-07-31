@@ -74,7 +74,8 @@ class DeltaNeutralContract(NautilusConfig, frozen=True, repr_omit_defaults=True)
 
 class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
-    Class describing an instrument's definition with additional fields for options/futures.
+    Class describing an instrument's definition with additional fields for
+    options/futures.
 
     Parameters
     ----------
@@ -96,6 +97,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         Filters the options_chain and futures_chain which are expiring before number of days specified.
     lastTradeDateOrContractMonth: str (%Y%m%d or %Y%m) (default: '')
         Filters the options_chain and futures_chain specific for this expiry date
+
     """
 
     secType: Literal["CASH", "STK", "OPT", "FUT", "FOP", "CONTFUT", "CRYPTO", ""] = ""
@@ -172,7 +174,8 @@ class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
 class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     """
-    ContractDetails class to be used internally in Nautilus for ease of encoding/decoding.
+    ContractDetails class to be used internally in Nautilus for ease of
+    encoding/decoding.
     """
 
     contract: IBContract = None

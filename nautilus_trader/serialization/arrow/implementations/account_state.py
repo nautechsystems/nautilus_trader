@@ -91,7 +91,7 @@ def _deserialize(values):
     margins = []
     for v in values:
         initial = v.get("margin_initial")
-        if pd.isnull(initial):
+        if pd.isna(initial):
             continue
         margins.append(
             {

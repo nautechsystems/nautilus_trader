@@ -23,12 +23,13 @@ use nautilus_core::{
     cvec::CVec,
     parsing::{bytes_to_string_vec, string_vec_to_bytes},
     string::{cstr_to_string, str_to_cstr},
+    time::UnixNanos,
 };
 
 use super::synthetic::SyntheticInstrument;
 use crate::{
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    types::price::Price,
+    types::price::{Price, ERROR_PRICE},
 };
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -65,9 +66,11 @@ impl DerefMut for SyntheticInstrument_API {
 #[no_mangle]
 pub unsafe extern "C" fn synthetic_instrument_new(
     symbol: Symbol,
-    precision: u8,
+    price_precision: u8,
     components_ptr: *const c_char,
     formula_ptr: *const c_char,
+    ts_event: u64,
+    ts_init: u64,
 ) -> SyntheticInstrument_API {
     // TODO: There is absolutely no error handling here yet
     let components = bytes_to_string_vec(components_ptr)
@@ -75,7 +78,14 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         .map(|s| InstrumentId::from_str(&s).unwrap())
         .collect::<Vec<InstrumentId>>();
     let formula = cstr_to_string(formula_ptr);
-    let synth = SyntheticInstrument::new(symbol, precision, components, formula);
+    let synth = SyntheticInstrument::new(
+        symbol,
+        price_precision,
+        components,
+        formula,
+        ts_event,
+        ts_init,
+    );
 
     SyntheticInstrument_API(Box::new(synth.unwrap()))
 }
@@ -87,12 +97,17 @@ pub extern "C" fn synthetic_instrument_drop(synth: SyntheticInstrument_API) {
 
 #[no_mangle]
 pub extern "C" fn synthetic_instrument_id(synth: &SyntheticInstrument_API) -> InstrumentId {
-    synth.id.clone()
+    synth.id
 }
 
 #[no_mangle]
-pub extern "C" fn synthetic_instrument_precision(synth: &SyntheticInstrument_API) -> u8 {
-    synth.precision
+pub extern "C" fn synthetic_instrument_price_precision(synth: &SyntheticInstrument_API) -> u8 {
+    synth.price_precision
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_price_increment(synth: &SyntheticInstrument_API) -> Price {
+    synth.price_increment
 }
 
 #[no_mangle]
@@ -115,6 +130,21 @@ pub extern "C" fn synthetic_instrument_components_to_cstr(
     string_vec_to_bytes(components_vec)
 }
 
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_components_count(synth: &SyntheticInstrument_API) -> usize {
+    synth.components.len()
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_ts_event(synth: &SyntheticInstrument_API) -> UnixNanos {
+    synth.ts_event
+}
+
+#[no_mangle]
+pub extern "C" fn synthetic_instrument_ts_init(synth: &SyntheticInstrument_API) -> UnixNanos {
+    synth.ts_init
+}
+
 /// # Safety
 ///
 /// - Assumes `formula_ptr` is a valid C string pointer.
@@ -123,8 +153,11 @@ pub unsafe extern "C" fn synthetic_instrument_is_valid_formula(
     synth: &SyntheticInstrument_API,
     formula_ptr: *const c_char,
 ) -> u8 {
+    if formula_ptr.is_null() {
+        return false as u8;
+    }
     let formula = cstr_to_string(formula_ptr);
-    synth.is_valid_formula(&formula) as u8
+    u8::from(synth.is_valid_formula(&formula))
 }
 
 /// # Safety
@@ -148,6 +181,8 @@ pub extern "C" fn synthetic_instrument_calculate(
     let CVec { ptr, len, .. } = inputs_ptr;
     let inputs: &[f64] = unsafe { std::slice::from_raw_parts(*ptr as *mut f64, *len) };
 
-    // TODO: There is absolutely no error handling here yet
-    synth.calculate(inputs).unwrap()
+    match synth.calculate(inputs) {
+        Ok(price) => price,
+        Err(_) => ERROR_PRICE,
+    }
 }

@@ -18,15 +18,20 @@ from typing import Optional
 
 from nautilus_trader.config import CacheDatabaseConfig
 
+from cpython.datetime cimport datetime
+
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport currency_type_from_str
 from nautilus_trader.model.enums_c cimport currency_type_to_str
@@ -35,6 +40,7 @@ from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.identifiers cimport AccountId
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -43,6 +49,8 @@ from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -62,13 +70,18 @@ cdef str _UTF8 = "utf-8"
 cdef str _GENERAL = "general"
 cdef str _CURRENCIES = "currencies"
 cdef str _INSTRUMENTS = "instruments"
+cdef str _SYNTHETICS = "synthetics"
 cdef str _ACCOUNTS = "accounts"
 cdef str _TRADER = "trader"
 cdef str _ORDERS = "orders"
 cdef str _POSITIONS = "positions"
 cdef str _ACTORS = "actors"
 cdef str _STRATEGIES = "strategies"
-cdef str _COMMANDS = "commands"
+cdef str _INDEX_ORDER_POSITION = "index:order_position"
+cdef str _INDEX_ORDER_CLIENT = "index:order_client"
+cdef str _SNAPSHOTS_ORDERS = "snapshots:orders"
+cdef str _SNAPSHOTS_POSITIONS = "snapshots:positions"
+cdef str _HEARTBEAT = "health:heartbeat"
 
 
 cdef class RedisCacheDatabase(CacheDatabase):
@@ -115,19 +128,26 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if config is None:
             config = CacheDatabaseConfig()
         Condition.type(config, CacheDatabaseConfig, "config")
-        super().__init__(logger)
+        super().__init__(logger, config)
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
         self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
         self._key_currencies  = f"{self._key_trader}:{_CURRENCIES}:"  # noqa
         self._key_instruments = f"{self._key_trader}:{_INSTRUMENTS}:" # noqa
+        self._key_synthetics  = f"{self._key_trader}:{_SYNTHETICS}:"  # noqa
         self._key_accounts    = f"{self._key_trader}:{_ACCOUNTS}:"    # noqa
         self._key_orders      = f"{self._key_trader}:{_ORDERS}:"      # noqa
         self._key_positions   = f"{self._key_trader}:{_POSITIONS}:"   # noqa
         self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
-        self._key_commands    = f"{self._key_trader}:{_COMMANDS}:"    # noqa
+
+        self._key_index_order_position = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"
+        self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"
+
+        self._key_snapshots_orders = f"{self._key_trader}:{_SNAPSHOTS_ORDERS}:"
+        self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"
+        self._key_heartbeat = f"{self._key_trader}:{_HEARTBEAT}"
 
         # Serializers
         self._serializer = serializer
@@ -151,7 +171,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         self._log.debug("Flushing database....")
         self._redis.flushdb()
-        self._log.info("Flushed database.")
+        self._log.info("Flushed database.", LogColor.BLUE)
 
     cpdef dict load(self):
         """
@@ -234,6 +254,35 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 instruments[instrument.id] = instrument
 
         return instruments
+
+    cpdef dict load_synthetics(self):
+        """
+        Load all synthetic instruments from the database.
+
+        Returns
+        -------
+        dict[InstrumentId, SyntheticInstrument]
+
+        """
+        cdef dict synthetics = {}
+
+        cdef list synthetic_keys = self._redis.keys(f"{self._key_synthetics}*")
+        if not synthetic_keys:
+            return synthetics
+
+        cdef bytes key_bytes
+        cdef str key_str
+        cdef InstrumentId instrument_id
+        cdef SyntheticInstrument synthetic
+        for key_bytes in synthetic_keys:
+            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+            instrument_id = InstrumentId.from_str_c(key_str)
+            synthetic = self.load_synthetic(instrument_id)
+
+            if synthetic is not None:
+                synthetics[synthetic.id] = synthetic
+
+        return synthetics
 
     cpdef dict load_accounts(self):
         """
@@ -322,107 +371,31 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         return positions
 
-    cpdef dict load_submit_order_commands(self):
+    cpdef dict load_index_order_position(self):
         """
-        Load all submit order commands from the database.
+        Load the order to position index from the database.
 
         Returns
         -------
-        dict[ClientOrderId, SubmitOrder]
+        dict[ClientOrderId, PositionId]
 
         """
-        cdef dict commands = {}
+        cdef dict raw_index = self._redis.hgetall(self._key_index_order_position)
 
-        cdef list command_keys = self._redis.keys(f"{self._key_commands}submit_order:*")
-        if not command_keys:
-            return commands
+        return {ClientOrderId(k.decode("utf-8")): PositionId(v.decode("utf-8")) for k, v in raw_index.items()}
 
-        cdef bytes key_bytes
-        cdef str key_str
-        cdef ClientOrderId client_order_id
-        cdef SubmitOrder command
-        for key_bytes in command_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            client_order_id = ClientOrderId(key_str)
-            command = self.load_submit_order_command(client_order_id)
-
-            if command is not None:
-                commands[client_order_id] = command
-
-        return commands
-
-    cpdef SubmitOrder load_submit_order_command(self, ClientOrderId client_order_id):
+    cpdef dict load_index_order_client(self):
         """
-        Load the command associated with the given client order ID (if found).
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The client order ID for the command to load.
+        Load the order to execution client index from the database.
 
         Returns
         -------
-        SubmitOrder or ``None``
+        dict[ClientOrderId, ClientId]
 
         """
-        Condition.not_none(client_order_id, "client_order_id")
+        cdef dict raw_index = self._redis.hgetall(self._key_index_order_client)
 
-        cdef str key = f"{self._key_commands}submit_order:{client_order_id}"
-        cdef bytes command_bytes = self._redis.get(name=key)
-        if not command_bytes:
-            return None
-
-        return self._serializer.deserialize(command_bytes)
-
-    cpdef dict load_submit_order_list_commands(self):
-        """
-        Load all submit order list commands from the database.
-
-        Returns
-        -------
-        dict[OrderListId, SubmitOrderList]
-
-        """
-        cdef dict commands = {}
-
-        cdef list command_keys = self._redis.keys(f"{self._key_commands}submit_order_list:*")
-        if not command_keys:
-            return commands
-
-        cdef bytes key_bytes
-        cdef str key_str
-        cdef OrderListId order_list_id
-        cdef SubmitOrderList command
-        for key_bytes in command_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            order_list_id = OrderListId(key_str)
-            command = self.load_submit_order_list_command(order_list_id)
-
-            if command is not None:
-                commands[order_list_id] = command
-
-        return commands
-
-    cpdef SubmitOrderList load_submit_order_list_command(self, OrderListId order_list_id):
-        """
-        Load the command associated with the given order list ID (if found).
-
-        Parameters
-        ----------
-        order_list_id : OrderListId
-            The order list ID for the command to load.
-
-        Returns
-        -------
-        SubmitOrderList or ``None``
-
-        """
-        cdef str key = f"{self._key_commands}submit_order_list:{order_list_id}"
-        cdef bytes command_bytes = self._redis.get(name=key)
-        if not command_bytes:
-            return None
-
-        return self._serializer.deserialize(command_bytes)
+        return {ClientOrderId(k.decode("utf-8")): ClientId(v.decode("utf-8")) for k, v in raw_index.items()}
 
     cpdef Currency load_currency(self, str code):
         """
@@ -476,6 +449,36 @@ cdef class RedisCacheDatabase(CacheDatabase):
             return None
 
         return self._serializer.deserialize(instrument_bytes)
+
+    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id):
+        """
+        Load the synthetic instrument associated with the given synthetic instrument ID
+        (if found).
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The synthetic instrument ID to load.
+
+        Returns
+        -------
+        SyntheticInstrument or ``None``
+
+        Raises
+        ------
+        ValueError
+            If `instrument_id` is not for a synthetic instrument.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.true(instrument_id.is_synthetic(), "instrument_id was not for a synthetic instrument")
+
+        cdef str key = self._key_synthetics + instrument_id.to_str()
+        cdef bytes synthetic_bytes = self._redis.get(name=key)
+        if not synthetic_bytes:
+            return None
+
+        return self._serializer.deserialize(synthetic_bytes)
 
     cpdef Account load_account(self, AccountId account_id):
         """
@@ -544,6 +547,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef OrderEvent event
         for event_bytes in events:
             event = self._serializer.deserialize(event_bytes)
+
+            # Check event integrity
+            if event in order._events:
+                raise RuntimeError(f"Corrupt cache with duplicate event for order {event}")
+
             if event_count > 0 and isinstance(event, OrderInitialized):
                 if event.order_type == OrderType.MARKET:
                     order = MarketOrder.transform(order, event.ts_init)
@@ -596,9 +604,22 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef Position position = Position(instrument, initial_fill)
 
-        cdef bytes event_bytes
+        cdef:
+            bytes event_bytes
+            OrderFilled fill
         for event_bytes in events:
-            position.apply(self._serializer.deserialize(event_bytes))
+            event = self._serializer.deserialize(event_bytes)
+
+            # Check event integrity
+            if event in position._events:
+                raise RuntimeError(f"Corrupt cache with duplicate event for position {event}")
+            if event.trade_id in position._trade_ids:
+                raise RuntimeError(
+                    f"Duplicate {event.trade_id!r}, "
+                    f"existing {position.id!r} trade_ids={position._trade_ids}",
+                )
+
+            position.apply(event)
 
         return position
 
@@ -738,6 +759,23 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added instrument {instrument.id}.")
 
+    cpdef void add_synthetic(self, SyntheticInstrument synthetic):
+        """
+        Add the given synthetic instrument to the database.
+
+        Parameters
+        ----------
+        synthetic : SyntheticInstrument
+            The synthetic instrument to add.
+
+        """
+        Condition.not_none(synthetic, "synthetic")
+
+        cdef str key = self._key_synthetics + synthetic.id.value
+        self._redis.set(name=key, value=self._serializer.serialize(synthetic))
+
+        self._log.debug(f"Added synthetic instrument {synthetic.id}.")
+
     cpdef void add_account(self, Account account):
         """
         Add the given account to the database.
@@ -761,9 +799,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(account.id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added {account}).")
+        self._log.debug(f"Added {account}.")
 
-    cpdef void add_order(self, Order order):
+    cpdef void add_order(self, Order order, PositionId position_id = None, ClientId client_id = None):
         """
         Add the given order to the database.
 
@@ -771,6 +809,10 @@ cdef class RedisCacheDatabase(CacheDatabase):
         ----------
         order : Order
             The order to add.
+        position_id : PositionId, optional
+            The position ID to associate with this order.
+        client_id : ClientId, optional
+            The execution client ID to associate with this order.
 
         """
         Condition.not_none(order, "order")
@@ -785,11 +827,17 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added Order(id={order.client_order_id.to_str()}).")
+        self._log.debug(f"Added {order}.")
+
+        if position_id is not None:
+            self.index_order_position(order.client_order_id, position_id)
+        if client_id is not None:
+            self._redis.hset(self._key_index_order_client, order.client_order_id.to_str(), client_id.to_str())
+            self._log.debug(f"Indexed {order.client_order_id!r} -> {client_id!r}")
 
     cpdef void add_position(self, Position position):
         """
-        Add the given position associated with the given strategy ID.
+        Add the given position to the database.
 
         Parameters
         ----------
@@ -808,55 +856,30 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(position.id)} already existed and was appended to.",
             )
 
-        self._log.debug(f"Added Position(id={position.id.to_str()}).")
+        self._log.debug(f"Added {position}.")
 
-    cpdef void add_submit_order_command(self, SubmitOrder command):
+    cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id):
         """
-        Add the given submit order command to the database.
+        Add an index entry for the given `client_order_id` to `position_id`.
 
         Parameters
         ----------
-        command : SubmitOrder
-            The command to add.
+        client_order_id : ClientOrderId
+            The client order ID to index.
+        position_id : PositionId
+            The position ID to index.
 
         """
-        Condition.not_none(command, "command")
+        Condition.not_none(client_order_id, "client_order_id")
+        Condition.not_none(position_id, "position_id")
 
-        cdef str key = f"{self._key_commands}submit_order:{command.order.client_order_id.to_str()}"
-        cdef bytes command_bytes = self._serializer.serialize(command)
-        cdef int reply = self._redis.set(key, command_bytes)
+        self._redis.hset(
+            self._key_index_order_position,
+            client_order_id.to_str(),
+            position_id.to_str(),
+        )
 
-        # Check data integrity of reply
-        if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.warning(
-                f"The {repr(command)} already existed.",
-            )
-
-        self._log.debug(f"Added {command}.")
-
-    cpdef void add_submit_order_list_command(self, SubmitOrderList command):
-        """
-        Add the given submit order list command to the database.
-
-        Parameters
-        ----------
-        command : SubmitOrderList
-            The command to add.
-
-        """
-        Condition.not_none(command, "command")
-
-        cdef str key = f"{self._key_commands}submit_order_list:{command.order_list.id.to_str()}"
-        cdef bytes command_bytes = self._serializer.serialize(command)
-        cdef int reply = self._redis.set(key, command_bytes)
-
-        # Check data integrity of reply
-        if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.warning(
-                f"The {repr(command)} already existed.",
-            )
-
-        self._log.debug(f"Added {command}.")
+        self._log.debug(f"Indexed {client_order_id!r} -> {position_id!r}")
 
     cpdef void update_actor(self, Actor actor):
         """
@@ -965,3 +988,63 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), serialized_event)
 
         self._log.debug(f"Updated {position}.")
+
+    cpdef void snapshot_order_state(self, Order order):
+        """
+        Snapshot the state of the given `order`.
+
+        Parameters
+        ----------
+        order : Order
+            The order for the state snapshot.
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef dict order_state = order.to_dict()
+        cdef bytes snapshot_bytes = self._serializer.serialize(order_state)
+
+        self._redis.rpush(self._key_snapshots_orders + order.client_order_id.to_str(), snapshot_bytes)
+
+        self._log.debug(f"Added state snapshot {order}.")
+
+    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl = None):
+        """
+        Snapshot the state of the given `position`.
+
+        Parameters
+        ----------
+        position : Position
+            The position for the state snapshot.
+        unrealized_pnl : Money, optional
+            The unrealized PnL for the state snapshot.
+
+        """
+        Condition.not_none(position, "position")
+
+        cdef dict position_state = position.to_dict()
+
+        if unrealized_pnl is not None:
+            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+
+        cdef bytes snapshot_bytes = self._serializer.serialize(position_state)
+        self._redis.rpush(self._key_snapshots_positions + position.id.to_str(), snapshot_bytes)
+
+        self._log.debug(f"Added state snapshot {position}.")
+
+    cpdef void heartbeat(self, datetime timestamp):
+        """
+        Add a heartbeat at the given `timestamp`.
+
+        Parameters
+        ----------
+        timestamp : datetime
+            The timestamp for the heartbeat.
+
+        """
+        Condition.not_none(timestamp, "timestamp")
+
+        cdef timestamp_str = format_iso8601(timestamp)
+        self._redis.set(self._key_heartbeat, timestamp_str)
+
+        self._log.debug(f"Set last heartbeat {timestamp_str}.")

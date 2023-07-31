@@ -14,21 +14,31 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct ComponentId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
+}
+
+impl ComponentId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`ComponentId` value");
+
+        Self {
+            value: Ustr::from(s),
+        }
+    }
 }
 
 impl Debug for ComponentId {
@@ -43,17 +53,6 @@ impl Display for ComponentId {
     }
 }
 
-impl ComponentId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ComponentId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,36 +63,13 @@ impl ComponentId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     ComponentId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn component_id_clone(component_id: &ComponentId) -> ComponentId {
-    component_id.clone()
-}
-
-/// Frees the memory for the given `component_id` by dropping.
-#[no_mangle]
-pub extern "C" fn component_id_drop(component_id: ComponentId) {
-    drop(component_id); // Memory freed here
-}
-
-/// Returns a [`ComponentId`] identifier as a C string pointer.
-#[no_mangle]
-pub extern "C" fn component_id_to_cstr(component_id: &ComponentId) -> *const c_char {
-    str_to_cstr(&component_id.value)
-}
-
-#[no_mangle]
-pub extern "C" fn component_id_eq(lhs: &ComponentId, rhs: &ComponentId) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn component_id_hash(component_id: &ComponentId) -> u64 {
-    let mut h = DefaultHasher::new();
-    component_id.hash(&mut h);
-    h.finish()
+pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -102,27 +78,11 @@ pub extern "C" fn component_id_hash(component_id: &ComponentId) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::ComponentId;
-    use crate::identifiers::component_id::component_id_drop;
-
-    #[test]
-    fn test_equality() {
-        let id1 = ComponentId::new("RiskEngine");
-        let id2 = ComponentId::new("DataEngine");
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let id = ComponentId::new("RiskEngine");
         assert_eq!(id.to_string(), "RiskEngine");
         assert_eq!(format!("{id}"), "RiskEngine");
-    }
-
-    #[test]
-    fn test_component_id_drop() {
-        let id = ComponentId::new("001");
-
-        component_id_drop(id); // No panic
     }
 }

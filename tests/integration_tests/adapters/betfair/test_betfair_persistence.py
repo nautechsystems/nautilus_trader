@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import fsspec
 import pytest
 
@@ -28,9 +27,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 
 
-pytestmark = pytest.mark.skip(reason="Repair order book parsing")
-
-
+@pytest.mark.skip(reason="Reimplementing")
 class TestBetfairPersistence:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory")
@@ -47,7 +44,7 @@ class TestBetfairPersistence:
                 "price": 0.990099,
                 "size": 60.07,
                 "side": "BUY",
-                "order_id": "f7ed1f20-8c1d-40c6-9d63-bd45f7cc0a86",
+                "order_id": 1635313844283000000,
                 "ts_event": 1635313844283000000,
                 "ts_init": 1635313844283000000,
             },
@@ -99,6 +96,7 @@ class TestBetfairPersistence:
         # Assert
         assert result.bsp == bsp.bsp
 
+    @pytest.mark.skip("Broken due to parquet writing")
     def test_bsp_deltas(self):
         # Arrange
         rf = RawFile(

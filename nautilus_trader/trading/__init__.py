@@ -12,11 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `trading` subpackage groups all trading domain specific components and tooling.
 
 This is a top-level package where the majority of users will interface with the
 framework. Custom trading strategies can be implemented by inheriting from the
 `Strategy` base class.
+
 """

@@ -43,7 +43,7 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 
 async def create_provider():
     """
-    create a provider to load all instrument data from live exchange
+    Create a provider to load all instrument data from live exchange.
     """
     clock = LiveClock()
     log = Logger(clock=clock)

@@ -12,5 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""The `portfolio` subpackage provides portfolio management functionality."""
+"""
+The `portfolio` subpackage provides portfolio management functionality.
+"""

@@ -27,10 +27,10 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
-def resolve_path(path: str):
-    module, cls = path.rsplit(":", maxsplit=1)
+def resolve_path(path: str) -> type:
+    module, cls_str = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
-    cls = getattr(mod, cls)
+    cls: type = getattr(mod, cls_str)
     return cls
 
 
@@ -114,14 +114,31 @@ class CacheConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    tick_capacity : PositiveInt
+    tick_capacity : PositiveInt, default 10_000
         The maximum length for internal tick dequeues.
-    bar_capacity : PositiveInt
+    bar_capacity : PositiveInt, default 10_000
         The maximum length for internal bar dequeues.
+    snapshot_orders : bool, default False
+        If order state snapshot lists should be persisted.
+        Snapshots will be taken at every order state update (when events are applied).
+    snapshot_positions : bool, default False
+        If position state snapshot lists should be persisted.
+        Snapshots will be taken at position opened, changed and closed (when events are applied).
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
+    snapshot_positions_interval : PositiveFloat, optional
+        The interval (seconds) at which additional position state snapshots are persisted.
+        If ``None`` then no additional snapshots will be taken.
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
+
     """
 
-    tick_capacity: PositiveInt = 1000
-    bar_capacity: PositiveInt = 1000
+    tick_capacity: PositiveInt = 10_000
+    bar_capacity: PositiveInt = 10_000
+    snapshot_orders: bool = False
+    snapshot_positions: bool = False
+    snapshot_positions_interval: Optional[PositiveFloat] = None
 
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
@@ -142,8 +159,12 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         The account password for the database connection.
     ssl : bool, default False
         If database should use an SSL enabled connection.
-    flush : bool, default False
-        If database should be flushed before start.
+    flush_on_start : bool, default False
+        If database should be flushed on start.
+    timestamps_as_iso8601, default False
+        If timestamps should be persisted as ISO 8601 strings.
+        If `False` then will persit as UNIX nanoseconds.
+
     """
 
     type: str = "in-memory"
@@ -152,7 +173,8 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     username: Optional[str] = None
     password: Optional[str] = None
     ssl: bool = False
-    flush: bool = False
+    flush_on_start: bool = False
+    timestamps_as_iso8601: bool = False
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
@@ -172,6 +194,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         whether the instrument should be loaded
     log_warnings : bool, default True
         If parser warnings should be logged.
+
     """
 
     def __eq__(self, other):
@@ -206,6 +229,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     time_bars_build_with_no_updates: bool = True
@@ -231,6 +255,7 @@ class RiskEngineConfig(NautilusConfig, frozen=True):
         The value should be a valid decimal format.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     bypass: bool = False
@@ -250,15 +275,13 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
         If the cache should be loaded on initialization.
     allow_cash_positions : bool, default True
         If unleveraged spot/cash assets should generate positions.
-    filter_unclaimed_external_orders : bool, default False
-        If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
+
     """
 
     load_cache: bool = True
     allow_cash_positions: bool = True
-    filter_unclaimed_external_orders: bool = False
     debug: bool = False
 
 
@@ -284,6 +307,7 @@ class StreamingConfig(NautilusConfig, frozen=True):
         The flush interval (milliseconds) for writing chunks.
     replace_existing: bool, default False
         If any existing feather files should be replaced.
+
     """
 
     catalog_path: str
@@ -319,6 +343,7 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
         The fsspec storage options for the data catalog.
     use_rust : bool, default False
         If queries will be for Rust schema versions (when implemented).
+
     """
 
     path: str
@@ -336,6 +361,7 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
     component_id : str, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
+
     """
 
     component_id: Optional[str] = None
@@ -353,6 +379,7 @@ class ImportableActorConfig(NautilusConfig, frozen=True):
         The fully qualified name of the Actor Config class.
     config : dict
         The actor configuration.
+
     """
 
     actor_path: str
@@ -407,6 +434,8 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         how the `ExecutionEngine` handles position IDs (see docs).
     external_order_claims : list[str], optional
         The external order claim instrument IDs.
+        External orders for matching instrument IDs will be associated with (claimed by) the strategy.
+
     """
 
     strategy_id: Optional[str] = None
@@ -427,6 +456,7 @@ class ImportableStrategyConfig(NautilusConfig, frozen=True):
         The fully qualified name of the config class.
     config : dict[str, Any]
         The strategy configuration.
+
     """
 
     strategy_path: str
@@ -474,6 +504,7 @@ class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
     exec_algorithm_id : str, optional
         The unique ID for the execution algorithm.
         If not ``None`` then will become the execution algorithm ID.
+
     """
 
     exec_algorithm_id: Optional[str] = None
@@ -491,6 +522,7 @@ class ImportableExecAlgorithmConfig(NautilusConfig, frozen=True):
         The fully qualified name of the config class.
     config : dict[str, Any]
         The execution algorithm configuration.
+
     """
 
     exec_algorithm_path: str
@@ -531,7 +563,8 @@ class ExecAlgorithmFactory:
 
 class LoggingConfig(NautilusConfig, frozen=True):
     """
-    Configuration for standard output and file logging for a ``NautilusKernel`` instance.
+    Configuration for standard output and file logging for a ``NautilusKernel``
+    instance.
 
     Parameters
     ----------
@@ -554,6 +587,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
         IDs (e.g. actor/strategy IDs) and values are log levels.
     bypass_logging : bool, default False
         If all logging should be bypassed.
+
     """
 
     log_level: str = "INFO"
@@ -609,6 +643,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The timeout for all engine clients to disconnect.
     timeout_post_stop : PositiveFloat (seconds)
         The timeout after stopping the node to await residual events before final shutdown.
+
     """
 
     environment: Environment
@@ -649,7 +684,8 @@ class ImportableFactoryConfig(NautilusConfig, frozen=True):
 
 class ImportableConfig(NautilusConfig, frozen=True):
     """
-    Represents an importable configuration (typically live data client or live execution client).
+    Represents an importable configuration (typically live data client or live execution
+    client).
     """
 
     path: str

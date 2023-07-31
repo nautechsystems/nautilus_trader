@@ -1,6 +1,66 @@
+# NautilusTrader 1.176.0 Beta
+
+Released on 31st July 2023 (UTC).
+
+### Enhancements
+- Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) library, thanks @twitu
+- Added `SyntheticInstrument` capability, including dynamic derivation formulas
+- Added `Order.commissions()` convenience method (also added to state snapshot dictionaries)
+- Added `Cache` position and order state snapshots (configure via `CacheConfig`)
+- Added `CacheDatabaseConfig.timestamps_as_iso8601` to persist timestamps as ISO 8601 strings
+- Added `LiveExecEngineConfig.filter_position_reports` to filter position reports from reconciliation
+- Added `Strategy.cancel_gtd_expiry` to cancel managed GTD order expiration
+- Added Binance Futures support for modifying `LIMIT` orders
+- Added `BinanceExecClientConfig.max_retries` option (for retrying order submit and cancel requests)
+- Added `BinanceExecClientConfig.retry_delay` option (the delay between retry attempts)
+- Added `BinanceExecClientConfig.use_reduce_only` option (default true to retain current behavior)
+- Added `BinanceExecClientConfig.use_position_ids` option (default true to retain current behavior)
+- Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default false to retain current behavior)
+- Added `BacktestVenueConfig.use_reduct_only` option (default true to retain current behaviour)
+- Added `MessageBus.is_pending_request(...)` method
+- Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
+- Added `Actor.is_pending_request(...)` convenience method
+- Added `Actor.has_pending_requests()` convenience method
+- Added `Actor.pending_requests()` convenience method
+- Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
+- Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
+- Improved `Binance` live clients logging
+- Upgraded Cython to 3.0.0 stable
+
+### Breaking Changes
+- Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
+- All `Actor.request_*` methods no longer take a `request_id`, but now return a `UUID4` request ID
+- Removed `BinanceExecClientConfig.warn_gtd_to_gtd` (now always an `INFO` level log)
+- Renamed `Instrument.native_symbol` to `raw_symbol` (you must manually migrate or flush your cached instruments)
+- Renamed `Position.cost_currency` to `settlement_currency` (standardize terminology)
+- Renamed `CacheDatabaseConfig.flush` to `flush_on_start` (for clarity)
+- Changed `Order.ts_last` to represent the UNIX nanoseconds timestamp of the last _event_ (rather than fill)
+
+### Fixes
+- Fixed `Portfolio.net_position` calculation to use `Decimal` rather than `float` to avoid rounding errors
+- Fixed race condition on `OrderFactory` order identifiers generation
+- Fixed dictionary representation of orders for `venue_order_id` (for three order types)
+- Fixed `Currency` registration with core global map on creation
+- Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
+- Fixed assignment of position IDs for contingency orders (when parent filled)
+- Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
+- Fixed fill handling of `reduce_only` orders when partially filled
+- Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
+- Fixed Binance Futures native symbol parsing (was actually Nautilus symbol values)
+- Fixed Binance Futures `PositionStatusReport` parsing of position side
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
+- Fixed Binance execution submitting of order lists
+- Fixed Binance commission rates requests for `InstrumentProvider`
+- Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
+- Fixed Binance order parsing of invalid orders in execution reports #1157, thanks for reporting @graceyangfan
+- Fixed `BinanceOrderType` members to include undocumented `INSURANCE_FUND`, thanks for reporting @Tzumx
+- Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
+
+---
+
 # NautilusTrader 1.175.0 Beta
 
-Released on 16th July 2023 (UTC).
+Released on 16th June 2023 (UTC).
 
 The Betfair adapter is broken for this release pending integration with the new Rust order book.
 We recommend you do not upgrade to this version if you're using the Betfair adapter.
@@ -201,7 +261,7 @@ Released on 18th February 2023 (UTC).
 ### Enhancements
 - Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
-- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (True by default)
+- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (true by default)
 - Added `OrderFactory.generate_client_order_id()` (calls internal generator)
 - Added `OrderFactory.generate_order_list_id()` (calls internal generator)
 - Added `OrderFactory.create_list(...)` as easier method for creating order lists

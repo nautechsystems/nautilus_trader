@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
 import concurrent.futures
 import platform
@@ -21,7 +23,7 @@ import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from typing import Callable, Optional
+from typing import Callable
 
 import msgspec
 
@@ -104,14 +106,15 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
+
     """
 
     def __init__(  # noqa (too complex)
         self,
         name: str,
         config: NautilusKernelConfig,
-        loop: Optional[asyncio.AbstractEventLoop] = None,
-        loop_sig_callback: Optional[Callable] = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+        loop_sig_callback: Callable | None = None,
     ) -> None:
         PyCondition.valid_string(name, "name")
         PyCondition.type(config, NautilusKernelConfig, "config")
@@ -171,7 +174,7 @@ class NautilusKernel:
         self.log.info("Building system kernel...")
 
         # Setup loop (if sandbox live)
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         if self._environment != Environment.BACKTEST:
             self._loop = loop or asyncio.get_running_loop()
             if loop is not None:
@@ -190,7 +193,10 @@ class NautilusKernel:
             cache_db = RedisCacheDatabase(
                 trader_id=self._trader_id,
                 logger=self._logger,
-                serializer=MsgPackSerializer(timestamps_as_str=True),
+                serializer=MsgPackSerializer(
+                    timestamps_as_str=True,  # Hardcoded for now
+                    timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
+                ),
                 config=config.cache_database,
             )
         else:
@@ -318,12 +324,12 @@ class NautilusKernel:
             self._trader.load()
 
         # Setup stream writer
-        self._writer: Optional[StreamingFeatherWriter] = None
+        self._writer: StreamingFeatherWriter | None = None
         if config.streaming:
             self._setup_streaming(config=config.streaming)
 
         # Setup data catalog
-        self._catalog: Optional[ParquetDataCatalog] = None
+        self._catalog: ParquetDataCatalog | None = None
         if config.catalog:
             self._catalog = ParquetDataCatalog(
                 path=config.catalog.path,
@@ -423,7 +429,7 @@ class NautilusKernel:
         return self._loop or asyncio.get_running_loop()
 
     @property
-    def loop_sig_callback(self) -> Optional[Callable]:
+    def loop_sig_callback(self) -> Callable | None:
         """
         Return the kernels signal handling callback.
 
@@ -435,7 +441,7 @@ class NautilusKernel:
         return self._loop_sig_callback
 
     @property
-    def executor(self) -> Optional[ThreadPoolExecutor]:
+    def executor(self) -> ThreadPoolExecutor | None:
         """
         Return the kernels default executor.
 
@@ -663,7 +669,7 @@ class NautilusKernel:
         return self._trader
 
     @property
-    def writer(self) -> Optional[StreamingFeatherWriter]:
+    def writer(self) -> StreamingFeatherWriter | None:
         """
         Return the kernels writer.
 
@@ -675,7 +681,7 @@ class NautilusKernel:
         return self._writer
 
     @property
-    def catalog(self) -> Optional[ParquetDataCatalog]:
+    def catalog(self) -> ParquetDataCatalog | None:
         """
         Return the kernels data catalog.
 
@@ -688,6 +694,9 @@ class NautilusKernel:
 
     async def start(self) -> None:
         self._log.info("STARTING...")
+
+        if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
+            self._cache.flush_db()
 
         # Start system
         self._data_engine.start()
@@ -797,8 +806,9 @@ class NautilusKernel:
         """
         Dispose of the kernel releasing system resources.
 
-        Calling this method multiple times has the same effect as calling it once (it is idempotent).
-        Once called, it cannot be reversed, and no other methods should be called on this instance.
+        Calling this method multiple times has the same effect as calling it once (it is
+        idempotent). Once called, it cannot be reversed, and no other methods should be
+        called on this instance.
 
         """
         # Stop all engines

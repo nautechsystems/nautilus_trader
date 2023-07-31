@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+
 import msgspec
 import pandas as pd
 import pytest
@@ -114,7 +115,7 @@ class TestPersistenceParsers:
             # Replace str repr with "fully qualified" string we can `eval`
             replacements = {
                 b"id=BTCUSDT.BINANCE": b"instrument_id=InstrumentId(Symbol('BTCUSDT'), venue=Venue('BINANCE'))",
-                b"native_symbol=BTCUSDT": b"native_symbol=Symbol('BTCUSDT')",
+                b"raw_symbol=BTCUSDT": b"raw_symbol=Symbol('BTCUSDT')",
                 b"price_increment=0.01": b"price_increment=Price.from_str('0.01')",
                 b"size_increment=0.000001": b"size_increment=Quantity.from_str('0.000001')",
                 b"margin_init=0": b"margin_init=Decimal(0)",
@@ -125,7 +126,7 @@ class TestPersistenceParsers:
             for k, v in replacements.items():
                 line = line.replace(k, v)
 
-            yield eval(line)
+            yield eval(line)  # noqa
 
         reader = TextReader(line_parser=parser)
         raw_file = make_raw_files(glob_path=f"{TEST_DATA_DIR}/binance-btcusdt-instrument.txt")[0]

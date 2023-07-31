@@ -18,7 +18,7 @@ import os
 import warnings
 from enum import IntEnum
 from time import sleep
-from typing import Optional
+from typing import ClassVar, Optional
 
 
 try:
@@ -42,12 +42,12 @@ class ContainerStatus(IntEnum):
 
 class InteractiveBrokersGateway:
     """
-    A class to manage starting an Interactive Brokers Gateway docker container
+    A class to manage starting an Interactive Brokers Gateway docker container.
     """
 
-    IMAGE = "ghcr.io/unusualalpha/ib-gateway:stable"
-    CONTAINER_NAME = "nautilus-ib-gateway"
-    PORTS = {"paper": 4002, "live": 4001}
+    IMAGE: ClassVar[str] = "ghcr.io/unusualalpha/ib-gateway:stable"
+    CONTAINER_NAME: ClassVar[str] = "nautilus-ib-gateway"
+    PORTS: ClassVar[dict[str, int]] = {"paper": 4002, "live": 4001}
 
     def __init__(
         self,

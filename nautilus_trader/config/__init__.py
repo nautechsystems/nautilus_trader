@@ -12,11 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `config` subpackage groups all configuration classes and factories.
 
 All configurations inherit from :class:`msgspec.Struct`.
+
 """
 
 from nautilus_trader.config.backtest import BacktestDataConfig

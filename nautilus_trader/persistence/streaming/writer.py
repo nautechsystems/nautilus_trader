@@ -51,6 +51,7 @@ class StreamingFeatherWriter:
         The flush interval (milliseconds) for writing chunks.
     replace : bool, default False
         If existing files at the given `path` should be replaced.
+
     """
 
     def __init__(
@@ -212,6 +213,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
     Returns
     -------
     SignalData
+
     """
 
     class SignalData(Data):

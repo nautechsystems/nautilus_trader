@@ -93,8 +93,7 @@ class TestOrderBook:
             book_type=BookType.L2_MBP,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert book.best_bid_price() is None
         assert book.best_ask_price() is None
 
@@ -105,8 +104,7 @@ class TestOrderBook:
             book_type=BookType.L2_MBP,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert book.best_bid_size() is None
         assert book.best_ask_size() is None
 
@@ -117,9 +115,70 @@ class TestOrderBook:
             book_type=BookType.L2_MBP,
         )
 
-        # Act
-        # Assert
+        # Act, Assert
         assert book.spread() is None
+
+    @pytest.mark.parametrize(
+        "order_side",
+        [
+            OrderSide.BUY,
+            OrderSide.SELL,
+        ],
+    )
+    def test_get_avg_px_for_quantity_when_no_market(self, order_side: OrderSide) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
+
+        quantity = Quantity.from_str("1.0")
+
+        # Act, Assert
+        assert book.get_avg_px_for_quantity(quantity, order_side) == 0.0
+
+    @pytest.mark.parametrize(
+        ("order_side", "expected"),
+        [
+            [OrderSide.BUY, 11.0],
+            [OrderSide.SELL, 10.0],
+        ],
+    )
+    def test_get_avg_px_for_quantity(self, order_side: OrderSide, expected: float) -> None:
+        # Arrange
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L2_MBP,
+        )
+
+        book.add(
+            BookOrder(
+                price=Price(10.0, 1),
+                size=Quantity(5.0, 0),
+                side=OrderSide.BUY,
+                order_id=0,
+            ),
+            0,
+            0,
+        )
+        book.add(
+            BookOrder(
+                price=Price(11.0, 1),
+                size=Quantity(6.0, 0),
+                side=OrderSide.SELL,
+                order_id=1,
+            ),
+            1,
+            1,
+        )
+
+        quantity = Quantity.from_str("1.0")
+
+        # Act
+        result = book.get_avg_px_for_quantity(quantity, order_side)
+
+        # Assert
+        assert result == expected
 
     def test_add_orders_to_book(self):
         # Arrange
@@ -159,6 +218,22 @@ class TestOrderBook:
         assert book.best_ask_size() == 6.0
         assert book.spread() == 1.0
         assert book.midpoint() == 10.5
+        assert len(book.bids()) == 1
+        assert len(book.asks()) == 1
+        assert (
+            repr(book.bids())
+            == "[Level(price=10.0, orders=[BookOrder { side: Buy, price: 10.0, size: 5, order_id: 10000000000 }])]"
+        )
+        assert (
+            repr(book.asks())
+            == "[Level(price=11.0, orders=[BookOrder { side: Sell, price: 11.0, size: 6, order_id: 11000000000 }])]"
+        )
+        bid_level = book.bids()[0]
+        ask_level = book.asks()[0]
+        assert len(bid_level.orders()) == 1
+        assert len(ask_level.orders()) == 1
+        assert bid_level.price == Price.from_str("10.0")
+        assert ask_level.price == Price.from_str("11.0")
 
     def test_repr(self):
         book = OrderBook(

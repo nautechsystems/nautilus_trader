@@ -618,7 +618,7 @@ typedef enum TriggerType {
     INDEX_PRICE = 9,
 } TriggerType;
 
-typedef struct Arc_String Arc_String;
+typedef struct Level Level;
 
 typedef struct OrderBook OrderBook;
 
@@ -630,30 +630,18 @@ typedef struct String String;
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 
-typedef struct BarSpecification_t {
-    uint64_t step;
-    uint8_t aggregation;
-    enum PriceType price_type;
-} BarSpecification_t;
-
 typedef struct Symbol_t {
-    struct Arc_String *value;
+    char* value;
 } Symbol_t;
 
 typedef struct Venue_t {
-    struct Arc_String *value;
+    char* value;
 } Venue_t;
 
 typedef struct InstrumentId_t {
     struct Symbol_t symbol;
     struct Venue_t venue;
 } InstrumentId_t;
-
-typedef struct BarType_t {
-    struct InstrumentId_t instrument_id;
-    struct BarSpecification_t spec;
-    enum AggregationSource aggregation_source;
-} BarType_t;
 
 typedef struct Price_t {
     int64_t raw;
@@ -665,24 +653,25 @@ typedef struct Quantity_t {
     uint8_t precision;
 } Quantity_t;
 
-typedef struct Bar_t {
-    struct BarType_t bar_type;
-    struct Price_t open;
-    struct Price_t high;
-    struct Price_t low;
-    struct Price_t close;
-    struct Quantity_t volume;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} Bar_t;
-
 /**
  * Represents an order in a book.
  */
 typedef struct BookOrder_t {
+    /**
+     * The order side.
+     */
     enum OrderSide side;
+    /**
+     * The order price.
+     */
     struct Price_t price;
+    /**
+     * The order size.
+     */
     struct Quantity_t size;
+    /**
+     * The order ID.
+     */
     uint64_t order_id;
 } BookOrder_t;
 
@@ -690,12 +679,33 @@ typedef struct BookOrder_t {
  * Represents a single change/delta in an order book.
  */
 typedef struct OrderBookDelta_t {
+    /**
+     * The instrument ID for the book.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The order book delta action.
+     */
     enum BookAction action;
+    /**
+     * The order to apply.
+     */
     struct BookOrder_t order;
+    /**
+     * A combination of packet end with matching engine status.
+     */
     uint8_t flags;
+    /**
+     * The message sequence number assigned at the venue.
+     */
     uint64_t sequence;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } OrderBookDelta_t;
 
@@ -703,31 +713,149 @@ typedef struct OrderBookDelta_t {
  * Represents a single quote tick in a financial market.
  */
 typedef struct QuoteTick_t {
+    /**
+     * The quotes instrument ID.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The top of book bid price.
+     */
     struct Price_t bid;
+    /**
+     * The top of book ask price.
+     */
     struct Price_t ask;
+    /**
+     * The top of book bid size.
+     */
     struct Quantity_t bid_size;
+    /**
+     * The top of book ask size.
+     */
     struct Quantity_t ask_size;
+    /**
+     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     */
     uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } QuoteTick_t;
 
 typedef struct TradeId_t {
-    struct Arc_String *value;
+    char* value;
 } TradeId_t;
 
 /**
  * Represents a single trade tick in a financial market.
  */
 typedef struct TradeTick_t {
+    /**
+     * The trade instrument ID.
+     */
     struct InstrumentId_t instrument_id;
+    /**
+     * The traded price.
+     */
     struct Price_t price;
+    /**
+     * The traded size.
+     */
     struct Quantity_t size;
+    /**
+     * The trade aggressor side.
+     */
     enum AggressorSide aggressor_side;
+    /**
+     * The trade match ID (assigned by the venue).
+     */
     struct TradeId_t trade_id;
+    /**
+     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     */
     uint64_t ts_event;
+    /**
+     *  The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
     uint64_t ts_init;
 } TradeTick_t;
+
+/**
+ * Represents a bar aggregation specification including a step, aggregation
+ * method/rule and price type.
+ */
+typedef struct BarSpecification_t {
+    /**
+     * The step for binning samples for bar aggregation.
+     */
+    uint64_t step;
+    /**
+     * The type of bar aggregation.
+     */
+    uint8_t aggregation;
+    /**
+     * The price type to use for aggregation.
+     */
+    enum PriceType price_type;
+} BarSpecification_t;
+
+/**
+ * Represents a bar type including the instrument ID, bar specification and
+ * aggregation source.
+ */
+typedef struct BarType_t {
+    /**
+     * The bar types instrument ID.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The bar types specification.
+     */
+    struct BarSpecification_t spec;
+    /**
+     * The bar types aggregation source.
+     */
+    enum AggregationSource aggregation_source;
+} BarType_t;
+
+/**
+ * Represents an aggregated bar.
+ */
+typedef struct Bar_t {
+    /**
+     * The bar type for this bar.
+     */
+    struct BarType_t bar_type;
+    /**
+     * The bars open price.
+     */
+    struct Price_t open;
+    /**
+     * The bars high price.
+     */
+    struct Price_t high;
+    /**
+     * The bars low price.
+     */
+    struct Price_t low;
+    /**
+     * The bars close price.
+     */
+    struct Price_t close;
+    /**
+     * The bars volume.
+     */
+    struct Quantity_t volume;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
+    uint64_t ts_init;
+} Bar_t;
 
 typedef enum Data_t_Tag {
     DELTA,
@@ -755,15 +883,15 @@ typedef struct Data_t {
 } Data_t;
 
 typedef struct TraderId_t {
-    struct Arc_String *value;
+    char* value;
 } TraderId_t;
 
 typedef struct StrategyId_t {
-    struct Arc_String *value;
+    char* value;
 } StrategyId_t;
 
 typedef struct ClientOrderId_t {
-    struct Arc_String *value;
+    char* value;
 } ClientOrderId_t;
 
 typedef struct OrderDenied_t {
@@ -778,31 +906,31 @@ typedef struct OrderDenied_t {
 } OrderDenied_t;
 
 typedef struct AccountId_t {
-    struct Arc_String *value;
+    char* value;
 } AccountId_t;
 
 typedef struct ClientId_t {
-    struct Arc_String *value;
+    char* value;
 } ClientId_t;
 
 typedef struct ComponentId_t {
-    struct Arc_String *value;
+    char* value;
 } ComponentId_t;
 
 typedef struct ExecAlgorithmId_t {
-    struct Arc_String *value;
+    char* value;
 } ExecAlgorithmId_t;
 
 typedef struct OrderListId_t {
-    struct Arc_String *value;
+    char* value;
 } OrderListId_t;
 
 typedef struct PositionId_t {
-    struct Arc_String *value;
+    char* value;
 } PositionId_t;
 
 typedef struct VenueOrderId_t {
-    struct Arc_String *value;
+    char* value;
 } VenueOrderId_t;
 
 /**
@@ -834,11 +962,25 @@ typedef struct OrderBook_API {
     struct OrderBook *_0;
 } OrderBook_API;
 
+/**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
+ *
+ * This struct wraps `Level` in a way that makes it compatible with C function
+ * calls, enabling interaction with `Level` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `Level_API` to be
+ * dereferenced to `Level`, providing access to `Level`'s methods without
+ * having to manually acce wss the underlying `Level` instance.
+ */
+typedef struct Level_API {
+    struct Level *_0;
+} Level_API;
+
 typedef struct Currency_t {
-    struct Arc_String *code;
+    char* code;
     uint8_t precision;
     uint16_t iso4217;
-    struct Arc_String *name;
+    char* name;
     enum CurrencyType currency_type;
 } Currency_t;
 
@@ -846,6 +988,15 @@ typedef struct Money_t {
     int64_t raw;
     struct Currency_t currency;
 } Money_t;
+
+#define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0 }
+
+/**
+ * Sentinel Price for errors.
+ */
+#define ERROR_PRICE (Price_t){ .raw = INT64_MAX, .precision = 0 }
+
+struct Data_t data_clone(const struct Data_t *data);
 
 struct BarSpecification_t bar_specification_new(uint64_t step,
                                                 uint8_t aggregation,
@@ -876,10 +1027,6 @@ uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
 struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
-
-void bar_type_drop(struct BarType_t bar_type);
-
-struct BarType_t bar_type_clone(const struct BarType_t *bar_type);
 
 uint8_t bar_type_eq(const struct BarType_t *lhs, const struct BarType_t *rhs);
 
@@ -918,18 +1065,26 @@ struct Bar_t bar_new_from_raw(struct BarType_t bar_type,
                               uint64_t ts_event,
                               uint64_t ts_init);
 
-void bar_drop(struct Bar_t bar);
+uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
 
-struct Bar_t bar_clone(const struct Bar_t *bar);
+uint64_t bar_hash(const struct Bar_t *bar);
 
 /**
  * Returns a [`Bar`] as a C string.
  */
 const char *bar_to_cstr(const struct Bar_t *bar);
 
-uint8_t bar_eq(const struct Bar_t *lhs, const struct Bar_t *rhs);
+struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
+                                            enum BookAction action,
+                                            struct BookOrder_t order,
+                                            uint8_t flags,
+                                            uint64_t sequence,
+                                            uint64_t ts_event,
+                                            uint64_t ts_init);
 
-uint64_t bar_hash(const struct Bar_t *bar);
+uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
+
+uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
@@ -956,22 +1111,6 @@ const char *book_order_display_to_cstr(const struct BookOrder_t *order);
  */
 const char *book_order_debug_to_cstr(const struct BookOrder_t *order);
 
-void orderbook_delta_drop(struct OrderBookDelta_t delta);
-
-struct OrderBookDelta_t orderbook_delta_clone(const struct OrderBookDelta_t *delta);
-
-struct OrderBookDelta_t orderbook_delta_new(struct InstrumentId_t instrument_id,
-                                            enum BookAction action,
-                                            struct BookOrder_t order,
-                                            uint8_t flags,
-                                            uint64_t sequence,
-                                            uint64_t ts_event,
-                                            uint64_t ts_init);
-
-uint8_t orderbook_delta_eq(const struct OrderBookDelta_t *lhs, const struct OrderBookDelta_t *rhs);
-
-uint64_t orderbook_delta_hash(const struct OrderBookDelta_t *delta);
-
 struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   int64_t bid_price_raw,
                                   int64_t ask_price_raw,
@@ -984,9 +1123,9 @@ struct QuoteTick_t quote_tick_new(struct InstrumentId_t instrument_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
-void quote_tick_drop(struct QuoteTick_t tick);
+uint8_t quote_tick_eq(const struct QuoteTick_t *lhs, const struct QuoteTick_t *rhs);
 
-struct QuoteTick_t quote_tick_clone(const struct QuoteTick_t *tick);
+uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
 
 /**
  * Returns a [`QuoteTick`] as a C string pointer.
@@ -1003,18 +1142,14 @@ struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
 
-void trade_tick_drop(struct TradeTick_t tick);
+uint8_t trade_tick_eq(const struct TradeTick_t *lhs, const struct TradeTick_t *rhs);
 
-struct TradeTick_t trade_tick_clone(const struct TradeTick_t *tick);
+uint64_t trade_tick_hash(const struct TradeTick_t *delta);
 
 /**
  * Returns a [`TradeTick`] as a C string pointer.
  */
 const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
-
-void data_drop(struct Data_t data);
-
-struct Data_t data_clone(const struct Data_t *data);
 
 const char *account_type_to_cstr(enum AccountType value);
 
@@ -1279,6 +1414,8 @@ struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
 
 const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
 
+void interned_string_stats(void);
+
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *
@@ -1288,21 +1425,7 @@ const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
  */
 struct AccountId_t account_id_new(const char *ptr);
 
-struct AccountId_t account_id_clone(const struct AccountId_t *account_id);
-
-/**
- * Frees the memory for the given `account_id` by dropping.
- */
-void account_id_drop(struct AccountId_t account_id);
-
-/**
- * Returns an [`AccountId`] as a C string pointer.
- */
-const char *account_id_to_cstr(const struct AccountId_t *account_id);
-
-uint8_t account_id_eq(const struct AccountId_t *lhs, const struct AccountId_t *rhs);
-
-uint64_t account_id_hash(const struct AccountId_t *account_id);
+uint64_t account_id_hash(const struct AccountId_t *id);
 
 /**
  * Returns a Nautilus identifier from C string pointer.
@@ -1313,21 +1436,7 @@ uint64_t account_id_hash(const struct AccountId_t *account_id);
  */
 struct ClientId_t client_id_new(const char *ptr);
 
-struct ClientId_t client_id_clone(const struct ClientId_t *client_id);
-
-/**
- * Frees the memory for the given `client_id` by dropping.
- */
-void client_id_drop(struct ClientId_t client_id);
-
-/**
- * Returns a [`ClientId`] identifier as a C string pointer.
- */
-const char *client_id_to_cstr(const struct ClientId_t *client_id);
-
-uint8_t client_id_eq(const struct ClientId_t *lhs, const struct ClientId_t *rhs);
-
-uint64_t client_id_hash(const struct ClientId_t *client_id);
+uint64_t client_id_hash(const struct ClientId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1338,21 +1447,7 @@ uint64_t client_id_hash(const struct ClientId_t *client_id);
  */
 struct ClientOrderId_t client_order_id_new(const char *ptr);
 
-struct ClientOrderId_t client_order_id_clone(const struct ClientOrderId_t *client_order_id);
-
-/**
- * Frees the memory for the given `client_order_id` by dropping.
- */
-void client_order_id_drop(struct ClientOrderId_t client_order_id);
-
-/**
- * Returns a [`ClientOrderId`] as a C string pointer.
- */
-const char *client_order_id_to_cstr(const struct ClientOrderId_t *client_order_id);
-
-uint8_t client_order_id_eq(const struct ClientOrderId_t *lhs, const struct ClientOrderId_t *rhs);
-
-uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
+uint64_t client_order_id_hash(const struct ClientOrderId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1363,21 +1458,7 @@ uint64_t client_order_id_hash(const struct ClientOrderId_t *client_order_id);
  */
 struct ComponentId_t component_id_new(const char *ptr);
 
-struct ComponentId_t component_id_clone(const struct ComponentId_t *component_id);
-
-/**
- * Frees the memory for the given `component_id` by dropping.
- */
-void component_id_drop(struct ComponentId_t component_id);
-
-/**
- * Returns a [`ComponentId`] identifier as a C string pointer.
- */
-const char *component_id_to_cstr(const struct ComponentId_t *component_id);
-
-uint8_t component_id_eq(const struct ComponentId_t *lhs, const struct ComponentId_t *rhs);
-
-uint64_t component_id_hash(const struct ComponentId_t *component_id);
+uint64_t component_id_hash(const struct ComponentId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1388,24 +1469,9 @@ uint64_t component_id_hash(const struct ComponentId_t *component_id);
  */
 struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
 
-struct ExecAlgorithmId_t exec_algorithm_id_clone(const struct ExecAlgorithmId_t *exec_algorithm_id);
+uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
 
-/**
- * Frees the memory for the given `exec_algorithm_id` by dropping.
- */
-void exec_algorithm_id_drop(struct ExecAlgorithmId_t exec_algorithm_id);
-
-/**
- * Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
- */
-const char *exec_algorithm_id_to_cstr(const struct ExecAlgorithmId_t *exec_algorithm_id);
-
-uint8_t exec_algorithm_id_eq(const struct ExecAlgorithmId_t *lhs,
-                             const struct ExecAlgorithmId_t *rhs);
-
-uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *exec_algorithm_id);
-
-struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const struct Venue_t *venue);
+struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1416,21 +1482,14 @@ struct InstrumentId_t instrument_id_new(const struct Symbol_t *symbol, const str
  */
 struct InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
 
-struct InstrumentId_t instrument_id_clone(const struct InstrumentId_t *instrument_id);
-
-/**
- * Frees the memory for the given `instrument_id` by dropping.
- */
-void instrument_id_drop(struct InstrumentId_t instrument_id);
-
 /**
  * Returns an [`InstrumentId`] as a C string pointer.
  */
 const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
 
-uint8_t instrument_id_eq(const struct InstrumentId_t *lhs, const struct InstrumentId_t *rhs);
-
 uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
+
+uint8_t instrument_id_is_synthetic(const struct InstrumentId_t *instrument_id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1441,21 +1500,7 @@ uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
  */
 struct OrderListId_t order_list_id_new(const char *ptr);
 
-struct OrderListId_t order_list_id_clone(const struct OrderListId_t *order_list_id);
-
-/**
- * Frees the memory for the given `order_list_id` by dropping.
- */
-void order_list_id_drop(struct OrderListId_t order_list_id);
-
-/**
- * Returns an [`OrderListId`] as a C string pointer.
- */
-const char *order_list_id_to_cstr(const struct OrderListId_t *order_list_id);
-
-uint8_t order_list_id_eq(const struct OrderListId_t *lhs, const struct OrderListId_t *rhs);
-
-uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
+uint64_t order_list_id_hash(const struct OrderListId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1466,21 +1511,7 @@ uint64_t order_list_id_hash(const struct OrderListId_t *order_list_id);
  */
 struct PositionId_t position_id_new(const char *ptr);
 
-struct PositionId_t position_id_clone(const struct PositionId_t *position_id);
-
-/**
- * Frees the memory for the given `position_id` by dropping.
- */
-void position_id_drop(struct PositionId_t position_id);
-
-/**
- * Returns a [`PositionId`] identifier as a C string pointer.
- */
-const char *position_id_to_cstr(const struct PositionId_t *position_id);
-
-uint8_t position_id_eq(const struct PositionId_t *lhs, const struct PositionId_t *rhs);
-
-uint64_t position_id_hash(const struct PositionId_t *position_id);
+uint64_t position_id_hash(const struct PositionId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1491,17 +1522,7 @@ uint64_t position_id_hash(const struct PositionId_t *position_id);
  */
 struct StrategyId_t strategy_id_new(const char *ptr);
 
-struct StrategyId_t strategy_id_clone(const struct StrategyId_t *strategy_id);
-
-/**
- * Frees the memory for the given `strategy_id` by dropping.
- */
-void strategy_id_drop(struct StrategyId_t strategy_id);
-
-/**
- * Returns a [`StrategyId`] as a C string pointer.
- */
-const char *strategy_id_to_cstr(const struct StrategyId_t *strategy_id);
+uint64_t strategy_id_hash(const struct StrategyId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1512,21 +1533,7 @@ const char *strategy_id_to_cstr(const struct StrategyId_t *strategy_id);
  */
 struct Symbol_t symbol_new(const char *ptr);
 
-struct Symbol_t symbol_clone(const struct Symbol_t *symbol);
-
-/**
- * Frees the memory for the given [Symbol] by dropping.
- */
-void symbol_drop(struct Symbol_t symbol);
-
-/**
- * Returns a [`Symbol`] as a C string pointer.
- */
-const char *symbol_to_cstr(const struct Symbol_t *symbol);
-
-uint8_t symbol_eq(const struct Symbol_t *lhs, const struct Symbol_t *rhs);
-
-uint64_t symbol_hash(const struct Symbol_t *symbol);
+uint64_t symbol_hash(const struct Symbol_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1537,21 +1544,7 @@ uint64_t symbol_hash(const struct Symbol_t *symbol);
  */
 struct TradeId_t trade_id_new(const char *ptr);
 
-struct TradeId_t trade_id_clone(const struct TradeId_t *trade_id);
-
-/**
- * Frees the memory for the given `trade_id` by dropping.
- */
-void trade_id_drop(struct TradeId_t trade_id);
-
-/**
- * Returns [`TradeId`] as a C string pointer.
- */
-const char *trade_id_to_cstr(const struct TradeId_t *trade_id);
-
-uint8_t trade_id_eq(const struct TradeId_t *lhs, const struct TradeId_t *rhs);
-
-uint64_t trade_id_hash(const struct TradeId_t *trade_id);
+uint64_t trade_id_hash(const struct TradeId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1562,17 +1555,7 @@ uint64_t trade_id_hash(const struct TradeId_t *trade_id);
  */
 struct TraderId_t trader_id_new(const char *ptr);
 
-struct TraderId_t trader_id_clone(const struct TraderId_t *trader_id);
-
-/**
- * Frees the memory for the given `trader_id` by dropping.
- */
-void trader_id_drop(struct TraderId_t trader_id);
-
-/**
- * Returns a [`TraderId`] as a C string pointer.
- */
-const char *trader_id_to_cstr(const struct TraderId_t *trader_id);
+uint64_t trader_id_hash(const struct TraderId_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1583,21 +1566,9 @@ const char *trader_id_to_cstr(const struct TraderId_t *trader_id);
  */
 struct Venue_t venue_new(const char *ptr);
 
-struct Venue_t venue_clone(const struct Venue_t *venue);
+uint64_t venue_hash(const struct Venue_t *id);
 
-/**
- * Frees the memory for the given `venue` by dropping.
- */
-void venue_drop(struct Venue_t venue);
-
-/**
- * Returns a [`Venue`] identifier as a C string pointer.
- */
-const char *venue_to_cstr(const struct Venue_t *venue);
-
-uint8_t venue_eq(const struct Venue_t *lhs, const struct Venue_t *rhs);
-
-uint64_t venue_hash(const struct Venue_t *venue);
+uint8_t venue_is_synthetic(const struct Venue_t *venue);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.
@@ -1608,18 +1579,7 @@ uint64_t venue_hash(const struct Venue_t *venue);
  */
 struct VenueOrderId_t venue_order_id_new(const char *ptr);
 
-struct VenueOrderId_t venue_order_id_clone(const struct VenueOrderId_t *venue_order_id);
-
-/**
- * Frees the memory for the given `venue_order_id` by dropping.
- */
-void venue_order_id_drop(struct VenueOrderId_t venue_order_id);
-
-const char *venue_order_id_to_cstr(const struct VenueOrderId_t *venue_order_id);
-
-uint8_t venue_order_id_eq(const struct VenueOrderId_t *lhs, const struct VenueOrderId_t *rhs);
-
-uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
+uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
 
 /**
  * # Safety
@@ -1628,19 +1588,29 @@ uint64_t venue_order_id_hash(const struct VenueOrderId_t *venue_order_id);
  * - Assumes `formula_ptr` is a valid C string pointer.
  */
 struct SyntheticInstrument_API synthetic_instrument_new(struct Symbol_t symbol,
-                                                        uint8_t precision,
+                                                        uint8_t price_precision,
                                                         const char *components_ptr,
-                                                        const char *formula_ptr);
+                                                        const char *formula_ptr,
+                                                        uint64_t ts_event,
+                                                        uint64_t ts_init);
 
 void synthetic_instrument_drop(struct SyntheticInstrument_API synth);
 
 struct InstrumentId_t synthetic_instrument_id(const struct SyntheticInstrument_API *synth);
 
-uint8_t synthetic_instrument_precision(const struct SyntheticInstrument_API *synth);
+uint8_t synthetic_instrument_price_precision(const struct SyntheticInstrument_API *synth);
+
+struct Price_t synthetic_instrument_price_increment(const struct SyntheticInstrument_API *synth);
 
 const char *synthetic_instrument_formula_to_cstr(const struct SyntheticInstrument_API *synth);
 
 const char *synthetic_instrument_components_to_cstr(const struct SyntheticInstrument_API *synth);
+
+uintptr_t synthetic_instrument_components_count(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_event(const struct SyntheticInstrument_API *synth);
+
+uint64_t synthetic_instrument_ts_init(const struct SyntheticInstrument_API *synth);
 
 /**
  * # Safety
@@ -1700,6 +1670,10 @@ void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_
 
 void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
 
+CVec orderbook_bids(struct OrderBook_API *book);
+
+CVec orderbook_asks(struct OrderBook_API *book);
+
 uint8_t orderbook_has_bid(struct OrderBook_API *book);
 
 uint8_t orderbook_has_ask(struct OrderBook_API *book);
@@ -1716,6 +1690,10 @@ double orderbook_spread(struct OrderBook_API *book);
 
 double orderbook_midpoint(struct OrderBook_API *book);
 
+double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
+                                         struct Quantity_t qty,
+                                         enum OrderSide order_side);
+
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
 
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
@@ -1731,6 +1709,24 @@ void vec_fills_drop(CVec v);
  */
 const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
 
+struct Level_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
+
+void level_drop(struct Level_API level);
+
+struct Level_API level_clone(const struct Level_API *level);
+
+struct Price_t level_price(const struct Level_API *level);
+
+CVec level_orders(const struct Level_API *level);
+
+double level_volume(const struct Level_API *level);
+
+double level_exposure(const struct Level_API *level);
+
+void vec_levels_drop(CVec v);
+
+void vec_orders_drop(CVec v);
+
 /**
  * Returns a [`Currency`] from pointers and primitives.
  *
@@ -1745,17 +1741,11 @@ struct Currency_t currency_from_py(const char *code_ptr,
                                    const char *name_ptr,
                                    enum CurrencyType currency_type);
 
-struct Currency_t currency_clone(const struct Currency_t *currency);
-
-void currency_drop(struct Currency_t currency);
-
 const char *currency_to_cstr(const struct Currency_t *currency);
 
 const char *currency_code_to_cstr(const struct Currency_t *currency);
 
 const char *currency_name_to_cstr(const struct Currency_t *currency);
-
-uint8_t currency_eq(const struct Currency_t *lhs, const struct Currency_t *rhs);
 
 uint64_t currency_hash(const struct Currency_t *currency);
 
@@ -1778,8 +1768,6 @@ struct Currency_t currency_from_cstr(const char *code_ptr);
 struct Money_t money_new(double amount, struct Currency_t currency);
 
 struct Money_t money_from_raw(int64_t raw, struct Currency_t currency);
-
-void money_drop(struct Money_t money);
 
 double money_as_f64(const struct Money_t *money);
 

@@ -22,10 +22,10 @@ import pyarrow as pa
 # fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data import BookOrder
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
@@ -64,22 +64,20 @@ class BSPOrderBookDelta(OrderBookDelta):
     def from_dict(values) -> "BSPOrderBookDelta":
         PyCondition.not_none(values, "values")
         action: BookAction = book_action_from_str(values["action"])
-        order: BookOrder = (
-            BookOrder.from_dict(
-                {
-                    "price": values["price"],
-                    "size": values["size"],
-                    "side": values["side"],
-                    "order_id": values["order_id"],
-                },
-            )
-            if values["action"] != "CLEAR"
-            else None
-        )
+        if action != BookAction.CLEAR:
+            book_dict = {
+                "price": str(values["price"]),
+                "size": str(values["size"]),
+                "side": values["side"],
+                "order_id": values["order_id"],
+            }
+            book_order = BookOrder.from_dict(book_dict)
+        else:
+            book_order = None
         return BSPOrderBookDelta(
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             action=action,
-            order=order,
+            order=book_order,
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -166,11 +164,21 @@ class BetfairStartingPrice(Data):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        bsp: float = None,
+        bsp: Optional[float] = None,
     ):
-        super().__init__(ts_event=ts_event, ts_init=ts_init)
+        super().__init__()
+        self._ts_event = ts_event
+        self._ts_init = ts_init
         self.instrument_id: InstrumentId = instrument_id
         self.bsp = bsp
+
+    @property
+    def ts_init(self) -> int:
+        return self._ts_init
+
+    @property
+    def ts_event(self) -> int:
+        return self._ts_event
 
     @classmethod
     def schema(cls):

@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import asyncio
-from typing import Optional
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.clock import LiveClock
@@ -54,6 +55,7 @@ class LiveRiskEngine(RiskEngine):
     ------
     TypeError
         If `config` is not of type `LiveRiskEngineConfig`.
+
     """
 
     _sentinel = None
@@ -66,7 +68,7 @@ class LiveRiskEngine(RiskEngine):
         cache: CacheFacade,
         clock: LiveClock,
         logger: Logger,
-        config: Optional[LiveRiskEngineConfig] = None,
+        config: LiveRiskEngineConfig | None = None,
     ) -> None:
         if config is None:
             config = LiveRiskEngineConfig()
@@ -85,11 +87,11 @@ class LiveRiskEngine(RiskEngine):
         self._evt_queue: Queue = Queue(maxsize=config.qsize)
 
         # Async tasks
-        self._cmd_queue_task: Optional[asyncio.Task] = None
-        self._evt_queue_task: Optional[asyncio.Task] = None
+        self._cmd_queue_task: asyncio.Task | None = None
+        self._evt_queue_task: asyncio.Task | None = None
         self._kill: bool = False
 
-    def get_cmd_queue_task(self) -> Optional[asyncio.Task]:
+    def get_cmd_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal command queue task for the engine.
 
@@ -100,7 +102,7 @@ class LiveRiskEngine(RiskEngine):
         """
         return self._cmd_queue_task
 
-    def get_evt_queue_task(self) -> Optional[asyncio.Task]:
+    def get_evt_queue_task(self) -> asyncio.Task | None:
         """
         Return the internal event queue task for the engine.
 
@@ -238,7 +240,7 @@ class LiveRiskEngine(RiskEngine):
         )
         try:
             while True:
-                command: Optional[Command] = await self._cmd_queue.get()
+                command: Command | None = await self._cmd_queue.get()
                 if command is self._sentinel:
                     break
                 self._execute_command(command)
@@ -257,7 +259,7 @@ class LiveRiskEngine(RiskEngine):
         )
         try:
             while True:
-                event: Optional[Event] = await self._evt_queue.get()
+                event: Event | None = await self._evt_queue.get()
                 if event is self._sentinel:
                     break
                 self._handle_event(event)

@@ -12,6 +12,7 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
+anyhow.workspace = true
 pyo3.workspace = true
 rmp-serde.workspace = true
 rust_decimal.workspace = true
@@ -23,12 +24,10 @@ derive_builder = "0.12.0"
 evalexpr = "11.0.0"
 lazy_static = "1.4.0"
 tabled = "0.12.2"
+ustr = "0.10.0"
 
 [features]
-extension-module = [
-    "pyo3/extension-module",
-    "nautilus-core/extension-module",
-]
+extension-module = ["pyo3/extension-module", "nautilus-core/extension-module"]
 default = []
 
 [dev-dependencies]

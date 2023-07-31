@@ -12,10 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
-Defines tradable asset/contract instruments with specific properties dependent
-on the asset class and asset type.
+Defines tradable asset/contract instruments with specific properties dependent on the
+asset class and asset type.
 """
 
 from nautilus_trader.model.instruments.base import Instrument
@@ -26,6 +25,7 @@ from nautilus_trader.model.instruments.currency_pair import CurrencyPair
 from nautilus_trader.model.instruments.equity import Equity
 from nautilus_trader.model.instruments.futures_contract import FuturesContract
 from nautilus_trader.model.instruments.options_contract import OptionsContract
+from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
 
 
 __all__ = [
@@ -37,4 +37,5 @@ __all__ = [
     "Equity",
     "FuturesContract",
     "OptionsContract",
+    "SyntheticInstrument",
 ]

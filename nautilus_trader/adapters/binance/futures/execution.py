@@ -22,6 +22,7 @@ import msgspec
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
@@ -74,8 +75,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    warn_gtd_to_gtc : bool, default True
-        If log warning for GTD time in force transformed to GTC.
+    config : BinanceExecClientConfig
+        The configuration for the client.
+
     """
 
     def __init__(
@@ -88,8 +90,8 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         logger: Logger,
         instrument_provider: BinanceFuturesInstrumentProvider,
         base_url_ws: str,
+        config: BinanceExecClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        warn_gtd_to_gtc: bool = True,
     ):
         PyCondition.true(
             account_type.is_futures,
@@ -119,7 +121,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
-            warn_gtd_to_gtc=warn_gtd_to_gtc,
+            config=config,
         )
 
         # Register additional futures websocket user data event handlers
@@ -193,16 +195,16 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     async def _get_binance_active_position_symbols(
         self,
         symbol: Optional[str] = None,
-    ) -> list[str]:
+    ) -> set[str]:
         # Check Binance for all active positions
-        active_symbols: list[str] = []
+        active_symbols: set[str] = set()
         binance_positions: list[BinanceFuturesPositionRisk]
         binance_positions = await self._futures_http_account.query_futures_position_risk(symbol)
         for position in binance_positions:
             if Decimal(position.positionAmt) == 0:
                 continue  # Flat position
             # Add active symbol
-            active_symbols.append(position.symbol)
+            active_symbols.add(position.symbol)
         return active_symbols
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------

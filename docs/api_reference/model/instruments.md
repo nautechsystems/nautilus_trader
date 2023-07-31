@@ -45,7 +45,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.instruments.future
+.. automodule:: nautilus_trader.model.instruments.futures_contract
    :show-inheritance:
    :inherited-members:
    :members:
@@ -53,7 +53,15 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.model.instruments.option
+.. automodule:: nautilus_trader.model.instruments.options_contract
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
+.. automodule:: nautilus_trader.model.instruments.synthetic
    :show-inheritance:
    :inherited-members:
    :members:

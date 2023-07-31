@@ -94,7 +94,7 @@ class TestDataStubs:
     def trade_tick(
         instrument: Optional[Instrument] = None,
         price: float = 1.0,
-        quantity: float = 100_000,
+        size: float = 100_000,
         aggressor_side: AggressorSide = AggressorSide.BUYER,
         trade_id: str = "123456",
         ts_event: int = 0,
@@ -104,7 +104,7 @@ class TestDataStubs:
         return TradeTick(
             instrument_id=inst.id,
             price=inst.make_price(price),
-            size=inst.make_qty(quantity),
+            size=inst.make_qty(size),
             aggressor_side=aggressor_side,
             trade_id=TradeId(trade_id),
             ts_event=ts_event,
@@ -210,7 +210,7 @@ class TestDataStubs:
 
     @staticmethod
     def instrument_close() -> InstrumentClose:
-        from nautilus_trader.adapters.betfair.common import BETFAIR_PRICE_PRECISION
+        from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 
         return InstrumentClose(
             TestIdStubs.betting_instrument_id(),
@@ -370,8 +370,8 @@ class TestDataStubs:
 
     @staticmethod
     def venue_status_update(
-        venue: Venue = None,
-        status: MarketStatus = None,
+        venue: Optional[Venue] = None,
+        status: Optional[MarketStatus] = None,
     ) -> VenueStatusUpdate:
         return VenueStatusUpdate(
             venue=venue or Venue("BINANCE"),
@@ -382,8 +382,8 @@ class TestDataStubs:
 
     @staticmethod
     def instrument_status_update(
-        instrument_id: InstrumentId = None,
-        status: MarketStatus = None,
+        instrument_id: Optional[InstrumentId] = None,
+        status: Optional[MarketStatus] = None,
     ) -> InstrumentStatusUpdate:
         return InstrumentStatusUpdate(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),

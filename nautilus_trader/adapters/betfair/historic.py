@@ -17,7 +17,7 @@ from typing import Optional
 
 import msgspec
 from betfair_parser.spec.streaming import MCM
-from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -35,10 +35,10 @@ def historical_instrument_provider_loader(instrument_provider, line):
     mcm = msgspec.json.decode(line, type=MCM)
     # Find instruments in data
     for mc in mcm.mc:
-        if mc.marketDefinition:
-            market_def = msgspec.structs.replace(mc.marketDefinition, marketId=mc.id)
-            mc = msgspec.structs.replace(mc, marketDefinition=market_def)
-            instruments = make_instruments(mc.marketDefinition, currency="GBP")
+        if mc.market_definition:
+            market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
+            mc = msgspec.structs.replace(mc, market_definition=market_def)
+            instruments = make_instruments(mc.market_definition, currency="GBP")
             instrument_provider.add_bulk(instruments)
 
     # By this point we should always have some instruments loaded from historical data
@@ -55,7 +55,7 @@ def make_betfair_reader(
     parser = BetfairParser()
 
     def parse_line(line):
-        yield from parser.parse(STREAM_DECODER.decode(line))
+        yield from parser.parse(stream_decode(line))
 
     return TextReader(
         # Use the standard `on_market_update` betfair parser that the adapter uses

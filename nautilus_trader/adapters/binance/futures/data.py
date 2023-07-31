@@ -20,6 +20,7 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesMarkPriceMsg
@@ -64,9 +65,9 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    use_agg_trade_ticks : bool, default False
-        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
-        TradeId of ticks will be the Aggregate tradeId returned by Binance.
+    config : BinanceDataClientConfig
+        The configuration for the client.
+
     """
 
     def __init__(
@@ -79,8 +80,8 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         base_url_ws: str,
+        config: BinanceDataClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        use_agg_trade_ticks: bool = False,
     ):
         PyCondition.true(
             account_type.is_futures,
@@ -106,7 +107,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
-            use_agg_trade_ticks=use_agg_trade_ticks,
+            config=config,
         )
 
         # Register additional futures websocket handlers
@@ -133,7 +134,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                     "no instrument ID in `data_type` metadata.",
                 )
                 return
-            self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
+            await self._ws_client.subscribe_mark_price(instrument_id.symbol.value, speed=1000)
         else:
             self._log.error(
                 f"Cannot subscribe to {data_type.type} (not implemented).",

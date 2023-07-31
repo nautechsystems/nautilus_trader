@@ -34,7 +34,7 @@ pub const MONEY_MAX: f64 = 9_223_372_036.0;
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
-#[derive(Eq, Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq)]
 #[pyclass]
 pub struct Money {
     raw: i64,
@@ -82,7 +82,7 @@ impl PartialEq for Money {
 
 impl PartialOrd for Money {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.raw.partial_cmp(&other.raw)
+        Some(self.cmp(other))
     }
 
     fn lt(&self, other: &Self) -> bool {
@@ -214,7 +214,7 @@ impl Serialize for Money {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&format!("{}", self))
+        serializer.serialize_str(&self.to_string())
     }
 }
 
@@ -255,11 +255,6 @@ pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
 #[no_mangle]
 pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
     Money::from_raw(raw, currency)
-}
-
-#[no_mangle]
-pub extern "C" fn money_drop(money: Money) {
-    drop(money); // Memory freed here
 }
 
 #[no_mangle]

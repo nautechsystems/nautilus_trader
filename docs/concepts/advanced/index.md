@@ -18,5 +18,6 @@ highest to lowest level (although they are self-contained and can be read in any
    data.md
    advanced_orders.md
    emulated_orders.md
+   synthetic_instruments.md
    portfolio_statistics.md
 ```

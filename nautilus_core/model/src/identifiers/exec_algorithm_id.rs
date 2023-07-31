@@ -14,21 +14,31 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct ExecAlgorithmId {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
+}
+
+impl ExecAlgorithmId {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`ExecAlgorithmId` value");
+
+        Self {
+            value: Ustr::from(s),
+        }
+    }
 }
 
 impl Debug for ExecAlgorithmId {
@@ -43,17 +53,6 @@ impl Display for ExecAlgorithmId {
     }
 }
 
-impl ExecAlgorithmId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ExecAlgorithmId` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,36 +63,13 @@ impl ExecAlgorithmId {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *const c_char) -> ExecAlgorithmId {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     ExecAlgorithmId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn exec_algorithm_id_clone(exec_algorithm_id: &ExecAlgorithmId) -> ExecAlgorithmId {
-    exec_algorithm_id.clone()
-}
-
-/// Frees the memory for the given `exec_algorithm_id` by dropping.
-#[no_mangle]
-pub extern "C" fn exec_algorithm_id_drop(exec_algorithm_id: ExecAlgorithmId) {
-    drop(exec_algorithm_id); // Memory freed here
-}
-
-/// Returns an [`ExecAlgorithmId`] identifier as a C string pointer.
-#[no_mangle]
-pub extern "C" fn exec_algorithm_id_to_cstr(exec_algorithm_id: &ExecAlgorithmId) -> *const c_char {
-    str_to_cstr(&exec_algorithm_id.value)
-}
-
-#[no_mangle]
-pub extern "C" fn exec_algorithm_id_eq(lhs: &ExecAlgorithmId, rhs: &ExecAlgorithmId) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn exec_algorithm_id_hash(exec_algorithm_id: &ExecAlgorithmId) -> u64 {
-    let mut h = DefaultHasher::new();
-    exec_algorithm_id.hash(&mut h);
-    h.finish()
+pub extern "C" fn exec_algorithm_id_hash(id: &ExecAlgorithmId) -> u64 {
+    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -102,26 +78,11 @@ pub extern "C" fn exec_algorithm_id_hash(exec_algorithm_id: &ExecAlgorithmId) ->
 #[cfg(test)]
 mod tests {
     use super::ExecAlgorithmId;
-    use crate::identifiers::exec_algorithm_id::exec_algorithm_id_drop;
-
-    #[test]
-    fn test_equality() {
-        let id1 = ExecAlgorithmId::new("VWAP");
-        let id2 = ExecAlgorithmId::new("TWAP");
-        assert_eq!(id1, id1);
-        assert_ne!(id1, id2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let id = ExecAlgorithmId::new("001");
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
-    }
-
-    #[test]
-    fn test_exec_algorithm_id_drop() {
-        let id = ExecAlgorithmId::new("001");
-        exec_algorithm_id_drop(id); // No panic
     }
 }

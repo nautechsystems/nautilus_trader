@@ -18,7 +18,7 @@ import os
 from functools import lru_cache
 from typing import Optional
 
-from nautilus_trader.adapters.betfair.client.core import BetfairClient
+from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
@@ -34,7 +34,7 @@ from nautilus_trader.model.currency import Currency
 from nautilus_trader.msgbus.bus import MessageBus
 
 
-CLIENTS: dict[str, BetfairClient] = {}
+CLIENTS: dict[str, BetfairHttpClient] = {}
 INSTRUMENT_PROVIDER = None
 
 
@@ -45,8 +45,7 @@ def get_cached_betfair_client(
     username: Optional[str] = None,
     password: Optional[str] = None,
     app_key: Optional[str] = None,
-    cert_dir: Optional[str] = None,
-) -> BetfairClient:
+) -> BetfairHttpClient:
     """
     Cache and return a Betfair HTTP client with the given credentials.
 
@@ -68,13 +67,10 @@ def get_cached_betfair_client(
     app_key : str, optional
         The API application key for the client.
         If None then will source from the `BETFAIR_APP_KEY` env var.
-    cert_dir : str, optional
-        The API SSL certificate directory for the client.
-        If None then will source from the `BETFAIR_CERT_DIR` env var.
 
     Returns
     -------
-    BetfairClient
+    BetfairHttpClient
 
     """
     global CLIENTS
@@ -82,19 +78,16 @@ def get_cached_betfair_client(
     username = username or os.environ["BETFAIR_USERNAME"]
     password = password or os.environ["BETFAIR_PASSWORD"]
     app_key = app_key or os.environ["BETFAIR_APP_KEY"]
-    cert_dir = cert_dir or os.environ["BETFAIR_CERT_DIR"]
 
-    key: str = "|".join((username, password, app_key, cert_dir))
+    key: str = "|".join((username, password, app_key))
     if key not in CLIENTS:
         LoggerAdapter("BetfairFactory", logger).warning(
-            "Creating new instance of BetfairClient",
+            "Creating new instance of BetfairHttpClient",
         )
-        client = BetfairClient(
+        client = BetfairHttpClient(
             username=username,
             password=password,
             app_key=app_key,
-            cert_dir=cert_dir,
-            loop=loop,
             logger=logger,
         )
         CLIENTS[key] = client
@@ -103,7 +96,7 @@ def get_cached_betfair_client(
 
 @lru_cache(1)
 def get_cached_betfair_instrument_provider(
-    client: BetfairClient,
+    client: BetfairHttpClient,
     logger: Logger,
     market_filter: tuple,
 ) -> BetfairInstrumentProvider:
@@ -123,7 +116,7 @@ def get_cached_betfair_instrument_provider(
 
     Returns
     -------
-    BinanceInstrumentProvider
+    BetfairInstrumentProvider
 
     """
     global INSTRUMENT_PROVIDER
@@ -186,9 +179,8 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             username=config.username,
             password=config.password,
             app_key=config.app_key,
-            cert_dir=config.cert_dir,
-            loop=loop,
             logger=logger,
+            loop=loop,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,
@@ -252,11 +244,10 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         market_filter: tuple = config.market_filter or ()
 
         client = get_cached_betfair_client(
+            loop=loop,
             username=config.username,
             password=config.password,
             app_key=config.app_key,
-            cert_dir=config.cert_dir,
-            loop=loop,
             logger=logger,
         )
         provider = get_cached_betfair_instrument_provider(

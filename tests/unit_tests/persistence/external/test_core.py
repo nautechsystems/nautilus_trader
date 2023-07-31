@@ -448,10 +448,12 @@ class TestPersistenceCoreMemory(_TestPersistenceCore):
 class TestPersistenceCoreFile(_TestPersistenceCore):
     fs_protocol = "file"
     """
-    TODO
-    These tests fail on windows and Memory fs due to fsspec prepending forward slash to window paths.
+    TODO These tests fail on windows and Memory fs due to fsspec prepending forward
+    slash to window paths.
+
     OSError: [WinError 123] Failed querying information for path
     '/C:/Users/user/AppData/Local/Temp/tmpa2tso19k/sample.parquet'
+
     """
 
     def test_write_parquet_no_partitions(self):

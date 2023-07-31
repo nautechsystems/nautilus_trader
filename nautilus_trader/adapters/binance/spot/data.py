@@ -20,6 +20,7 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.data import BinanceCommonDataClient
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.http.market import BinanceSpotMarketHttpAPI
@@ -61,9 +62,9 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         The base URL for the WebSocket client.
     account_type : BinanceAccountType
         The account type for the client.
-    use_agg_trade_ticks : bool, default False
-        Whether to use aggregated trade tick endpoints instead of raw trade ticks.
-        TradeId of ticks will be the Aggregate tradeId returned by Binance.
+    config : BinanceDataClientConfig
+        The configuration for the client.
+
     """
 
     def __init__(
@@ -76,8 +77,8 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
         logger: Logger,
         instrument_provider: InstrumentProvider,
         base_url_ws: str,
+        config: BinanceDataClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
-        use_agg_trade_ticks: bool = False,
     ):
         PyCondition.true(
             account_type.is_spot_or_margin,
@@ -102,7 +103,7 @@ class BinanceSpotDataClient(BinanceCommonDataClient):
             instrument_provider=instrument_provider,
             account_type=account_type,
             base_url_ws=base_url_ws,
-            use_agg_trade_ticks=use_agg_trade_ticks,
+            config=config,
         )
 
         # Websocket msgspec decoders

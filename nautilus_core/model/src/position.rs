@@ -60,9 +60,9 @@ struct Position {
     pub size_precision: u8,
     pub multiplier: Quantity,
     pub is_inverse: bool,
-    pub quote_currency: Currency,
     pub base_currency: Option<Currency>,
-    pub cost_currency: Currency,
+    pub quote_currency: Currency,
+    pub settlement_currency: Currency,
     pub ts_init: UnixNanos,
     pub ts_opened: UnixNanos,
     pub ts_last: UnixNanos,
@@ -75,8 +75,8 @@ struct Position {
 }
 
 impl Position {
-    pub fn new(instrument: &Instrument, fill: &OrderFilled) -> Self {
-        assert_eq!(instrument.id, fill.instrument_id);
+    pub fn new<T: Instrument>(instrument: &T, fill: &OrderFilled) -> Self {
+        assert_eq!(instrument.id(), &fill.instrument_id);
         assert!(fill.position_id.is_some());
         assert!(fill.order_side != OrderSide::NoOrderSide);
 
@@ -85,28 +85,28 @@ impl Position {
             client_order_ids: Vec::<ClientOrderId>::new(),
             venue_order_ids: Vec::<VenueOrderId>::new(),
             trade_ids: Vec::<TradeId>::new(),
-            buy_qty: Quantity::new(0.0, instrument.size_precision),
-            sell_qty: Quantity::new(0.0, instrument.size_precision),
+            buy_qty: Quantity::zero(instrument.size_precision()),
+            sell_qty: Quantity::zero(instrument.size_precision()),
             commissions: HashMap::<Currency, Money>::new(),
-            trader_id: fill.trader_id.clone(),
-            strategy_id: fill.strategy_id.clone(),
-            instrument_id: fill.instrument_id.clone(),
-            id: fill.position_id.clone().unwrap(), // TODO: Improve validation
-            account_id: fill.account_id.clone(),
-            opening_order_id: fill.client_order_id.clone(),
+            trader_id: fill.trader_id,
+            strategy_id: fill.strategy_id,
+            instrument_id: fill.instrument_id,
+            id: fill.position_id.unwrap(), // TODO: Improve validation
+            account_id: fill.account_id,
+            opening_order_id: fill.client_order_id,
             closing_order_id: None,
             entry: fill.order_side,
             side: PositionSide::Flat,
             signed_qty: 0.0,
             quantity: fill.last_qty,
             peak_qty: fill.last_qty,
-            price_precision: instrument.price_precision,
-            size_precision: instrument.size_precision,
-            multiplier: instrument.multiplier,
-            is_inverse: instrument.is_inverse,
-            quote_currency: instrument.quote_currency.clone(),
-            base_currency: instrument.base_currency.clone(),
-            cost_currency: instrument.cost_currency.clone(),
+            price_precision: instrument.price_precision(),
+            size_precision: instrument.size_precision(),
+            multiplier: instrument.multiplier(),
+            is_inverse: instrument.is_inverse(),
+            base_currency: instrument.base_currency().to_owned().copied(),
+            quote_currency: *instrument.quote_currency(),
+            settlement_currency: *instrument.settlement_currency(),
             ts_init: fill.ts_init,
             ts_opened: fill.ts_event,
             ts_last: fill.ts_event,
@@ -129,12 +129,12 @@ impl Position {
             // Reset position
             self.events.clear();
             self.trade_ids.clear();
-            self.buy_qty = Quantity::new(0.0, self.size_precision);
-            self.sell_qty = Quantity::new(0.0, self.size_precision);
+            self.buy_qty = Quantity::zero(self.size_precision);
+            self.sell_qty = Quantity::zero(self.size_precision);
             self.commissions.clear();
-            self.opening_order_id = fill.client_order_id.clone();
+            self.opening_order_id = fill.client_order_id;
             self.closing_order_id = None;
-            self.peak_qty = Quantity::new(0.0, self.size_precision);
+            self.peak_qty = Quantity::zero(self.size_precision);
             self.ts_init = fill.ts_init;
             self.ts_opened = fill.ts_event;
             self.duration_ns = None;
@@ -145,17 +145,17 @@ impl Position {
         }
 
         self.events.push(fill.clone()); // Potentially do this last
-        self.trade_ids.push(fill.trade_id.clone());
+        self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions
-        let commission_currency = fill.commission.currency.clone();
-        let commission_clone = fill.commission.clone();
+        let commission_currency = fill.commission.currency;
+        let commission_clone = fill.commission;
 
         if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
             *existing_commission += commission_clone;
         } else {
             self.commissions
-                .insert(commission_currency, fill.commission.clone());
+                .insert(commission_currency, fill.commission);
         }
 
         // Calculate avg prices, points, return, PnL
@@ -180,7 +180,7 @@ impl Position {
             self.side = PositionSide::Short;
         } else {
             self.side = PositionSide::Flat;
-            self.closing_order_id = Some(fill.client_order_id.clone());
+            self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
             self.duration_ns = Some(self.ts_closed.unwrap() - self.ts_opened);
         }

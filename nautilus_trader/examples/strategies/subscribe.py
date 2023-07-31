@@ -49,12 +49,14 @@ class SubscribeStrategyConfig(StrategyConfig, frozen=True):
 
 class SubscribeStrategy(Strategy):
     """
-    A strategy that simply subscribes to data and logs it (typically for testing adapters)
+    A strategy that simply subscribes to data and logs it (typically for testing
+    adapters)
 
     Parameters
     ----------
     config : OrderbookImbalanceConfig
         The configuration for the instance.
+
     """
 
     def __init__(self, config: SubscribeStrategyConfig) -> None:
@@ -63,7 +65,9 @@ class SubscribeStrategy(Strategy):
         self.book: Optional[OrderBook] = None
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")

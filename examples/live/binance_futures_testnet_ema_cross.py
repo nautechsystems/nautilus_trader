@@ -68,6 +68,7 @@ config_node = TradingNodeConfig(
             us=False,  # If client is for Binance US
             testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            use_position_ids=False,
         ),
     },
     timeout_connection=20.0,
@@ -76,6 +77,7 @@ config_node = TradingNodeConfig(
     timeout_disconnection=10.0,
     timeout_post_stop=5.0,
 )
+
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
@@ -88,7 +90,9 @@ strat_config = EMACrossConfig(
     slow_ema_period=20,
     trade_size=Decimal("0.010"),
     order_id_tag="001",
+    oms_type="HEDGING",
 )
+
 # Instantiate your strategy
 strategy = EMACross(config=strat_config)
 

@@ -13,9 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from numpy import float64
@@ -32,8 +34,8 @@ from nautilus_trader.model.position import Position
 
 class PortfolioAnalyzer:
     """
-    Provides a portfolio performance analyzer for tracking and generating
-    performance metrics and statistics.
+    Provides a portfolio performance analyzer for tracking and generating performance
+    metrics and statistics.
     """
 
     def __init__(self) -> None:
@@ -63,14 +65,12 @@ class PortfolioAnalyzer:
     def deregister_statistic(self, statistic: PortfolioStatistic) -> None:
         """
         Deregister a statistic from the analyzer.
-
         """
         self._statistics.pop(statistic.name, None)
 
     def deregister_statistics(self) -> None:
         """
         Deregister all statistics from the analyzer.
-
         """
         self._statistics.clear()
 
@@ -79,6 +79,7 @@ class PortfolioAnalyzer:
         Reset the analyzer.
 
         All stateful fields are reset to their initial value.
+
         """
         self._account_balances_starting = {}
         self._account_balances = {}
@@ -104,7 +105,7 @@ class PortfolioAnalyzer:
         """
         return list(self._account_balances.keys())
 
-    def statistic(self, name: str) -> Optional[PortfolioStatistic]:
+    def statistic(self, name: str) -> PortfolioStatistic | None:
         """
         Return the statistic with the given name (if found).
 
@@ -194,7 +195,7 @@ class PortfolioAnalyzer:
             self._returns.loc[timestamp] = 0.0
         self._returns.loc[timestamp] += float(value)
 
-    def realized_pnls(self, currency: Currency = None) -> Optional[pd.Series]:
+    def realized_pnls(self, currency: Currency | None = None) -> pd.Series | None:
         """
         Return the realized PnL for the portfolio.
 
@@ -227,8 +228,8 @@ class PortfolioAnalyzer:
 
     def total_pnl(
         self,
-        currency: Optional[Currency] = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> float:
         """
         Return the total PnL for the portfolio.
@@ -278,8 +279,8 @@ class PortfolioAnalyzer:
 
     def total_pnl_percentage(
         self,
-        currency: Currency = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> float:
         """
         Return the percentage change of the total PnL for the portfolio.
@@ -339,11 +340,12 @@ class PortfolioAnalyzer:
 
     def get_performance_stats_pnls(
         self,
-        currency: Currency = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> dict[str, float]:
         """
-        Return the 'PnL' (profit and loss) performance statistics, optionally includes the unrealized PnL.
+        Return the 'PnL' (profit and loss) performance statistics, optionally includes
+        the unrealized PnL.
 
         Money objects are converted to floats.
 
@@ -419,12 +421,12 @@ class PortfolioAnalyzer:
 
     def get_stats_pnls_formatted(
         self,
-        currency: Currency = None,
-        unrealized_pnl: Optional[Money] = None,
+        currency: Currency | None = None,
+        unrealized_pnl: Money | None = None,
     ) -> list[str]:
         """
-        Return the performance statistics from the last backtest run formatted
-        for printing in the backtest run footer.
+        Return the performance statistics from the last backtest run formatted for
+        printing in the backtest run footer.
 
         Parameters
         ----------

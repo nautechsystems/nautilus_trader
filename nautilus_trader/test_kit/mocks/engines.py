@@ -19,7 +19,9 @@ from nautilus_trader.live.risk_engine import LiveRiskEngine
 
 
 class MockLiveDataEngine(LiveDataEngine):
-    """Provides a mock live data engine for testing."""
+    """
+    Provides a mock live data engine for testing.
+    """
 
     def __init__(
         self,
@@ -54,7 +56,9 @@ class MockLiveDataEngine(LiveDataEngine):
 
 
 class MockLiveExecutionEngine(LiveExecutionEngine):
-    """Provides a mock live execution engine for testing."""
+    """
+    Provides a mock live execution engine for testing.
+    """
 
     def __init__(
         self,
@@ -85,7 +89,9 @@ class MockLiveExecutionEngine(LiveExecutionEngine):
 
 
 class MockLiveRiskEngine(LiveRiskEngine):
-    """Provides a mock live risk engine for testing."""
+    """
+    Provides a mock live risk engine for testing.
+    """
 
     def __init__(
         self,

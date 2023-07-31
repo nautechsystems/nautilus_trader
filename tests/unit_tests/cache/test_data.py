@@ -1,0 +1,653 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+from decimal import Decimal
+
+import pytest
+
+from nautilus_trader.model.currencies import AUD
+from nautilus_trader.model.currencies import JPY
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.test_kit.stubs.component import TestComponentStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
+
+
+SIM = Venue("SIM")
+USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+
+
+class TestCache:
+    def setup(self):
+        # Fixture Setup
+        self.cache = TestComponentStubs.cache()
+
+    def test_reset_an_empty_cache(self):
+        # Arrange, Act
+        self.cache.reset()
+
+        # Assert
+        assert self.cache.instruments() == []
+        assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
+        assert self.cache.trade_ticks(AUDUSD_SIM.id) == []
+        assert self.cache.bars(TestDataStubs.bartype_gbpusd_1sec_mid()) == []
+
+    def test_instrument_ids_when_no_instruments_returns_empty_list(self):
+        # Arrange, Act, Assert
+        assert self.cache.instrument_ids() == []
+
+    def test_instruments_when_no_instruments_returns_empty_list(self):
+        # Arrange, Act, Assert
+        assert self.cache.instruments() == []
+
+    def test_tickers_for_unknown_instrument_returns_empty_list(self):
+        # Arrange, Act, Assert
+        assert self.cache.tickers(AUDUSD_SIM.id) == []
+
+    def test_quote_ticks_for_unknown_instrument_returns_empty_list(self):
+        # Arrange, Act, Assert
+        assert self.cache.quote_ticks(AUDUSD_SIM.id) == []
+
+    def test_trade_ticks_for_unknown_instrument_returns_empty_list(self):
+        # Arrange, Act, Assert
+        assert self.cache.trade_ticks(AUDUSD_SIM.id) == []
+
+    def test_bars_for_unknown_bar_type_returns_empty_list(self):
+        # Arrange, Act, Assert
+        assert self.cache.bars(TestDataStubs.bartype_gbpusd_1sec_mid()) == []
+
+    def test_instrument_when_no_instruments_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.instrument(AUDUSD_SIM.id) is None
+
+    def test_order_book_for_unknown_instrument_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.order_book(AUDUSD_SIM.id) is None
+
+    def test_ticker_when_no_tickers_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.ticker(AUDUSD_SIM.id) is None
+
+    def test_quote_tick_when_no_ticks_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.quote_tick(AUDUSD_SIM.id) is None
+
+    def test_trade_tick_when_no_ticks_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.trade_tick(AUDUSD_SIM.id) is None
+
+    def test_bar_when_no_bars_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.cache.bar(TestDataStubs.bartype_gbpusd_1sec_mid()) is None
+
+    def test_ticker_count_for_unknown_instrument_returns_zero(self):
+        # Arrange, Act, Assert
+        assert self.cache.ticker_count(AUDUSD_SIM.id) == 0
+
+    def test_quote_tick_count_for_unknown_instrument_returns_zero(self):
+        # Arrange, Act, Assert
+        assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 0
+
+    def test_trade_tick_count_for_unknown_instrument_returns_zero(self):
+        # Arrange, Act, Assert
+        assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 0
+
+    def test_has_order_book_for_unknown_instrument_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.has_order_book(AUDUSD_SIM.id)
+
+    def test_has_tickers_for_unknown_instrument_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.has_tickers(AUDUSD_SIM.id)
+
+    def test_has_quote_ticks_for_unknown_instrument_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.has_quote_ticks(AUDUSD_SIM.id)
+
+    def test_has_trade_ticks_for_unknown_instrument_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.has_trade_ticks(AUDUSD_SIM.id)
+
+    def test_has_bars_for_unknown_bar_type_returns_false(self):
+        # Arrange, Act, Assert
+        assert not self.cache.has_bars(TestDataStubs.bartype_gbpusd_1sec_mid())
+
+    def test_instrument_ids_when_one_instrument_returns_expected_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instrument_ids()
+
+        # Assert
+        assert result == [instrument.id]
+
+    def test_instrument_ids_given_same_venue_returns_expected_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instrument_ids(venue=instrument.venue)
+
+        # Assert
+        assert result == [instrument.id]
+
+    def test_instrument_ids_given_different_venue_returns_empty_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instrument_ids(venue=SIM)
+
+        # Assert
+        assert result == []
+
+    def test_instruments_when_one_instrument_returns_expected_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instruments()
+
+        # Assert
+        assert result == [instrument]
+
+    def test_instruments_given_same_venue_returns_expected_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instruments(venue=instrument.venue)
+
+        # Assert
+        assert result == [instrument]
+
+    def test_instruments_given_different_venue_returns_empty_list(self):
+        # Arrange
+        instrument = TestInstrumentProvider.ethusdt_binance()
+
+        self.cache.add_instrument(instrument)
+
+        # Act
+        result = self.cache.instruments(venue=SIM)
+
+        # Assert
+        assert result == []
+
+    def test_synthetic_ids_when_one_synthetic_instrument_returns_expected_list(self):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        self.cache.add_synthetic(synthetic)
+
+        # Act
+        result = self.cache.synthetic_ids()
+
+        # Assert
+        assert result == [synthetic.id]
+
+    def test_synthetics_when_one_synthetic_instrument_returns_expected_list(self):
+        # Arrange
+        synthetic = TestInstrumentProvider.synthetic_instrument()
+
+        self.cache.add_synthetic(synthetic)
+
+        # Act
+        result = self.cache.synthetics()
+
+        # Assert
+        assert result == [synthetic]
+
+    def test_quote_ticks_when_one_tick_returns_expected_list(self):
+        # Arrange
+        tick = TestDataStubs.quote_tick()
+
+        self.cache.add_quote_ticks([tick])
+
+        # Act
+        result = self.cache.quote_ticks(tick.instrument_id)
+
+        # Assert
+        assert result == [tick]
+
+    def test_add_quote_ticks_when_already_ticks_does_not_add(self):
+        # Arrange
+        tick = TestDataStubs.quote_tick()
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        self.cache.add_quote_ticks([tick])
+        result = self.cache.quote_ticks(tick.instrument_id)
+
+        # Assert
+        assert result == [tick]
+
+    def test_trade_ticks_when_one_tick_returns_expected_list(self):
+        # Arrange
+        tick = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_ticks([tick])
+
+        # Act
+        result = self.cache.trade_ticks(tick.instrument_id)
+
+        # Assert
+        assert result == [tick]
+
+    def test_add_trade_ticks_when_already_ticks_does_not_add(self):
+        # Arrange
+        tick = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        self.cache.add_trade_ticks([tick])
+        result = self.cache.trade_ticks(tick.instrument_id)
+
+        # Assert
+        assert result == [tick]
+
+    def test_bars_when_one_bar_returns_expected_list(self):
+        # Arrange
+        bar = TestDataStubs.bar_5decimal()
+
+        self.cache.add_bars([bar])
+
+        # Act
+        result = self.cache.bars(bar.bar_type)
+
+        # Assert
+        assert result == [bar]
+
+    def test_add_bars_when_already_bars_does_not_add(self):
+        # Arrange
+        bar = TestDataStubs.bar_5decimal()
+
+        self.cache.add_bar(bar)
+
+        # Act
+        self.cache.add_bars([bar])
+        result = self.cache.bars(bar.bar_type)
+
+        # Assert
+        assert result == [bar]
+
+    def test_instrument_when_no_instrument_returns_none(self):
+        # Arrange, Act
+        result = self.cache.instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert result is None
+
+    def test_instrument_when_instrument_exists_returns_expected(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        # Act
+        result = self.cache.instrument(AUDUSD_SIM.id)
+
+        # Assert
+        assert result == AUDUSD_SIM
+
+    def test_order_book_when_order_book_exists_returns_expected(self):
+        # Arrange
+        order_book = TestDataStubs.order_book(ETHUSDT_BINANCE.id)
+        self.cache.add_order_book(order_book)
+
+        # Act
+        result = self.cache.order_book(ETHUSDT_BINANCE.id)
+
+        # Assert
+        assert result == order_book
+
+    def test_price_when_no_ticks_returns_none(self):
+        # Act
+        result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
+
+        # Assert
+        assert result is None
+
+    def test_price_given_last_when_no_trade_ticks_returns_none(self):
+        # Act
+        tick = TestDataStubs.quote_tick()
+
+        self.cache.add_quote_tick(tick)
+
+        result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
+
+        # Assert
+        assert result is None
+
+    def test_price_given_quote_price_type_when_no_quote_ticks_returns_none(self):
+        # Arrange
+        tick = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.price(AUDUSD_SIM.id, PriceType.MID)
+
+        # Assert
+        assert result is None
+
+    def test_price_given_last_when_trade_tick_returns_expected_price(self):
+        # Arrange
+        tick = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.price(AUDUSD_SIM.id, PriceType.LAST)
+
+        # Assert
+        assert result == Price.from_str("1.00000")
+
+    @pytest.mark.parametrize(
+        ("price_type", "expected"),
+        [
+            [PriceType.BID, Price.from_str("1.00001")],
+            [PriceType.ASK, Price.from_str("1.00003")],
+            [PriceType.MID, Price.from_str("1.000020")],
+        ],
+    )
+    def test_price_given_various_quote_price_types_when_quote_tick_returns_expected_price(
+        self,
+        price_type,
+        expected,
+    ):
+        # Arrange
+        tick = TestDataStubs.quote_tick(
+            instrument=AUDUSD_SIM,
+            bid=1.00001,
+            ask=1.00003,
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.price(AUDUSD_SIM.id, price_type)
+
+        # Assert
+        assert result == expected
+
+    def test_quote_tick_when_index_out_of_range_returns_none(self):
+        # Arrange
+        tick = TestDataStubs.quote_tick()
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.quote_tick(AUDUSD_SIM.id, index=1)
+
+        # Assert
+        assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 1
+        assert result is None
+
+    def test_quote_tick_with_two_ticks_returns_expected_tick(self):
+        # Arrange
+        tick1 = TestDataStubs.quote_tick(ts_init=0)
+        tick2 = TestDataStubs.quote_tick(ts_init=1)
+
+        self.cache.add_quote_tick(tick1)
+        self.cache.add_quote_tick(tick2)
+
+        # Act
+        result = self.cache.quote_tick(AUDUSD_SIM.id, index=0)
+
+        # Assert
+        assert self.cache.quote_tick_count(AUDUSD_SIM.id) == 2
+        assert result.ts_init == 1
+
+    def test_trade_tick_when_index_out_of_range_returns_none(self):
+        # Arrange
+        tick = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_tick(tick)
+
+        # Act
+        result = self.cache.trade_tick(AUDUSD_SIM.id, index=1)
+
+        # Assert
+        assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 1
+        assert result is None
+
+    def test_trade_tick_with_one_tick_returns_expected_tick(self):
+        # Arrange
+        tick1 = TestDataStubs.trade_tick()
+        tick2 = TestDataStubs.trade_tick()
+
+        self.cache.add_trade_tick(tick1)
+        self.cache.add_trade_tick(tick2)
+
+        # Act
+        result = self.cache.trade_tick(AUDUSD_SIM.id, index=0)
+
+        # Assert
+        assert self.cache.trade_tick_count(AUDUSD_SIM.id) == 2
+        assert result == tick2
+
+    def test_bar_index_out_of_range_returns_expected_bar(self):
+        # Arrange
+        bar = TestDataStubs.bar_5decimal()
+
+        self.cache.add_bar(bar)
+
+        # Act
+        result = self.cache.bar(bar.bar_type, index=1)
+
+        # Assert
+        assert self.cache.bar_count(bar.bar_type) == 1
+        assert result is None
+
+    def test_bar_with_two_bars_returns_expected_bar(self):
+        # Arrange
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
+        bar1 = TestDataStubs.bar_5decimal()
+        bar2 = TestDataStubs.bar_5decimal()
+
+        self.cache.add_bar(bar1)
+        self.cache.add_bar(bar2)
+
+        # Act
+        result = self.cache.bar(bar_type, index=0)
+
+        # Assert
+        assert self.cache.bar_count(bar_type) == 2
+        assert result == bar2
+
+    def test_get_general_object_when_nothing_in_cache_returns_none(self):
+        # Arrange, Act
+        result = self.cache.get("something")
+
+        # Assert
+        assert result is None
+
+    def test_add_general_object_adds_to_cache(self):
+        # Arrange
+        key = "value_a"
+        obj = b"some string value"
+
+        # Act
+        self.cache.add(key, obj)
+
+        # Assert
+        assert self.cache.get(key) == obj
+
+    def test_get_xrate_returns_correct_rate(self):
+        # Arrange
+        self.cache.add_instrument(USDJPY_SIM)
+
+        tick = QuoteTick(
+            instrument_id=USDJPY_SIM.id,
+            bid=Price.from_str("110.80000"),
+            ask=Price.from_str("110.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.get_xrate(SIM, JPY, USD)
+
+        # Assert
+        assert result == 0.009025266685348969
+
+    def test_get_xrate_with_no_conversion_returns_one(self):
+        # Arrange, Act
+        result = self.cache.get_xrate(SIM, AUD, AUD)
+
+        # Assert
+        assert result == Decimal("1")
+
+    def test_get_xrate_with_conversion(self):
+        # Arrange
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        tick = QuoteTick(
+            instrument_id=AUDUSD_SIM.id,
+            bid=Price.from_str("0.80000"),
+            ask=Price.from_str("0.80010"),
+            bid_size=Quantity.from_int(1),
+            ask_size=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_quote_tick(tick)
+
+        # Act
+        result = self.cache.get_xrate(SIM, AUD, USD)
+
+        # Assert
+        assert result == 0.80005
+
+    def test_get_xrate_fallbacks_to_bars_if_no_quotes_returns_correct_rate(self):
+        # Arrange
+        self.cache.reset()
+        self.cache.add_instrument(AUDUSD_SIM)
+
+        bid_price = Price.from_str("0.80000")
+        bid_bar = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=bid_price,
+            high=bid_price,
+            low=bid_price,
+            close=bid_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        ask_price = Price.from_str("0.80010")
+        ask_bar = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=ask_price,
+            high=ask_price,
+            low=ask_price,
+            close=ask_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_bar(bid_bar)
+        self.cache.add_bar(ask_bar)
+
+        # Act
+        result = self.cache.get_xrate(SIM, AUD, USD)
+
+        # Assert
+        assert result == 0.80005
+
+    def test_get_xrate_fallbacks_to_bars_if_no_quotes_returns_correct_rate_with_add_bars(self):
+        # Arrange
+        self.cache.reset()
+        self.cache.add_instrument(AUDUSD_SIM)
+        bid_price = Price.from_str("0.80000")
+        ask_price = Price.from_str("0.80010")
+
+        bid_bar1 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=bid_price,
+            high=bid_price,
+            low=bid_price,
+            close=bid_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        bid_bar2 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-BID-EXTERNAL"),
+            open=Price.from_str("0"),
+            high=Price.from_str("0"),
+            low=Price.from_str("0"),
+            close=Price.from_str("0"),
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        ask_bar1 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=ask_price,
+            high=ask_price,
+            low=ask_price,
+            close=ask_price,
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+        ask_bar2 = Bar(
+            bar_type=BarType.from_str(f"{AUDUSD_SIM.id}-1-DAY-ASK-EXTERNAL"),
+            open=Price.from_str("0"),
+            high=Price.from_str("0"),
+            low=Price.from_str("0"),
+            close=Price.from_str("0"),
+            volume=Quantity.from_int(1),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.cache.add_bars([bid_bar2, bid_bar1])
+        self.cache.add_bars([ask_bar2, ask_bar1])
+
+        # Act
+        result = self.cache.get_xrate(SIM, AUD, USD)
+
+        # Assert
+        assert result == 0.80005

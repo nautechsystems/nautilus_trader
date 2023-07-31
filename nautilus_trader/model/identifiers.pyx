@@ -13,64 +13,45 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdio cimport printf
+
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.model cimport account_id_drop
-from nautilus_trader.core.rust.model cimport account_id_eq
 from nautilus_trader.core.rust.model cimport account_id_hash
 from nautilus_trader.core.rust.model cimport account_id_new
-from nautilus_trader.core.rust.model cimport account_id_to_cstr
-from nautilus_trader.core.rust.model cimport client_order_id_drop
-from nautilus_trader.core.rust.model cimport client_order_id_eq
+from nautilus_trader.core.rust.model cimport client_id_hash
+from nautilus_trader.core.rust.model cimport client_id_new
 from nautilus_trader.core.rust.model cimport client_order_id_hash
 from nautilus_trader.core.rust.model cimport client_order_id_new
-from nautilus_trader.core.rust.model cimport client_order_id_to_cstr
-from nautilus_trader.core.rust.model cimport component_id_drop
-from nautilus_trader.core.rust.model cimport component_id_eq
 from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
-from nautilus_trader.core.rust.model cimport component_id_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_clone
-from nautilus_trader.core.rust.model cimport instrument_id_drop
-from nautilus_trader.core.rust.model cimport instrument_id_eq
+from nautilus_trader.core.rust.model cimport exec_algorithm_id_hash
+from nautilus_trader.core.rust.model cimport exec_algorithm_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_hash
+from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
-from nautilus_trader.core.rust.model cimport order_list_id_drop
-from nautilus_trader.core.rust.model cimport order_list_id_eq
+from nautilus_trader.core.rust.model cimport interned_string_stats
 from nautilus_trader.core.rust.model cimport order_list_id_hash
 from nautilus_trader.core.rust.model cimport order_list_id_new
-from nautilus_trader.core.rust.model cimport order_list_id_to_cstr
-from nautilus_trader.core.rust.model cimport position_id_drop
-from nautilus_trader.core.rust.model cimport position_id_eq
 from nautilus_trader.core.rust.model cimport position_id_hash
 from nautilus_trader.core.rust.model cimport position_id_new
-from nautilus_trader.core.rust.model cimport position_id_to_cstr
-from nautilus_trader.core.rust.model cimport symbol_clone
-from nautilus_trader.core.rust.model cimport symbol_drop
-from nautilus_trader.core.rust.model cimport symbol_eq
+from nautilus_trader.core.rust.model cimport strategy_id_hash
+from nautilus_trader.core.rust.model cimport strategy_id_new
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
-from nautilus_trader.core.rust.model cimport symbol_to_cstr
-from nautilus_trader.core.rust.model cimport trade_id_clone
-from nautilus_trader.core.rust.model cimport trade_id_drop
-from nautilus_trader.core.rust.model cimport trade_id_eq
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
-from nautilus_trader.core.rust.model cimport trade_id_to_cstr
-from nautilus_trader.core.rust.model cimport venue_clone
-from nautilus_trader.core.rust.model cimport venue_drop
-from nautilus_trader.core.rust.model cimport venue_eq
+from nautilus_trader.core.rust.model cimport trader_id_hash
+from nautilus_trader.core.rust.model cimport trader_id_new
 from nautilus_trader.core.rust.model cimport venue_hash
+from nautilus_trader.core.rust.model cimport venue_is_synthetic
 from nautilus_trader.core.rust.model cimport venue_new
-from nautilus_trader.core.rust.model cimport venue_order_id_drop
-from nautilus_trader.core.rust.model cimport venue_order_id_eq
 from nautilus_trader.core.rust.model cimport venue_order_id_hash
 from nautilus_trader.core.rust.model cimport venue_order_id_new
-from nautilus_trader.core.rust.model cimport venue_order_id_to_cstr
-from nautilus_trader.core.rust.model cimport venue_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 
 
 cdef class Identifier:
@@ -145,10 +126,6 @@ cdef class Symbol(Identifier):
         Condition.valid_string(value, "value")
         self._mem = symbol_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            symbol_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -158,19 +135,19 @@ cdef class Symbol(Identifier):
     def __eq__(self, Symbol other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return symbol_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return symbol_hash(&self._mem)
 
     @staticmethod
-    cdef Symbol from_mem_c(Symbol_t* mem):
+    cdef Symbol from_mem_c(Symbol_t mem):
         cdef Symbol symbol = Symbol.__new__(Symbol)
-        symbol._mem = symbol_clone(mem)
+        symbol._mem = mem
         return symbol
 
     cdef str to_str(self):
-        return cstr_to_pystr(symbol_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class Venue(Identifier):
@@ -192,10 +169,6 @@ cdef class Venue(Identifier):
         Condition.valid_string(name, "name")
         self._mem = venue_new(pystr_to_cstr(name))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            venue_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -205,19 +178,30 @@ cdef class Venue(Identifier):
     def __eq__(self, Venue other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return venue_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return venue_hash(&self._mem)
 
     @staticmethod
-    cdef Venue from_mem_c(Venue_t* mem):
+    cdef Venue from_mem_c(Venue_t mem):
         cdef Venue venue = Venue.__new__(Venue)
-        venue._mem = venue_clone(mem)
+        venue._mem = mem
         return venue
 
     cdef str to_str(self):
-        return cstr_to_pystr(venue_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
+
+    cpdef bint is_synthetic(self):
+        """
+        Return whether the venue is synthetic ('SYNTH').
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>venue_is_synthetic(&self._mem)
 
 
 cdef class InstrumentId(Identifier):
@@ -236,8 +220,8 @@ cdef class InstrumentId(Identifier):
 
     def __init__(self, Symbol symbol not None, Venue venue not None):
         self._mem = instrument_id_new(
-            <Symbol_t *>&symbol._mem,
-            <Venue_t *>&venue._mem,
+            symbol._mem,
+            venue._mem,
         )
 
     @property
@@ -250,7 +234,7 @@ cdef class InstrumentId(Identifier):
         Symbol
 
         """
-        return Symbol.from_mem_c(&self._mem.symbol)
+        return Symbol.from_mem_c(self._mem.symbol)
 
     @property
     def venue(self) -> Venue:
@@ -262,11 +246,7 @@ cdef class InstrumentId(Identifier):
         Venue
 
         """
-        return Venue.from_mem_c(&self._mem.venue)
-
-    def __del__(self) -> None:
-        if self._mem.symbol.value != NULL:
-            instrument_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
+        return Venue.from_mem_c(self._mem.venue)
 
     def __getstate__(self):
         return self.to_str()
@@ -279,7 +259,7 @@ cdef class InstrumentId(Identifier):
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return instrument_id_eq(&self._mem, &other._mem)
+        return self._mem.symbol.value == other._mem.symbol.value and self._mem.venue.value == other._mem.venue.value
 
     def __hash__ (self) -> int:
         return instrument_id_hash(&self._mem)
@@ -290,7 +270,7 @@ cdef class InstrumentId(Identifier):
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_clone(&mem)
+        instrument_id._mem = mem
         return instrument_id
 
     @staticmethod
@@ -320,6 +300,17 @@ cdef class InstrumentId(Identifier):
         """
         return InstrumentId.from_str_c(value)
 
+    cpdef bint is_synthetic(self):
+        """
+        Return whether the instrument ID is a synthetic instrument (with venue of 'SYNTH').
+
+        Returns
+        -------
+        bool
+
+        """
+        return <bint>instrument_id_is_synthetic(&self._mem)
+
 
 cdef class ComponentId(Identifier):
     """
@@ -344,10 +335,6 @@ cdef class ComponentId(Identifier):
         Condition.valid_string(value, "value")
         self._mem = component_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            component_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -357,16 +344,16 @@ cdef class ComponentId(Identifier):
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return component_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__(self) -> int:
         return component_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(component_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
 
-cdef class ClientId(ComponentId):
+cdef class ClientId(Identifier):
     """
     Represents a system client ID.
 
@@ -387,10 +374,27 @@ cdef class ClientId(ComponentId):
 
     def __init__(self, str value not None):
         Condition.valid_string(value, "value")
-        super().__init__(value)
+        self._mem = client_id_new(pystr_to_cstr(value))
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = client_id_new(pystr_to_cstr(state))
+
+    def __eq__(self, ClientId other) -> bool:
+        if other is None:
+            raise RuntimeError("other was None in __eq__")
+        return self._mem.value == other._mem.value
+
+    def __hash__(self) -> int:
+        return client_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
 
 
-cdef class TraderId(ComponentId):
+cdef class TraderId(Identifier):
     """
     Represents a valid trader ID.
 
@@ -420,8 +424,24 @@ cdef class TraderId(ComponentId):
 
     def __init__(self, str value not None):
         Condition.valid_string(value, "value")
-        Condition.true("-" in value, "value was malformed: did not contain a hyphen '-'")
-        super().__init__(value)
+        self._mem = trader_id_new(pystr_to_cstr(value))
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = trader_id_new(pystr_to_cstr(state))
+
+    def __eq__(self, TraderId other) -> bool:
+        if other is None:
+            raise RuntimeError("other was None in __eq__")
+        return self._mem.value == other._mem.value
+
+    def __hash__(self) -> int:
+        return trader_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
 
     cpdef str get_tag(self):
         """
@@ -439,7 +459,7 @@ cdef class TraderId(ComponentId):
 cdef StrategyId EXTERNAL_STRATEGY_ID = StrategyId("EXTERNAL")
 
 
-cdef class StrategyId(ComponentId):
+cdef class StrategyId(Identifier):
     """
     Represents a valid strategy ID.
 
@@ -470,7 +490,25 @@ cdef class StrategyId(ComponentId):
     def __init__(self, str value):
         Condition.valid_string(value, "value")
         Condition.true(value == "EXTERNAL" or "-" in value, "value was malformed: did not contain a hyphen '-'")
-        super().__init__(value)
+
+        self._mem = strategy_id_new(pystr_to_cstr(value))
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = strategy_id_new(pystr_to_cstr(state))
+
+    def __eq__(self, StrategyId other) -> bool:
+        if other is None:
+            raise RuntimeError("other was None in __eq__")
+        return self._mem.value == other._mem.value
+
+    def __hash__(self) -> int:
+        return strategy_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
 
     cpdef str get_tag(self):
         """
@@ -501,7 +539,7 @@ cdef class StrategyId(ComponentId):
         return EXTERNAL_STRATEGY_ID
 
 
-cdef class ExecAlgorithmId(ComponentId):
+cdef class ExecAlgorithmId(Identifier):
     """
     Represents a valid execution algorithm ID.
 
@@ -518,7 +556,24 @@ cdef class ExecAlgorithmId(ComponentId):
 
     def __init__(self, str value not None):
         Condition.valid_string(value, "value")
-        super().__init__(value)
+        self._mem = exec_algorithm_id_new(pystr_to_cstr(value))
+
+    def __getstate__(self):
+        return self.to_str()
+
+    def __setstate__(self, state):
+        self._mem = exec_algorithm_id_new(pystr_to_cstr(state))
+
+    def __eq__(self, ExecAlgorithmId other) -> bool:
+        if other is None:
+            raise RuntimeError("other was None in __eq__")
+        return self._mem.value == other._mem.value
+
+    def __hash__(self) -> int:
+        return exec_algorithm_id_hash(&self._mem)
+
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
 
 
 
@@ -552,10 +607,6 @@ cdef class AccountId(Identifier):
         Condition.true("-" in value, "value was malformed: did not contain a hyphen '-'")
         self._mem = account_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            account_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -565,13 +616,13 @@ cdef class AccountId(Identifier):
     def __eq__(self, AccountId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return account_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return account_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(account_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
     cpdef str get_issuer(self):
         """
@@ -619,10 +670,6 @@ cdef class ClientOrderId(Identifier):
         Condition.valid_string(value, "value")
         self._mem = client_order_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            client_order_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -632,13 +679,13 @@ cdef class ClientOrderId(Identifier):
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return client_order_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return client_order_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(client_order_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
     cpdef bint is_this_trader(self, TraderId trader_id):
         """
@@ -682,10 +729,6 @@ cdef class VenueOrderId(Identifier):
         Condition.valid_string(value, "value")
         self._mem = venue_order_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            venue_order_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -695,13 +738,13 @@ cdef class VenueOrderId(Identifier):
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return venue_order_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return venue_order_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(venue_order_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class OrderListId(Identifier):
@@ -723,10 +766,6 @@ cdef class OrderListId(Identifier):
         Condition.valid_string(value, "value")
         self._mem = order_list_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            order_list_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -736,13 +775,13 @@ cdef class OrderListId(Identifier):
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return order_list_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return order_list_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(order_list_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
 
 cdef class PositionId(Identifier):
@@ -764,10 +803,6 @@ cdef class PositionId(Identifier):
         Condition.valid_string(value, "value")
         self._mem = position_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            position_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -777,13 +812,13 @@ cdef class PositionId(Identifier):
     def __eq__(self, PositionId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return position_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return position_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(position_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
     cdef bint is_virtual_c(self):
         return self.to_str().startswith("P-")
@@ -823,10 +858,6 @@ cdef class TradeId(Identifier):
         Condition.valid_string(value, "value")
         self._mem = trade_id_new(pystr_to_cstr(value))
 
-    def __del__(self) -> None:
-        if self._mem.value != NULL:
-            trade_id_drop(self._mem)  # `self._mem` moved to Rust (then dropped)
-
     def __getstate__(self):
         return self.to_str()
 
@@ -836,16 +867,16 @@ cdef class TradeId(Identifier):
     def __eq__(self, TradeId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return trade_id_eq(&self._mem, &other._mem)
+        return self._mem.value == other._mem.value
 
     def __hash__ (self) -> int:
         return trade_id_hash(&self._mem)
 
     cdef str to_str(self):
-        return cstr_to_pystr(trade_id_to_cstr(&self._mem))
+        return ustr_to_pystr(self._mem.value)
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
-        trade_id._mem = trade_id_clone(&mem)
+        trade_id._mem = mem
         return trade_id

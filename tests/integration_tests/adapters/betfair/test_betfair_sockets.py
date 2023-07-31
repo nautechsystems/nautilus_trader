@@ -32,9 +32,21 @@ class TestBetfairSockets:
 
     def test_unique_id(self):
         clients = [
-            BetfairMarketStreamClient(client=self.client, logger=self.logger, message_handler=len),
-            BetfairOrderStreamClient(client=self.client, logger=self.logger, message_handler=len),
-            BetfairMarketStreamClient(client=self.client, logger=self.logger, message_handler=len),
+            BetfairMarketStreamClient(
+                http_client=self.client,
+                logger=self.logger,
+                message_handler=len,
+            ),
+            BetfairOrderStreamClient(
+                http_client=self.client,
+                logger=self.logger,
+                message_handler=len,
+            ),
+            BetfairMarketStreamClient(
+                http_client=self.client,
+                logger=self.logger,
+                message_handler=len,
+            ),
         ]
         result = [c.unique_id for c in clients]
         assert result == sorted(set(result))

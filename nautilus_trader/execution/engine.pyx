@@ -34,6 +34,8 @@ from typing import Optional
 
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.execution.reports import ExecutionMassStatus
+from nautilus_trader.execution.reports import ExecutionReport
 
 from libc.stdint cimport uint64_t
 
@@ -59,11 +61,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.execution.reports cimport ExecutionMassStatus
-from nautilus_trader.execution.reports cimport ExecutionReport
-from nautilus_trader.execution.reports cimport OrderStatusReport
-from nautilus_trader.execution.reports cimport PositionStatusReport
-from nautilus_trader.execution.reports cimport TradeReport
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -153,7 +150,6 @@ cdef class ExecutionEngine(Component):
         # Settings
         self.debug: bool = config.debug
         self.allow_cash_positions: bool = config.allow_cash_positions
-        self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
 
         # Counters
         self.command_count: int = 0
@@ -305,6 +301,17 @@ cdef class ExecutionEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
 
         return self._external_order_claims.get(instrument_id)
+
+    cpdef set get_external_order_claims_instruments(self):
+        """
+        Get all external order claims instrument IDs.
+
+        Returns
+        -------
+        set[InstrumentId]
+
+        """
+        return set(self._external_order_claims.keys())
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -567,17 +574,14 @@ cdef class ExecutionEngine(Component):
         """
         cdef uint64_t ts = unix_timestamp_ms()
 
-        # ***** WARNING *****
-        # Cache commands early so that `SubmitOrder` commands don't revert
-        # orders back to their initialized state.
         self._cache.cache_general()
-        self._cache.cache_commands()
         self._cache.cache_currencies()
         self._cache.cache_instruments()
         self._cache.cache_accounts()
         self._cache.cache_orders()
         self._cache.cache_order_lists()
         self._cache.cache_positions()
+
         self._cache.build_index()
         self._cache.check_integrity()
         self._set_position_id_counts()
@@ -756,7 +760,7 @@ cdef class ExecutionEngine(Component):
         cdef Order order = command.order
         if not self._cache.order_exists(order.client_order_id):
             # Cache order
-            self._cache.add_order(order, command.position_id)
+            self._cache.add_order(order, command.position_id, command.client_id)
 
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -785,7 +789,7 @@ cdef class ExecutionEngine(Component):
         for order in command.order_list.orders:
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
-                self._cache.add_order(order, position_id=None)
+                self._cache.add_order(order, command.position_id, command.client_id)
 
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
@@ -884,7 +888,7 @@ cdef class ExecutionEngine(Component):
             oms_type = self._determine_oms_type(event)
             self._determine_position_id(event, oms_type)
             self._apply_event_to_order(order, event)
-            self._handle_order_fill(event, oms_type)
+            self._handle_order_fill(order, event, oms_type)
         else:
             self._apply_event_to_order(order, event)
 
@@ -907,7 +911,8 @@ cdef class ExecutionEngine(Component):
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if self.debug:
             self._log.debug(
-                f"Determining position ID for {repr(fill.client_order_id)} = {repr(position_id)}.",
+                f"Determining position ID for {repr(fill.client_order_id)}, "
+                f"position_id={repr(position_id)}.",
                 LogColor.MAGENTA,
             )
         if position_id is not None:
@@ -919,6 +924,8 @@ cdef class ExecutionEngine(Component):
                 )
             # Assign position ID to fill
             fill.position_id = position_id
+            if self.debug:
+                self._log.debug(f"Assigned {repr(position_id)} to {fill}.", LogColor.MAGENTA)
             return
 
         if oms_type == OmsType.HEDGING:
@@ -926,7 +933,10 @@ cdef class ExecutionEngine(Component):
                 # Already assigned
                 return
             # Assign new position ID
-            fill.position_id = self._pos_id_generator.generate(fill.strategy_id)
+            position_id = self._pos_id_generator.generate(fill.strategy_id)
+            fill.position_id = position_id
+            if self.debug:
+                self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
             fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
@@ -953,7 +963,7 @@ cdef class ExecutionEngine(Component):
             msg=event,
         )
 
-    cpdef void _handle_order_fill(self, OrderFilled fill, OmsType oms_type):
+    cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -976,13 +986,30 @@ cdef class ExecutionEngine(Component):
 
         cdef Position position = self._cache.position(fill.position_id)
         if position is None or position.is_closed_c():
-            self._open_position(instrument, position, fill, oms_type)
+            position = self._open_position(instrument, position, fill, oms_type)
         elif self._will_flip_position(position, fill):
             self._flip_position(instrument, position, fill, oms_type)
         else:
             self._update_position(instrument, position, fill, oms_type)
 
-    cpdef void _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
+        cdef:
+            ClientOrderId client_order_id
+            Order contingent_order
+        if order.contingency_type == ContingencyType.OTO and position is not None and position.is_open_c():
+            for client_order_id in order.linked_order_ids or []:
+                contingent_order = self._cache.order(client_order_id)
+                if contingent_order is not None and contingent_order.position_id is None:
+                    if contingent_order.is_reduce_only and contingent_order.quantity._mem.raw > position.quantity._mem.raw:
+                        return  # Cannot yet assign position ID as will reject `reduce_only` orders
+                    contingent_order.position_id = position.id
+                    self._cache.add_position_id(
+                        order.position_id,
+                        contingent_order.instrument_id.venue,
+                        contingent_order.client_order_id,
+                        contingent_order.strategy_id,
+                    )
+
+    cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
@@ -1007,6 +1034,8 @@ cdef class ExecutionEngine(Component):
             topic=f"events.position.{event.strategy_id.to_str()}",
             msg=event,
         )
+
+        return position
 
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type):
         try:

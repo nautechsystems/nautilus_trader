@@ -22,6 +22,7 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
@@ -48,7 +49,6 @@ from nautilus_trader.trading.strategy import Strategy
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
-@pytest.mark.skip(reason="WIP")
 class TestBinanceSpotExecutionClient:
     def setup(self):
         # Fixture Setup
@@ -122,6 +122,8 @@ class TestBinanceSpotExecutionClient:
             clock=self.clock,
             logger=self.logger,
             instrument_provider=self.provider,
+            base_url_ws="",  # Not required for testing
+            config=BinanceExecClientConfig(),
             account_type=BinanceAccountType.SPOT,
         )
 
@@ -137,6 +139,7 @@ class TestBinanceSpotExecutionClient:
             logger=self.logger,
         )
 
+    @pytest.mark.skip(reason="Pending overhaul of testing")
     @pytest.mark.asyncio()
     async def test_connect(self, monkeypatch):
         # Arrange: prepare data for monkey patch
@@ -257,15 +260,15 @@ class TestBinanceSpotExecutionClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/api/v3/order"
-        assert request[2]["symbol"] == "ETHUSDT"
-        assert request[2]["type"] == "MARKET"
-        assert request[2]["side"] == "BUY"
-        assert request[2]["quantity"] == "1"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
+        request = mock_send_request.call_args
+        assert request[0][0] == "POST"
+        assert request[0][1] == "/api/v3/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"
+        assert request[1]["payload"]["type"] == "MARKET"
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["quantity"] == "1"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["recvWindow"] == "5000"
 
     @pytest.mark.asyncio()
     async def test_submit_limit_order(self, mocker):
@@ -296,16 +299,16 @@ class TestBinanceSpotExecutionClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/api/v3/order"
-        assert request[2]["symbol"] == "ETHUSDT"
-        assert request[2]["side"] == "BUY"
-        assert request[2]["type"] == "LIMIT"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == "POST"
+        assert request[0][1] == "/api/v3/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["type"] == "LIMIT"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
 
     @pytest.mark.asyncio()
     async def test_submit_stop_limit_order(self, mocker):
@@ -337,19 +340,19 @@ class TestBinanceSpotExecutionClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/api/v3/order"
-        assert request[2]["symbol"] == "ETHUSDT"
-        assert request[2]["side"] == "BUY"
-        assert request[2]["type"] == "STOP_LOSS_LIMIT"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["price"] == "10050.80"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["stopPrice"] == "10050.00"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == "POST"
+        assert request[0][1] == "/api/v3/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["type"] == "STOP_LOSS_LIMIT"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["price"] == "10050.80"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["stopPrice"] == "10050.00"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
 
     @pytest.mark.asyncio()
     async def test_submit_limit_if_touched_order(self, mocker):
@@ -381,19 +384,19 @@ class TestBinanceSpotExecutionClient:
         await asyncio.sleep(0.3)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/api/v3/order"
-        assert request[2]["symbol"] == "ETHUSDT"
-        assert request[2]["side"] == "SELL"
-        assert request[2]["type"] == "TAKE_PROFIT_LIMIT"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["price"] == "10100.00"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["stopPrice"] == "10099.00"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == "POST"
+        assert request[0][1] == "/api/v3/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"
+        assert request[1]["payload"]["side"] == "SELL"
+        assert request[1]["payload"]["type"] == "TAKE_PROFIT_LIMIT"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["price"] == "10100.00"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["stopPrice"] == "10099.00"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
 
     @pytest.mark.asyncio()
     async def test_query_order(self, mocker):

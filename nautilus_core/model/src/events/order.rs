@@ -13,21 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::HashMap;
+
 use derive_builder::{self, Builder};
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
+        TriggerType,
+    },
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId,
-        trade_id::TradeId, trader_id::TraderId, venue_order_id::VenueOrderId,
+        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
+        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
+        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[derive(Clone, Hash, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum OrderEvent {
     OrderInitialized(OrderInitialized),
     OrderDenied(OrderDenied),
@@ -47,7 +53,7 @@ pub enum OrderEvent {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Builder, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Builder, Serialize, Deserialize)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderInitialized {
@@ -69,12 +75,15 @@ pub struct OrderInitialized {
     pub display_qty: Option<Quantity>,
     pub limit_offset: Option<Price>,
     pub trailing_offset: Option<Price>,
-    pub trailing_offset_type: Option<TriggerType>,
+    pub trailing_offset_type: Option<TrailingOffsetType>,
     pub emulation_trigger: Option<TriggerType>,
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
     pub parent_order_id: Option<ClientOrderId>,
+    pub exec_algorithm_id: Option<ExecAlgorithmId>,
+    pub exec_algorithm_params: Option<HashMap<String, String>>,
+    pub exec_spawn_id: Option<ClientOrderId>,
     pub tags: Option<String>,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
@@ -109,6 +118,9 @@ impl Default for OrderInitialized {
             order_list_id: Default::default(),
             linked_order_ids: Default::default(),
             parent_order_id: Default::default(),
+            exec_algorithm_id: Default::default(),
+            exec_algorithm_params: Default::default(),
+            exec_spawn_id: Default::default(),
             tags: Default::default(),
             event_id: Default::default(),
             ts_event: Default::default(),
@@ -119,7 +131,7 @@ impl Default for OrderInitialized {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderDenied {
@@ -134,7 +146,7 @@ pub struct OrderDenied {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderSubmitted {
@@ -149,7 +161,7 @@ pub struct OrderSubmitted {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderAccepted {
@@ -166,7 +178,7 @@ pub struct OrderAccepted {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderRejected {
@@ -184,7 +196,7 @@ pub struct OrderRejected {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderCanceled {
@@ -201,7 +213,7 @@ pub struct OrderCanceled {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderExpired {
@@ -218,7 +230,7 @@ pub struct OrderExpired {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderTriggered {
@@ -235,7 +247,7 @@ pub struct OrderTriggered {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderPendingUpdate {
@@ -252,7 +264,7 @@ pub struct OrderPendingUpdate {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderPendingCancel {
@@ -269,7 +281,7 @@ pub struct OrderPendingCancel {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderModifyRejected {
@@ -287,7 +299,7 @@ pub struct OrderModifyRejected {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderCancelRejected {
@@ -305,7 +317,7 @@ pub struct OrderCancelRejected {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderUpdated {
@@ -325,7 +337,7 @@ pub struct OrderUpdated {
 }
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[serde(tag = "type")]
 pub struct OrderFilled {
     pub trader_id: TraderId,

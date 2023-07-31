@@ -12,10 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 """
 The `live` subpackage groups all engine and client implementations for live trading.
 
 Generally a common event loop is passed into each live engine to support the overarching
-design of a single efficient event loop, by default `uvloop <https://github.com/MagicStack/uvloop>`_.
+design of a single efficient event loop, by default
+`uvloop <https://github.com/MagicStack/uvloop>`_.
+
 """

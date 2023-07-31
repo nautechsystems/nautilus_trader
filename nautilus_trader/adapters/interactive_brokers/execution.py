@@ -117,6 +117,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The instrument provider.
     ibg_client_id : int
         Client ID used to connect TWS/Gateway.
+
     """
 
     def __init__(
@@ -212,8 +213,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         venue_order_id: Optional[VenueOrderId] = None,
     ) -> Optional[OrderStatusReport]:
         """
-        Generate an `OrderStatusReport` for the given order identifier parameter(s).
-        If the order is not found, or an error occurs, then logs and returns ``None``.
+        Generate an `OrderStatusReport` for the given order identifier parameter(s). If
+        the order is not found, or an error occurs, then logs and returns ``None``.
 
         Parameters
         ----------
@@ -227,10 +228,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         OrderStatusReport or ``None``
+
         Raises
         ------
         ValueError
             If both the `client_order_id` and `venue_order_id` are ``None``.
+
         """
         PyCondition.type_or_none(client_order_id, ClientOrderId, "client_order_id")
         PyCondition.type_or_none(venue_order_id, VenueOrderId, "venue_order_id")
@@ -285,10 +288,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         price = (
             None if ib_order.lmtPrice == UNSET_DOUBLE else Price.from_str(str(ib_order.lmtPrice))
         )
-        if ib_order.tif == "GTD":
-            expire_time = timestring_to_timestamp(ib_order.goodTillDate)
-        else:
-            expire_time = None
+        expire_time = (
+            timestring_to_timestamp(ib_order.goodTillDate) if ib_order.tif == "GTD" else None
+        )
 
         # TODO: Testing for advanced Open orders
         order_status = OrderStatusReport(
@@ -326,8 +328,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         """
-        Generate a list of `OrderStatusReport`s with optional query filters.
-        The returned list may be empty if no orders match the given parameters.
+        Generate a list of `OrderStatusReport`s with optional query filters. The
+        returned list may be empty if no orders match the given parameters.
 
         Parameters
         ----------
@@ -343,6 +345,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         list[OrderStatusReport]
+
         """
         report = []
         # Create the Filled OrderStatusReport from Open Positions
@@ -400,8 +403,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
     ) -> list[TradeReport]:
         """
-        Generate a list of `TradeReport`s with optional query filters.
-        The returned list may be empty if no trades match the given parameters.
+        Generate a list of `TradeReport`s with optional query filters. The returned list
+        may be empty if no trades match the given parameters.
 
         Parameters
         ----------
@@ -417,6 +420,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         list[TradeReport]
+
         """
         self._log.warning("Cannot generate `list[TradeReport]`: not yet implemented.")
 
@@ -429,8 +433,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         end: Optional[pd.Timestamp] = None,
     ) -> list[PositionStatusReport]:
         """
-        Generate a list of `PositionStatusReport`s with optional query filters.
-        The returned list may be empty if no positions match the given parameters.
+        Generate a list of `PositionStatusReport`s with optional query filters. The
+        returned list may be empty if no positions match the given parameters.
 
         Parameters
         ----------
@@ -444,6 +448,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         Returns
         -------
         list[PositionStatusReport]
+
         """
         report = []
         positions: list[IBPosition] = await self._client.get_positions(self.account_id.get_id())
@@ -482,19 +487,18 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if value := getattr(order, key, None):
                 setattr(ib_order, field, fn(value))
 
-        if isinstance(order, TrailingStopLimitOrder) or isinstance(order, TrailingStopMarketOrder):
+        if isinstance(order, (TrailingStopLimitOrder, TrailingStopMarketOrder)):
             ib_order.auxPrice = float(order.trailing_offset)
             if order.trigger_price:
                 ib_order.trailStopPrice = order.trigger_price.as_double()
                 ib_order.triggerMethod = map_trigger_method[order.trigger_type]
         elif (
-            isinstance(order, MarketIfTouchedOrder)
-            or isinstance(order, LimitIfTouchedOrder)
-            or isinstance(order, StopLimitOrder)
-            or isinstance(order, StopMarketOrder)
-        ):
-            if order.trigger_price:
-                ib_order.auxPrice = order.trigger_price.as_double()
+            isinstance(
+                order,
+                (MarketIfTouchedOrder, LimitIfTouchedOrder, StopLimitOrder, StopMarketOrder),
+            )
+        ) and order.trigger_price:
+            ib_order.auxPrice = order.trigger_price.as_double()
 
         details = self.instrument_provider.contract_details[order.instrument_id.value]
         ib_order.contract = details.contract
@@ -636,7 +640,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         except ValueError:
             self._account_summary[currency][tag] = value
 
-        for currency in self._account_summary.keys():
+        for currency in self._account_summary:
             if not currency:
                 continue
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
@@ -682,7 +686,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         status: OrderStatus,
         order: Order,
-        order_id: int = None,
+        order_id: Optional[int] = None,
         reason: str = "",
     ):
         if status == OrderStatus.SUBMITTED:

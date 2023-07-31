@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.175.0"
+version = "1.176.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -33,8 +33,8 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.6.1",
-    "numpy>=1.24.3",
-    "Cython==3.0.0b3",
+    "numpy>=1.25.1",
+    "Cython==3.0.0",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -44,15 +44,13 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.0b3"
-aiodns = "^3.0.0"
-aiohttp = "^3.8.4"
-click = "^8.1.3"
+cython = "==3.0.0"
+click = "^8.1.5"
 frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
-msgspec = "^0.15.1"
-numpy = "^1.24.3"
-pandas = "^2.0.2"
+msgspec = "^0.17.0"
+numpy = "^1.25.1"
+pandas = "^2.0.3"
 psutil = "^5.9.5"
 pyarrow = "^12.0.1"
 pytz = "^2023.3.0"
@@ -60,29 +58,30 @@ toml = "^0.10.2"
 tqdm = "^4.65.0"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.3", optional = true}
-ibapi = {git = "https://github.com/nautechsystems/ibapi.git", optional = true}
-ib_insync = {version = "^0.9.85", optional = true}
-redis = {version = "^4.5.5", optional = true}
+redis = {version = "^4.6.0", optional = true}
 docker = {version = "^6.1.3", optional = true}
-betfair_parser = {version = "0.2.6", optional = true}  # Pinned for stability
+nautilus_ibapi = {version = "==1019.1", optional = true}
+ib_insync = {version = "^0.9.86", optional = true}
+betfair_parser = {version = "==0.4.6", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
 docker = ["docker"]
-ib = ["ibapi", "ib_insync"]
+ib = ["nautilus_ibapi", "ib_insync"]
 redis = ["hiredis", "redis"]
 
 [tool.poetry.group.dev]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.3.0"
-mypy = "^1.3.0"
+black = "^23.7.0"
+docformatter = "^1.7.5"
+mypy = "^1.4.1"
 pre-commit = "^3.3.3"
-ruff = "^0.0.272"
-types-pytz = "^2023.3.0"
-types-redis = "^4.5.5"
-types-requests = "^2.29.0"
+ruff = "^0.0.280"
+types-pytz = "^2023.3"
+types-redis = "^4.6"
+types-requests = "^2.31"
 types-toml = "^0.10.2"
 
 [tool.poetry.group.test]
@@ -90,11 +89,11 @@ optional = true
 
 [tool.poetry.group.test.dependencies]
 coverage = "^7.2.7"
-pytest = "^7.3.2"
+pytest = "^7.4.0"
 pytest-aiohttp = "^1.0.4"
-pytest-asyncio = "^0.21.0"
+pytest-asyncio = "^0.21.1"
 pytest-benchmark = "^4.0.0"
-pytest-cov = "4.0.0"
+pytest-cov = "^4.1.0"
 pytest-mock = "^3.11.1"
 pytest-xdist = { version = "^3.3.1", extras = ["psutil"] }
 
@@ -111,9 +110,6 @@ sphinx-external-toc = "^0.3.1"
 sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 
-##########################################################
-# Formatter configs                                      #
-##########################################################
 [tool.isort]
 py_version = "39"
 skip_glob = ["**/core/rust/*"]
@@ -132,9 +128,14 @@ filter_files = true
 target_version = ["py39", "py310", "py311"]
 line_length = 100
 
-##########################################################
-# Linter configs                                         #
-##########################################################
+[tool.docformatter]
+black = true
+make-summary-multi-line = true
+pre-summary-new-line = true
+blank = true
+recursive = true
+in-place = true
+
 [tool.ruff]
 target-version = "py39"
 line-length = 150  # Reduce to 100
@@ -160,7 +161,7 @@ select = [
     # "SIM",
     # "ARG",
     # "ERA",
-    # "PD",
+    "PD",
     # "PGH",
     # "PLW",
     "NPY",
@@ -168,7 +169,6 @@ select = [
 ]
 
 ignore = [
-    "E741",  # Ambiguous variable name (single char)
     "D100",  # Missing docstring in public module  **fix**
     "D101",
     "D102",  # Missing docstring in public method  **fix**
@@ -184,6 +184,9 @@ ignore = [
     "D413",  # Missing blank line after last section ('Parameters')
     "D415",  # First line should end with a period, question mark, or exclamation point (not always a first line)
     "D416",  # Section name should end with a colon ('Warnings:', not 'Warnings') (incorrect?)
+    "E741",  # Ambiguous variable name (single char)
+    "PD901", # `df` is a bad variable name. Be kinder to your future self
+    "RUF012",  # Mutable class attributes should be annotated with `typing.ClassVar`
     "S101",  # Use of assert detected (OK in test suite)
     "S105",  # Use of hardcoded password (spurious)
     "S106",  # Use of hardcoded password (spurious)
@@ -243,9 +246,6 @@ lines-after-imports = 2
 [tool.ruff.mccabe]
 max-complexity = 10
 
-##########################################################
-# Static analysis configs                                #
-##########################################################
 [tool.mypy]
 python_version = "3.9"
 disallow_incomplete_defs = true
@@ -256,9 +256,6 @@ warn_no_return = true
 warn_unused_configs = true
 warn_unused_ignores = true
 
-##########################################################
-# Test configs                                           #
-##########################################################
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --new-first --failed-first --doctest-modules --doctest-glob=\"*.pyx\""

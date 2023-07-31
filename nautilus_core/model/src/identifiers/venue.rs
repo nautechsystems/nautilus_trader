@@ -14,21 +14,50 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
-    sync::Arc,
+    hash::Hash,
 };
 
-use nautilus_core::{correctness, string::str_to_cstr};
+use nautilus_core::correctness;
 use pyo3::prelude::*;
+use ustr::Ustr;
+
+pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 #[repr(C)]
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[pyclass]
 pub struct Venue {
-    pub value: Box<Arc<String>>,
+    pub value: Ustr,
+}
+
+impl Venue {
+    #[must_use]
+    pub fn new(s: &str) -> Self {
+        correctness::valid_string(s, "`Venue` value");
+
+        Self {
+            value: Ustr::from(s),
+        }
+    }
+
+    #[must_use]
+    pub fn synthetic() -> Self {
+        Self::new(SYNTHETIC_VENUE)
+    }
+
+    pub fn is_synthetic(&self) -> bool {
+        self.value.as_str() == SYNTHETIC_VENUE
+    }
+}
+
+impl Default for Venue {
+    fn default() -> Self {
+        Self {
+            value: Ustr::from("SIM"),
+        }
+    }
 }
 
 impl Debug for Venue {
@@ -43,25 +72,6 @@ impl Display for Venue {
     }
 }
 
-impl Default for Venue {
-    fn default() -> Self {
-        Self {
-            value: Box::new(Arc::new(String::from("SIM"))),
-        }
-    }
-}
-
-impl Venue {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`Venue` value");
-
-        Self {
-            value: Box::new(Arc::new(s.to_string())),
-        }
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,36 +82,18 @@ impl Venue {
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
     Venue::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
-pub extern "C" fn venue_clone(venue: &Venue) -> Venue {
-    venue.clone()
-}
-
-/// Frees the memory for the given `venue` by dropping.
-#[no_mangle]
-pub extern "C" fn venue_drop(venue: Venue) {
-    drop(venue); // Memory freed here
-}
-
-/// Returns a [`Venue`] identifier as a C string pointer.
-#[no_mangle]
-pub extern "C" fn venue_to_cstr(venue: &Venue) -> *const c_char {
-    str_to_cstr(&venue.value)
+pub extern "C" fn venue_hash(id: &Venue) -> u64 {
+    id.value.precomputed_hash()
 }
 
 #[no_mangle]
-pub extern "C" fn venue_eq(lhs: &Venue, rhs: &Venue) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[no_mangle]
-pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
-    let mut h = DefaultHasher::new();
-    venue.hash(&mut h);
-    h.finish()
+pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
+    u8::from(venue.is_synthetic())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -110,26 +102,11 @@ pub extern "C" fn venue_hash(venue: &Venue) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::Venue;
-    use crate::identifiers::venue::venue_drop;
-
-    #[test]
-    fn test_equality() {
-        let venue1 = Venue::new("BINANCE");
-        let venue2 = Venue::new("IDEALPRO");
-        assert_eq!(venue1, venue1);
-        assert_ne!(venue1, venue2);
-    }
 
     #[test]
     fn test_string_reprs() {
         let venue = Venue::new("BINANCE");
         assert_eq!(venue.to_string(), "BINANCE");
         assert_eq!(format!("{venue}"), "BINANCE");
-    }
-
-    #[test]
-    fn test_venue_drop() {
-        let id = Venue::new("BINANCE");
-        venue_drop(id); // No panic
     }
 }

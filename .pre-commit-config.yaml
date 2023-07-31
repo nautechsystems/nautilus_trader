@@ -25,7 +25,7 @@ repos:
       - id: check-yaml
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.2.4
+    rev: v2.2.5
     hooks:
       - id: codespell
         description: Checks for common misspellings.
@@ -39,7 +39,7 @@ repos:
     hooks:
       - id: fmt
         name: cargo fmt
-        description: Format files with cargo fmt.
+        description: Format files with cargo fmt (nightly toolchain).
         entry: cargo fmt
         language: system
         types: [rust]
@@ -60,14 +60,14 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v2.5.1
+    rev: v3.0.0
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 23.3.0
+    rev: 23.7.0
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -76,7 +76,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.272
+    rev: v0.0.280
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -90,15 +90,29 @@ repos:
         entry: "isort"
         args: ["--settings-file", "pyproject.toml"]
 
+  - repo: https://github.com/PyCQA/docformatter
+    rev: v1.7.5
+    hooks:
+      - id: docformatter
+        additional_dependencies: [tomli]
+        args: [
+          "--black",
+          "--make-summary-multi-line",
+          "--pre-summary-newline",
+          "--blank",
+          "--recursive",
+          "--in-place",
+        ]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.3.0
+    rev: v1.4.1
     hooks:
       - id: mypy
         args: [
-          --ignore-missing-imports,
-          --allow-incomplete-defs,
-          --no-strict-optional,  # Fixing in progress
-          --warn-no-return,
+          "--ignore-missing-imports",
+          "--allow-incomplete-defs",
+          "--no-strict-optional",  # Fixing in progress
+          "--warn-no-return",
         ]
         additional_dependencies: [
           msgspec,

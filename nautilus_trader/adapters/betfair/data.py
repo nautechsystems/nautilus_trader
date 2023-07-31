@@ -17,13 +17,13 @@ import asyncio
 from typing import Optional
 
 import msgspec
-from betfair_parser.spec.streaming import STREAM_DECODER
+from betfair_parser.spec.streaming import stream_decode
 from betfair_parser.spec.streaming.mcm import MCM
 from betfair_parser.spec.streaming.status import Connection
 from betfair_parser.spec.streaming.status import Status
 
-from nautilus_trader.adapters.betfair.client.core import BetfairClient
-from nautilus_trader.adapters.betfair.common import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.client import BetfairHttpClient
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
@@ -38,8 +38,8 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data.base import DataType
+from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -71,12 +71,13 @@ class BetfairDataClient(LiveMarketDataClient):
         The instrument provider.
     strict_handling : bool
         If strict handling mode is enabled.
+
     """
 
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: BetfairClient,
+        client: BetfairHttpClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -98,9 +99,9 @@ class BetfairDataClient(LiveMarketDataClient):
         )
 
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
-        self._client: BetfairClient = client
+        self._client: BetfairHttpClient = client
         self._stream = BetfairMarketStreamClient(
-            client=self._client,
+            http_client=self._client,
             logger=logger,
             message_handler=self.on_market_update,
         )
@@ -117,7 +118,7 @@ class BetfairDataClient(LiveMarketDataClient):
         return self._instrument_provider
 
     async def _connect(self):
-        self._log.info("Connecting to BetfairClient...")
+        self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
         self._log.info("BetfairClient login successful.", LogColor.GREEN)
 
@@ -142,8 +143,8 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _post_connect_heartbeat(self):
         for _ in range(3):
-            await asyncio.sleep(5)
             await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
+            await asyncio.sleep(5)
 
     async def _disconnect(self):
         # Close socket
@@ -245,7 +246,7 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
-        update = STREAM_DECODER.decode(raw)
+        update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)
         elif isinstance(update, Connection):
@@ -294,9 +295,9 @@ class BetfairDataClient(LiveMarketDataClient):
                 )
 
     def _handle_status_message(self, update: Status):
-        if update.statusCode == "FAILURE" and update.connectionClosed:
+        if update.status_code == "FAILURE" and update.connection_closed:
             self._log.warning(str(update))
-            if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
+            if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")

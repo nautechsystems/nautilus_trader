@@ -32,8 +32,10 @@ cdef class MatchingCore:
 
     Parameters
     ----------
-    instrument : Instrument
-        The instrument for the matching core.
+    instrument_id : InstrumentId
+        The instrument ID for the matching core.
+    price_increment : Price
+        The minimum price increment (tick size) for the matching core.
     trigger_stop_order : Callable[[Order], None]
         The callable when a stop order is triggered.
     fill_market_order : Callable[[Order], None]
@@ -44,12 +46,15 @@ cdef class MatchingCore:
 
     def __init__(
         self,
-        Instrument instrument not None,
+        InstrumentId instrument_id not None,
+        Price price_increment not None,
         trigger_stop_order not None: Callable,
         fill_market_order not None: Callable,
         fill_limit_order not None: Callable,
     ):
-        self._instrument = instrument
+        self._instrument_id = instrument_id
+        self._price_increment = price_increment
+        self._price_precision = price_increment.precision
 
         # Market
         self.bid_raw = 0
@@ -70,6 +75,42 @@ cdef class MatchingCore:
         self._orders_ask: list[Order] = []
 
     @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        Return the instrument ID for the matching core.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return self._instrument_id
+
+    @property
+    def price_precision(self) -> int:
+        """
+        Return the instruments price precision for the matching core.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._price_increment.precision
+
+    @property
+    def price_increment(self) -> Price:
+        """
+        Return the instruments minimum price increment (tick size) for the matching core.
+
+        Returns
+        -------
+        Price
+
+        """
+        return self._price_increment
+
+    @property
     def bid(self) -> Optional[Price]:
         """
         Return the current bid price for the matching core.
@@ -82,7 +123,7 @@ cdef class MatchingCore:
         if not self.is_bid_initialized:
             return None
         else:
-            return Price.from_raw_c(self.bid_raw, self._instrument.price_precision)
+            return Price.from_raw_c(self.bid_raw, self._price_precision)
 
     @property
     def ask(self) -> Optional[Price]:
@@ -97,7 +138,7 @@ cdef class MatchingCore:
         if not self.is_ask_initialized:
             return None
         else:
-            return Price.from_raw_c(self.ask_raw, self._instrument.price_precision)
+            return Price.from_raw_c(self.ask_raw, self._price_precision)
 
     @property
     def last(self) -> Optional[Price]:
@@ -112,7 +153,7 @@ cdef class MatchingCore:
         if not self.is_last_initialized:
             return None
         else:
-            return Price.from_raw_c(self.last_raw, self._instrument.price_precision)
+            return Price.from_raw_c(self.last_raw, self._price_precision)
 
 # -- QUERIES --------------------------------------------------------------------------------------
 

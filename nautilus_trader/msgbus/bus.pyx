@@ -188,6 +188,24 @@ cdef class MessageBus:
 
         return sub in self._subscriptions
 
+    cpdef bint is_pending_request(self, UUID4 request_id):
+        """
+        Return if the given `request_id` is still pending a response.
+
+        Parameters
+        ----------
+        request_id : UUID4
+            The request ID to check (to match the correlation_id).
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(request_id, "request_id")
+
+        return request_id in self._correlation_index
+
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
         Register the given `handler` to receive messages at the `endpoint` address.

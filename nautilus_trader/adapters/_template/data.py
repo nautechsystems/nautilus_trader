@@ -57,6 +57,7 @@ class TemplateLiveDataClient(LiveDataClient):
     +---------------------------------------+-------------+
     | _request                              | optional    |
     +---------------------------------------+-------------+
+
     """
 
     async def _connect(self) -> None:
@@ -87,7 +88,8 @@ class TemplateLiveDataClient(LiveDataClient):
 
 class TemplateLiveMarketDataClient(LiveMarketDataClient):
     """
-    An example of a ``LiveMarketDataClient`` highlighting the overridable abstract methods.
+    An example of a ``LiveMarketDataClient`` highlighting the overridable abstract
+    methods.
 
     A live market data client general handles market data feeds and requests.
 
@@ -129,6 +131,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _request_trade_ticks                   | optional    |
     | _request_bars                          | optional    |
     +----------------------------------------+-------------+
+
     """
 
     async def _connect(self) -> None:
@@ -159,7 +162,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -168,7 +171,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: Optional[int] = None,
-        kwargs: dict = None,
+        kwargs: Optional[dict] = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

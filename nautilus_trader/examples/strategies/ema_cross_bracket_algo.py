@@ -88,6 +88,7 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+
     """
 
     instrument_id: str
@@ -126,6 +127,7 @@ class EMACrossBracketAlgo(Strategy):
     ------
     ValueError
         If `config.fast_ema_period` is not less than `config.slow_ema_period`.
+
     """
 
     def __init__(self, config: EMACrossBracketAlgoConfig) -> None:
@@ -173,7 +175,9 @@ class EMACrossBracketAlgo(Strategy):
         self.instrument: Optional[Instrument] = None  # Initialized in on_start
 
     def on_start(self) -> None:
-        """Actions to be performed on strategy start."""
+        """
+        Actions to be performed on strategy start.
+        """
         self.instrument = self.cache.instrument(self.instrument_id)
         if self.instrument is None:
             self.log.error(f"Could not find instrument for {self.instrument_id}")

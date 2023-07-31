@@ -12,8 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-"""Defines the fundamental data types represented within the trading domain."""
+"""
+Defines the fundamental data types represented within the trading domain.
+"""
 
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
@@ -21,6 +22,7 @@ from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.data.bar_aggregation import BarAggregation
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
@@ -37,6 +39,7 @@ __all__ = [
     "BarSpecification",
     "BarType",
     "GenericData",
+    "NULL_ORDER",
     "BarAggregation",
     "DataType",
     "BookOrder",
