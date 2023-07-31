@@ -1,6 +1,6 @@
 # NautilusTrader 1.176.0 Beta
 
-Released on 30th July 2023 (UTC).
+Released on 31st July 2023 (UTC).
 
 ### Enhancements
 - Implemented string interning with the [ustr](https://github.com/anderslanglands/ustr) library, thanks @twitu
