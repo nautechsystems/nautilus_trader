@@ -342,7 +342,7 @@ checksum = "cc6dde6e4ed435a4c1ee4e73592f5ba9da2151af10076cc04858746af9352d09"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -1310,7 +1310,7 @@ checksum = "89ca545a94061b6365f2c7355b4b32bd20df3ff95f02da9329b34ccc3bd6ee72"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -1853,7 +1853,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -1865,7 +1865,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1880,7 +1880,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "nautilus-core",
  "nautilus-model",
@@ -1905,7 +1905,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -1929,7 +1929,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -1949,7 +1949,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "binary-heap-plus",
  "chrono",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "nautilus-indicators",
  "nautilus-model",
@@ -2140,7 +2140,7 @@ checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -2939,22 +2939,22 @@ checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
 
 [[package]]
 name = "serde"
-version = "1.0.178"
+version = "1.0.179"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60363bdd39a7be0266a520dab25fdc9241d2f987b08a01e01f0ec6d06a981348"
+checksum = "0a5bf42b8d227d4abf38a1ddb08602e229108a517cd4e5bb28f9c7eaafdce5c0"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.178"
+version = "1.0.179"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f28482318d6641454cb273da158647922d1be6b5a2fcc6165cd89ebdd7ed576b"
+checksum = "741e124f5485c7e60c03b043f79f320bff3527f4bbf12cf3831750dc46a0ec2c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -3139,7 +3139,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -3155,9 +3155,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.27"
+version = "2.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b60f673f44a8255b9c8c657daf66a596d435f2da81a555b06dc644d080ba45e0"
+checksum = "04361975b3f5e348b2189d8dc55bc942f278b2d482a6a0365de5bdd62d351567"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3245,7 +3245,7 @@ checksum = "090198534930841fab3a5d1bb637cde49e339654e606195f8d9c76eeb081dc96"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -3342,7 +3342,7 @@ checksum = "630bdcf245f78637c13ec01ffae6187cca34625e8c63150d424b59e55af2675e"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -3433,7 +3433,7 @@ checksum = "5f4f31f56159e98206da9efd823404b79b6ef3143b4a7ab76e67b1751b25a4ab"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
 ]
 
 [[package]]
@@ -3693,7 +3693,7 @@ dependencies = [
  "once_cell",
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
  "wasm-bindgen-shared",
 ]
 
@@ -3715,7 +3715,7 @@ checksum = "54681b18a46765f095758388f2d0cf16eb8d4169b639ab575a8f5693af210c7b"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.27",
+ "syn 2.0.28",
  "wasm-bindgen-backend",
  "wasm-bindgen-shared",
 ]
