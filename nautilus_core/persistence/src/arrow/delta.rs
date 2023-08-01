@@ -222,7 +222,7 @@ mod tests {
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let delta1 = OrderBookDelta {
-            instrument_id: instrument_id,
+            instrument_id,
             action: BookAction::Add,
             order: BookOrder {
                 side: OrderSide::Buy,
