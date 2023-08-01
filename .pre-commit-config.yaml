@@ -60,7 +60,7 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v3.0.0
+    rev: v3.0.1
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
@@ -76,7 +76,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.280
+    rev: v0.0.281
     hooks:
       - id: ruff
         args: ["--fix"]
