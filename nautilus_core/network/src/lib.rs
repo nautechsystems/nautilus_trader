@@ -20,6 +20,7 @@ pub mod websocket;
 use http::{HttpClient, HttpResponse};
 use pyo3::prelude::*;
 use socket::SocketClient;
+use tracing::metadata::LevelFilter;
 use tracing_appender::non_blocking::WorkerGuard;
 use websocket::WebSocketClient;
 
@@ -34,7 +35,7 @@ fn set_global_tracing_collector(file_path: Option<String>) -> LogGuard {
         todo!()
     } else {
         let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        tracing_subscriber::fmt().with_writer(non_blocking).init();
+        tracing_subscriber::fmt().with_max_level(LevelFilter::DEBUG).with_writer(non_blocking).init();
         LogGuard { guard }
     }
 }
