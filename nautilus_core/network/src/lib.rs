@@ -22,6 +22,15 @@ use pyo3::prelude::*;
 use socket::SocketClient;
 use websocket::WebSocketClient;
 
+#[pyfunction]
+fn set_global_tracing_collector(file_path: Option<String>) {
+    if let Some(_file_path) = file_path {
+    } else {
+        let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+        tracing_subscriber::fmt().with_writer(non_blocking).init();
+    }
+}
+
 /// Loaded as nautilus_pyo3.network
 #[pymodule]
 pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -29,5 +38,6 @@ pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpResponse>()?;
     m.add_class::<WebSocketClient>()?;
     m.add_class::<SocketClient>()?;
+    m.add_function(wrap_pyfunction!(set_global_tracing_collector, m)?)?;
     Ok(())
 }
