@@ -113,7 +113,7 @@ class TestPrice:
             [
                 Price(-1, precision=0),
                 Decimal("-1"),
-            ],  # Matches built-in decimal.Decimal behaviour
+            ],  # Matches built-in decimal.Decimal behavior
             [Price(0, 0), Decimal("0")],
         ],
     )

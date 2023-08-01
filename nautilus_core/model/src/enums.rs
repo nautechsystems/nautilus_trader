@@ -325,7 +325,7 @@ impl FromU8 for BookType {
     }
 }
 
-/// The order contigency type which specifies the behaviour of linked orders.
+/// The order contigency type which specifies the behavior of linked orders.
 ///
 /// [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
 #[repr(C)]

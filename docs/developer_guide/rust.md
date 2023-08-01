@@ -23,8 +23,8 @@ their own standard libraries.
 
 Great care will be taken with the use of Rusts `unsafe` facility - which just enables a small set of additional language features, thereby changing
 the contract between the interface and caller, shifting some responsibility for guaranteeing correctness
-from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding _any_ undefined behaviour.
-The definition for what the Rust language designers consider undefined behaviour can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
+from the Rust compiler, and onto us. The goal is to realize the advantages of the `unsafe` facility, whilst avoiding _any_ undefined behavior.
+The definition for what the Rust language designers consider undefined behavior can be found in the [language reference](https://doc.rust-lang.org/stable/reference/behavior-considered-undefined.html).
 
 ## Safety Policy
 To maintain the high standards of correctness the project strives for, it's necessary to specify a reasonable policy
