@@ -16,7 +16,7 @@ Released on 31st July 2023 (UTC).
 - Added `BinanceExecClientConfig.use_reduce_only` option (default true to retain current behavior)
 - Added `BinanceExecClientConfig.use_position_ids` option (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default false to retain current behavior)
-- Added `BacktestVenueConfig.use_reduct_only` option (default true to retain current behaviour)
+- Added `BacktestVenueConfig.use_reduce_only` option (default true to retain current behaviour)
 - Added `MessageBus.is_pending_request(...)` method
 - Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
 - Added `Actor.is_pending_request(...)` convenience method
