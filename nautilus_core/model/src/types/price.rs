@@ -282,6 +282,19 @@ impl<'de> Deserialize<'de> for Price {
     }
 }
 
+#[pymethods]
+impl Price {
+    #[getter]
+    pub fn precision(&self) -> u8 {
+        self.precision
+    }
+
+    #[must_use]
+    pub fn as_double(&self) -> f64 {
+        fixed_i64_to_f64(self.raw)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
