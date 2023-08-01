@@ -109,7 +109,7 @@ cdef class Portfolio(PortfolioFacade):
             log=self._log,
         )
 
-        self._venue = None  # Venue for specific portfolio behaviour (Interactive Brokers)
+        self._venue = None  # Venue for specific portfolio behavior (Interactive Brokers)
         self._unrealized_pnls: dict[InstrumentId, Money] = {}
         self._net_positions: dict[InstrumentId, Decimal] = {}
         self._pending_calcs: set[InstrumentId] = set()

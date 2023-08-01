@@ -2597,7 +2597,7 @@ class TestSimulatedExchange:
         self.exchange.process(0)
 
         # Assert
-        # TODO(cs): Current behaviour erases previous position from cache
+        # TODO(cs): Current behavior erases previous position from cache
         position_open = self.cache.positions_open()[0]
         position_closed = self.cache.positions_closed()[0]
         assert position_open.side == PositionSide.SHORT
