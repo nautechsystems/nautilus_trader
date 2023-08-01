@@ -20,14 +20,22 @@ pub mod websocket;
 use http::{HttpClient, HttpResponse};
 use pyo3::prelude::*;
 use socket::SocketClient;
+use tracing_appender::non_blocking::WorkerGuard;
 use websocket::WebSocketClient;
 
+#[pyclass]
+struct LogGuard {
+    guard: WorkerGuard,
+}
+
 #[pyfunction]
-fn set_global_tracing_collector(file_path: Option<String>) {
+fn set_global_tracing_collector(file_path: Option<String>) -> LogGuard {
     if let Some(_file_path) = file_path {
+        todo!()
     } else {
-        let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
+        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
         tracing_subscriber::fmt().with_writer(non_blocking).init();
+        LogGuard { guard }
     }
 }
 
@@ -38,6 +46,7 @@ pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpResponse>()?;
     m.add_class::<WebSocketClient>()?;
     m.add_class::<SocketClient>()?;
+    m.add_class::<LogGuard>()?;
     m.add_function(wrap_pyfunction!(set_global_tracing_collector, m)?)?;
     Ok(())
 }
