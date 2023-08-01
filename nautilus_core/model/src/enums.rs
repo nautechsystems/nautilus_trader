@@ -273,6 +273,15 @@ pub enum BookAction {
     Clear = 4,
 }
 
+// TODO: Make this a macro
+#[pymethods]
+impl BookAction {
+    #[getter]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+}
+
 impl FromU8 for BookAction {
     fn from_u8(value: u8) -> Option<Self> {
         match value {
@@ -553,6 +562,15 @@ pub enum OrderSide {
     Buy = 1,
     /// The order is a SELL.
     Sell = 2,
+}
+
+// TODO: Make this a macro
+#[pymethods]
+impl OrderSide {
+    #[getter]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
 }
 
 /// Convert the given `value` to an [`OrderSide`].
