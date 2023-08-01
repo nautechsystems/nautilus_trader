@@ -17,14 +17,19 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
-use super::order::BookOrder;
-use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
+use super::order::{BookOrder, NULL_ORDER};
+use crate::{
+    enums::{BookAction, FromU8, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
@@ -81,6 +86,60 @@ impl OrderBookDelta {
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());
         metadata
+    }
+
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str)
+            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .unwrap();
+
+        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
+        let action_u8 = action_obj.getattr("value")?.extract()?;
+        let action = BookAction::from_u8(action_u8).unwrap();
+
+        let flags: u8 = obj.getattr("flags")?.extract()?;
+        let sequence: u64 = obj.getattr("sequence")?.extract()?;
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        let order_pyobject = obj.getattr("order")?;
+        let order: BookOrder = if order_pyobject.is_none() {
+            NULL_ORDER
+        } else {
+            let side_obj: &PyAny = order_pyobject.getattr("side")?.extract()?;
+            let side_u8 = side_obj.getattr("value")?.extract()?;
+            let side = OrderSide::from_u8(side_u8).unwrap();
+
+            let price_py: &PyAny = order_pyobject.getattr("price")?;
+            let price_f64: f64 = price_py.call_method0("as_double")?.extract()?;
+            let price_prec: u8 = price_py.getattr("precision")?.extract()?;
+            let price = Price::new(price_f64, price_prec);
+
+            let size_py: &PyAny = order_pyobject.getattr("price")?;
+            let size_f64: f64 = size_py.call_method0("as_double")?.extract()?;
+            let size_prec: u8 = size_py.getattr("precision")?.extract()?;
+            let size = Quantity::new(size_f64, size_prec);
+
+            let order_id: u64 = order_pyobject.getattr("order_id")?.extract()?;
+            BookOrder {
+                side,
+                price,
+                size,
+                order_id,
+            }
+        };
+
+        Ok(Self::new(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        ))
     }
 }
 
@@ -356,5 +415,16 @@ mod tests {
         let serialized = delta.as_msgpack_bytes().unwrap();
         let deserialized = OrderBookDelta::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, delta);
+    }
+
+    #[test]
+    fn test_from_pyobject() {
+        let delta = create_stub_delta();
+
+        Python::with_gil(|py| {
+            let delta_pyobject = delta.into_py(py);
+            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_delta, delta);
+        });
     }
 }
