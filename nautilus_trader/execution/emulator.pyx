@@ -406,7 +406,10 @@ cdef class OrderEmulator(Actor):
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            raise RuntimeError(f"Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}.")  # pragma: no cover (design-time error)
+            self._log.error(
+                f"Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}.",
+            )
+            return
 
         matching_core.match_order(order)
         if order.side == OrderSide.BUY:
@@ -425,7 +428,10 @@ cdef class OrderEmulator(Actor):
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            raise RuntimeError(f"Cannot handle `CancelOrder`: no matching core for trigger instrument {trigger_instrument_id}.")  # pragma: no cover (design-time error)
+            self._log.error(
+                f"Cannot handle `CancelOrder`: no matching core for trigger instrument {trigger_instrument_id}.",
+            )
+            return
 
         if not matching_core.order_exists(order.client_order_id) and order.is_open_c() and not order.is_pending_cancel_c():
             # Order not held in the emulator
@@ -748,7 +754,7 @@ cdef class OrderEmulator(Actor):
         ):
             self._fill_market_order(order)
         else:
-            raise RuntimeError("invalid `OrderType`")  # pragma: no cover (design-time error)
+            raise RuntimeError(f"invalid `OrderType`, was {order.type_string_c()}")  # pragma: no cover (design-time error)
 
     cpdef void _fill_market_order(self, Order order):
         # Fetch command
@@ -763,10 +769,8 @@ cdef class OrderEmulator(Actor):
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
-        if matching_core is None:
-            raise RuntimeError(f"No matching core for trigger instrument {trigger_instrument_id}")
-
-        matching_core.delete_order(order)
+        if matching_core is not None:
+            matching_core.delete_order(order)
 
         order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef MarketOrder transformed = MarketOrder.transform(order, self.clock.timestamp_ns())
@@ -811,10 +815,8 @@ cdef class OrderEmulator(Actor):
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
-        if matching_core is None:
-            raise RuntimeError(f"No matching core for trigger instrument {trigger_instrument_id}")
-
-        matching_core.delete_order(order)
+        if matching_core is not None:
+            matching_core.delete_order(order)
 
         order.emulation_trigger = TriggerType.NO_TRIGGER
         cdef LimitOrder transformed = LimitOrder.transform(order, self.clock.timestamp_ns())
