@@ -547,8 +547,9 @@ class InteractiveBrokersClient(Component, EWrapper):
             # sometimes I get news before the server version, thus the loop
             while len(fields) != 2:
                 self._client.decoder.interpret(fields)
+                await asyncio.sleep(1)
                 buf = await self._loop.run_in_executor(None, self._client.conn.recvMsg)
-                if not self._client.conn.isConnected() or not (len(buf) > 0):
+                if not self._client.conn.isConnected():
                     # recvMsg() triggers disconnect() where there's a socket.error or 0 length buffer
                     # if we don't then drop out of the while loop it infinitely loops
                     self._log.warning("Disconnected; resetting connection")
