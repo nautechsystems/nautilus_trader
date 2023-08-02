@@ -96,7 +96,7 @@ class BetfairStreamClient:
         """
         Actions to be performed post disconnection.
         """
-        # Override to implement additional disconnection related behaviour
+        # Override to implement additional disconnection related behavior
         # (canceling ping tasks etc.).
 
     async def reconnect(self):

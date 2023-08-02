@@ -33,14 +33,14 @@ const ERROR_EMPTY_DATA: &str = "`data` was empty";
 pub struct DataTransformer {}
 
 impl DataTransformer {
-    /// Transforms the given `data_dicts` into a vector of [`OrderBookDelta`] objects.
-    fn pydicts_to_order_book_deltas(
+    /// Transforms the given `data` into a vector of [`OrderBookDelta`] objects.
+    fn pyobjects_to_order_book_deltas(
         py: Python<'_>,
-        data_dicts: Vec<Py<PyDict>>,
+        data: Vec<PyObject>,
     ) -> PyResult<Vec<OrderBookDelta>> {
-        let deltas: Vec<OrderBookDelta> = data_dicts
+        let deltas: Vec<OrderBookDelta> = data
             .into_iter()
-            .map(|dict| OrderBookDelta::from_dict(py, dict))
+            .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
 
         Ok(deltas)
@@ -126,7 +126,7 @@ impl DataTransformer {
 
         // Iterate over all objects calling the legacy 'to_dict' method
         let mut data_dicts: Vec<Py<PyDict>> = vec![];
-        for obj in data {
+        for obj in &data {
             let dict: Py<PyDict> = obj
                 .call_method1(py, "to_dict", (obj.clone(),))?
                 .extract(py)?;
@@ -143,7 +143,7 @@ impl DataTransformer {
 
         match data_type.as_str() {
             stringify!(OrderBookDelta) => {
-                let deltas = Self::pydicts_to_order_book_deltas(py, data_dicts)?;
+                let deltas = Self::pyobjects_to_order_book_deltas(py, data)?;
                 Self::pyo3_order_book_deltas_to_batches_bytes(py, deltas)
             }
             stringify!(QuoteTick) => {

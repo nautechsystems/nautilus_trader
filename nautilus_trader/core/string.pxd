@@ -61,7 +61,7 @@ cdef inline str cstr_to_pystr(const char* ptr, bint drop = True):
     cdef str obj = PyUnicode_FromString(ptr)
 
     # Assumes `ptr` was created from Rust `CString::from_raw`,
-    # otherwise will lead to undefined behaviour when passed to `cstr_drop`.
+    # otherwise will lead to undefined behavior when passed to `cstr_drop`.
     if drop:
         cstr_drop(ptr)
     return obj
@@ -76,7 +76,7 @@ cdef inline bytes cstr_to_pybytes(const char* ptr):
     cdef bytes obj = PyBytes_FromString(ptr)
 
     # Assumes `ptr` was created from Rust `CString::from_raw`,
-    # otherwise will lead to undefined behaviour when passed to `cstr_drop`.
+    # otherwise will lead to undefined behavior when passed to `cstr_drop`.
     cstr_drop(ptr)
     return obj
 
