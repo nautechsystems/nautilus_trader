@@ -68,13 +68,20 @@ cdef class ComponentStateChanged(Event):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(event_id, ts_event, ts_init)
-
         self.trader_id = trader_id
         self.component_id = component_id
         self.component_type = component_type
         self.state = state
         self.config = config
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, Event other) -> bool:
+        return self._event_id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self._event_id)
 
     def __str__(self) -> str:
         return (
@@ -84,7 +91,7 @@ cdef class ComponentStateChanged(Event):
             f"component_type={self.component_type}, "
             f"state={component_state_to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id.to_str()})"
+            f"event_id={self._event_id.to_str()})"
         )
 
     def __repr__(self) -> str:
@@ -95,9 +102,45 @@ cdef class ComponentStateChanged(Event):
             f"component_type={self.component_type}, "
             f"state={component_state_to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id.to_str()}, "
-            f"ts_init={self.ts_init})"
+            f"event_id={self._event_id.to_str()}, "
+            f"ts_init={self._ts_init})"
         )
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @staticmethod
     cdef ComponentStateChanged from_dict_c(dict values):
@@ -141,9 +184,9 @@ cdef class ComponentStateChanged(Event):
             "component_type": obj.component_type,
             "state": component_state_to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.to_str(),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "event_id": obj._event_id.to_str(),
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
         }
 
     @staticmethod
@@ -199,9 +242,52 @@ cdef class RiskEvent(Event):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(event_id, ts_event, ts_init)
-
         self.trader_id = trader_id
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, Event other) -> bool:
+        return self._event_id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self._event_id)
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
 
 cdef class TradingStateChanged(RiskEvent):
@@ -233,10 +319,12 @@ cdef class TradingStateChanged(RiskEvent):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(trader_id, event_id, ts_event, ts_init)
-
+        self.trader_id = trader_id
         self.state = state
         self.config = config
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
 
     def __str__(self) -> str:
         return (
@@ -244,7 +332,7 @@ cdef class TradingStateChanged(RiskEvent):
             f"trader_id={self.trader_id.to_str()}, "
             f"state={trading_state_to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id.to_str()})"
+            f"event_id={self._event_id.to_str()})"
         )
 
     def __repr__(self) -> str:
@@ -253,9 +341,45 @@ cdef class TradingStateChanged(RiskEvent):
             f"trader_id={self.trader_id.to_str()}, "
             f"state={trading_state_to_str(self.state)}, "
             f"config={self.config}, "
-            f"event_id={self.id.to_str()}, "
-            f"ts_init={self.ts_init})"
+            f"event_id={self._event_id.to_str()}, "
+            f"ts_init={self._ts_init})"
         )
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
     @staticmethod
     cdef TradingStateChanged from_dict_c(dict values):
@@ -291,9 +415,9 @@ cdef class TradingStateChanged(RiskEvent):
             "trader_id": obj.trader_id.to_str(),
             "state": trading_state_to_str(obj.state),
             "config": config_bytes,
-            "event_id": obj.id.to_str(),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "event_id": obj._event_id.to_str(),
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
         }
 
     @staticmethod

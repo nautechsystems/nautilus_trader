@@ -15,6 +15,8 @@
 
 from typing import Any, Callable
 
+import cython
+
 from nautilus_trader.core.uuid cimport UUID4
 
 
@@ -106,54 +108,51 @@ cdef class Document:
         return f"{type(self).__name__}(id={self.id}, ts_init={self.ts_init})"
 
 
+@cython.auto_pickle(False)
 cdef class Event:
     """
-    The base class for all event messages.
-
-    Parameters
-    ----------
-    event_id : UUID4
-        The event ID.
-    ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the event occurred.
-    ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+    The abstract base class for all event messages.
 
     Warnings
     --------
     This class should not be used directly, but through a concrete subclass.
     """
 
-    def __init__(
-        self,
-        UUID4 event_id not None,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ):
-        self.id = event_id
-        self.ts_event = ts_event
-        self.ts_init = ts_init
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
 
-    def __getstate__(self):
-        return (
-            self.id.to_str(),
-            self.ts_event,
-            self.ts_init,
-        )
+        Returns
+        -------
+        UUID4
 
-    def __setstate__(self, state):
-        self.id = UUID4(state[0])
-        self.ts_event = state[1]
-        self.ts_init = state[2]
+        """
+        raise NotImplementedError("abstract property must be implemented")
 
-    def __eq__(self, Event other) -> bool:
-        return self.id == other.id
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
 
-    def __hash__(self) -> int:
-        return hash(self.id)
+        Returns
+        -------
+        int
 
-    def __repr__(self) -> str:
-        return f"{type(self).__name__}(id={self.id}, ts_event={self.ts_event}, ts_init={self.ts_init})"
+        """
+        raise NotImplementedError("abstract property must be implemented")
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        raise NotImplementedError("abstract property must be implemented")
 
 
 cdef class Request:

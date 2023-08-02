@@ -622,8 +622,6 @@ typedef struct Level Level;
 
 typedef struct OrderBook OrderBook;
 
-typedef struct String String;
-
 /**
  * Represents a synthetic instrument with prices derived from component instruments using a
  * formula.
@@ -899,7 +897,7 @@ typedef struct OrderDenied_t {
     struct StrategyId_t strategy_id;
     struct InstrumentId_t instrument_id;
     struct ClientOrderId_t client_order_id;
-    struct String *reason;
+    char* reason;
     UUID4_t event_id;
     uint64_t ts_event;
     uint64_t ts_init;
@@ -1404,15 +1402,6 @@ struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       UUID4_t event_id,
                                       uint64_t ts_event,
                                       uint64_t ts_init);
-
-/**
- * Frees the memory for the given `event` by dropping.
- */
-void order_denied_drop(struct OrderDenied_t event);
-
-struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
-
-const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
 
 void interned_string_stats(void);
 
