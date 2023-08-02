@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
-use crate::strum_serde;
+use crate::{enum_strum_serde, enum_value_getter};
 
 pub trait FromU8 {
     fn from_u8(value: u8) -> Option<Self>
@@ -271,15 +271,6 @@ pub enum BookAction {
     Delete = 3,
     /// The state of the order book is cleared.
     Clear = 4,
-}
-
-// TODO: Make this a macro
-#[pymethods]
-impl BookAction {
-    #[getter]
-    pub fn value(&self) -> u8 {
-        *self as u8
-    }
 }
 
 impl FromU8 for BookAction {
@@ -562,15 +553,6 @@ pub enum OrderSide {
     Buy = 1,
     /// The order is a SELL.
     Sell = 2,
-}
-
-// TODO: Make this a macro
-#[pymethods]
-impl OrderSide {
-    #[getter]
-    pub fn value(&self) -> u8 {
-        *self as u8
-    }
 }
 
 /// Convert the given `value` to an [`OrderSide`].
@@ -889,30 +871,54 @@ pub enum TriggerType {
     IndexPrice = 9,
 }
 
-strum_serde!(AccountType);
-strum_serde!(AggregationSource);
-strum_serde!(AggressorSide);
-strum_serde!(AssetClass);
-strum_serde!(AssetType);
-strum_serde!(BarAggregation);
-strum_serde!(BookAction);
-strum_serde!(BookType);
-strum_serde!(ContingencyType);
-strum_serde!(CurrencyType);
-strum_serde!(InstrumentCloseType);
-strum_serde!(LiquiditySide);
-strum_serde!(MarketStatus);
-strum_serde!(OmsType);
-strum_serde!(OptionKind);
-strum_serde!(OrderSide);
-strum_serde!(OrderStatus);
-strum_serde!(OrderType);
-strum_serde!(PositionSide);
-strum_serde!(PriceType);
-strum_serde!(TimeInForce);
-strum_serde!(TradingState);
-strum_serde!(TrailingOffsetType);
-strum_serde!(TriggerType);
+enum_strum_serde!(AccountType);
+enum_strum_serde!(AggregationSource);
+enum_strum_serde!(AggressorSide);
+enum_strum_serde!(AssetClass);
+enum_strum_serde!(AssetType);
+enum_strum_serde!(BarAggregation);
+enum_strum_serde!(BookAction);
+enum_strum_serde!(BookType);
+enum_strum_serde!(ContingencyType);
+enum_strum_serde!(CurrencyType);
+enum_strum_serde!(InstrumentCloseType);
+enum_strum_serde!(LiquiditySide);
+enum_strum_serde!(MarketStatus);
+enum_strum_serde!(OmsType);
+enum_strum_serde!(OptionKind);
+enum_strum_serde!(OrderSide);
+enum_strum_serde!(OrderStatus);
+enum_strum_serde!(OrderType);
+enum_strum_serde!(PositionSide);
+enum_strum_serde!(PriceType);
+enum_strum_serde!(TimeInForce);
+enum_strum_serde!(TradingState);
+enum_strum_serde!(TrailingOffsetType);
+enum_strum_serde!(TriggerType);
+
+enum_value_getter!(AccountType);
+enum_value_getter!(AggregationSource);
+enum_value_getter!(AggressorSide);
+enum_value_getter!(AssetClass);
+enum_value_getter!(BarAggregation);
+enum_value_getter!(BookAction);
+enum_value_getter!(BookType);
+enum_value_getter!(ContingencyType);
+enum_value_getter!(CurrencyType);
+enum_value_getter!(InstrumentCloseType);
+enum_value_getter!(LiquiditySide);
+enum_value_getter!(MarketStatus);
+enum_value_getter!(OmsType);
+enum_value_getter!(OptionKind);
+enum_value_getter!(OrderSide);
+enum_value_getter!(OrderStatus);
+enum_value_getter!(OrderType);
+enum_value_getter!(PositionSide);
+enum_value_getter!(PriceType);
+enum_value_getter!(TimeInForce);
+enum_value_getter!(TradingState);
+enum_value_getter!(TrailingOffsetType);
+enum_value_getter!(TriggerType);
 
 #[no_mangle]
 pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {

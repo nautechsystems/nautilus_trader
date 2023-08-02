@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 #[macro_export]
-macro_rules! strum_serde {
+macro_rules! enum_strum_serde {
     ($type:ty) => {
         impl Serialize for $type {
             fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -32,6 +32,19 @@ macro_rules! strum_serde {
             {
                 let s = String::deserialize(deserializer)?;
                 <$type>::from_str(&s).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! enum_value_getter {
+    ($type:ty) => {
+        #[pymethods]
+        impl $type {
+            #[getter]
+            pub fn value(&self) -> u8 {
+                *self as u8
             }
         }
     };
