@@ -13,13 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::c_char;
+use std::ffi::{c_char, CStr};
 
-use nautilus_core::{
-    string::{cstr_to_string, str_to_cstr},
-    time::UnixNanos,
-    uuid::UUID4,
-};
+use nautilus_core::{string::SerializableUstr, time::UnixNanos, uuid::UUID4};
+use ustr::Ustr;
 
 // use crate::types::price::Price;
 // use crate::types::quantity::Quantity;
@@ -103,30 +100,20 @@ pub unsafe extern "C" fn order_denied_new(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> OrderDenied {
+    assert!(!reason_ptr.is_null(), "`readon_ptr` was NULL");
+    let reason = SerializableUstr(Ustr::from(
+        CStr::from_ptr(reason_ptr)
+            .to_str()
+            .expect("CStr::from_ptr failed"),
+    ));
     OrderDenied {
         trader_id,
         strategy_id,
         instrument_id,
         client_order_id,
-        reason: Box::new(cstr_to_string(reason_ptr)),
+        reason,
         event_id,
         ts_event,
         ts_init,
     }
-}
-
-/// Frees the memory for the given `event` by dropping.
-#[no_mangle]
-pub extern "C" fn order_denied_drop(event: OrderDenied) {
-    drop(event); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn order_denied_clone(event: &OrderDenied) -> OrderDenied {
-    event.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn order_denied_reason_to_cstr(event: &OrderDenied) -> *const c_char {
-    str_to_cstr(&event.reason)
 }

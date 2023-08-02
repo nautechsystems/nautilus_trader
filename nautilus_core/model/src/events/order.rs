@@ -16,7 +16,7 @@
 use std::collections::HashMap;
 
 use derive_builder::{self, Builder};
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{string::SerializableUstr, time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -131,7 +131,7 @@ impl Default for OrderInitialized {
 }
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderDenied {
@@ -139,7 +139,7 @@ pub struct OrderDenied {
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub reason: Box<String>,
+    pub reason: SerializableUstr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,

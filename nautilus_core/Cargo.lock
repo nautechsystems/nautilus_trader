@@ -1891,6 +1891,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "ustr",
  "uuid",
 ]
 

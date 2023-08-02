@@ -33,12 +33,7 @@ cdef class Document:
 
 
 cdef class Event:
-    cdef readonly UUID4 id
-    """The event message ID.\n\n:returns: `UUID4`"""
-    cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the event occurred.\n\n:returns: `uint64_t`"""
+    pass
 
 
 cdef class Request:

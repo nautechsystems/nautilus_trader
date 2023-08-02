@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport OrderDenied_t
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport LiquiditySide
@@ -38,6 +41,10 @@ from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class OrderEvent(Event):
+    cdef UUID4 _event_id
+    cdef uint64_t _ts_event
+    cdef uint64_t _ts_init
+
     cdef readonly TraderId trader_id
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
     cdef readonly StrategyId strategy_id

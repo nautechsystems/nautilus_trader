@@ -337,9 +337,6 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook:
         pass
 
-    cdef struct String:
-        pass
-
     # Represents a synthetic instrument with prices derived from component instruments using a
     # formula.
     cdef struct SyntheticInstrument:
@@ -494,7 +491,7 @@ cdef extern from "../includes/model.h":
         StrategyId_t strategy_id;
         InstrumentId_t instrument_id;
         ClientOrderId_t client_order_id;
-        String *reason;
+        char* reason;
         UUID4_t event_id;
         uint64_t ts_event;
         uint64_t ts_init;
@@ -909,13 +906,6 @@ cdef extern from "../includes/model.h":
                                    UUID4_t event_id,
                                    uint64_t ts_event,
                                    uint64_t ts_init);
-
-    # Frees the memory for the given `event` by dropping.
-    void order_denied_drop(OrderDenied_t event);
-
-    OrderDenied_t order_denied_clone(const OrderDenied_t *event);
-
-    const char *order_denied_reason_to_cstr(const OrderDenied_t *event);
 
     void interned_string_stats();
 

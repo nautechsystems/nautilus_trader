@@ -130,8 +130,6 @@ cdef class PositionEvent(Event):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        super().__init__(event_id, ts_event, ts_init)
-
         self.trader_id = trader_id
         self.strategy_id = strategy_id
         self.instrument_id = instrument_id
@@ -155,6 +153,16 @@ cdef class PositionEvent(Event):
         self.ts_opened = ts_opened
         self.ts_closed = ts_closed
         self.duration_ns = duration_ns
+
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, Event other) -> bool:
+        return self._event_id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self._event_id)
 
     def __str__(self) -> str:
         return (
@@ -203,11 +211,47 @@ cdef class PositionEvent(Event):
             f"realized_pnl={self.realized_pnl.to_str()}, "
             f"unrealized_pnl={self.unrealized_pnl.to_str()}, "
             f"ts_opened={self.ts_opened}, "
-            f"ts_last={self.ts_event}, "
+            f"ts_last={self._ts_event}, "
             f"ts_closed={self.ts_closed}, "
             f"duration_ns={self.duration_ns}, "
-            f"event_id={self.id.to_str()})"
+            f"event_id={self._event_id.to_str()})"
         )
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
 
 
 cdef class PositionOpened(PositionEvent):
@@ -390,9 +434,9 @@ cdef class PositionOpened(PositionEvent):
             "avg_px_open": obj.avg_px_open,
             "realized_pnl": obj.realized_pnl.to_str(),
             "duration_ns": obj.duration_ns,
-            "event_id": obj.id.to_str(),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "event_id": obj._event_id.to_str(),
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
         }
 
     @staticmethod
@@ -655,10 +699,10 @@ cdef class PositionChanged(PositionEvent):
             "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
             "unrealized_pnl": obj.unrealized_pnl.to_str(),
-            "event_id": obj.id.to_str(),
+            "event_id": obj._event_id.to_str(),
             "ts_opened": obj.ts_opened,
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
         }
 
     @staticmethod
@@ -926,11 +970,11 @@ cdef class PositionClosed(PositionEvent):
             "avg_px_close": obj.avg_px_close,
             "realized_return": obj.realized_return,
             "realized_pnl": obj.realized_pnl.to_str(),
-            "event_id": obj.id.to_str(),
+            "event_id": obj._event_id.to_str(),
             "ts_opened": obj.ts_opened,
             "ts_closed": obj.ts_closed,
             "duration_ns": obj.duration_ns,
-            "ts_init": obj.ts_init,
+            "ts_init": obj._ts_init,
         }
 
     @staticmethod
