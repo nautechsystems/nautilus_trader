@@ -19,7 +19,6 @@ from collections import Counter
 import msgspec.json
 import pytest
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -44,32 +43,32 @@ class TestPersistenceStreaming:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/catalog")  # ,
         self.fs = self.catalog.fs
-        self._load_data_into_catalog()
+        # self._load_data_into_catalog()
         self._logger = Logger(clock=LiveClock())
         self.logger = LoggerAdapter("test", logger=self._logger)
 
-    def _load_data_into_catalog(self):
-        self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        raise NotImplementedError("Needs new record batch loader")
-        # result = process_files(
-        #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-        #     reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
-        #     instrument_provider=self.instrument_provider,
-        #     catalog=self.catalog,
-        # )
-        data = (
-            self.catalog.instruments(as_nautilus=True)
-            + self.catalog.instrument_status_updates(as_nautilus=True)
-            + self.catalog.trade_ticks(as_nautilus=True)
-            + self.catalog.order_book_deltas(as_nautilus=True)
-            + self.catalog.tickers(as_nautilus=True)
-        )
-        assert len(data) == 2535
+    # def _load_data_into_catalog(self):
+    #     self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
+    #     raise NotImplementedError("Needs new record batch loader")
+    #     # result = process_files(
+    #     #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
+    #     #     reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
+    #     #     instrument_provider=self.instrument_provider,
+    #     #     catalog=self.catalog,
+    #     # )
+    #     data = (
+    #         self.catalog.instruments(as_nautilus=True)
+    #         + self.catalog.instrument_status_updates(as_nautilus=True)
+    #         + self.catalog.trade_ticks(as_nautilus=True)
+    #         + self.catalog.order_book_deltas(as_nautilus=True)
+    #         + self.catalog.tickers(as_nautilus=True)
+    #     )
+    #     assert len(data) == 2535
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
-    def test_feather_writer(self):
+    def test_feather_writer(self, betfair_catalog):
         # Arrange
-        instrument = self.catalog.instruments(as_nautilus=True)[0]
+        instrument = self.catalog.instruments()[0]
 
         catalog_path = "/.nautilus/catalog"
 
