@@ -15,14 +15,12 @@
 
 import sys
 from collections import Counter
+from typing import Optional
 
 import msgspec.json
 import pytest
 
 from nautilus_trader.backtest.node import BacktestNode
-from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -31,9 +29,9 @@ from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.streaming.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
-from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -41,42 +39,19 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestPersistenceStreaming:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/catalog")  # ,
-        self.fs = self.catalog.fs
-        # self._load_data_into_catalog()
-        self._logger = Logger(clock=LiveClock())
-        self.logger = LoggerAdapter("test", logger=self._logger)
-
-    # def _load_data_into_catalog(self):
-    #     self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-    #     raise NotImplementedError("Needs new record batch loader")
-    #     # result = process_files(
-    #     #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-    #     #     reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
-    #     #     instrument_provider=self.instrument_provider,
-    #     #     catalog=self.catalog,
-    #     # )
-    #     data = (
-    #         self.catalog.instruments(as_nautilus=True)
-    #         + self.catalog.instrument_status_updates(as_nautilus=True)
-    #         + self.catalog.trade_ticks(as_nautilus=True)
-    #         + self.catalog.order_book_deltas(as_nautilus=True)
-    #         + self.catalog.tickers(as_nautilus=True)
-    #     )
-    #     assert len(data) == 2535
+        self.catalog: Optional[ParquetDataCatalog] = None
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self, betfair_catalog):
         # Arrange
+        self.catalog = betfair_catalog
         instrument = self.catalog.instruments()[0]
-
-        catalog_path = "/.nautilus/catalog"
-
         run_config = BetfairTestStubs.betfair_backtest_run_config(
-            catalog_path=catalog_path,
-            catalog_fs_protocol="memory",
+            catalog_path=betfair_catalog.path,
+            catalog_fs_protocol="file",
             instrument_id=instrument.id.value,
             flush_interval_ms=5000,
+            bypass_logging=False,
         )
 
         node = BacktestNode(configs=[run_config])
@@ -108,16 +83,10 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    def test_feather_writer_generic_data(self):
+    def test_feather_writer_generic_data(self, betfair_catalog):
         # Arrange
+        self.catalog = betfair_catalog
         TestPersistenceStubs.setup_news_event_persistence()
-
-        raise NotImplementedError("Needs new record batch loader")
-        # process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-        #     catalog=self.catalog,
-        # )
 
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
@@ -155,8 +124,9 @@ class TestPersistenceStreaming:
         result = Counter([r.__class__.__name__ for r in result])
         assert result["NewsEventData"] == 86985
 
-    def test_feather_writer_signal_data(self):
+    def test_feather_writer_signal_data(self, betfair_catalog):
         # Arrange
+        self.catalog = betfair_catalog
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
@@ -208,8 +178,9 @@ class TestPersistenceStreaming:
         assert instance.value == 5.0
         assert instance.ts_init == 0
 
-    def test_config_write(self):
+    def test_config_write(self, betfair_catalog):
         # Arrange
+        self.catalog = betfair_catalog
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,

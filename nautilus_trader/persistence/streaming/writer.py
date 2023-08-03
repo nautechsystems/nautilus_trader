@@ -25,14 +25,11 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
 from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
 from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
 from nautilus_trader.persistence.catalog.parquet.util import GENERIC_DATA_PREFIX
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
-from nautilus_trader.persistence.catalog.parquet.util import list_dicts_to_dict_lists
 
 
 class StreamingFeatherWriter:
@@ -81,12 +78,6 @@ class StreamingFeatherWriter:
         self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
 
         self._schemas = list_schemas()
-        self._schemas.update(
-            {
-                OrderBookDelta: self._schemas[OrderBookDelta],
-                OrderBookDeltas: self._schemas[OrderBookDelta],
-            },
-        )
         self.logger = logger
         self._files: dict[str, BinaryIO] = {}
         self._writers: dict[str, RecordBatchStreamWriter] = {}
@@ -154,21 +145,14 @@ class StreamingFeatherWriter:
         serialized = ParquetSerializer.serialize_batch([obj], cls=cls)
         if not serialized:
             return
-        if isinstance(serialized, dict):
-            serialized = [serialized]
-        original = list_dicts_to_dict_lists(
-            serialized,
-            keys=self._schemas[cls].names,
-        )
-        data = list(original.values())
         try:
-            batch = pa.record_batch(data, schema=self._schemas[cls])
-            writer.write_batch(batch)
+            for batch in serialized.to_batches():
+                writer.write_batch(batch)
             self.check_flush()
         except Exception as e:
             self.logger.error(f"Failed to serialize {cls=}")
             self.logger.error(f"ERROR = `{e}`")
-            self.logger.debug(f"data = {original}")
+            self.logger.debug(f"data = {obj}")
 
     def check_flush(self) -> None:
         """

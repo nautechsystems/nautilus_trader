@@ -26,7 +26,6 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.dataset
 import pyarrow.dataset as pds
-import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
 from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
@@ -45,6 +44,7 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.serializers import RUST_SERIALIZERS
@@ -212,7 +212,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
-                instrument_ids=instrument_ids,
+                instrument_ids=None,
                 start=start,
                 end=end,
                 where=where,
@@ -253,7 +253,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: Optional[str] = None,
         **kwargs,
     ):
-        if cls in (QuoteTick, TradeTick, Bar, OrderBookDeltas):
+        if cls in (QuoteTick, TradeTick, Bar, OrderBookDelta):
             data = self.query_rust(
                 cls=cls,
                 instrument_ids=instrument_ids,
@@ -293,14 +293,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         q = f"SELECT * FROM {table}"  # noqa
         conditions: list[str] = [] + ([where] if where else [])
-        if instrument_ids:
+        if len(instrument_ids or []) == 1:
+            conditions.append(f"instrument_id = '{instrument_ids[0]}'")
+        elif instrument_ids:
             conditions.append(f"instrument_id in {tuple(instrument_ids)}")
         if start:
-            ts = dt_to_unix_nanos(pd.Timestamp(start))
-            conditions.append(f"ts_init >= {ts}")
+            start_ts = dt_to_unix_nanos(pd.Timestamp(start))
+            conditions.append(f"ts_init >= {start_ts}")
         if end:
-            dt_to_unix_nanos(pd.Timestamp(end))
-            conditions.append(f"ts_init <= {ts}")
+            end_ts = dt_to_unix_nanos(pd.Timestamp(end))
+            conditions.append(f"ts_init <= {end_ts}")
         if conditions:
             q += f" WHERE {' AND '.join(conditions)}"
         q += " ORDER BY ts_init"
@@ -362,19 +364,6 @@ class ParquetDataCatalog(BaseDataCatalog):
     def list_data_types(self):
         glob_path = f"{self.path}/data/*"
         return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
-
-    def list_partitions(self, cls_type: type):
-        assert isinstance(cls_type, type), "`cls_type` should be type, i.e. TradeTick"
-        name = class_to_filename(cls_type)
-        dataset = pq.ParquetDataset(
-            f"{self.path}/data/{name}",
-            filesystem=self.fs,
-        )
-        # TODO(cs): Catalog v1 impl below
-        # partitions = {}
-        # for level in dataset.partitioning:
-        #     partitions[level.name] = level.keys
-        return dataset.partitioning
 
     def list_backtest_runs(self) -> list[str]:
         glob_path = f"{self.path}/backtest/*.feather"

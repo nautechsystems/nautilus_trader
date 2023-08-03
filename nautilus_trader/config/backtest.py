@@ -137,14 +137,12 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             {
                 "start": start_time or query["start"],
                 "end": end_time or query["end"],
-                "as_nautilus": as_nautilus,
             },
         )
 
         catalog = self.catalog()
         instruments = catalog.instruments(
             instrument_ids=[self.instrument_id] if self.instrument_id else None,
-            as_nautilus=True,
         )
         if not instruments:
             return {"data": [], "instrument": None}
