@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.enums_c cimport TradingState
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport Identifier
@@ -22,6 +25,10 @@ from nautilus_trader.model.identifiers cimport TraderId
 
 
 cdef class ComponentStateChanged(Event):
+    cdef UUID4 _event_id
+    cdef uint64_t _ts_event
+    cdef uint64_t _ts_init
+
     cdef readonly TraderId trader_id
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
     cdef readonly Identifier component_id
@@ -41,6 +48,10 @@ cdef class ComponentStateChanged(Event):
 
 
 cdef class RiskEvent(Event):
+    cdef UUID4 _event_id
+    cdef uint64_t _ts_event
+    cdef uint64_t _ts_init
+
     cdef readonly TraderId trader_id
     """The trader ID associated with the event.\n\n:returns: `TraderId`"""
 

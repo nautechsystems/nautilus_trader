@@ -17,7 +17,6 @@ import pickle
 
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.message import Document
-from nautilus_trader.core.message import Event
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
@@ -81,48 +80,6 @@ class TestMessage:
 
         # Assert
         assert res == unpickled
-
-    def test_event_message_equality(self):
-        # Arrange
-        uuid = UUID4()
-
-        event1 = Event(
-            event_id=uuid,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        event2 = Event(
-            event_id=uuid,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        event3 = Event(
-            event_id=UUID4(),  # Different UUID4
-            ts_event=0,
-            ts_init=0,
-        )
-
-        # Act, Assert
-        assert event1 == event1
-        assert event1 == event2
-        assert event1 != event3
-
-    def test_event_message_picking(self):
-        # Arrange
-        event = Event(
-            UUID4(),
-            1,
-            2,
-        )
-
-        # Act
-        pickled = pickle.dumps(event)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
-
-        # Assert
-        assert event == unpickled
 
     def test_document_message_hash(self):
         # Arrange

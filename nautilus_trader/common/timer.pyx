@@ -57,8 +57,6 @@ cdef class TimeEvent(Event):
         uint64_t ts_init,
     ):
         # Precondition: `name` validated in Rust
-        super().__init__(event_id, ts_event, ts_init)
-
         self._mem = time_event_new(
             pystr_to_cstr(name),
             event_id._mem,
@@ -73,14 +71,12 @@ cdef class TimeEvent(Event):
     def __getstate__(self):
         return (
             self.to_str(),
-            self.id.to_str(),
+            self.id.value,
             self.ts_event,
             self.ts_init,
         )
 
     def __setstate__(self, state):
-        self.ts_event = state[2]
-        self.ts_init = state[3]
         self._mem = time_event_new(
             pystr_to_cstr(state[0]),
             uuid4_from_cstr(pystr_to_cstr(state[1])),
@@ -115,13 +111,48 @@ cdef class TimeEvent(Event):
         """
         return cstr_to_pystr(time_event_name_to_cstr((&self._mem)))
 
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        cdef UUID4 uuid4 = UUID4.__new__(UUID4)
+        uuid4._mem = self._mem.event_id
+        return uuid4
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
     @staticmethod
     cdef TimeEvent from_mem_c(TimeEvent_t mem):
         cdef TimeEvent event = TimeEvent.__new__(TimeEvent)
         event._mem = time_event_clone(&mem)
-        event.id = UUID4.from_mem_c(mem.event_id)
-        event.ts_event = mem.ts_event
-        event.ts_init = mem.ts_init
         return event
 
 

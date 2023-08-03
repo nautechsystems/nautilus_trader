@@ -20,7 +20,7 @@ use datafusion::arrow::{
 };
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
-    exceptions::{PyKeyError, PyRuntimeError, PyValueError},
+    exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
     types::{PyBytes, PyDict},
 };
@@ -124,21 +124,12 @@ impl DataTransformer {
             return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
-        // Iterate over all objects calling the legacy 'to_dict' method
-        let mut data_dicts: Vec<Py<PyDict>> = vec![];
-        for obj in &data {
-            let dict: Py<PyDict> = obj
-                .call_method1(py, "to_dict", (obj.clone(),))?
-                .extract(py)?;
-            data_dicts.push(dict);
-        }
-
-        let data_type: String = data_dicts
+        let data_type: String = data
             .first()
             .unwrap() // Safety: already checked that `data` not empty above
             .as_ref(py)
-            .get_item("type")
-            .ok_or_else(|| PyKeyError::new_err("'type' key not found in dict."))?
+            .getattr("__class__")?
+            .getattr("__name__")?
             .extract()?;
 
         match data_type.as_str() {
@@ -147,14 +138,35 @@ impl DataTransformer {
                 Self::pyo3_order_book_deltas_to_batches_bytes(py, deltas)
             }
             stringify!(QuoteTick) => {
+                let mut data_dicts: Vec<Py<PyDict>> = vec![];
+                for obj in &data {
+                    let dict: Py<PyDict> = obj
+                        .call_method1(py, "to_dict", (obj.clone(),))?
+                        .extract(py)?;
+                    data_dicts.push(dict);
+                }
                 let ticks = Self::pydicts_to_quote_ticks(py, data_dicts)?;
                 Self::pyo3_quote_ticks_to_batches_bytes(py, ticks)
             }
             stringify!(TradeTick) => {
+                let mut data_dicts: Vec<Py<PyDict>> = vec![];
+                for obj in &data {
+                    let dict: Py<PyDict> = obj
+                        .call_method1(py, "to_dict", (obj.clone(),))?
+                        .extract(py)?;
+                    data_dicts.push(dict);
+                }
                 let ticks = Self::pydicts_to_trade_ticks(py, data_dicts)?;
                 Self::pyo3_trade_ticks_to_batches_bytes(py, ticks)
             }
             stringify!(Bar) => {
+                let mut data_dicts: Vec<Py<PyDict>> = vec![];
+                for obj in &data {
+                    let dict: Py<PyDict> = obj
+                        .call_method1(py, "to_dict", (obj.clone(),))?
+                        .extract(py)?;
+                    data_dicts.push(dict);
+                }
                 let bars = Self::pydicts_to_bars(py, data_dicts)?;
                 Self::pyo3_bars_to_batches_bytes(py, bars)
             }
