@@ -261,4 +261,5 @@ cdef class OrderFactory:
         dict entry_exec_algorithm_params=*,
         dict tp_exec_algorithm_params=*,
         dict sl_exec_algorithm_params=*,
+        str tags=*,
     )

@@ -1110,6 +1110,7 @@ cdef class OrderFactory:
         dict entry_exec_algorithm_params = None,
         dict tp_exec_algorithm_params = None,
         dict sl_exec_algorithm_params = None,
+        str tags = None,
     ):
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -1168,6 +1169,9 @@ cdef class OrderFactory:
             The execution algorithm parameters for the order.
         sl_exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
+        tags : str, optional
+            The custom user tags for the order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -1200,7 +1204,7 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                tags=tags,
             )
         elif entry_order_type == OrderType.LIMIT:
             entry_order = LimitOrder(
@@ -1225,7 +1229,7 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                tags=tags,
             )
         elif entry_order_type == OrderType.MARKET_IF_TOUCHED:
             entry_order = MarketIfTouchedOrder(
@@ -1250,7 +1254,7 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                tags=tags,
             )
         elif entry_order_type == OrderType.LIMIT_IF_TOUCHED:
             entry_order = LimitIfTouchedOrder(
@@ -1277,7 +1281,7 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                tags=tags,
             )
         else:
             raise ValueError(f"invalid `entry_order_type`, was {order_type_to_str(entry_order_type)}")
@@ -1309,7 +1313,7 @@ cdef class OrderFactory:
                 parent_order_id=entry_client_order_id,
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
-                tags="TAKE_PROFIT",
+                tags=tags,
             )
         elif tp_order_type == OrderType.LIMIT_IF_TOUCHED:
             tp_order = LimitIfTouchedOrder(
@@ -1337,7 +1341,7 @@ cdef class OrderFactory:
                 parent_order_id=entry_client_order_id,
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
-                tags="TAKE_PROFIT",
+                tags=tags,
             )
         elif tp_order_type == OrderType.MARKET_IF_TOUCHED:
             tp_order = MarketIfTouchedOrder(
@@ -1362,7 +1366,7 @@ cdef class OrderFactory:
                 parent_order_id=entry_client_order_id,
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
-                tags="TAKE_PROFIT",
+                tags=tags,
             )
         else:
             raise ValueError(f"invalid `tp_order_type`, was {order_type_to_str(entry_order_type)}")
@@ -1392,7 +1396,7 @@ cdef class OrderFactory:
             parent_order_id=entry_client_order_id,
             exec_algorithm_id=sl_exec_algorithm_id,
             exec_algorithm_params=sl_exec_algorithm_params,
-            tags="STOP_LOSS",
+            tags=tags,
         )
 
         return OrderList(
