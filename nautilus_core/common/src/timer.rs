@@ -16,15 +16,16 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Formatter},
-    rc::Rc,
 };
 
 use nautilus_core::{
     correctness,
+    string::SerializableUstr,
     time::{TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
 use pyo3::ffi;
+use ustr::Ustr;
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -32,7 +33,7 @@ use pyo3::ffi;
 /// Represents a time event occurring at the event timestamp.
 pub struct TimeEvent {
     /// The event name.
-    pub name: Box<Rc<String>>,
+    pub name: SerializableUstr,
     /// The event ID.
     pub event_id: UUID4,
     /// The message category
@@ -47,7 +48,7 @@ impl TimeEvent {
         correctness::valid_string(&name, "`TimeEvent` name");
 
         TimeEvent {
-            name: Box::new(Rc::new(name)),
+            name: SerializableUstr(Ustr::from(&name)),
             event_id,
             ts_event,
             ts_init,
@@ -150,7 +151,7 @@ impl TestTimer {
 
     pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
-            name: Box::new(Rc::new(self.name.clone())),
+            name: SerializableUstr(Ustr::from(&self.name)),
             event_id,
             ts_event: self.next_time_ns,
             ts_init,
@@ -181,7 +182,7 @@ impl Iterator for TestTimer {
         } else {
             let item = (
                 TimeEvent {
-                    name: Box::new(Rc::new(self.name.clone())),
+                    name: SerializableUstr(Ustr::from(&self.name)),
                     event_id: UUID4::new(),
                     ts_event: self.next_time_ns,
                     ts_init: self.next_time_ns,
