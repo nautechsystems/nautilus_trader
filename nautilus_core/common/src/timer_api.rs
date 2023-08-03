@@ -35,21 +35,6 @@ pub unsafe extern "C" fn time_event_new(
     TimeEvent::new(cstr_to_string(name_ptr), event_id, ts_event, ts_init)
 }
 
-#[no_mangle]
-pub extern "C" fn time_event_clone(event: &TimeEvent) -> TimeEvent {
-    event.clone()
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_drop(event: TimeEvent) {
-    drop(event); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_name_to_cstr(event: &TimeEvent) -> *const c_char {
-    str_to_cstr(&event.name)
-}
-
 /// Returns a [`TimeEvent`] as a C string pointer.
 #[no_mangle]
 pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {

@@ -28,6 +28,7 @@ header = '"../includes/common.h"'
 rename_variants = "ScreamingSnakeCase"
 
 [export.rename]
+"SerializableUstr" = "char*"
 "bool" = "uint8_t"
 "UnixNanos" = "uint64_t"
 "TimedeltaNanos" = "int64_t"
