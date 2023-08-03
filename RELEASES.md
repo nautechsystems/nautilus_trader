@@ -3,7 +3,7 @@
 Released on TBD (UTC)
 
 ### Enhancements
-None
+- Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
 None
