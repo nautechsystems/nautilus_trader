@@ -237,12 +237,18 @@ def generate_signal_class(name: str, value_type: type) -> type:
     SignalData.__name__ = f"Signal{name.title()}"
 
     # Parquet serialization
-    def serialize_signal(self):
-        return {
-            "ts_init": self.ts_init,
-            "ts_event": self.ts_event,
-            "value": self.value,
-        }
+    def serialize_signal(data: list) -> pa.Table:
+        return pa.Table.from_pylist(
+            [
+                {
+                    "ts_init": d.ts_init,
+                    "ts_event": d.ts_event,
+                    "value": d.value,
+                }
+                for d in data
+            ],
+            schema=schema,
+        )
 
     def deserialize_signal(data):
         return SignalData(**data)

@@ -25,7 +25,7 @@ def betfair_catalog(data_catalog):
     data_catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(fn))
+    data = list(parse_betfair_file(fn))[:2]
     data_catalog.write_data(data)
 
     return data_catalog

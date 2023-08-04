@@ -26,7 +26,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.singleton import clear_singleton_instances
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.trading.filters import NewsEvent
+
+
+AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class NewsEventData(NewsEvent):
@@ -85,13 +91,7 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
         logger=logger,
     )
     instrument_provider.add(instrument)
-    raise NotImplementedError
-    # process_files(
-    #     glob_path=f"{TEST_DATA_DIR}/truefx-audusd-ticks.csv",
-    #     reader=CSVReader(
-    #         block_parser=partial(parse_csv_tick, instrument_id=TestIdStubs.audusd_id()),
-    #         as_dataframe=True,
-    #     ),
-    #     instrument_provider=instrument_provider,
-    #     catalog=catalog,
-    # )
+
+    wrangler = QuoteTickDataWrangler(instrument)
+    ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx-audusd-ticks.csv"))
+    catalog.write_data(ticks)

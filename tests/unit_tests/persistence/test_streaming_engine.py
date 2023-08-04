@@ -19,7 +19,6 @@ import fsspec
 import pandas as pd
 import pytest
 
-from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -37,7 +36,6 @@ from nautilus_trader.persistence.streaming.engine import _StreamingBuffer
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
@@ -541,7 +539,6 @@ class TestPersistenceBatching:
     def setup(self) -> None:
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
-        self._load_data_into_catalog()
 
     def teardown(self) -> None:
         # Cleanup
@@ -550,19 +547,11 @@ class TestPersistenceBatching:
         if fs.exists(path):
             fs.rm(path, recursive=True)
 
-    def _load_data_into_catalog(self):
-        self.instrument_provider = BetfairInstrumentProvider.from_instruments([])
-        raise NotImplementedError("Needs new record batch loader")
-        # process_files(
-        #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-        #     reader=BetfairTestStubs.betfair_reader(instrument_provider=self.instrument_provider),
-        #     instrument_provider=self.instrument_provider,
-        #     catalog=self.catalog,
-        # )
-
-    def test_batch_files_single(self):
+    def test_batch_files_single(self, betfair_catalog):
         # Arrange
-        instrument_ids = self.catalog.instruments()["id"].unique().tolist()
+        self.catalog = betfair_catalog
+
+        instrument_ids = [ins.id for ins in self.catalog.instruments()]
 
         shared_kw = {
             "catalog_path": str(self.catalog.path),
@@ -590,15 +579,9 @@ class TestPersistenceBatching:
             latest_timestamp = max(timestamps)
             assert timestamps == sorted(timestamps)
 
-    def test_batch_generic_data(self):
+    def test_batch_generic_data(self, betfair_catalog):
         # Arrange
-        TestPersistenceStubs.setup_news_event_persistence()
-        raise NotImplementedError("Needs new record batch loader")
-        # process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-        #     catalog=self.catalog,
-        # )
+        self.catalog = betfair_catalog
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="memory",
