@@ -42,6 +42,29 @@ macro_rules! enum_for_python {
     ($type:ty) => {
         #[pymethods]
         impl $type {
+            #[new]
+            fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
+                let t = Self::type_object(py);
+                Self::py_from_str(t, value)
+            }
+
+            fn __hash__(&self) -> isize {
+                *self as isize
+            }
+
+            fn __str__(&self) -> String {
+                self.to_string()
+            }
+
+            fn __repr__(&self) -> String {
+                format!(
+                    "<{}.{}: '{}'>",
+                    stringify!($type),
+                    self.name(),
+                    self.value(),
+                )
+            }
+
             #[getter]
             pub fn name(&self) -> String {
                 self.to_string()
@@ -50,6 +73,19 @@ macro_rules! enum_for_python {
             #[getter]
             pub fn value(&self) -> u8 {
                 *self as u8
+            }
+
+            #[classmethod]
+            fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+                EnumIterator::new::<Self>(py)
+            }
+
+            #[classmethod]
+            #[pyo3(name = "from_str")]
+            fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
+                let data_str: &str = data.str().and_then(|s| s.extract())?;
+                let tokenized = data_str.to_uppercase();
+                Self::from_str(&tokenized).map_err(|e| PyValueError::new_err(format!("{e:?}")))
             }
         }
     };

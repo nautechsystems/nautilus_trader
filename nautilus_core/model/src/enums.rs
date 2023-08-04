@@ -18,11 +18,11 @@
 use std::{ffi::c_char, str::FromStr};
 
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use strum::{AsRefStr, Display, EnumString, FromRepr};
+use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
-use crate::{enum_for_python, enum_strum_serde};
+use crate::{enum_for_python, enum_strum_serde, python::EnumIterator};
 
 pub trait FromU8 {
     fn from_u8(value: u8) -> Option<Self>
@@ -44,6 +44,7 @@ pub trait FromU8 {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -72,6 +73,7 @@ pub enum AccountType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -98,6 +100,7 @@ pub enum AggregationSource {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -126,6 +129,7 @@ pub enum AggressorSide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -167,6 +171,7 @@ pub enum AssetClass {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -203,6 +208,7 @@ pub enum AssetType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -257,6 +263,7 @@ pub enum BarAggregation {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -299,6 +306,7 @@ impl FromU8 for BookAction {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -341,6 +349,7 @@ impl FromU8 for BookType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -371,6 +380,7 @@ pub enum ContingencyType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -397,6 +407,7 @@ pub enum CurrencyType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -423,6 +434,7 @@ pub enum InstrumentCloseType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -452,6 +464,7 @@ pub enum LiquiditySide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -484,6 +497,7 @@ pub enum MarketStatus {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -514,6 +528,7 @@ pub enum OmsType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -540,6 +555,7 @@ pub enum OptionKind {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -600,6 +616,7 @@ impl FromU8 for OrderSide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -646,6 +663,7 @@ pub enum OrderStatus {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -686,6 +704,7 @@ pub enum OrderType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -717,6 +736,7 @@ pub enum PositionSide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -747,6 +767,7 @@ pub enum PriceType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -783,6 +804,7 @@ pub enum TimeInForce {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -811,6 +833,7 @@ pub enum TradingState {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -843,6 +866,7 @@ pub enum TrailingOffsetType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
