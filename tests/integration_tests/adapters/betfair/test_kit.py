@@ -173,9 +173,9 @@ class BetfairTestStubs:
         yield from parser.parse(stream_decode(line))
 
     @staticmethod
-    def betfair_venue_config() -> BacktestVenueConfig:
+    def betfair_venue_config(name="BETFAIR") -> BacktestVenueConfig:
         return BacktestVenueConfig(  # typing: ignore
-            name="BETFAIR",
+            name=name,
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",
@@ -205,6 +205,7 @@ class BetfairTestStubs:
         bypass_risk=False,
         flush_interval_ms: Optional[int] = None,
         bypass_logging: bool = True,
+        venue_name: str = "BETFAIR",
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=bypass_logging),
@@ -230,7 +231,7 @@ class BetfairTestStubs:
         )
         run_config = BacktestRunConfig(  # typing: ignore
             engine=engine_config,
-            venues=[BetfairTestStubs.betfair_venue_config()],
+            venues=[BetfairTestStubs.betfair_venue_config(name=venue_name)],
             data=[
                 BacktestDataConfig(  # typing: ignore
                     data_cls=TradeTick.fully_qualified_name(),
