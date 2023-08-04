@@ -43,7 +43,7 @@ impl<'de> Deserialize<'de> for SerializableUstr {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(SerializableUstr(Ustr::from(s.as_str())))
+        Ok(Self(Ustr::from(s.as_str())))
     }
 }
 

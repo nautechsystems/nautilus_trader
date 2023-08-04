@@ -259,7 +259,7 @@ impl WebSocketClient {
             Python::with_gil(|py| match handler.call0(py) {
                 Ok(_) => debug!("Called post_connection handler"),
                 Err(err) => error!("post_connection handler failed because: {}", err),
-            })
+            });
         }
 
         Ok(Self {
@@ -319,9 +319,9 @@ impl WebSocketClient {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => debug!("Called post_reconnection handler"),
                                     Err(err) => {
-                                        error!("post_reconnection handler failed because: {}", err)
+                                        error!("post_reconnection handler failed because: {}", err);
                                     }
-                                })
+                                });
                             }
                         }
                         Err(err) => {
@@ -336,9 +336,9 @@ impl WebSocketClient {
                             Python::with_gil(|py| match handler.call0(py) {
                                 Ok(_) => debug!("Called post_reconnection handler"),
                                 Err(err) => {
-                                    error!("post_reconnection handler failed because: {}", err)
+                                    error!("post_reconnection handler failed because: {}", err);
                                 }
-                            })
+                            });
                         }
                         break;
                     }
