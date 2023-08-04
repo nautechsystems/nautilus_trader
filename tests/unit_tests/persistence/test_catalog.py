@@ -12,11 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
 class _TestPersistenceCatalog:
@@ -33,18 +31,13 @@ class _TestPersistenceCatalog:
         ticks = [TestDataStubs.trade_tick(instrument, ts_init=ts) for ts in range(5)]
         data_catalog.write_data(ticks)
 
-        run_config = BetfairTestStubs.betfair_backtest_run_config(
-            catalog_path=data_catalog.path,
-            catalog_fs_protocol="file",
-            instrument_id=instrument.id.value,
-            flush_interval_ms=5000,
-            bypass_logging=False,
-            venue_name="SIM",
-        )
+        instrument = data_catalog.instruments()[0]
+        tick = data_catalog.trade_ticks()[0]
 
-        # Act
-        node = BacktestNode(configs=[run_config])
-        node.run()
+        # Fails:
+        # Expected: InstrumentId('AUD/USD.SIM')
+        # Actual: InstrumentId('AUD/USD.SIM')
+        assert instrument.id == tick.instrument_id
 
     # def test_list_data_types(self, data_catalog, betfair_catalog):
     #     data_types = data_catalog.list_data_types()
