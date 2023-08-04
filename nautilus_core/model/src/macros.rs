@@ -38,10 +38,15 @@ macro_rules! enum_strum_serde {
 }
 
 #[macro_export]
-macro_rules! enum_value_getter {
+macro_rules! enum_for_python {
     ($type:ty) => {
         #[pymethods]
         impl $type {
+            #[getter]
+            pub fn name(&self) -> String {
+                self.to_string()
+            }
+
             #[getter]
             pub fn value(&self) -> u8 {
                 *self as u8

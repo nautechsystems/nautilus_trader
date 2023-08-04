@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumString, FromRepr};
 
-use crate::{enum_strum_serde, enum_value_getter};
+use crate::{enum_for_python, enum_strum_serde};
 
 pub trait FromU8 {
     fn from_u8(value: u8) -> Option<Self>
@@ -896,29 +896,29 @@ enum_strum_serde!(TradingState);
 enum_strum_serde!(TrailingOffsetType);
 enum_strum_serde!(TriggerType);
 
-enum_value_getter!(AccountType);
-enum_value_getter!(AggregationSource);
-enum_value_getter!(AggressorSide);
-enum_value_getter!(AssetClass);
-enum_value_getter!(BarAggregation);
-enum_value_getter!(BookAction);
-enum_value_getter!(BookType);
-enum_value_getter!(ContingencyType);
-enum_value_getter!(CurrencyType);
-enum_value_getter!(InstrumentCloseType);
-enum_value_getter!(LiquiditySide);
-enum_value_getter!(MarketStatus);
-enum_value_getter!(OmsType);
-enum_value_getter!(OptionKind);
-enum_value_getter!(OrderSide);
-enum_value_getter!(OrderStatus);
-enum_value_getter!(OrderType);
-enum_value_getter!(PositionSide);
-enum_value_getter!(PriceType);
-enum_value_getter!(TimeInForce);
-enum_value_getter!(TradingState);
-enum_value_getter!(TrailingOffsetType);
-enum_value_getter!(TriggerType);
+enum_for_python!(AccountType);
+enum_for_python!(AggregationSource);
+enum_for_python!(AggressorSide);
+enum_for_python!(AssetClass);
+enum_for_python!(BarAggregation);
+enum_for_python!(BookAction);
+enum_for_python!(BookType);
+enum_for_python!(ContingencyType);
+enum_for_python!(CurrencyType);
+enum_for_python!(InstrumentCloseType);
+enum_for_python!(LiquiditySide);
+enum_for_python!(MarketStatus);
+enum_for_python!(OmsType);
+enum_for_python!(OptionKind);
+enum_for_python!(OrderSide);
+enum_for_python!(OrderStatus);
+enum_for_python!(OrderType);
+enum_for_python!(PositionSide);
+enum_for_python!(PriceType);
+enum_for_python!(TimeInForce);
+enum_for_python!(TradingState);
+enum_for_python!(TrailingOffsetType);
+enum_for_python!(TriggerType);
 
 #[no_mangle]
 pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
@@ -1305,4 +1305,23 @@ pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerTy
     let value = cstr_to_string(ptr);
     TriggerType::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `TriggerType` enum string value, was '{value}'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name() {
+        assert_eq!(OrderSide::NoOrderSide.name(), "NO_ORDER_SIDE");
+        assert_eq!(OrderSide::Buy.name(), "BUY");
+        assert_eq!(OrderSide::Sell.name(), "SELL");
+    }
+
+    #[test]
+    fn test_value() {
+        assert_eq!(OrderSide::NoOrderSide.value(), 0);
+        assert_eq!(OrderSide::Buy.value(), 1);
+        assert_eq!(OrderSide::Sell.value(), 2);
+    }
 }
