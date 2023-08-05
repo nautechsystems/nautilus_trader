@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import asyncio
 import functools
-import uuid
 from asyncio import Future
 from asyncio import Queue
 from collections.abc import Callable
@@ -26,19 +25,20 @@ from dataclasses import dataclass
 from typing import Any
 
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.uuid import UUID4
 
 
 @dataclass(frozen=True)
 class TaskId:
     """
-    Represents the identifier for a task executing as a `asyncio.Future`.
-
-    This also corresponds to the future objects memory address, unless the task was
-    queued, in which case it is a pre-assigned random integer.
-
+    Represents the identifier for a task which is either queued or executing as an
+    `asyncio.Future`.
     """
 
-    value: int
+    value: str
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}('{self.value}')"
 
 
 class ActorExecutor:
@@ -72,10 +72,39 @@ class ActorExecutor:
         self._log: LoggerAdapter = logger
 
         self._active_tasks: dict[TaskId, Future[Any]] = {}
+        self._future_index: dict[Future[Any], TaskId] = {}
         self._queued_tasks: set[TaskId] = set()
 
         self._queue: Queue = Queue()
         self._worker_task = self._loop.create_task(self._worker())
+
+    def reset(self) -> None:
+        """
+        Reset the executor.
+
+        This will cancel all queued and active tasks, and drain the internal queue
+        without executing those tasks.
+
+        """
+        self.cancel_all_tasks()
+        self._drain_queue()
+
+        self._active_tasks.clear()
+        self._future_index.clear()
+        self._queued_tasks.clear()
+
+    def _create_task_id(self) -> TaskId:
+        return TaskId(str(UUID4()))
+
+    def _drain_queue(self) -> None:
+        # Drain the internal task queue (this will not execute the tasks)
+        while not self._queue.empty():
+            task_id, _, _, _ = self._queue.get_nowait()
+            self._log.info(f"Executor: Dequeued {task_id} prior to execution.")
+
+    def _add_active_task(self, task_id: TaskId, task: Future[Any]) -> None:
+        self._active_tasks[task_id] = task
+        self._future_index[task] = task_id
 
     async def _worker(self) -> None:
         try:
@@ -86,29 +115,33 @@ class ActorExecutor:
 
                 task = self._submit_to_executor(func, *args, **kwargs)
 
-                # Use pre-assigned task_id
-                self._active_tasks[task_id] = task
-                self._log.debug(f"Executor: scheduled {task_id}, {task} ...")
+                self._add_active_task(task_id, task)
+                self._log.debug(f"Executor: Scheduled {task_id}, {task} ...")
 
                 # Sequentially execute tasks
                 await asyncio.wrap_future(self._active_tasks[task_id])
                 self._queue.task_done()
         except asyncio.CancelledError:
-            self._log.debug("Executor: worker task canceled.")
+            self._log.debug("Executor: Canceled inner worker task.")
 
     def _remove_done_task(self, task: Future[Any]) -> None:
-        task_id = TaskId(id(task))
-        for active_task_id, active_task in self._active_tasks.items():
-            if task == active_task:
-                task_id = active_task_id
+        task_id = self._future_index.pop(task, None)
+        if not task_id:
+            self._log.error(f"Executor: {task} not found on done callback.")
+            return
+
+        self._active_tasks.pop(task_id, None)
 
         if task.done():
             try:
                 if task.exception() is not None:
-                    self._log.error(f"Exception in {task_id}: {task.exception()}")
+                    self._log.error(f"Executor: Exception in {task_id}: {task.exception()}")
+                    return
             except asyncio.CancelledError:
-                self._log.info(f"Task {task_id} was canceled.")
-            self._active_tasks.pop(task_id, None)
+                # Make this a warning level for now
+                self._log.warning(f"Executor: Canceled {task_id}.")
+                return
+            self._log.info(f"Executor: Completed {task_id}.")
 
     def _submit_to_executor(
         self,
@@ -128,7 +161,7 @@ class ActorExecutor:
         **kwargs: Any,
     ) -> TaskId:
         """
-        Enqueue the given callable to be executed sequentially.
+        Enqueue the given `func` to be executed sequentially.
 
         Parameters
         ----------
@@ -144,7 +177,7 @@ class ActorExecutor:
         TaskId
 
         """
-        task_id = TaskId(id(uuid.uuid4()))
+        task_id: TaskId = self._create_task_id()
         self._queue.put_nowait((task_id, func, args, kwargs))
         self._queued_tasks.add(task_id)
 
@@ -157,7 +190,7 @@ class ActorExecutor:
         **kwargs: Any,
     ) -> TaskId:
         """
-        Arrange for the given callable to be executed.
+        Arrange for the given `func` to be called in the executor.
 
         Parameters
         ----------
@@ -174,11 +207,12 @@ class ActorExecutor:
 
         """
         self._log.info(f"Executor: {type(func).__name__}({args=}, {kwargs=})")
-        task = self._submit_to_executor(func, *args, **kwargs)
+        task: Future = self._submit_to_executor(func, *args, **kwargs)
 
-        task_id = TaskId(id(task))
+        task_id: TaskId = self._create_task_id()
         self._active_tasks[task_id] = task
-        self._log.debug(f"Executor: scheduled {task_id}, {task} ...")
+        self._future_index[task] = task_id
+        self._log.debug(f"Executor: Scheduled {task_id}, {task} ...")
 
         return task_id
 
@@ -240,28 +274,25 @@ class ActorExecutor:
         """
         if task_id in self._queued_tasks:
             self._queued_tasks.discard(task_id)
-            self._log.info(f"Executor: {task_id} canceled prior to execution.")
+            self._log.info(f"Executor: Canceled {task_id} prior to execution.")
             return
 
-        future: Future | None = self._active_tasks.get(task_id)
-        if not future:
+        task: Future | None = self._active_tasks.get(task_id)
+        if not task:
             self._log.warning(f"Executor: {task_id} not found.")
             return
 
-        result = future.cancel()
-        self._log.info(f"Executor: {task_id} canceled {result}.")
+        result = task.cancel()
+        self._log.info(f"Executor: Canceled {task_id} with result {result}.")
 
     def cancel_all_tasks(self) -> None:
         """
         Cancel all active and queued tasks.
         """
-        # Drain queue
-        while not self._queue.empty():
-            task_id, _, _, _ = self._queue.get_nowait()
-            self._log.info(f"Executor: {task_id} dequeued prior to execution.")
+        self._drain_queue()
 
         if self._worker_task is not None:
             self._worker_task.cancel()
 
-        for task in self._active_tasks:
-            self.cancel_task(task)
+        for task_id in self._active_tasks:
+            self.cancel_task(task_id)
