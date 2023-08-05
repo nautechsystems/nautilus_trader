@@ -927,10 +927,10 @@ cdef class Actor(Component):
 
         cdef str name
         for name in timer_names:
-            self._log.info(f"Cancelled Timer(name={name}).")
+            self._log.info(f"Canceled Timer(name={name}).")
 
         if self._executor is not None:
-            self._log.info(f"Cancelling executor tasks ...")
+            self._log.info(f"Canceling executor tasks...")
             self._executor.cancel_all_tasks()
 
         self.on_stop()

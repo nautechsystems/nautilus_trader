@@ -524,7 +524,7 @@ class TradingNode:
         self.kernel.clock.cancel_timers()
 
         for name in timer_names:
-            self.kernel.log.info(f"Cancelled Timer(name={name}).")
+            self.kernel.log.info(f"Canceled Timer(name={name}).")
 
         # Flush writer
         if self.kernel.writer is not None:
