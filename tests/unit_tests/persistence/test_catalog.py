@@ -37,6 +37,9 @@ class _TestPersistenceCatalog:
         # Fails:
         # Expected: InstrumentId('AUD/USD.SIM')
         # Actual: InstrumentId('AUD/USD.SIM')
+        assert instrument.id.symbol.value == tick.instrument_id.symbol.value
+        # assert id(instrument.id.symbol.value) == id(tick.instrument_id.symbol.value)
+        # assert id(instrument.id.venue.value) == id(tick.instrument_id.venue.value)
         assert instrument.id == tick.instrument_id
 
     # def test_list_data_types(self, data_catalog, betfair_catalog):

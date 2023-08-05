@@ -21,6 +21,7 @@ from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
+from libc.stdio cimport printf
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -39,6 +40,7 @@ from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport aggressor_side_from_str
@@ -698,8 +700,32 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem):
+        cdef Symbol symbol = Symbol(ustr_to_pystr(mem.instrument_id.symbol.value))
+        cdef Venue venue = Venue(ustr_to_pystr(mem.instrument_id.venue.value))
+
         cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
         trade_tick._mem = mem
+        # print(symbol)
+        # print(trade_tick.instrument_id.symbol)
+        # printf("%p\n", trade_tick._mem.instrument_id.symbol.value)
+        # printf("%p\n", symbol._mem.value)
+
+        cdef char* symbol_ptr = symbol._mem.value
+        if trade_tick._mem.instrument_id.symbol.value != symbol_ptr:
+            trade_tick._mem.instrument_id.symbol.value = symbol_ptr
+            # printf("%p\n", trade_tick._mem.instrument_id.symbol.value)
+
+        if trade_tick._mem.instrument_id.symbol.value != symbol_ptr:
+            raise RuntimeError("Symbol pointers were not equal")
+
+        cdef char* venue_ptr = venue._mem.value
+        if trade_tick._mem.instrument_id.venue.value != venue_ptr:
+            trade_tick._mem.instrument_id.venue.value = venue_ptr
+            # printf("%p\n", trade_tick._mem.instrument_id.venue.value)
+
+        if trade_tick._mem.instrument_id.venue.value != venue_ptr:
+            raise RuntimeError("Venue pointers were not equal")
+
         return trade_tick
 
     # Safety: Do NOT deallocate the capsule here
