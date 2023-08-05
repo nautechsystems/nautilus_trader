@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import time
 from decimal import Decimal
 from typing import Optional, Union
 
@@ -146,27 +145,6 @@ class VolatilityMarketMaker(Strategy):
         #     ),
         #     client_id=ClientId("BINANCE"),
         # )
-
-        self.run_in_executor(self._log.critical, ("something",))
-        self.run_in_executor(self.continually_print)
-        self.run_in_executor(self.print_something_else)
-        self.queue_for_executor(self._log.critical, ("something",))
-        self.queue_for_executor(self.continually_print)
-        self.queue_for_executor(self.print_something_else)
-
-    def continually_print(self) -> None:
-        count = 0
-        while True:
-            time.sleep(1.0)
-            count += 1
-            self._log.info("TICK-TOCK", LogColor.MAGENTA)
-            if count == 5:
-                break
-
-        self._log.info("Task finished", LogColor.MAGENTA)
-
-    def print_something_else(self) -> None:
-        self._log.info("TICK-TOCK", LogColor.MAGENTA)
 
     def on_data(self, data: Data) -> None:
         """
