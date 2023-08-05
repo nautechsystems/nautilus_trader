@@ -735,7 +735,7 @@ cdef class Actor(Component):
         ----------
         func : Callable
             The function to be executed.
-        args : variable length argument list
+        args : positional arguments
             The positional arguments for the call to `func`.
         kwargs : arbitrary keyword arguments
             The keyword arguments for the call to `func`.
@@ -793,7 +793,7 @@ cdef class Actor(Component):
         ----------
         func : Callable
             The function to be executed.
-        args : variable length argument list
+        args : positional arguments
             The positional arguments for the call to `func`.
         kwargs : arbitrary keyword arguments
             The keyword arguments for the call to `func`.
@@ -832,25 +832,84 @@ cdef class Actor(Component):
         self._log.info(f"Queued {task_id}.", LogColor.BLUE)
         return task_id
 
+    cpdef list queued_task_ids(self):
+        """
+        Return the queued task identifiers.
+
+        Returns
+        -------
+        list[TaskId]
+
+        """
+        if self._executor is None:
+            return []  # Tasks are immediately executed
+
+        return self._executor.queued_task_ids()
+
     cpdef list active_task_ids(self):
+        """
+        Return the active task identifiers.
+
+        Returns
+        -------
+        list[TaskId]
+
+        """
         if self._executor is None:
             return []  # Tasks are immediately executed
 
         return self._executor.active_task_ids()
 
+    cpdef bint has_queued_tasks(self):
+        """
+        Return a value indicating whether there are any queued tasks.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._executor is None:
+            return False
+
+        return self._executor.has_queued_tasks()
+
     cpdef bint has_active_tasks(self):
+        """
+        Return a value indicating whether there are any active tasks.
+
+        Returns
+        -------
+        bool
+
+        """
         if self._executor is None:
             return False
 
         return self._executor.has_active_tasks()
 
     cpdef void cancel_task(self, task_id: TaskId):
+        """
+        Cancel the task with the given `task_id` (if queued or active).
+
+        If the task is not found then a warning is logged.
+
+        Parameters
+        ----------
+        task_id : TaskId
+            The task identifier.
+
+        """
         if self._executor is None:
+            self._log.warning(f"Executor: {task_id} not found.")
             return
 
         self._executor.cancel_task(task_id)
 
     cpdef void cancel_all_tasks(self):
+        """
+        Cancel all queued and active tasks.
+        """
         if self._executor is None:
             return
 
