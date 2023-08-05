@@ -24,7 +24,10 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport order_accepted_new
 from nautilus_trader.core.rust.model cimport order_denied_new
+from nautilus_trader.core.rust.model cimport order_rejected_new
+from nautilus_trader.core.rust.model cimport order_submitted_new
 from nautilus_trader.core.rust.model cimport strategy_id_new
 from nautilus_trader.core.rust.model cimport trader_id_new
 from nautilus_trader.core.string cimport cstr_to_pybytes
@@ -323,10 +326,10 @@ cdef class OrderInitialized(OrderEvent):
         self.tags = tags
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         cdef ClientOrderId o
@@ -386,8 +389,8 @@ cdef class OrderInitialized(OrderEvent):
             f"exec_algorithm_params={self.exec_algorithm_params}, "
             f"exec_spawn_id={self.exec_spawn_id}, "
             f"tags={self.tags}, "
-            f"event_id={self._event_id}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -579,8 +582,8 @@ cdef class OrderInitialized(OrderEvent):
             "exec_algorithm_params": json.dumps(obj.exec_algorithm_params) if obj.exec_algorithm_params else None,
             "exec_spawn_id": obj.exec_spawn_id.value if obj.exec_spawn_id is not None else None,
             "tags": obj.tags,
-            "event_id": obj._event_id.value,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -671,7 +674,7 @@ cdef class OrderDenied(OrderEvent):
         return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -754,7 +757,7 @@ cdef class OrderDenied(OrderEvent):
         VenueOrderId or `None`
 
         """
-        return None
+        return None  # No assignment from venue
 
     @property
     def account_id(self) -> AccountId | None:
@@ -766,7 +769,7 @@ cdef class OrderDenied(OrderEvent):
         AccountId or `None`
 
         """
-        return None
+        return None  # No assignment
 
     @property
     def reason(self) -> str:
@@ -922,20 +925,22 @@ cdef class OrderSubmitted(OrderEvent):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        self._trader_id = trader_id
-        self._strategy_id = strategy_id
-        self._instrument_id = instrument_id
-        self._client_order_id = client_order_id
-        self._account_id = account_id
-        self._event_id = event_id
-        self._ts_event = ts_event
-        self._ts_init = ts_init
+        self._mem = order_submitted_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            account_id._mem,
+            event_id._mem,
+            ts_event,
+            ts_init,
+        )
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -954,9 +959,9 @@ cdef class OrderSubmitted(OrderEvent):
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -972,7 +977,7 @@ cdef class OrderSubmitted(OrderEvent):
         TraderId
 
         """
-        return self._trader_id
+        return TraderId.from_mem_c(self._mem.trader_id)
 
     @property
     def strategy_id(self) -> TraderId:
@@ -984,7 +989,7 @@ cdef class OrderSubmitted(OrderEvent):
         StrategyId
 
         """
-        return self._strategy_id
+        return StrategyId.from_mem_c(self._mem.strategy_id)
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -996,7 +1001,7 @@ cdef class OrderSubmitted(OrderEvent):
         InstrumentId
 
         """
-        return self._instrument_id
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
 
     @property
     def client_order_id(self) -> ClientOrderId:
@@ -1008,7 +1013,7 @@ cdef class OrderSubmitted(OrderEvent):
         ClientOrderId
 
         """
-        return self._client_order_id
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
 
     @property
     def venue_order_id(self) -> VenueOrderId | None:
@@ -1032,7 +1037,7 @@ cdef class OrderSubmitted(OrderEvent):
         AccountId or `None`
 
         """
-        return self._account_id
+        return AccountId.from_mem_c(self._mem.account_id)
 
     @property
     def reconciliation(self) -> bool:
@@ -1056,7 +1061,7 @@ cdef class OrderSubmitted(OrderEvent):
         UUID4
 
         """
-        return self._event_id
+        return UUID4.from_mem_c(self._mem.event_id)
 
     @property
     def ts_event(self) -> int:
@@ -1068,7 +1073,7 @@ cdef class OrderSubmitted(OrderEvent):
         int
 
         """
-        return self._ts_event
+        return self._mem.ts_event
 
     @property
     def ts_init(self) -> int:
@@ -1080,7 +1085,7 @@ cdef class OrderSubmitted(OrderEvent):
         int
 
         """
-        return self._ts_init
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values):
@@ -1106,9 +1111,9 @@ cdef class OrderSubmitted(OrderEvent):
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
             "account_id": obj.account_id.value,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
         }
 
     @staticmethod
@@ -1189,22 +1194,24 @@ cdef class OrderAccepted(OrderEvent):
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        self._trader_id = trader_id
-        self._strategy_id = strategy_id
-        self._instrument_id = instrument_id
-        self._client_order_id = client_order_id
-        self._venue_order_id = venue_order_id
-        self._account_id = account_id
-        self._event_id = event_id
-        self._ts_event = ts_event
-        self._ts_init = ts_init
-        self._reconciliation = reconciliation
+        self._mem = order_accepted_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            venue_order_id._mem,
+            account_id._mem,
+            event_id._mem,
+            ts_event,
+            ts_init,
+            reconciliation,
+        )
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -1225,9 +1232,9 @@ cdef class OrderAccepted(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -1243,7 +1250,7 @@ cdef class OrderAccepted(OrderEvent):
         TraderId
 
         """
-        return self._trader_id
+        return TraderId.from_mem_c(self._mem.trader_id)
 
     @property
     def strategy_id(self) -> TraderId:
@@ -1255,7 +1262,7 @@ cdef class OrderAccepted(OrderEvent):
         StrategyId
 
         """
-        return self._strategy_id
+        return StrategyId.from_mem_c(self._mem.strategy_id)
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -1267,7 +1274,7 @@ cdef class OrderAccepted(OrderEvent):
         InstrumentId
 
         """
-        return self._instrument_id
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
 
     @property
     def client_order_id(self) -> ClientOrderId:
@@ -1279,7 +1286,7 @@ cdef class OrderAccepted(OrderEvent):
         ClientOrderId
 
         """
-        return self._client_order_id
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
 
     @property
     def venue_order_id(self) -> VenueOrderId | None:
@@ -1291,7 +1298,7 @@ cdef class OrderAccepted(OrderEvent):
         VenueOrderId or `None`
 
         """
-        return self._venue_order_id
+        return VenueOrderId.from_mem_c(self._mem.venue_order_id)
 
     @property
     def account_id(self) -> AccountId | None:
@@ -1303,7 +1310,7 @@ cdef class OrderAccepted(OrderEvent):
         AccountId or `None`
 
         """
-        return self._account_id
+        return AccountId.from_mem_c(self._mem.account_id)
 
     @property
     def reconciliation(self) -> bool:
@@ -1315,7 +1322,7 @@ cdef class OrderAccepted(OrderEvent):
         bool
 
         """
-        return self._reconciliation
+        return <bint>self._mem.reconciliation
 
     @property
     def id(self) -> UUID4:
@@ -1327,7 +1334,7 @@ cdef class OrderAccepted(OrderEvent):
         UUID4
 
         """
-        return self._event_id
+        return UUID4.from_mem_c(self._mem.event_id)
 
     @property
     def ts_event(self) -> int:
@@ -1339,7 +1346,7 @@ cdef class OrderAccepted(OrderEvent):
         int
 
         """
-        return self._ts_event
+        return self._mem.ts_event
 
     @property
     def ts_init(self) -> int:
@@ -1351,7 +1358,7 @@ cdef class OrderAccepted(OrderEvent):
         int
 
         """
-        return self._ts_init
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values):
@@ -1380,9 +1387,9 @@ cdef class OrderAccepted(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value,
             "account_id": obj.account_id.value,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -1464,22 +1471,24 @@ cdef class OrderRejected(OrderEvent):
     ):
         Condition.valid_string(reason, "reason")
 
-        self._trader_id = trader_id
-        self._strategy_id = strategy_id
-        self._instrument_id = instrument_id
-        self._client_order_id = client_order_id
-        self._account_id = account_id
-        self._reason = reason
-        self._event_id = event_id
-        self._ts_event = ts_event
-        self._ts_init = ts_init
-        self._reconciliation = reconciliation
+        self._mem = order_rejected_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            account_id._mem,
+            pystr_to_cstr(reason),
+            event_id._mem,
+            ts_event,
+            ts_init,
+            reconciliation,
+        )
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -1500,9 +1509,9 @@ cdef class OrderRejected(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"account_id={self.account_id}, "
             f"reason='{self.reason}', "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -1518,7 +1527,7 @@ cdef class OrderRejected(OrderEvent):
         TraderId
 
         """
-        return self._trader_id
+        return TraderId.from_mem_c(self._mem.trader_id)
 
     @property
     def strategy_id(self) -> TraderId:
@@ -1530,7 +1539,7 @@ cdef class OrderRejected(OrderEvent):
         StrategyId
 
         """
-        return self._strategy_id
+        return StrategyId.from_mem_c(self._mem.strategy_id)
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -1542,7 +1551,7 @@ cdef class OrderRejected(OrderEvent):
         InstrumentId
 
         """
-        return self._instrument_id
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
 
     @property
     def client_order_id(self) -> ClientOrderId:
@@ -1554,7 +1563,7 @@ cdef class OrderRejected(OrderEvent):
         ClientOrderId
 
         """
-        return self._client_order_id
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
 
     @property
     def venue_order_id(self) -> VenueOrderId | None:
@@ -1566,7 +1575,7 @@ cdef class OrderRejected(OrderEvent):
         VenueOrderId or `None`
 
         """
-        return self._venue_order_id
+        return None  # Not assigned
 
     @property
     def account_id(self) -> AccountId | None:
@@ -1578,7 +1587,7 @@ cdef class OrderRejected(OrderEvent):
         AccountId or `None`
 
         """
-        return self._account_id
+        return AccountId.from_mem_c(self._mem.account_id)
 
     @property
     def reason(self) -> str:
@@ -1590,7 +1599,7 @@ cdef class OrderRejected(OrderEvent):
         str
 
         """
-        return self._reason
+        return ustr_to_pystr(self._mem.reason)
 
     @property
     def reconciliation(self) -> bool:
@@ -1602,7 +1611,7 @@ cdef class OrderRejected(OrderEvent):
         bool
 
         """
-        return self._reconciliation
+        return <bint>self._mem.reconciliation
 
     @property
     def id(self) -> UUID4:
@@ -1614,7 +1623,7 @@ cdef class OrderRejected(OrderEvent):
         UUID4
 
         """
-        return self._event_id
+        return UUID4.from_mem_c(self._mem.event_id)
 
     @property
     def ts_event(self) -> int:
@@ -1626,7 +1635,7 @@ cdef class OrderRejected(OrderEvent):
         int
 
         """
-        return self._ts_event
+        return self._mem.ts_event
 
     @property
     def ts_init(self) -> int:
@@ -1638,7 +1647,7 @@ cdef class OrderRejected(OrderEvent):
         int
 
         """
-        return self._ts_init
+        return self._mem.ts_init
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values):
@@ -1667,9 +1676,9 @@ cdef class OrderRejected(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "account_id": obj.account_id.value,
             "reason": obj.reason,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -1756,10 +1765,10 @@ cdef class OrderCanceled(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -1780,9 +1789,9 @@ cdef class OrderCanceled(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -1937,9 +1946,9 @@ cdef class OrderCanceled(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -2026,10 +2035,10 @@ cdef class OrderExpired(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -2050,9 +2059,9 @@ cdef class OrderExpired(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -2207,9 +2216,9 @@ cdef class OrderExpired(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -2298,10 +2307,10 @@ cdef class OrderTriggered(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -2322,9 +2331,9 @@ cdef class OrderTriggered(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -2479,9 +2488,9 @@ cdef class OrderTriggered(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -2569,10 +2578,10 @@ cdef class OrderPendingUpdate(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -2593,9 +2602,9 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -2750,9 +2759,9 @@ cdef class OrderPendingUpdate(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -2840,10 +2849,10 @@ cdef class OrderPendingCancel(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -2864,9 +2873,9 @@ cdef class OrderPendingCancel(OrderEvent):
             f"client_order_id={self.client_order_id}, "
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -3021,9 +3030,9 @@ cdef class OrderPendingCancel(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -3122,10 +3131,10 @@ cdef class OrderModifyRejected(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -3148,9 +3157,9 @@ cdef class OrderModifyRejected(OrderEvent):
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
             f"reason={self.reason}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -3319,9 +3328,9 @@ cdef class OrderModifyRejected(OrderEvent):
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -3420,10 +3429,10 @@ cdef class OrderCancelRejected(OrderEvent):
         self._reconciliation = reconciliation
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -3446,9 +3455,9 @@ cdef class OrderCancelRejected(OrderEvent):
             f"venue_order_id={self.venue_order_id}, "
             f"account_id={self.account_id}, "
             f"reason={self.reason}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -3617,9 +3626,9 @@ cdef class OrderCancelRejected(OrderEvent):
             "venue_order_id": obj.venue_order_id.value if obj.venue_order_id is not None else None,
             "account_id": obj.account_id.value if obj.account_id is not None else None,
             "reason": obj.reason,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -3726,10 +3735,10 @@ cdef class OrderUpdated(OrderEvent):
         self.trigger_price = trigger_price
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -3756,9 +3765,9 @@ cdef class OrderUpdated(OrderEvent):
             f"quantity={self.quantity.to_str()}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -3921,9 +3930,9 @@ cdef class OrderUpdated(OrderEvent):
             "quantity": str(obj.quantity),
             "price": str(obj.price) if obj.price is not None else None,
             "trigger_price": str(obj.trigger_price) if obj.trigger_price is not None else None,
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "reconciliation": obj.reconciliation,
         }
 
@@ -4064,10 +4073,10 @@ cdef class OrderFilled(OrderEvent):
         self.info = info
 
     def __eq__(self, Event other) -> bool:
-        return self._event_id == other.id
+        return self.id == other.id
 
     def __hash__(self) -> int:
-        return hash(self._event_id)
+        return hash(self.id)
 
     def __str__(self) -> str:
         return (
@@ -4104,9 +4113,9 @@ cdef class OrderFilled(OrderEvent):
             f"last_px={self.last_px} {self.currency.code}, "
             f"commission={self.commission.to_str()}, "
             f"liquidity_side={liquidity_side_to_str(self.liquidity_side)}, "
-            f"event_id={self._event_id}, "
-            f"ts_event={self._ts_event}, "
-            f"ts_init={self._ts_init})"
+            f"event_id={self.id}, "
+            f"ts_event={self.ts_event}, "
+            f"ts_init={self.ts_init})"
         )
 
     def set_client_order_id(self, ClientOrderId client_order_id):
@@ -4280,9 +4289,9 @@ cdef class OrderFilled(OrderEvent):
             "currency": obj.currency.code,
             "commission": obj.commission.to_str(),
             "liquidity_side": liquidity_side_to_str(obj.liquidity_side),
-            "event_id": obj._event_id.value,
-            "ts_event": obj._ts_event,
-            "ts_init": obj._ts_init,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_event,
+            "ts_init": obj.ts_init,
             "info": msgspec.json.encode(obj.info) if obj.info is not None else None,
             "reconciliation": obj.reconciliation,
         }

@@ -31,6 +31,7 @@ exclude = [
 ]
 
 [export.rename]
+"bool" = "bint"
 "Ustr" = "char*"
 "SerializableUstr" = "char*"
 "AccountId" = "AccountId_t"
@@ -48,7 +49,12 @@ exclude = [
 "InstrumentId" = "InstrumentId_t"
 "Money" = "Money_t"
 "OrderBookDelta" = "OrderBookDelta_t"
+"OrderInitialized" = "OrderInitialized_t"
 "OrderDenied" = "OrderDenied_t"
+"OrderSubmitted" = "OrderSubmitted_t"
+"OrderAccepted" = "OrderAccepted_t"
+"OrderRejected" = "OrderRejected_t"
+"OrderCanceled" = "OrderCanceled_t"
 "OrderListId" = "OrderListId_t"
 "PositionId" = "PositionId_t"
 "Price" = "Price_t"

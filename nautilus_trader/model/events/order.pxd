@@ -16,7 +16,10 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport OrderAccepted_t
 from nautilus_trader.core.rust.model cimport OrderDenied_t
+from nautilus_trader.core.rust.model cimport OrderRejected_t
+from nautilus_trader.core.rust.model cimport OrderSubmitted_t
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -110,14 +113,7 @@ cdef class OrderDenied(OrderEvent):
 
 
 cdef class OrderSubmitted(OrderEvent):
-    cdef TraderId _trader_id
-    cdef StrategyId _strategy_id
-    cdef InstrumentId _instrument_id
-    cdef ClientOrderId _client_order_id
-    cdef AccountId _account_id
-    cdef UUID4 _event_id
-    cdef uint64_t _ts_event
-    cdef uint64_t _ts_init
+    cdef OrderSubmitted_t _mem
 
     @staticmethod
     cdef OrderSubmitted from_dict_c(dict values)
@@ -127,16 +123,7 @@ cdef class OrderSubmitted(OrderEvent):
 
 
 cdef class OrderAccepted(OrderEvent):
-    cdef TraderId _trader_id
-    cdef StrategyId _strategy_id
-    cdef InstrumentId _instrument_id
-    cdef ClientOrderId _client_order_id
-    cdef VenueOrderId _venue_order_id
-    cdef AccountId _account_id
-    cdef bint _reconciliation
-    cdef UUID4 _event_id
-    cdef uint64_t _ts_event
-    cdef uint64_t _ts_init
+    cdef OrderAccepted_t _mem
 
     @staticmethod
     cdef OrderAccepted from_dict_c(dict values)
@@ -146,17 +133,7 @@ cdef class OrderAccepted(OrderEvent):
 
 
 cdef class OrderRejected(OrderEvent):
-    cdef TraderId _trader_id
-    cdef StrategyId _strategy_id
-    cdef InstrumentId _instrument_id
-    cdef ClientOrderId _client_order_id
-    cdef VenueOrderId _venue_order_id
-    cdef AccountId _account_id
-    cdef str _reason
-    cdef bint _reconciliation
-    cdef UUID4 _event_id
-    cdef uint64_t _ts_event
-    cdef uint64_t _ts_init
+    cdef OrderRejected_t _mem
 
     @staticmethod
     cdef OrderRejected from_dict_c(dict values)

@@ -89,7 +89,7 @@ pub struct OrderInitialized {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 impl Default for OrderInitialized {
@@ -176,7 +176,7 @@ pub struct OrderAccepted {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -188,13 +188,12 @@ pub struct OrderRejected {
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
-    pub reason: String,
+    pub reason: SerializableUstr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -211,7 +210,7 @@ pub struct OrderCanceled {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -228,7 +227,7 @@ pub struct OrderExpired {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -245,7 +244,7 @@ pub struct OrderTriggered {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -262,7 +261,7 @@ pub struct OrderPendingUpdate {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -279,7 +278,7 @@ pub struct OrderPendingCancel {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -293,11 +292,11 @@ pub struct OrderModifyRejected {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: Box<String>,
+    pub reason: SerializableUstr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -311,7 +310,7 @@ pub struct OrderCancelRejected {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: Box<String>,
+    pub reason: SerializableUstr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -335,7 +334,7 @@ pub struct OrderUpdated {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
 
 #[repr(C)]
@@ -360,5 +359,5 @@ pub struct OrderFilled {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
 }
