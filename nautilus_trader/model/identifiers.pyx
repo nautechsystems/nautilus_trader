@@ -652,7 +652,7 @@ cdef class AccountId(Identifier):
         return account_id_hash(&self._mem)
 
     @staticmethod
-    cdef AccountId from_mem_c(AccountId mem):
+    cdef AccountId from_mem_c(AccountId_t mem):
         cdef AccountId account_id = AccountId.__new__(AccountId)
         account_id._mem = mem
         return account_id
@@ -829,7 +829,7 @@ cdef class OrderListId(Identifier):
         return order_list_id_hash(&self._mem)
 
     @staticmethod
-    cdef OrderListId from_mem_c(OrderListId mem):
+    cdef OrderListId from_mem_c(OrderListId_t mem):
         cdef OrderListId order_list_id = OrderListId.__new__(OrderListId)
         order_list_id._mem = mem
         return order_list_id
