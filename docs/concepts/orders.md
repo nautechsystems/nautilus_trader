@@ -66,7 +66,7 @@ An order which is set as `reduce_only` will only ever reduce an existing positio
 never open a new position (if already flat). The exact behavior of this instruction can vary between
 exchanges, however the behavior as per the Nautilus `SimulatedExchange` is typical of a live exchange.
 
-- Order will be cancelled if the associated position is closed (becomes flat)
+- Order will be canceled if the associated position is closed (becomes flat)
 - Order quantity will be reduced as the associated positions size reduces
 
 ### Display Quantity
