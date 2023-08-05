@@ -29,7 +29,6 @@ rename_variants = "ScreamingSnakeCase"
 [export.rename]
 "bool" = "bint"
 "Ustr" = "char*"
-"SerializableUstr" = "char*"
 "UnixNanos" = "uint64_t"
 "TimedeltaNanos" = "int64_t"
 "TimeEvent" = "TimeEvent_t"

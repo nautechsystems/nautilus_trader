@@ -33,7 +33,6 @@ exclude = [
 [export.rename]
 "bool" = "bint"
 "Ustr" = "char*"
-"SerializableUstr" = "char*"
 "AccountId" = "AccountId_t"
 "Bar" = "Bar_t"
 "BarAggregation" = "uint8_t"

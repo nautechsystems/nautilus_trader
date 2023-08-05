@@ -16,8 +16,9 @@
 use std::collections::HashMap;
 
 use derive_builder::{self, Builder};
-use nautilus_core::{string::SerializableUstr, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{
     enums::{
@@ -141,7 +142,7 @@ pub struct OrderDenied {
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub reason: SerializableUstr,
+    pub reason: Ustr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -189,7 +190,7 @@ pub struct OrderRejected {
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
     pub account_id: AccountId,
-    pub reason: SerializableUstr,
+    pub reason: Ustr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -292,7 +293,7 @@ pub struct OrderModifyRejected {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: SerializableUstr,
+    pub reason: Ustr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
@@ -310,7 +311,7 @@ pub struct OrderCancelRejected {
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub account_id: Option<AccountId>,
-    pub reason: SerializableUstr,
+    pub reason: Ustr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
