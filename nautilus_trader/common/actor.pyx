@@ -761,7 +761,7 @@ cdef class Actor(Component):
 
         if self._executor is None:
             func(*args, **kwargs)
-            task_id = TaskId(id(UUID4()))
+            task_id = TaskId.create()
         else:
             task_id = self._executor.queue_for_executor(
                 func,
@@ -819,7 +819,7 @@ cdef class Actor(Component):
 
         if self._executor is None:
             func(*args, **kwargs)
-            task_id = TaskId(id(UUID4()))
+            task_id = TaskId.create()
         else:
             task_id = self._executor.run_in_executor(
                 func,

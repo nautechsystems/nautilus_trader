@@ -43,6 +43,18 @@ class TaskId:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}('{self.value}')"
 
+    @classmethod
+    def create(cls) -> TaskId:
+        """
+        Create and return a new task identifier with a UUID v4 value.
+
+        Returns
+        -------
+        TaskId
+
+        """
+        return TaskId(str(UUID4()))
+
 
 class ActorExecutor:
     """
@@ -104,9 +116,6 @@ class ActorExecutor:
         self._active_tasks.clear()
         self._future_index.clear()
         self._queued_tasks.clear()
-
-    def _create_task_id(self) -> TaskId:
-        return TaskId(str(UUID4()))
 
     def _drain_queue(self) -> None:
         # Drain the internal task queue (this will not execute the tasks)
@@ -189,7 +198,7 @@ class ActorExecutor:
         TaskId
 
         """
-        task_id: TaskId = self._create_task_id()
+        task_id = TaskId.create()
         self._queue.put_nowait((task_id, func, args, kwargs))
         self._queued_tasks.add(task_id)
 
@@ -221,7 +230,7 @@ class ActorExecutor:
         self._log.info(f"Executor: {type(func).__name__}({args=}, {kwargs=})")
         task: Future = self._submit_to_executor(func, *args, **kwargs)
 
-        task_id: TaskId = self._create_task_id()
+        task_id = TaskId.create()
         self._active_tasks[task_id] = task
         self._future_index[task] = task_id
         self._log.debug(f"Executor: Scheduled {task_id}, {task} ...")
