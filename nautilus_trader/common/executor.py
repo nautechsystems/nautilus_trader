@@ -31,8 +31,11 @@ from nautilus_trader.core.uuid import UUID4
 @dataclass(frozen=True)
 class TaskId:
     """
-    Represents the identifier for a task which is either queued or executing as an
-    `asyncio.Future`.
+    Represents a unique identifier for a task managed by the ActorExecutor.
+
+    This ID can be associated with a task that is either queued for execution or
+    actively executing as an `asyncio.Future`.
+
     """
 
     value: str
@@ -45,6 +48,14 @@ class ActorExecutor:
     """
     Provides an executor for `Actor` and `Strategy` classes.
 
+    Provides an executor designed to handle asynchronous tasks for `Actor` and `Strategy` classes.
+    This custom executor queues and executes tasks within a given event loop and is tailored for
+    single-threaded applications.
+
+    The `ActorExecutor` maintains its internal state to manage both queued and active tasks,
+    providing facilities for scheduling, cancellation, and monitoring. It can be used to create
+    more controlled execution flows within complex asynchronous systems.
+
     Parameters
     ----------
     loop : AbstractEventLoop
@@ -56,8 +67,9 @@ class ActorExecutor:
 
     Warnings
     --------
-    This executor if not thread safe, and must be called from the same thread
-    in which it was created.
+    This executor is not thread-safe and must be invoked from the same thread in which
+    it was created. Special care should be taken to ensure thread consistency when integrating
+    with multi-threaded applications.
 
     """
 
@@ -277,10 +289,12 @@ class ActorExecutor:
             self._log.info(f"Executor: Canceled {task_id} prior to execution.")
             return
 
-        task: Future | None = self._active_tasks.get(task_id)
+        task: Future | None = self._active_tasks.pop(task_id, None)
         if not task:
             self._log.warning(f"Executor: {task_id} not found.")
             return
+
+        self._future_index.pop(task, None)
 
         result = task.cancel()
         self._log.info(f"Executor: Canceled {task_id} with result {result}.")
