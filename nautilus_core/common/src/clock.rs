@@ -188,7 +188,7 @@ impl TestClock {
             .map(|event| {
                 let callback_py = self
                     .callbacks_py
-                    .get(event.name.0.as_str())
+                    .get(event.name.as_str())
                     .cloned()
                     .unwrap_or_else(|| {
                         // If callback_py is None, use the default_callback_py

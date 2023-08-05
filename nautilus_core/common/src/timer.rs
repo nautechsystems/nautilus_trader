@@ -20,7 +20,6 @@ use std::{
 
 use nautilus_core::{
     correctness,
-    string::SerializableUstr,
     time::{TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
@@ -33,7 +32,7 @@ use ustr::Ustr;
 /// Represents a time event occurring at the event timestamp.
 pub struct TimeEvent {
     /// The event name.
-    pub name: SerializableUstr,
+    pub name: Ustr,
     /// The event ID.
     pub event_id: UUID4,
     /// The message category
@@ -48,7 +47,7 @@ impl TimeEvent {
         correctness::valid_string(&name, "`TimeEvent` name");
 
         TimeEvent {
-            name: SerializableUstr(Ustr::from(&name)),
+            name: Ustr::from(&name),
             event_id,
             ts_event,
             ts_init,
@@ -151,7 +150,7 @@ impl TestTimer {
 
     pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
-            name: SerializableUstr(Ustr::from(&self.name)),
+            name: Ustr::from(&self.name),
             event_id,
             ts_event: self.next_time_ns,
             ts_init,
@@ -182,7 +181,7 @@ impl Iterator for TestTimer {
         } else {
             let item = (
                 TimeEvent {
-                    name: SerializableUstr(Ustr::from(&self.name)),
+                    name: Ustr::from(&self.name),
                     event_id: UUID4::new(),
                     ts_event: self.next_time_ns,
                     ts_init: self.next_time_ns,
