@@ -15,11 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{
-    string::{cstr_to_ustr, SerializableUstr},
-    time::UnixNanos,
-    uuid::UUID4,
-};
+use nautilus_core::{string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
 
 // use crate::types::price::Price;
 // use crate::types::quantity::Quantity;
@@ -109,7 +105,7 @@ pub unsafe extern "C" fn order_denied_new(
         strategy_id,
         instrument_id,
         client_order_id,
-        reason: SerializableUstr(cstr_to_ustr(reason_ptr)),
+        reason: cstr_to_ustr(reason_ptr),
         event_id,
         ts_event,
         ts_init,
@@ -188,7 +184,7 @@ pub unsafe extern "C" fn order_rejected_new(
         instrument_id,
         client_order_id,
         account_id,
-        reason: SerializableUstr(cstr_to_ustr(reason_ptr)),
+        reason: cstr_to_ustr(reason_ptr),
         event_id,
         ts_event,
         ts_init,
