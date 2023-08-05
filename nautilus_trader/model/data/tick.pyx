@@ -700,32 +700,8 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem):
-        cdef Symbol symbol = Symbol(ustr_to_pystr(mem.instrument_id.symbol.value))
-        cdef Venue venue = Venue(ustr_to_pystr(mem.instrument_id.venue.value))
-
         cdef TradeTick trade_tick = TradeTick.__new__(TradeTick)
         trade_tick._mem = mem
-        # print(symbol)
-        # print(trade_tick.instrument_id.symbol)
-        # printf("%p\n", trade_tick._mem.instrument_id.symbol.value)
-        # printf("%p\n", symbol._mem.value)
-
-        cdef char* symbol_ptr = symbol._mem.value
-        if trade_tick._mem.instrument_id.symbol.value != symbol_ptr:
-            trade_tick._mem.instrument_id.symbol.value = symbol_ptr
-            # printf("%p\n", trade_tick._mem.instrument_id.symbol.value)
-
-        if trade_tick._mem.instrument_id.symbol.value != symbol_ptr:
-            raise RuntimeError("Symbol pointers were not equal")
-
-        cdef char* venue_ptr = venue._mem.value
-        if trade_tick._mem.instrument_id.venue.value != venue_ptr:
-            trade_tick._mem.instrument_id.venue.value = venue_ptr
-            # printf("%p\n", trade_tick._mem.instrument_id.venue.value)
-
-        if trade_tick._mem.instrument_id.venue.value != venue_ptr:
-            raise RuntimeError("Venue pointers were not equal")
-
         return trade_tick
 
     # Safety: Do NOT deallocate the capsule here

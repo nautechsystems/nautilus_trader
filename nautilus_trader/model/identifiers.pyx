@@ -135,7 +135,7 @@ cdef class Symbol(Identifier):
     def __eq__(self, Symbol other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return symbol_hash(&self._mem)
@@ -178,7 +178,7 @@ cdef class Venue(Identifier):
     def __eq__(self, Venue other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return venue_hash(&self._mem)
@@ -259,7 +259,7 @@ cdef class InstrumentId(Identifier):
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.symbol.value == other._mem.symbol.value and self._mem.venue.value == other._mem.venue.value
+        return ustr_to_pystr(self._mem.symbol.value) == ustr_to_pystr(other._mem.symbol.value) and ustr_to_pystr(self._mem.venue.value) == ustr_to_pystr(other._mem.venue.value)
 
     def __hash__ (self) -> int:
         return instrument_id_hash(&self._mem)
@@ -344,7 +344,7 @@ cdef class ComponentId(Identifier):
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
         return component_id_hash(&self._mem)
@@ -385,7 +385,7 @@ cdef class ClientId(Identifier):
     def __eq__(self, ClientId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
         return client_id_hash(&self._mem)
@@ -435,7 +435,7 @@ cdef class TraderId(Identifier):
     def __eq__(self, TraderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
         return trader_id_hash(&self._mem)
@@ -502,7 +502,7 @@ cdef class StrategyId(Identifier):
     def __eq__(self, StrategyId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
         return strategy_id_hash(&self._mem)
@@ -567,7 +567,7 @@ cdef class ExecAlgorithmId(Identifier):
     def __eq__(self, ExecAlgorithmId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
         return exec_algorithm_id_hash(&self._mem)
@@ -616,7 +616,7 @@ cdef class AccountId(Identifier):
     def __eq__(self, AccountId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return account_id_hash(&self._mem)
@@ -679,7 +679,7 @@ cdef class ClientOrderId(Identifier):
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return client_order_id_hash(&self._mem)
@@ -738,7 +738,7 @@ cdef class VenueOrderId(Identifier):
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return venue_order_id_hash(&self._mem)
@@ -775,7 +775,7 @@ cdef class OrderListId(Identifier):
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return order_list_id_hash(&self._mem)
@@ -812,7 +812,7 @@ cdef class PositionId(Identifier):
     def __eq__(self, PositionId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return position_id_hash(&self._mem)
@@ -867,7 +867,7 @@ cdef class TradeId(Identifier):
     def __eq__(self, TradeId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
         return trade_id_hash(&self._mem)
