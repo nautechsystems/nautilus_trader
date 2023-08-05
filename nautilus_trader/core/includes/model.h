@@ -907,6 +907,47 @@ typedef struct AccountId_t {
     char* value;
 } AccountId_t;
 
+typedef struct OrderSubmitted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderSubmitted_t;
+
+typedef struct VenueOrderId_t {
+    char* value;
+} VenueOrderId_t;
+
+typedef struct OrderAccepted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct VenueOrderId_t venue_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderAccepted_t;
+
+typedef struct OrderRejected_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    char* reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderRejected_t;
+
 typedef struct ClientId_t {
     char* value;
 } ClientId_t;
@@ -926,10 +967,6 @@ typedef struct OrderListId_t {
 typedef struct PositionId_t {
     char* value;
 } PositionId_t;
-
-typedef struct VenueOrderId_t {
-    char* value;
-} VenueOrderId_t;
 
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -1402,6 +1439,42 @@ struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       UUID4_t event_id,
                                       uint64_t ts_event,
                                       uint64_t ts_init);
+
+struct OrderSubmitted_t order_submitted_new(struct TraderId_t trader_id,
+                                            struct StrategyId_t strategy_id,
+                                            struct InstrumentId_t instrument_id,
+                                            struct ClientOrderId_t client_order_id,
+                                            struct AccountId_t account_id,
+                                            UUID4_t event_id,
+                                            uint64_t ts_event,
+                                            uint64_t ts_init);
+
+struct OrderAccepted_t order_accepted_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct VenueOrderId_t venue_order_id,
+                                          struct AccountId_t account_id,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init,
+                                          uint8_t reconciliation);
+
+/**
+ * # Safety
+ *
+ * - Assumes `reason_ptr` is a valid C string pointer.
+ */
+struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct AccountId_t account_id,
+                                          const char *reason_ptr,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init,
+                                          uint8_t reconciliation);
 
 void interned_string_stats(void);
 

@@ -281,7 +281,7 @@ where
             event_id: order.init_id(),
             ts_event: order.ts_init(),
             ts_init: order.ts_init(),
-            reconciliation: false,
+            reconciliation: false as u8,
         }
     }
 }
