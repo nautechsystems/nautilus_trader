@@ -190,6 +190,9 @@ cdef class OrderEvent(Event):
         """
         raise NotImplementedError("abstract property must be implemented")
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        raise NotImplementedError("abstract method must be implemented")
+
 
 cdef class OrderInitialized(OrderEvent):
     """
@@ -386,6 +389,9 @@ cdef class OrderInitialized(OrderEvent):
             f"event_id={self._event_id}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -687,6 +693,9 @@ cdef class OrderDenied(OrderEvent):
             f"ts_init={self.ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
     @property
     def trader_id(self) -> TraderId:
         """
@@ -949,6 +958,9 @@ cdef class OrderSubmitted(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -1217,6 +1229,9 @@ cdef class OrderAccepted(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -1489,6 +1504,9 @@ cdef class OrderRejected(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -1767,6 +1785,9 @@ cdef class OrderCanceled(OrderEvent):
             f"ts_init={self._ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
     @property
     def trader_id(self) -> TraderId:
         """
@@ -2033,6 +2054,9 @@ cdef class OrderExpired(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -2303,6 +2327,9 @@ cdef class OrderTriggered(OrderEvent):
             f"ts_init={self._ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
     @property
     def trader_id(self) -> TraderId:
         """
@@ -2571,6 +2598,9 @@ cdef class OrderPendingUpdate(OrderEvent):
             f"ts_init={self._ts_init})"
         )
 
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
     @property
     def trader_id(self) -> TraderId:
         """
@@ -2838,6 +2868,9 @@ cdef class OrderPendingCancel(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -3119,6 +3152,9 @@ cdef class OrderModifyRejected(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -3414,6 +3450,9 @@ cdef class OrderCancelRejected(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -3721,6 +3760,9 @@ cdef class OrderUpdated(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
@@ -4066,6 +4108,9 @@ cdef class OrderFilled(OrderEvent):
             f"ts_event={self._ts_event}, "
             f"ts_init={self._ts_init})"
         )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
 
     @property
     def trader_id(self) -> TraderId:
