@@ -15,19 +15,16 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{
-    string::{cstr_to_string, str_to_cstr},
-    time::UnixNanos,
-    uuid::UUID4,
-};
+use nautilus_core::{string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
 
 // use crate::types::price::Price;
 // use crate::types::quantity::Quantity;
-use super::order::OrderDenied;
+use super::order::{OrderAccepted, OrderDenied, OrderRejected, OrderSubmitted};
 // use crate::enums::{OrderSide, OrderType, TimeInForce, TriggerType};
 use crate::identifiers::client_order_id::ClientOrderId;
 use crate::identifiers::{
-    instrument_id::InstrumentId, strategy_id::StrategyId, trader_id::TraderId,
+    account_id::AccountId, instrument_id::InstrumentId, strategy_id::StrategyId,
+    trader_id::TraderId, venue_order_id::VenueOrderId,
 };
 
 // #[no_mangle]
@@ -108,25 +105,116 @@ pub unsafe extern "C" fn order_denied_new(
         strategy_id,
         instrument_id,
         client_order_id,
-        reason: Box::new(cstr_to_string(reason_ptr)),
+        reason: cstr_to_ustr(reason_ptr),
         event_id,
         ts_event,
         ts_init,
     }
 }
 
-/// Frees the memory for the given `event` by dropping.
 #[no_mangle]
-pub extern "C" fn order_denied_drop(event: OrderDenied) {
-    drop(event); // Memory freed here
+pub extern "C" fn order_submitted_new(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderSubmitted {
+    OrderSubmitted {
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        account_id,
+        event_id,
+        ts_event,
+        ts_init,
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn order_denied_clone(event: &OrderDenied) -> OrderDenied {
-    event.clone()
+pub extern "C" fn order_accepted_new(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    reconciliation: u8,
+) -> OrderAccepted {
+    OrderAccepted {
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        event_id,
+        ts_event,
+        ts_init,
+        reconciliation,
+    }
 }
 
+/// # Safety
+///
+/// - Assumes `reason_ptr` is a valid C string pointer.
 #[no_mangle]
-pub extern "C" fn order_denied_reason_to_cstr(event: &OrderDenied) -> *const c_char {
-    str_to_cstr(&event.reason)
+pub unsafe extern "C" fn order_rejected_new(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    reason_ptr: *const c_char,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    reconciliation: u8,
+) -> OrderRejected {
+    OrderRejected {
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        account_id,
+        reason: cstr_to_ustr(reason_ptr),
+        event_id,
+        ts_event,
+        ts_init,
+        reconciliation,
+    }
 }
+
+// #[no_mangle]
+// pub unsafe extern "C" fn order_canceled_new(
+//     trader_id: TraderId,
+//     strategy_id: StrategyId,
+//     instrument_id: InstrumentId,
+//     client_order_id: ClientOrderId,
+//     venue_order_id: VenueOrderId,
+//     account_id: AccountId,
+//     reconciliation: u8,
+//     event_id: UUID4,
+//     ts_event: UnixNanos,
+//     ts_init: UnixNanos,
+// ) -> OrderCanceled {
+//     OrderCanceled {
+//         trader_id,
+//         strategy_id,
+//         instrument_id,
+//         client_order_id,
+//         venue_order_id,
+//         account_id,
+//         reconciliation,
+//         event_id,
+//         ts_event,
+//         ts_init,
+//     }
+// }

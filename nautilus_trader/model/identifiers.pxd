@@ -45,7 +45,6 @@ cdef class Venue(Identifier):
 
     @staticmethod
     cdef Venue from_mem_c(Venue_t mem)
-
     cpdef bint is_synthetic(self)
 
 
@@ -54,23 +53,30 @@ cdef class InstrumentId(Identifier):
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem)
-
     @staticmethod
     cdef InstrumentId from_str_c(str value)
-
     cpdef bint is_synthetic(self)
 
 
 cdef class ComponentId(Identifier):
     cdef ComponentId_t _mem
 
+    @staticmethod
+    cdef ComponentId from_mem_c(ComponentId_t mem)
+
 
 cdef class ClientId(Identifier):
     cdef ClientId_t _mem
 
+    @staticmethod
+    cdef ClientId from_mem_c(ClientId_t mem)
+
 
 cdef class TraderId(Identifier):
     cdef TraderId_t _mem
+
+    @staticmethod
+    cdef TraderId from_mem_c(TraderId_t mem)
 
     cpdef str get_tag(self)
 
@@ -78,20 +84,26 @@ cdef class TraderId(Identifier):
 cdef class StrategyId(Identifier):
     cdef StrategyId_t _mem
 
-    cpdef str get_tag(self)
-    cpdef bint is_external(self)
-
+    @staticmethod
+    cdef StrategyId from_mem_c(StrategyId_t mem)
     @staticmethod
     cdef StrategyId external_c()
+    cpdef str get_tag(self)
+    cpdef bint is_external(self)
 
 
 cdef class ExecAlgorithmId(Identifier):
     cdef ExecAlgorithmId_t _mem
 
+    @staticmethod
+    cdef ExecAlgorithmId from_mem_c(ExecAlgorithmId_t mem)
+
 
 cdef class AccountId(Identifier):
     cdef AccountId_t _mem
 
+    @staticmethod
+    cdef AccountId from_mem_c(AccountId_t mem)
     cpdef str get_issuer(self)
     cpdef str get_id(self)
 
@@ -99,15 +111,23 @@ cdef class AccountId(Identifier):
 cdef class ClientOrderId(Identifier):
     cdef ClientOrderId_t _mem
 
+    @staticmethod
+    cdef ClientOrderId from_mem_c(ClientOrderId_t mem)
     cpdef bint is_this_trader(self, TraderId trader_id)
 
 
 cdef class VenueOrderId(Identifier):
     cdef VenueOrderId_t _mem
 
+    @staticmethod
+    cdef VenueOrderId from_mem_c(VenueOrderId_t mem)
+
 
 cdef class OrderListId(Identifier):
     cdef OrderListId_t _mem
+
+    @staticmethod
+    cdef OrderListId from_mem_c(OrderListId_t mem)
 
 
 cdef class PositionId(Identifier):

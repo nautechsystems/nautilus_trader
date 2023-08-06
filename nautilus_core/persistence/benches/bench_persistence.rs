@@ -28,7 +28,7 @@ fn single_stream_bench(c: &mut Criterion) {
     let file_path = "../../bench_data/quotes_0005.parquet";
 
     group.bench_function("persistence v2", |b| {
-        b.iter_batched(
+        b.iter_batched_ref(
             || {
                 let rt = get_runtime();
                 let mut catalog = DataBackendSession::new(chunk_size);
@@ -56,7 +56,7 @@ fn multi_stream_bench(c: &mut Criterion) {
     let dir_path = "../../bench_data/multi_stream_data";
 
     group.bench_function("persistence v2", |b| {
-        b.iter_batched(
+        b.iter_batched_ref(
             || {
                 let rt = get_runtime();
                 let mut catalog = DataBackendSession::new(chunk_size);

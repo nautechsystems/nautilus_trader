@@ -203,8 +203,6 @@ typedef struct LiveClock LiveClock;
  */
 typedef struct Logger_t Logger_t;
 
-typedef struct Rc_String Rc_String;
-
 typedef struct TestClock TestClock;
 
 /**
@@ -257,7 +255,7 @@ typedef struct TimeEvent_t {
     /**
      * The event name.
      */
-    struct Rc_String *name;
+    char* name;
     /**
      * The event ID.
      */
@@ -468,12 +466,6 @@ struct TimeEvent_t time_event_new(const char *name_ptr,
                                   UUID4_t event_id,
                                   uint64_t ts_event,
                                   uint64_t ts_init);
-
-struct TimeEvent_t time_event_clone(const struct TimeEvent_t *event);
-
-void time_event_drop(struct TimeEvent_t event);
-
-const char *time_event_name_to_cstr(const struct TimeEvent_t *event);
 
 /**
  * Returns a [`TimeEvent`] as a C string pointer.

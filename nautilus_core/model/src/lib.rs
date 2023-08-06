@@ -29,6 +29,7 @@ pub mod macros;
 pub mod orderbook;
 pub mod orders;
 pub mod position;
+pub mod python;
 pub mod types;
 
 /// Loaded as nautilus_pyo3.model

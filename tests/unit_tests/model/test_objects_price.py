@@ -52,6 +52,7 @@ class TestPrice:
         result = Price(1, precision=1)
 
         # Assert
+        assert result.raw == 1_000_000_000
         assert str(result) == "1.0"
 
     def test_instantiate_base_decimal_from_float(self):
@@ -59,6 +60,7 @@ class TestPrice:
         result = Price(1.12300, precision=5)
 
         # Assert
+        assert result.raw == 1_123_000_000
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):

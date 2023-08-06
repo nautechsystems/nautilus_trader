@@ -13,9 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::ffi::{c_char, CStr, CString};
+use std::{
+    ffi::{c_char, CStr, CString},
+    str,
+};
 
 use pyo3::{ffi, types::PyString, FromPyPointer, Python};
+use ustr::Ustr;
 
 /// Returns an owned string from a valid Python object pointer.
 ///
@@ -30,6 +34,21 @@ use pyo3::{ffi, types::PyString, FromPyPointer, Python};
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
+}
+
+/// Convert a C string pointer into an owned `String`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// - If `ptr` is null.
+#[must_use]
+pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 /// Convert a C string pointer into an owned `String`.

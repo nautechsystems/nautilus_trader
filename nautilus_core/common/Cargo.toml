@@ -22,6 +22,7 @@ strum.workspace = true
 tracing-appender = "0.2.2"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 tracing.workspace = true
+ustr.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

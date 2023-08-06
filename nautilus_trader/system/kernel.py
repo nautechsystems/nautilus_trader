@@ -692,11 +692,20 @@ class NautilusKernel:
         """
         return self._catalog
 
-    async def start(self) -> None:
+    async def start(self) -> None:  # noqa (too complex)
         self._log.info("STARTING...")
 
         if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
             self._cache.flush_db()
+
+        # Register executor
+        if self._environment in (Environment.LIVE, Environment.SANDBOX):
+            for actor in self.trader.actors():
+                actor.register_executor(self._loop, self._executor)
+            for strategy in self.trader.strategies():
+                strategy.register_executor(self._loop, self._executor)
+            for exec_algorithm in self.trader.exec_algorithms():
+                exec_algorithm.register_executor(self._loop, self._executor)
 
         # Start system
         self._data_engine.start()
