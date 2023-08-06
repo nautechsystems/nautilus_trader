@@ -926,7 +926,7 @@ typedef struct OrderReleased_t {
     struct StrategyId_t strategy_id;
     struct InstrumentId_t instrument_id;
     struct ClientOrderId_t client_order_id;
-    struct Price_t triggered_price;
+    struct Price_t released_price;
     UUID4_t event_id;
     uint64_t ts_event;
     uint64_t ts_init;
@@ -1481,7 +1481,7 @@ struct OrderReleased_t order_released_new(struct TraderId_t trader_id,
                                           struct StrategyId_t strategy_id,
                                           struct InstrumentId_t instrument_id,
                                           struct ClientOrderId_t client_order_id,
-                                          struct Price_t triggered_price,
+                                          struct Price_t released_price,
                                           UUID4_t event_id,
                                           uint64_t ts_event,
                                           uint64_t ts_init);

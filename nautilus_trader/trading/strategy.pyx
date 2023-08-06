@@ -864,7 +864,7 @@ cdef class Strategy(Actor):
             OrderPendingCancel event
             Order order
         for order in open_orders + emulated_orders:
-            if order.is_emulated_c():
+            if order.status == OrderStatus.INITIALIZED or order.is_emulated_c():
                 continue
             event = self._generate_order_pending_cancel(order)
             try:

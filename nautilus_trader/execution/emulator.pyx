@@ -794,9 +794,9 @@ cdef class OrderEmulator(Actor):
 
         # Determine triggered price
         if order.side == OrderSide.BUY:
-            triggered_price = matching_core.ask
+            released_price = matching_core.ask
         elif order.side == OrderSide.SELL:
-            triggered_price = matching_core.bid
+            released_price = matching_core.bid
         else:
             raise RuntimeError("invalid `OrderSide`")
 
@@ -806,7 +806,7 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            triggered_price=triggered_price,
+            released_price=released_price,
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -858,9 +858,9 @@ cdef class OrderEmulator(Actor):
 
         # Determine triggered price
         if order.side == OrderSide.BUY:
-            triggered_price = matching_core.ask
+            released_price = matching_core.ask
         elif order.side == OrderSide.SELL:
-            triggered_price = matching_core.bid
+            released_price = matching_core.bid
         else:
             raise RuntimeError("invalid `OrderSide`")
 
@@ -870,7 +870,7 @@ cdef class OrderEmulator(Actor):
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            triggered_price=triggered_price,
+            released_price=released_price,
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )

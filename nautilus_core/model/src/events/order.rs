@@ -173,7 +173,7 @@ pub struct OrderReleased {
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub triggered_price: Price,
+    pub released_price: Price,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,

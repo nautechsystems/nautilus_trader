@@ -1148,8 +1148,8 @@ cdef class OrderReleased(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    triggered_price : Price
-        The price which triggered the order to be released from the emulator.
+    released_price : Price
+        The price which released the order from the emulator.
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
@@ -1163,7 +1163,7 @@ cdef class OrderReleased(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        Price triggered_price not None,
+        Price released_price not None,
         UUID4 event_id not None,
         uint64_t ts_init,
     ):
@@ -1172,7 +1172,7 @@ cdef class OrderReleased(OrderEvent):
             strategy_id._mem,
             instrument_id._mem,
             client_order_id._mem,
-            triggered_price._mem,
+            released_price._mem,
             event_id._mem,
             ts_init,
             ts_init,
@@ -1189,7 +1189,7 @@ cdef class OrderReleased(OrderEvent):
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
-            f"triggered_price={self.triggered_price})"
+            f"released_price={self.released_price})"
         )
 
     def __repr__(self) -> str:
@@ -1199,7 +1199,7 @@ cdef class OrderReleased(OrderEvent):
             f"strategy_id={self.strategy_id}, "
             f"instrument_id={self.instrument_id}, "
             f"client_order_id={self.client_order_id}, "
-            f"triggered_price={self.triggered_price}, "
+            f"released_price={self.released_price}, "
             f"event_id={self.id}, "
             f"ts_init={self.ts_init})"
         )
@@ -1280,16 +1280,16 @@ cdef class OrderReleased(OrderEvent):
         return None  # No assignment
 
     @property
-    def triggered_price(self) -> Price:
+    def released_price(self) -> Price:
         """
-        The triggered price for the event.
+        The released price for the event.
 
         Returns
         -------
         Price
 
         """
-        return Price.from_mem_c(self._mem.triggered_price)
+        return Price.from_mem_c(self._mem.released_price)
 
     @property
     def reconciliation(self) -> bool:
@@ -1347,7 +1347,7 @@ cdef class OrderReleased(OrderEvent):
             strategy_id=StrategyId(values["strategy_id"]),
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
             client_order_id=ClientOrderId(values["client_order_id"]),
-            triggered_price=Price.from_str_c(values["triggered_price"]),
+            released_price=Price.from_str_c(values["released_price"]),
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
         )
@@ -1361,7 +1361,7 @@ cdef class OrderReleased(OrderEvent):
             "strategy_id": obj.strategy_id.value,
             "instrument_id": obj.instrument_id.value,
             "client_order_id": obj.client_order_id.value,
-            "triggered_price": str(obj.triggered_price),
+            "released_price": str(obj.released_price),
             "event_id": obj.id.value,
             "ts_event": obj.ts_init,
             "ts_init": obj.ts_init,

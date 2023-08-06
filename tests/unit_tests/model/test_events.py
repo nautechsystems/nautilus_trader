@@ -238,7 +238,7 @@ class TestModelEvents:
             strategy_id=StrategyId("SCALPER-001"),
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             client_order_id=ClientOrderId("O-2020872378423"),
-            triggered_price=Price.from_str("50200.10"),
+            released_price=Price.from_str("50200.10"),
             event_id=uuid,
             ts_init=0,
         )
@@ -247,11 +247,11 @@ class TestModelEvents:
         assert OrderReleased.from_dict(OrderReleased.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderReleased(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, triggered_price=50200.10)"
+            == "OrderReleased(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, released_price=50200.10)"
         )
         assert (
             repr(event)
-            == f"OrderReleased(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, triggered_price=50200.10, event_id={uuid}, ts_init=0)"  # noqa
+            == f"OrderReleased(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, released_price=50200.10, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_submitted_event_to_from_dict_and_str_repr(self):

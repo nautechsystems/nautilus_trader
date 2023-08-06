@@ -514,7 +514,7 @@ cdef extern from "../includes/model.h":
         StrategyId_t strategy_id;
         InstrumentId_t instrument_id;
         ClientOrderId_t client_order_id;
-        Price_t triggered_price;
+        Price_t released_price;
         UUID4_t event_id;
         uint64_t ts_event;
         uint64_t ts_init;
@@ -976,7 +976,7 @@ cdef extern from "../includes/model.h":
                                        StrategyId_t strategy_id,
                                        InstrumentId_t instrument_id,
                                        ClientOrderId_t client_order_id,
-                                       Price_t triggered_price,
+                                       Price_t released_price,
                                        UUID4_t event_id,
                                        uint64_t ts_event,
                                        uint64_t ts_init);
