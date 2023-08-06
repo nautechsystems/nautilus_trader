@@ -155,14 +155,14 @@ class TestEventStubs:
     @staticmethod
     def order_released(
         order: Order,
-        triggered_price: Optional[Price] = None,
+        released_price: Optional[Price] = None,
     ) -> OrderReleased:
         return OrderReleased(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
             client_order_id=order.client_order_id,
-            triggered_price=triggered_price or Price.from_str("1.00000"),
+            released_price=released_price or Price.from_str("1.00000"),
             event_id=UUID4(),
             ts_init=0,
         )

@@ -37,6 +37,7 @@ from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -44,6 +45,7 @@ from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -74,12 +76,14 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     OrderCancelRejected.__name__: OrderCancelRejected.to_dict_c,
     OrderCanceled.__name__: OrderCanceled.to_dict_c,
     OrderDenied.__name__: OrderDenied.to_dict_c,
+    OrderEmulated.__name__: OrderEmulated.to_dict_c,
     OrderExpired.__name__: OrderExpired.to_dict_c,
     OrderFilled.__name__: OrderFilled.to_dict_c,
     OrderInitialized.__name__: OrderInitialized.to_dict_c,
     OrderPendingCancel.__name__: OrderPendingCancel.to_dict_c,
     OrderPendingUpdate.__name__: OrderPendingUpdate.to_dict_c,
     OrderRejected.__name__: OrderRejected.to_dict_c,
+    OrderReleased.__name__: OrderReleased.to_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.to_dict_c,
     OrderTriggered.__name__: OrderTriggered.to_dict_c,
     OrderModifyRejected.__name__: OrderModifyRejected.to_dict_c,
@@ -121,11 +125,13 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     OrderCancelRejected.__name__: OrderCancelRejected.from_dict_c,
     OrderCanceled.__name__: OrderCanceled.from_dict_c,
     OrderDenied.__name__: OrderDenied.from_dict_c,
+    OrderEmulated.__name__: OrderEmulated.from_dict_c,
     OrderExpired.__name__: OrderExpired.from_dict_c,
     OrderFilled.__name__: OrderFilled.from_dict_c,
     OrderInitialized.__name__: OrderInitialized.from_dict_c,
     OrderPendingCancel.__name__: OrderPendingCancel.from_dict_c,
     OrderPendingUpdate.__name__: OrderPendingUpdate.from_dict_c,
+    OrderReleased.__name__: OrderReleased.from_dict_c,
     OrderRejected.__name__: OrderRejected.from_dict_c,
     OrderSubmitted.__name__: OrderSubmitted.from_dict_c,
     OrderTriggered.__name__: OrderTriggered.from_dict_c,

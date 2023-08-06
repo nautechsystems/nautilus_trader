@@ -1045,7 +1045,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._redis.srem(self._key_index_orders_emulated, order.client_order_id.to_str())
         else:
-            self._log.critical("INDEXING EMULATED ORDER!")
             self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
 
         self._log.debug(f"Updated {order}.")
