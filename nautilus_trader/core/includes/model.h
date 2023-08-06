@@ -367,45 +367,53 @@ typedef enum OrderStatus {
      */
     DENIED = 2,
     /**
-     * The order was submitted by the Nautilus system to the external service or trading venue (closed/done).
+     * The order became emulated by the Nautilus system in the `OrderEmulator` component.
      */
-    SUBMITTED = 3,
+    EMULATED = 3,
+    /**
+     * The order was released by the Nautilus system from the `OrderEmulator` component.
+     */
+    RELEASED = 4,
+    /**
+     * The order was submitted by the Nautilus system to the external service or trading venue (awaiting acknowledgement).
+     */
+    SUBMITTED = 5,
     /**
      * The order was acknowledged by the trading venue as being received and valid (may now be working).
      */
-    ACCEPTED = 4,
+    ACCEPTED = 6,
     /**
      * The order was rejected by the trading venue.
      */
-    REJECTED = 5,
+    REJECTED = 7,
     /**
      * The order was canceled (closed/done).
      */
-    CANCELED = 6,
+    CANCELED = 8,
     /**
      * The order reached a GTD expiration (closed/done).
      */
-    EXPIRED = 7,
+    EXPIRED = 9,
     /**
-     * The order STOP price was triggered (closed/done).
+     * The order STOP price was triggered on a trading venue.
      */
-    TRIGGERED = 8,
+    TRIGGERED = 10,
     /**
-     * The order is currently pending a request to modify at the trading venue.
+     * The order is currently pending a request to modify on a trading venue.
      */
-    PENDING_UPDATE = 9,
+    PENDING_UPDATE = 11,
     /**
-     * The order is currently pending a request to cancel at the trading venue.
+     * The order is currently pending a request to cancel on a trading venue.
      */
-    PENDING_CANCEL = 10,
+    PENDING_CANCEL = 12,
     /**
-     * The order has been partially filled at the trading venue.
+     * The order has been partially filled on a trading venue.
      */
-    PARTIALLY_FILLED = 11,
+    PARTIALLY_FILLED = 13,
     /**
-     * The order has been completely filled at the trading venue (closed/done).
+     * The order has been completely filled on a trading venue (closed/done).
      */
-    FILLED = 12,
+    FILLED = 14,
 } OrderStatus;
 
 /**
@@ -902,6 +910,27 @@ typedef struct OrderDenied_t {
     uint64_t ts_event;
     uint64_t ts_init;
 } OrderDenied_t;
+
+typedef struct OrderEmulated_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderEmulated_t;
+
+typedef struct OrderReleased_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct Price_t triggered_price;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderReleased_t;
 
 typedef struct AccountId_t {
     char* value;
@@ -1439,6 +1468,23 @@ struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       UUID4_t event_id,
                                       uint64_t ts_event,
                                       uint64_t ts_init);
+
+struct OrderEmulated_t order_emulated_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+struct OrderReleased_t order_released_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct Price_t triggered_price,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
 
 struct OrderSubmitted_t order_submitted_new(struct TraderId_t trader_id,
                                             struct StrategyId_t strategy_id,

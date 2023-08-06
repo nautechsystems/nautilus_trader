@@ -38,6 +38,8 @@ use crate::{
 pub enum OrderEvent {
     OrderInitialized(OrderInitialized),
     OrderDenied(OrderDenied),
+    OrderEmulated(OrderEmulated),
+    OrderReleased(OrderReleased),
     OrderSubmitted(OrderSubmitted),
     OrderAccepted(OrderAccepted),
     OrderRejected(OrderRejected),
@@ -143,6 +145,35 @@ pub struct OrderDenied {
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
     pub reason: Ustr,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
+pub struct OrderEmulated {
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
+pub struct OrderReleased {
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
+    pub triggered_price: Price,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,

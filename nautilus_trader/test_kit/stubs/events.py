@@ -34,6 +34,7 @@ from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderPendingCancel
 from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
@@ -148,6 +149,21 @@ class TestEventStubs:
             info={},
             event_id=UUID4(),
             ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def order_released(
+        order: Order,
+        triggered_price: Optional[Price] = None,
+    ) -> OrderReleased:
+        return OrderReleased(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            triggered_price=triggered_price or Price.from_str("1.00000"),
+            event_id=UUID4(),
             ts_init=0,
         )
 

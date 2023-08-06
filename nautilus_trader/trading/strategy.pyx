@@ -63,6 +63,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
@@ -501,7 +502,7 @@ cdef class Strategy(Actor):
             self._set_gtd_expiry(order)
 
         # Route order
-        if order.is_emulated_c():
+        if order.emulation_trigger != TriggerType.NO_TRIGGER:
             self._send_emulator_command(command)
         elif order.exec_algorithm_id is not None:
             self._send_algo_command(command, order.exec_algorithm_id)
