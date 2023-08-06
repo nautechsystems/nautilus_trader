@@ -244,6 +244,24 @@ impl<'de> Deserialize<'de> for Money {
     }
 }
 
+#[pymethods]
+impl Money {
+    #[getter]
+    pub fn raw(&self) -> i64 {
+        self.raw
+    }
+
+    #[getter]
+    pub fn currency(&self) -> Currency {
+        self.currency
+    }
+
+    #[must_use]
+    pub fn as_double(&self) -> f64 {
+        fixed_i64_to_f64(self.raw)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
