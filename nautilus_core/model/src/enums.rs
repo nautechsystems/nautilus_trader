@@ -115,6 +115,17 @@ pub enum AggressorSide {
     Seller = 2,
 }
 
+impl FromU8 for AggressorSide {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(AggressorSide::NoAggressor),
+            1 => Some(AggressorSide::Buyer),
+            2 => Some(AggressorSide::Seller),
+            _ => None,
+        }
+    }
+}
+
 /// A broad financial market asset class.
 #[repr(C)]
 #[derive(

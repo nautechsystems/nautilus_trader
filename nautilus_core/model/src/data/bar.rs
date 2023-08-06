@@ -160,6 +160,31 @@ impl<'de> Deserialize<'de> for BarType {
     }
 }
 
+#[pymethods]
+impl BarType {
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+}
+
 /// Represents an aggregated bar.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -219,6 +244,43 @@ impl Bar {
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());
         metadata
+    }
+
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
+        let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
+        let bar_type = BarType::from_str(bar_type_str)
+            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .unwrap();
+
+        let open_py: &PyAny = obj.getattr("open")?;
+        let price_prec: u8 = open_py.getattr("precision")?.extract()?;
+        let open_raw: i64 = open_py.getattr("raw")?.extract()?;
+        let open = Price::from_raw(open_raw, price_prec);
+
+        let high_py: &PyAny = obj.getattr("high")?;
+        let high_raw: i64 = high_py.getattr("raw")?.extract()?;
+        let high = Price::from_raw(high_raw, price_prec);
+
+        let low_py: &PyAny = obj.getattr("low")?;
+        let low_raw: i64 = low_py.getattr("raw")?.extract()?;
+        let low = Price::from_raw(low_raw, price_prec);
+
+        let close_py: &PyAny = obj.getattr("close")?;
+        let close_raw: i64 = close_py.getattr("raw")?.extract()?;
+        let close = Price::from_raw(close_raw, price_prec);
+
+        let volume_py: &PyAny = obj.getattr("volume")?;
+        let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
+        let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
+        let volume = Quantity::from_raw(volume_raw, volume_prec);
+
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        Ok(Self::new(
+            bar_type, open, high, low, close, volume, ts_event, ts_init,
+        ))
     }
 }
 
@@ -633,6 +695,17 @@ mod tests {
             let dict = bar.as_dict(py).unwrap();
             let parsed = Bar::from_dict(py, dict).unwrap();
             assert_eq!(parsed, bar);
+        });
+    }
+
+    #[test]
+    fn test_from_pyobject() {
+        let bar = create_stub_bar();
+
+        Python::with_gil(|py| {
+            let bar_pyobject = bar.into_py(py);
+            let parsed_bar = Bar::from_pyobject(bar_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_bar, bar);
         });
     }
 
