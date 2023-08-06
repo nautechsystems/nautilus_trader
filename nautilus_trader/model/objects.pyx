@@ -224,6 +224,18 @@ cdef class Quantity:
         return f"{type(self).__name__}('{self}')"
 
     @property
+    def raw(self) -> uint64_t:
+        """
+        Return the raw memory representation of the quantity value.
+
+        Returns
+        -------
+        uint64_t
+
+        """
+        return self._mem.raw
+
+    @property
     def precision(self) -> int:
         """
         Return the precision for the quantity.
@@ -616,6 +628,18 @@ cdef class Price:
         return f"{type(self).__name__}('{self}')"
 
     @property
+    def raw(self) -> int64_t:
+        """
+        Return the raw memory representation of the price value.
+
+        Returns
+        -------
+        int64_t
+
+        """
+        return self._mem.raw
+
+    @property
     def precision(self) -> int:
         """
         Return the precision for the price.
@@ -952,6 +976,18 @@ cdef class Money:
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}('{str(self)}', {self.currency_code_c()})"
+
+    @property
+    def raw(self) -> int64_t:
+        """
+        Return the raw memory representation of the money amount.
+
+        Returns
+        -------
+        int64_t
+
+        """
+        return self._mem.raw
 
     @property
     def currency(self) -> Currency:

@@ -37,7 +37,7 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 #[derive(Clone, Copy, Debug, Eq)]
 #[pyclass]
 pub struct Money {
-    raw: i64,
+    pub raw: i64,
     pub currency: Currency,
 }
 
