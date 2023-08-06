@@ -26,8 +26,17 @@ use std::{
 use chrono::{prelude::*, Utc};
 use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{
+    event, instrument::WithSubscriber, metadata::LevelFilter, subscriber, Level, Subscriber,
+};
+use tracing_appender::{
+    non_blocking::WorkerGuard,
+    rolling::{RollingFileAppender, Rotation},
+};
+use tracing_subscriber::{fmt::Layer, prelude::*, EnvFilter, Registry};
 
 use crate::enums::{LogColor, LogLevel};
 
@@ -702,4 +711,58 @@ mod tests {
         "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
     }
+}
+
+/// Guards the log collector and flushes it when dropped
+///
+/// This struct must be dropped when the application has completed operation
+/// it ensures that the any pending log lines are flushed before the application
+/// closes.
+#[pyclass]
+struct LogGuard {
+    guards: Vec<WorkerGuard>,
+}
+
+/// Sets the global log collector
+///
+/// stdout_level: Set the level for the stdout writer
+/// stderr_level: Set the level for the stderr writer
+/// file_level: Set the level, the directory and the prefix for the file writer
+///
+/// It also configures a top level filter based on module/component name.
+/// The format for the string is component1=info,component2=debug.
+/// For e.g. network=error,kernel=info
+///
+/// # Safety
+/// Should only be called once during an applications run, ideally at the
+/// beginning of the run.
+fn set_global_log_collector(
+    stdout_level: Option<Level>,
+    stderr_level: Option<Level>,
+    file_level: Option<(String, String, Level)>,
+) {
+    let mut guards = Vec::new();
+    let stdout_sub_builder = stdout_level.map(|stdout_level| {
+        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+        guards.push(guard);
+        Layer::default().with_writer(non_blocking.with_max_level(stdout_level))
+    });
+    let stderr_sub_builder = stderr_level.map(|stderr_level| {
+        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+        guards.push(guard);
+        Layer::default().with_writer(non_blocking.with_max_level(stderr_level))
+    });
+    let file_sub_builder = file_level.map(|(dir_path, file_prefix, file_level)| {
+        let rolling_log = RollingFileAppender::new(Rotation::NEVER, dir_path, file_prefix);
+        let (non_blocking, guard) = tracing_appender::non_blocking(rolling_log);
+        guards.push(guard);
+        Layer::default().with_writer(non_blocking.with_max_level(file_level))
+    });
+
+    Registry::default()
+        .with(stderr_sub_builder)
+        .with(stdout_sub_builder)
+        .with(file_sub_builder)
+        .with(EnvFilter::from_default_env())
+        .init();
 }

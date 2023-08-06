@@ -19,6 +19,9 @@ serde.workspace = true
 serde_json.workspace = true
 pyo3.workspace = true
 strum.workspace = true
+tracing-appender = "0.2.2"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
