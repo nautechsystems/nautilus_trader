@@ -1,0 +1,4 @@
+(function() {var implementors = {
+"nautilus_common":[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"struct\" href=\"nautilus_common/timer/struct.TestTimer.html\" title=\"struct nautilus_common::timer::TestTimer\">TestTimer</a>"]],
+"nautilus_persistence":[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/iterator/trait.Iterator.html\" title=\"trait core::iter::traits::iterator::Iterator\">Iterator</a> for <a class=\"struct\" href=\"nautilus_persistence/backend/session/struct.QueryResult.html\" title=\"struct nautilus_persistence::backend::session::QueryResult\">QueryResult</a>"]]
+};if (window.register_implementors) {window.register_implementors(implementors);} else {window.pending_implementors = implementors;}})()

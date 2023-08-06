@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["uuid4_eq","uuid4_from_cstr","uuid4_hash","uuid4_new","uuid4_to_cstr"],"struct":["UUID4"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ERROR_PRICE","PRICE_MAX","PRICE_MIN"],"fn":["price_add_assign","price_as_f64","price_from_raw","price_new","price_sub_assign"],"struct":["Price"]};

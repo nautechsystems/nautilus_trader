@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["dummy"],"struct":["TestTimer","TimeEvent","TimeEventHandler"],"trait":["Timer"]};

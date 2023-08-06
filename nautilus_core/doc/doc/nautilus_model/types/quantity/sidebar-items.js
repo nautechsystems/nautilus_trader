@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["QUANTITY_MAX","QUANTITY_MIN"],"fn":["quantity_add_assign","quantity_add_assign_u64","quantity_as_f64","quantity_from_raw","quantity_new","quantity_sub_assign","quantity_sub_assign_u64"],"struct":["Quantity"]};

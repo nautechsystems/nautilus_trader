@@ -1,0 +1,10 @@
+D:\Timepercent\DeepCodeInterpreter\nautilus_trader\nautilus_core\doc\debug\deps\arrow_row-b55b4ed1b794dce0.rmeta: C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src/lib.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\dictionary.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\fixed.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\interner.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\list.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\variable.rs
+
+D:\Timepercent\DeepCodeInterpreter\nautilus_trader\nautilus_core\doc\debug\deps\arrow_row-b55b4ed1b794dce0.d: C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src/lib.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\dictionary.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\fixed.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\interner.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\list.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\variable.rs
+
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src/lib.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\dictionary.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\fixed.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\interner.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\list.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-row-43.0.0\src\variable.rs:

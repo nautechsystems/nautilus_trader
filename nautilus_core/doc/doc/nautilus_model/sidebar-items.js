@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["model"],"macro":["impl_serialization_for_identifier","strum_serde"],"mod":["currencies","data","enums","events","identifiers","instruments","macros","orderbook","orders","position","types"]};

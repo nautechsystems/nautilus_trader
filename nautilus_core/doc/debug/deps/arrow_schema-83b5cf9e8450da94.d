@@ -1,0 +1,10 @@
+D:\Timepercent\DeepCodeInterpreter\nautilus_trader\nautilus_core\doc\debug\deps\arrow_schema-83b5cf9e8450da94.rmeta: C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src/lib.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\datatype.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\error.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\field.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\fields.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\schema.rs
+
+D:\Timepercent\DeepCodeInterpreter\nautilus_trader\nautilus_core\doc\debug\deps\arrow_schema-83b5cf9e8450da94.d: C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src/lib.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\datatype.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\error.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\field.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\fields.rs C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\schema.rs
+
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src/lib.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\datatype.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\error.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\field.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\fields.rs:
+C:\Users\sms20\.cargo\registry\src\index.crates.io-6f17d22bba15001f\arrow-schema-43.0.0\src\schema.rs:

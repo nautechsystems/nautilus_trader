@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FIXED_PRECISION","FIXED_SCALAR"],"fn":["f64_to_fixed_i64","f64_to_fixed_u64","fixed_i64_to_f64","fixed_u64_to_f64"]};

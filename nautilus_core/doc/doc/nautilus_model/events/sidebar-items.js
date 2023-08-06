@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["order","order_api","position"]};

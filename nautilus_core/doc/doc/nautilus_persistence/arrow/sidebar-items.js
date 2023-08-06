@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["DataStreamingError","NautilusDataType"],"mod":["bar","delta","quote","trade"],"trait":["ArrowSchemaProvider","DecodeDataFromRecordBatch","DecodeFromRecordBatch","EncodeToRecordBatch","WriteStream"]};
