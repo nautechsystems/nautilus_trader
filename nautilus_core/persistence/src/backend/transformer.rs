@@ -33,7 +33,7 @@ const ERROR_EMPTY_DATA: &str = "`data` was empty";
 pub struct DataTransformer {}
 
 impl DataTransformer {
-    /// Transforms the given `data` into a vector of [`OrderBookDelta`] objects.
+    /// Transforms the given Python objects `data` into a vector of [`OrderBookDelta`] objects.
     fn pyobjects_to_order_book_deltas(
         py: Python<'_>,
         data: Vec<PyObject>,
@@ -46,7 +46,7 @@ impl DataTransformer {
         Ok(deltas)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`QuoteTick`] objects.
+    /// Transforms the given Python objects `data` into a vector of [`QuoteTick`] objects.
     fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
         let ticks: Vec<QuoteTick> = data
             .into_iter()
@@ -56,7 +56,7 @@ impl DataTransformer {
         Ok(ticks)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`TradeTick`] objects.
+    /// Transforms the given Python objects `data` into a vector of [`TradeTick`] objects.
     fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
         let ticks: Vec<TradeTick> = data
             .into_iter()
@@ -66,7 +66,7 @@ impl DataTransformer {
         Ok(ticks)
     }
 
-    /// Transforms the given `data` into a vector of [`Bar`] objects.
+    /// Transforms the given Python objects `data` into a vector of [`Bar`] objects.
     fn pyobjects_to_bars(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<Bar>> {
         let bars: Vec<Bar> = data
             .into_iter()
@@ -76,7 +76,7 @@ impl DataTransformer {
         Ok(bars)
     }
 
-    /// Transforms the given `batches` into Python `bytes`.
+    /// Transforms the given record `batches` into Python `bytes`.
     fn record_batches_to_pybytes(
         py: Python<'_>,
         batches: Vec<RecordBatch>,
