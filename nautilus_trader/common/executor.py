@@ -117,11 +117,43 @@ class ActorExecutor:
         self._future_index.clear()
         self._queued_tasks.clear()
 
+    def get_future(self, task_id: TaskId) -> Future | None:
+        """
+        Return the executing `Future` with the given task_id (if found).
+
+        Parameters
+        ----------
+        task_id : TaskId
+            The task identifier for the future.
+
+        Returns
+        -------
+        asyncio.Future or ``None``
+
+        """
+        return self._active_tasks.get(task_id)
+
+    async def shutdown(self) -> None:
+        """
+        Shutdown the executor in an async context.
+
+        This will cancel the inner worker task.
+
+        """
+        self._worker_task.cancel()
+        try:
+            await asyncio.wait_for(self._worker_task, timeout=2.0)
+        except asyncio.CancelledError:
+            pass  # Ignore the exception since we intentionally cancelled the task
+        except asyncio.TimeoutError:
+            self._log.error("Executor: TimeoutError shutting down worker.")
+
     def _drain_queue(self) -> None:
         # Drain the internal task queue (this will not execute the tasks)
         while not self._queue.empty():
             task_id, _, _, _ = self._queue.get_nowait()
             self._log.info(f"Executor: Dequeued {task_id} prior to execution.")
+        self._queued_tasks.clear()
 
     def _add_active_task(self, task_id: TaskId, task: Future[Any]) -> None:
         self._active_tasks[task_id] = task
@@ -317,5 +349,5 @@ class ActorExecutor:
         if self._worker_task is not None:
             self._worker_task.cancel()
 
-        for task_id in self._active_tasks:
+        for task_id in self._active_tasks.copy():
             self.cancel_task(task_id)
