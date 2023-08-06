@@ -750,6 +750,11 @@ class TestOrderEmulatorWithOrderLists:
 
         # Act
         self.exec_engine.process(
+            TestEventStubs.order_released(
+                bracket.first,
+            ),
+        )
+        self.exec_engine.process(
             TestEventStubs.order_submitted(
                 bracket.first,
                 account_id=self.account_id,
@@ -1000,7 +1005,7 @@ class TestOrderEmulatorWithOrderLists:
         assert self.cache.orders_emulated_count() == 1
         assert entry_order.status == OrderStatus.FILLED
         assert sl_order.status == OrderStatus.PARTIALLY_FILLED
-        assert tp_order.status == OrderStatus.INITIALIZED
+        assert tp_order.status == OrderStatus.EMULATED
         assert sl_order.quantity == Quantity.from_int(10)
         assert sl_order.leaves_qty == Quantity.from_int(5)
         assert tp_order.quantity == Quantity.from_int(5)

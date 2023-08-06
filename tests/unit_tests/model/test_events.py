@@ -30,6 +30,7 @@ from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderEmulated
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
@@ -37,6 +38,7 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderPendingCancel
 from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
@@ -203,6 +205,53 @@ class TestModelEvents:
         assert (
             repr(event)
             == f"OrderDenied(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, reason=Exceeded MAX_ORDER_SUBMIT_RATE, event_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_order_emulated_event_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        event = OrderEmulated(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("SCALPER-001"),
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            event_id=uuid,
+            ts_init=0,
+        )
+
+        # Act, Assert
+        assert OrderEmulated.from_dict(OrderEmulated.to_dict(event)) == event
+        assert (
+            str(event)
+            == "OrderEmulated(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423)"
+        )
+        assert (
+            repr(event)
+            == f"OrderEmulated(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, event_id={uuid}, ts_init=0)"  # noqa
+        )
+
+    def test_order_released_event_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid = UUID4()
+        event = OrderReleased(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("SCALPER-001"),
+            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            client_order_id=ClientOrderId("O-2020872378423"),
+            triggered_price=Price.from_str("50200.10"),
+            event_id=uuid,
+            ts_init=0,
+        )
+
+        # Act, Assert
+        assert OrderReleased.from_dict(OrderReleased.to_dict(event)) == event
+        assert (
+            str(event)
+            == "OrderReleased(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, triggered_price=50200.10)"
+        )
+        assert (
+            repr(event)
+            == f"OrderReleased(trader_id=TRADER-001, strategy_id=SCALPER-001, instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, triggered_price=50200.10, event_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_order_submitted_event_to_from_dict_and_str_repr(self):

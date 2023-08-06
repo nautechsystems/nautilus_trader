@@ -608,9 +608,9 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `order.status` is not ``INITIALIZED``.
+            If `order.status` is not ``INITIALIZED`` or ``RELEASED``.
         ValueError
-            If `order.emulation_trigger` is not ``None``.
+            If `order.emulation_trigger` is not ``NO_TRIGGER``.
 
         Warning
         -------
@@ -618,12 +618,12 @@ cdef class ExecAlgorithm(Actor):
         position opened by the order will have this position ID assigned. This may
         not be what you intended.
 
-        Emulated orders cannot be sent from execution algorithms (intentioally constraining complexity).
+        Emulated orders cannot be sent from execution algorithms (intentionally constraining complexity).
 
         """
         Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        Condition.true(order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED), "order", "order status was not either ``INITIALIZED`` or ``RELEASED``")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
 
         cdef Order primary = None

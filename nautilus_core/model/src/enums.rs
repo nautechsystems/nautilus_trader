@@ -638,26 +638,30 @@ pub enum OrderStatus {
     Initialized = 1,
     /// The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
     Denied = 2,
-    /// The order was submitted by the Nautilus system to the external service or trading venue (closed/done).
-    Submitted = 3,
+    /// The order became emulated by the Nautilus system in the `OrderEmulator` component.
+    Emulated = 3,
+    /// The order was released by the Nautilus system from the `OrderEmulator` component.
+    Released = 4,
+    /// The order was submitted by the Nautilus system to the external service or trading venue (awaiting acknowledgement).
+    Submitted = 5,
     /// The order was acknowledged by the trading venue as being received and valid (may now be working).
-    Accepted = 4,
+    Accepted = 6,
     /// The order was rejected by the trading venue.
-    Rejected = 5,
+    Rejected = 7,
     /// The order was canceled (closed/done).
-    Canceled = 6,
+    Canceled = 8,
     /// The order reached a GTD expiration (closed/done).
-    Expired = 7,
-    /// The order STOP price was triggered (closed/done).
-    Triggered = 8,
-    /// The order is currently pending a request to modify at the trading venue.
-    PendingUpdate = 9,
-    /// The order is currently pending a request to cancel at the trading venue.
-    PendingCancel = 10,
-    /// The order has been partially filled at the trading venue.
-    PartiallyFilled = 11,
-    /// The order has been completely filled at the trading venue (closed/done).
-    Filled = 12,
+    Expired = 9,
+    /// The order STOP price was triggered on a trading venue.
+    Triggered = 10,
+    /// The order is currently pending a request to modify on a trading venue.
+    PendingUpdate = 11,
+    /// The order is currently pending a request to cancel on a trading venue.
+    PendingCancel = 12,
+    /// The order has been partially filled on a trading venue.
+    PartiallyFilled = 13,
+    /// The order has been completely filled on a trading venue (closed/done).
+    Filled = 14,
 }
 
 /// The type of order.
