@@ -26,6 +26,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import CacheConfig
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.live.node import TradingNode
@@ -45,7 +46,16 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache_database=CacheDatabaseConfig(type="in-memory"),
+    cache=CacheConfig(
+        # snapshot_orders=True,
+        # snapshot_positions=True,
+        # snapshot_positions_interval=5.0,
+    ),
+    cache_database=CacheDatabaseConfig(
+        type="in-memory",
+        flush_on_start=False,
+        timestamps_as_iso8601=True,
+    ),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
