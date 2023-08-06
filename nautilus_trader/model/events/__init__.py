@@ -21,6 +21,7 @@ from nautilus_trader.model.events.order import OrderAccepted
 from nautilus_trader.model.events.order import OrderCanceled
 from nautilus_trader.model.events.order import OrderCancelRejected
 from nautilus_trader.model.events.order import OrderDenied
+from nautilus_trader.model.events.order import OrderEmulated
 from nautilus_trader.model.events.order import OrderEvent
 from nautilus_trader.model.events.order import OrderExpired
 from nautilus_trader.model.events.order import OrderFilled
@@ -29,6 +30,7 @@ from nautilus_trader.model.events.order import OrderModifyRejected
 from nautilus_trader.model.events.order import OrderPendingCancel
 from nautilus_trader.model.events.order import OrderPendingUpdate
 from nautilus_trader.model.events.order import OrderRejected
+from nautilus_trader.model.events.order import OrderReleased
 from nautilus_trader.model.events.order import OrderSubmitted
 from nautilus_trader.model.events.order import OrderTriggered
 from nautilus_trader.model.events.order import OrderUpdated
@@ -44,6 +46,7 @@ __all__ = [
     "OrderCanceled",
     "OrderCancelRejected",
     "OrderDenied",
+    "OrderEmulated",
     "OrderEvent",
     "OrderExpired",
     "OrderFilled",
@@ -52,6 +55,7 @@ __all__ = [
     "OrderPendingCancel",
     "OrderPendingUpdate",
     "OrderRejected",
+    "OrderReleased",
     "OrderSubmitted",
     "OrderTriggered",
     "OrderUpdated",

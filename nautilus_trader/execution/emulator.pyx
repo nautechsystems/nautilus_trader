@@ -48,10 +48,12 @@ from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport trigger_type_to_str
 from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
@@ -348,10 +350,19 @@ cdef class OrderEmulator(Actor):
         if order.client_order_id not in self._commands_submit_order:
             return  # Already released
 
+        # Generate event
+        cdef OrderEmulated event = OrderEmulated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._send_exec_event(event)
+
         # Hold in matching core
         matching_core.add_order(order)
-
-        self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
         self._check_monitoring(command.strategy_id, command.position_id)
@@ -401,7 +412,7 @@ cdef class OrderEmulator(Actor):
             ts_event=ts_now,
             ts_init=ts_now,
         )
-        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+        self._send_exec_event(event)
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -416,6 +427,8 @@ cdef class OrderEmulator(Actor):
             matching_core.sort_bid_orders()
         elif order.side == OrderSide.SELL:
             matching_core.sort_ask_orders()
+        else:
+            raise RuntimeError("invalid `OrderSide`")
 
     cdef void _handle_cancel_order(self, CancelOrder command):
         cdef Order order = self.cache.order(command.client_order_id)
@@ -727,25 +740,11 @@ cdef class OrderEmulator(Actor):
 # -------------------------------------------------------------------------------------------------
 
     cpdef void _trigger_stop_order(self, Order order):
-        cdef OrderTriggered event
         if (
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
         ):
-            # Generate event
-            event = OrderTriggered(
-                trader_id=order.trader_id,
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,  # Probably None
-                account_id=order.account_id,  # Probably None
-                event_id=UUID4(),
-                ts_event=self._clock.timestamp_ns(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            order.apply(event)
             self._fill_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
@@ -793,6 +792,26 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
+        # Determine triggered price
+        if order.side == OrderSide.BUY:
+            released_price = matching_core.ask
+        elif order.side == OrderSide.SELL:
+            released_price = matching_core.bid
+        else:
+            raise RuntimeError("invalid `OrderSide`")
+
+        # Generate event
+        cdef OrderReleased event = OrderReleased(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            released_price=released_price,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._send_exec_event(event)
+
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
@@ -810,8 +829,6 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
-
-        self.log.info(f"Releasing {order}...")
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -838,6 +855,26 @@ cdef class OrderEmulator(Actor):
             topic=f"events.order.{order.strategy_id.to_str()}",
             msg=transformed.last_event_c(),
         )
+
+        # Determine triggered price
+        if order.side == OrderSide.BUY:
+            released_price = matching_core.ask
+        elif order.side == OrderSide.SELL:
+            released_price = matching_core.bid
+        else:
+            raise RuntimeError("invalid `OrderSide`")
+
+        # Generate event
+        cdef OrderReleased event = OrderReleased(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            released_price=released_price,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._send_exec_event(event)
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)

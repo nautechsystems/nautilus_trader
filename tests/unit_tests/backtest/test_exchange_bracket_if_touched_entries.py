@@ -223,8 +223,16 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         sl_order = bracket.orders[1]
         tp_order = bracket.orders[2]
         assert entry_order.status == OrderStatus.FILLED
-        assert sl_order.status == OrderStatus.ACCEPTED
-        assert tp_order.status == OrderStatus.ACCEPTED
+        assert (
+            sl_order.status == OrderStatus.EMULATED
+            if sl_order.is_emulated
+            else OrderStatus.ACCEPTED
+        )
+        assert (
+            tp_order.status == OrderStatus.EMULATED
+            if tp_order.is_emulated
+            else OrderStatus.ACCEPTED
+        )
 
     @pytest.mark.parametrize(
         (
@@ -234,6 +242,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             "sl_trigger_price",
             "tp_trigger_price",
             "next_tick_price",
+            "expected_bracket_status",
         ),
         [
             [
@@ -243,6 +252,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3050.00,  # sl_trigger_price
                 3150.00,  # tp_price
                 3090.00,  # next_tick_price (hits trigger)
+                OrderStatus.ACCEPTED,
             ],
             [
                 TriggerType.BID_ASK,
@@ -251,6 +261,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3050.00,  # sl_trigger_price
                 3150.00,  # tp_price
                 3090.00,  # next_tick_price (hits trigger)
+                OrderStatus.EMULATED,
             ],
             [
                 TriggerType.NO_TRIGGER,
@@ -259,6 +270,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3150.00,  # sl_trigger_price
                 3050.00,  # tp_price
                 3110.00,  # next_tick_price (hits trigger)
+                OrderStatus.ACCEPTED,
             ],
             [
                 TriggerType.BID_ASK,
@@ -267,6 +279,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3150.00,  # sl_trigger_price
                 3050.00,  # tp_price
                 3110.00,  # next_tick_price (hits trigger)
+                OrderStatus.EMULATED,
             ],
         ],
     )
@@ -278,6 +291,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         sl_trigger_price: Price,
         tp_trigger_price: Price,
         next_tick_price: Price,
+        expected_bracket_status: OrderStatus,
     ) -> None:
         # Arrange: Prepare market
         tick1 = QuoteTick(
@@ -323,8 +337,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         sl_order = self.cache.order(bracket.orders[1].client_order_id)
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert entry_order.status == OrderStatus.FILLED
-        assert sl_order.status == OrderStatus.ACCEPTED
-        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.status == expected_bracket_status
+        assert tp_order.status == expected_bracket_status
 
     @pytest.mark.parametrize(
         (
@@ -434,12 +448,12 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             else OrderStatus.TRIGGERED
         )
         assert (
-            sl_order.status == OrderStatus.INITIALIZED
+            sl_order.status == OrderStatus.EMULATED
             if sl_order.is_emulated
             else OrderStatus.ACCEPTED
         )
         assert (
-            tp_order.status == OrderStatus.INITIALIZED
+            tp_order.status == OrderStatus.EMULATED
             if tp_order.is_emulated
             else OrderStatus.ACCEPTED
         )
@@ -548,8 +562,16 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert entry_order.status == OrderStatus.FILLED
         assert entry_order.avg_px == entry_order.price  # <-- fills at limit price
-        assert sl_order.status == OrderStatus.ACCEPTED
-        assert tp_order.status == OrderStatus.ACCEPTED
+        assert (
+            sl_order.status == OrderStatus.EMULATED
+            if sl_order.is_emulated
+            else OrderStatus.ACCEPTED
+        )
+        assert (
+            tp_order.status == OrderStatus.EMULATED
+            if tp_order.is_emulated
+            else OrderStatus.ACCEPTED
+        )
 
     @pytest.mark.parametrize(
         (
@@ -655,8 +677,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert entry_order.status == OrderStatus.FILLED
         assert entry_order.avg_px == entry_trigger_price  # <-- fills where market is at trigger
-        assert sl_order.status == OrderStatus.ACCEPTED
-        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.status in (OrderStatus.ACCEPTED, OrderStatus.EMULATED)
+        assert tp_order.status in (OrderStatus.ACCEPTED, OrderStatus.EMULATED)
 
     @pytest.mark.parametrize(
         (
@@ -667,6 +689,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             "sl_trigger_price",
             "tp_price",
             "next_tick_price",
+            "expected_bracket_status",
         ),
         [
             [
@@ -677,6 +700,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3050.00,  # sl_trigger_price
                 3150.00,  # tp_price
                 3094.00,  # next_tick_price (moves through limit price)
+                OrderStatus.ACCEPTED,
             ],
             [
                 TriggerType.BID_ASK,
@@ -686,6 +710,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3050.00,  # sl_trigger_price
                 3150.00,  # tp_price
                 3094.00,  # next_tick_price (moves through limit price)
+                OrderStatus.EMULATED,
             ],
             [
                 TriggerType.NO_TRIGGER,
@@ -695,6 +720,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3150.00,  # sl_trigger_price
                 3050.00,  # tp_price
                 3106.00,  # next_tick_price (moves through limit price)
+                OrderStatus.ACCEPTED,
             ],
             [
                 TriggerType.BID_ASK,
@@ -704,6 +730,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3150.00,  # sl_trigger_price
                 3050.00,  # tp_price
                 3106.00,  # next_tick_price (moves through limit price)
+                OrderStatus.EMULATED,
             ],
         ],
     )
@@ -716,6 +743,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         sl_trigger_price: Price,
         tp_price: Price,
         next_tick_price: Price,
+        expected_bracket_status: OrderStatus,
     ) -> None:
         # Arrange: Prepare market
         tick1 = QuoteTick(
@@ -762,8 +790,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert entry_order.status == OrderStatus.FILLED
         assert entry_order.avg_px == entry_order.price  # <-- fills at limit price
-        assert sl_order.status == OrderStatus.ACCEPTED
-        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.status == expected_bracket_status
+        assert tp_order.status == expected_bracket_status
 
     @pytest.mark.parametrize(
         (
@@ -773,6 +801,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
             "entry_price",
             "sl_trigger_price",
             "tp_price",
+            "expected_bracket_status",
         ),
         [
             [
@@ -782,6 +811,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3103.00,  # entry_price
                 3050.00,  # sl_trigger_price
                 3150.00,  # tp_price
+                OrderStatus.ACCEPTED,
             ],
             [
                 TriggerType.BID_ASK,
@@ -790,6 +820,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3103.00,  # entry_price
                 3050.00,  # sl_trigger_price
                 3150.00,  # tp_price
+                OrderStatus.EMULATED,
             ],
             [
                 TriggerType.NO_TRIGGER,
@@ -798,6 +829,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3097.00,  # entry_price
                 3150.00,  # sl_trigger_price
                 3050.00,  # tp_price
+                OrderStatus.ACCEPTED,
             ],
             [
                 TriggerType.BID_ASK,
@@ -806,6 +838,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
                 3097.00,  # entry_price
                 3150.00,  # sl_trigger_price
                 3050.00,  # tp_price
+                OrderStatus.EMULATED,
             ],
         ],
     )
@@ -817,6 +850,7 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         entry_price: Price,
         sl_trigger_price: Price,
         tp_price: Price,
+        expected_bracket_status: OrderStatus,
     ) -> None:
         # Arrange: Prepare market
         self.emulator.create_matching_core(
@@ -859,5 +893,5 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         tp_order = self.cache.order(bracket.orders[2].client_order_id)
         assert entry_order.status == OrderStatus.FILLED
         assert entry_order.avg_px == 3100.00  # <-- fills where market is
-        assert sl_order.status == OrderStatus.ACCEPTED
-        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.status == expected_bracket_status
+        assert tp_order.status == expected_bracket_status

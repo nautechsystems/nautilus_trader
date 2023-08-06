@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport order_side_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -258,7 +259,7 @@ cdef class SubmitOrderList(TradingCommand):
         self.order_list = order_list
         self.exec_algorithm_id = order_list.first.exec_algorithm_id
         self.position_id = position_id
-        self.has_emulated_order = True if any(o.is_emulated for o in order_list.orders) else False
+        self.has_emulated_order = True if any(o.emulation_trigger != TriggerType.NO_TRIGGER for o in order_list.orders) else False
 
     def __str__(self) -> str:
         return (
