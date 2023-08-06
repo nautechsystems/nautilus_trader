@@ -24,10 +24,14 @@ attempts to operate without a managing `Trader` instance.
 
 """
 
+import asyncio
+from concurrent.futures import Executor
 from typing import Optional
 
 import cython
 
+from nautilus_trader.common.executor import ActorExecutor
+from nautilus_trader.common.executor import TaskId
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.persistence.streaming.writer import generate_signal_class
@@ -542,6 +546,33 @@ cdef class Actor(Component):
         self.clock = self._clock
         self.log = self._log
 
+    cpdef void register_executor(
+        self,
+        loop: asyncio.AbstractEventLoop,
+        executor: Executor,
+    ):
+        """
+        Register the given `Executor` for the actor.
+
+        Parameters
+        ----------
+        loop : asyncio.AsbtractEventLoop
+            The event loop of the application.
+        executor : concurrent.futures.Executor
+            The executor to register.
+
+        Raises
+        ------
+        TypeError
+            If `executor` is not of type `concurrent.futures.Executor`
+
+        """
+        Condition.type(executor, Executor, "executor")
+
+        self._executor = ActorExecutor(loop, executor, logger=self._log)
+
+        self._log.debug(f"Registered {executor}.")
+
     cpdef void register_warning_event(self, type event):
         """
         Register the given event type for warning log levels.
@@ -691,6 +722,213 @@ cdef class Actor(Component):
         # This will replace the previous synthetic
         self.cache.add_synthetic(synthetic)
 
+    cpdef queue_for_executor(
+        self,
+        func: Callable[..., Any],
+        tuple args=None,
+        dict kwargs=None,
+    ):
+        """
+        Queues the callable `func` to be executed as `fn(*args, **kwargs)` sequentially.
+
+        Parameters
+        ----------
+        func : Callable
+            The function to be executed.
+        args : positional arguments
+            The positional arguments for the call to `func`.
+        kwargs : arbitrary keyword arguments
+            The keyword arguments for the call to `func`.
+
+        Raises
+        ------
+        TypeError
+            If `func` is not of type `Callable`.
+
+        Notes
+        -----
+        For backtesting the `func` is immediately executed, as there's no need for a `Future`
+        object that can be awaited. In a backtesting scenario, the execution is not in real time,
+        and so the results of `func` are 'immediately' available after it's called.
+
+        """
+        Condition.callable(func, "func")
+
+        if args is None:
+            args = ()
+        if kwargs is None:
+            kwargs = {}
+
+        if self._executor is None:
+            func(*args, **kwargs)
+            task_id = TaskId.create()
+        else:
+            task_id = self._executor.queue_for_executor(
+                func,
+                *args,
+                **kwargs,
+            )
+
+        self._log.info(
+                f"Executor: Queued {task_id}: {func.__name__}({args=}, {kwargs=}).", LogColor.BLUE,
+        )
+        return task_id
+
+    cpdef run_in_executor(
+        self,
+        func: Callable[..., Any],
+        tuple args=None,
+        dict kwargs=None,
+    ):
+        """
+        Schedules the callable `func` to be executed as `fn(*args, **kwargs)`.
+
+        Parameters
+        ----------
+        func : Callable
+            The function to be executed.
+        args : positional arguments
+            The positional arguments for the call to `func`.
+        kwargs : arbitrary keyword arguments
+            The keyword arguments for the call to `func`.
+
+        Returns
+        -------
+        TaskId
+            The unique task identifier for the execution.
+            This also corresponds to any future objects memory address.
+
+        Raises
+        ------
+        TypeError
+            If `func` is not of type `Callable`.
+
+        Notes
+        -----
+        For backtesting the `func` is immediately executed, as there's no need for a `Future`
+        object that can be awaited. In a backtesting scenario, the execution is not in real time,
+        and so the results of `func` are 'immediately' available after it's called.
+
+        """
+        Condition.callable(func, "func")
+
+        if args is None:
+            args = ()
+        if kwargs is None:
+            kwargs = {}
+
+        if self._executor is None:
+            func(*args, **kwargs)
+            task_id = TaskId.create()
+        else:
+            task_id = self._executor.run_in_executor(
+                func,
+                *args,
+                **kwargs,
+            )
+
+        self._log.info(
+            f"Executor: Submitted {task_id}: {func.__name__}({args=}, {kwargs=}).", LogColor.BLUE,
+        )
+        return task_id
+
+    cpdef list queued_task_ids(self):
+        """
+        Return the queued task identifiers.
+
+        Returns
+        -------
+        list[TaskId]
+
+        """
+        if self._executor is None:
+            return []  # Tasks are immediately executed
+
+        return self._executor.queued_task_ids()
+
+    cpdef list active_task_ids(self):
+        """
+        Return the active task identifiers.
+
+        Returns
+        -------
+        list[TaskId]
+
+        """
+        if self._executor is None:
+            return []  # Tasks are immediately executed
+
+        return self._executor.active_task_ids()
+
+    cpdef bint has_queued_tasks(self):
+        """
+        Return a value indicating whether there are any queued tasks.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._executor is None:
+            return False
+
+        return self._executor.has_queued_tasks()
+
+    cpdef bint has_active_tasks(self):
+        """
+        Return a value indicating whether there are any active tasks.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._executor is None:
+            return False
+
+        return self._executor.has_active_tasks()
+
+    cpdef bint has_any_tasks(self):
+        """
+        Return a value indicating whether there are any queued or active tasks.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._executor is None:
+            return False
+
+        return self._executor.has_queued_tasks() and self._executor.has_active_tasks()
+
+    cpdef void cancel_task(self, task_id: TaskId):
+        """
+        Cancel the task with the given `task_id` (if queued or active).
+
+        If the task is not found then a warning is logged.
+
+        Parameters
+        ----------
+        task_id : TaskId
+            The task identifier.
+
+        """
+        if self._executor is None:
+            self._log.warning(f"Executor: {task_id} not found.")
+            return
+
+        self._executor.cancel_task(task_id)
+
+    cpdef void cancel_all_tasks(self):
+        """
+        Cancel all queued and active tasks.
+        """
+        if self._executor is None:
+            return
+
+        self._executor.cancel_all_tasks()
+
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
@@ -703,7 +941,11 @@ cdef class Actor(Component):
 
         cdef str name
         for name in timer_names:
-            self._log.info(f"Cancelled Timer(name={name}).")
+            self._log.info(f"Canceled Timer(name={name}).")
+
+        if self._executor is not None:
+            self._log.info(f"Canceling executor tasks...")
+            self._executor.cancel_all_tasks()
 
         self.on_stop()
 

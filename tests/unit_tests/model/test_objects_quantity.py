@@ -51,6 +51,7 @@ class TestQuantity:
         result = Quantity(1.12300, precision=5)
 
         # Assert
+        assert result.raw == 1_123_000_000
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
@@ -65,6 +66,7 @@ class TestQuantity:
         result = Quantity.from_str("1.23")
 
         # Assert
+        assert result.raw == 1_230_000_000
         assert str(result) == "1.23"
 
     @pytest.mark.parametrize(

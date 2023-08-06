@@ -113,14 +113,14 @@ impl OrderBookDelta {
             let side = OrderSide::from_u8(side_u8).unwrap();
 
             let price_py: &PyAny = order_pyobject.getattr("price")?;
-            let price_f64: f64 = price_py.call_method0("as_double")?.extract()?;
+            let price_raw: i64 = price_py.getattr("raw")?.extract()?;
             let price_prec: u8 = price_py.getattr("precision")?.extract()?;
-            let price = Price::new(price_f64, price_prec);
+            let price = Price::from_raw(price_raw, price_prec);
 
-            let size_py: &PyAny = order_pyobject.getattr("price")?;
-            let size_f64: f64 = size_py.call_method0("as_double")?.extract()?;
+            let size_py: &PyAny = order_pyobject.getattr("size")?;
+            let size_raw: u64 = size_py.getattr("raw")?.extract()?;
             let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-            let size = Quantity::new(size_f64, size_prec);
+            let size = Quantity::from_raw(size_raw, size_prec);
 
             let order_id: u64 = order_pyobject.getattr("order_id")?.extract()?;
             BookOrder {
@@ -402,6 +402,17 @@ mod tests {
     }
 
     #[test]
+    fn test_from_pyobject() {
+        let delta = create_stub_delta();
+
+        Python::with_gil(|py| {
+            let delta_pyobject = delta.into_py(py);
+            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_delta, delta);
+        });
+    }
+
+    #[test]
     fn test_json_serialization() {
         let delta = create_stub_delta();
         let serialized = delta.as_json_bytes().unwrap();
@@ -415,16 +426,5 @@ mod tests {
         let serialized = delta.as_msgpack_bytes().unwrap();
         let deserialized = OrderBookDelta::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, delta);
-    }
-
-    #[test]
-    fn test_from_pyobject() {
-        let delta = create_stub_delta();
-
-        Python::with_gil(|py| {
-            let delta_pyobject = delta.into_py(py);
-            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
-            assert_eq!(parsed_delta, delta);
-        });
     }
 }

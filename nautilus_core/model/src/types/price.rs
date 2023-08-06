@@ -285,6 +285,11 @@ impl<'de> Deserialize<'de> for Price {
 #[pymethods]
 impl Price {
     #[getter]
+    pub fn raw(&self) -> i64 {
+        self.raw
+    }
+
+    #[getter]
     pub fn precision(&self) -> u8 {
         self.precision
     }

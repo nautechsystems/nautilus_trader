@@ -37,7 +37,7 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 #[derive(Clone, Copy, Debug, Eq)]
 #[pyclass]
 pub struct Money {
-    raw: i64,
+    pub raw: i64,
     pub currency: Currency,
 }
 
@@ -241,6 +241,24 @@ impl<'de> Deserialize<'de> for Money {
             .map_err(|_| serde::de::Error::custom("Invalid currency"))?;
 
         Ok(Money::new(amount, currency))
+    }
+}
+
+#[pymethods]
+impl Money {
+    #[getter]
+    pub fn raw(&self) -> i64 {
+        self.raw
+    }
+
+    #[getter]
+    pub fn currency(&self) -> Currency {
+        self.currency
+    }
+
+    #[must_use]
+    pub fn as_double(&self) -> f64 {
+        fixed_i64_to_f64(self.raw)
     }
 }
 

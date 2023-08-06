@@ -255,6 +255,11 @@ impl<'de> Deserialize<'de> for Quantity {
 #[pymethods]
 impl Quantity {
     #[getter]
+    pub fn raw(&self) -> u64 {
+        self.raw
+    }
+
+    #[getter]
     pub fn precision(&self) -> u8 {
         self.precision
     }

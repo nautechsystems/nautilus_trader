@@ -32,6 +32,16 @@
    :member-order: bysource
 ```
 
+## Executor
+
+```{eval-rst}
+.. automodule:: nautilus_trader.common.executor
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
 ```{eval-rst}
 .. automodule:: nautilus_trader.common.factories
    :show-inheritance:
