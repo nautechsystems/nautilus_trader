@@ -380,7 +380,10 @@ cdef class OrderEmulator(Actor):
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        self._send_exec_event(event)
+        order.apply(event)
+        self.cache.update_order(order)
+
+        self._send_risk_event(event)
 
         # Hold in matching core
         matching_core.add_order(order)
@@ -754,7 +757,6 @@ cdef class OrderEmulator(Actor):
             ts_event=ts_now,
             ts_init=ts_now,
         )
-
         order.apply(event)
         self.cache.update_order(order)
 
@@ -786,8 +788,6 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
-
-        self.log.info(f"Releasing {order}...")
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -833,7 +833,12 @@ cdef class OrderEmulator(Actor):
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        self._send_exec_event(event)
+        transformed.apply(event)
+        self.cache.update_order(transformed)
+
+        self._send_risk_event(event)
+
+        self.log.info(f"Releasing {order}...", LogColor.MAGENTA)
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
@@ -852,8 +857,6 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
-
-        self.log.info(f"Releasing {order}...")
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -899,7 +902,12 @@ cdef class OrderEmulator(Actor):
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        self._send_exec_event(event)
+        transformed.apply(event)
+        self.cache.update_order(transformed)
+
+        self._send_risk_event(event)
+
+        self.log.info(f"Releasing {order}...", LogColor.MAGENTA)
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
@@ -1006,6 +1014,7 @@ cdef class OrderEmulator(Actor):
             ts_init=ts_now,
         )
         order.apply(event)
+        self.cache.update_order(order)
 
         self._send_risk_event(event)
 
