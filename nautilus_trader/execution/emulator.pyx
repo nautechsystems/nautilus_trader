@@ -388,6 +388,12 @@ cdef class OrderEmulator(Actor):
         # Hold in matching core
         matching_core.add_order(order)
 
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
+
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
@@ -838,7 +844,13 @@ cdef class OrderEmulator(Actor):
 
         self._send_risk_event(event)
 
-        self.log.info(f"Releasing {order}...", LogColor.MAGENTA)
+        self.log.info(f"Releasing {transformed}...", LogColor.MAGENTA)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{transformed.strategy_id.to_str()}",
+            msg=event,
+        )
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
@@ -907,7 +919,13 @@ cdef class OrderEmulator(Actor):
 
         self._send_risk_event(event)
 
-        self.log.info(f"Releasing {order}...", LogColor.MAGENTA)
+        self.log.info(f"Releasing {transformed}...", LogColor.MAGENTA)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{transformed.strategy_id.to_str()}",
+            msg=event,
+        )
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
