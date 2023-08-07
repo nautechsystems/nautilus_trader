@@ -125,6 +125,9 @@ class TestCommands:
             quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
+            entry_tags="ENTRY",
+            tp_tags="TAKE_PROFIT",
+            sl_tags="STOP_LOSS",
         )
 
         command = SubmitOrderList(
@@ -158,6 +161,9 @@ class TestCommands:
             quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
+            entry_tags="ENTRY",
+            tp_tags="TAKE_PROFIT",
+            sl_tags="STOP_LOSS",
         )
 
         command = SubmitOrderList(
