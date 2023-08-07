@@ -12,25 +12,30 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from typing import Callable, Optional, Union
+from io import BytesIO
+from typing import Any, Callable, Optional, Union
 
 import pyarrow as pa
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
+from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
+from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
+from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
 
-_PARQUET_SERIALIZER: dict[type, Callable] = {}
-_PARQUET_DESERIALIZER: dict[type, Callable] = {}
+_ARROW_SERIALIZER: dict[type, Callable] = {}
+_ARROW_DESERIALIZER: dict[type, Callable] = {}
 _SCHEMAS: dict[type, pa.Schema] = {}
 
 DATA_OR_EVENTS = Union[Data, Event]
@@ -86,9 +91,9 @@ def register_arrow(
     PyCondition.type_or_none(deserializer, Callable, "deserializer")
 
     if serializer is not None:
-        _PARQUET_SERIALIZER[cls] = serializer
+        _ARROW_SERIALIZER[cls] = serializer
     if deserializer is not None:
-        _PARQUET_DESERIALIZER[cls] = deserializer
+        _ARROW_DESERIALIZER[cls] = deserializer
     if schema is not None:
         _SCHEMAS[cls] = schema
 
@@ -99,6 +104,22 @@ class ArrowSerializer:
     """
 
     @staticmethod
+    def _unpack_container_objects(cls: type, data: list[Any]):
+        if cls == OrderBookDeltas:
+            return [delta for deltas in data for delta in deltas.deltas]
+        return data
+
+    @staticmethod
+    def rust_objects_to_record_batch(data: list[Data], cls: type) -> pa.RecordBatch:
+        processed = ArrowSerializer._unpack_container_objects(cls, data)
+        batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
+        reader = pa.ipc.open_stream(BytesIO(batches_bytes))
+        table: pa.Table = reader.read_all()
+        batches = table.to_batches()
+        assert len(batches) == 1, len(batches)
+        return batches[0]
+
+    @staticmethod
     def serialize(
         data: DATA_OR_EVENTS,
         cls: Optional[type[DATA_OR_EVENTS]] = None,
@@ -106,8 +127,10 @@ class ArrowSerializer:
         if isinstance(data, GenericData):
             data = data.data
         cls = cls or type(data)
-        delegate = _PARQUET_SERIALIZER.get(cls)
+        delegate = _ARROW_DESERIALIZER.get(cls)
         if delegate is None:
+            if cls in RUST_SERIALIZERS:
+                return ArrowSerializer.rust_objects_to_record_batch([data], cls=cls)
             raise TypeError(
                 f"Cannot serialize object `{cls}`. Register a "
                 f"serialization method via `nautilus_trader.persistence.catalog.parquet.serializers.register_parquet()`",
@@ -118,7 +141,7 @@ class ArrowSerializer:
         return batch
 
     @staticmethod
-    def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.Table:
+    def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.RecordBatch:
         """
         Serialize the given instrument to `Parquet` specification bytes.
 
@@ -139,11 +162,13 @@ class ArrowSerializer:
             If `obj` cannot be serialized.
 
         """
+        if cls in RUST_SERIALIZERS:
+            return ArrowSerializer.rust_objects_to_record_batch(data, cls=cls)
         batches = [ArrowSerializer.serialize(obj, cls) for obj in data]
         return pa.Table.from_batches(batches, schema=batches[0].schema)
 
     @staticmethod
-    def deserialize(cls: type, table: pa.RecordBatch):
+    def deserialize(cls: type, batch: Union[pa.RecordBatch, pa.Table]):
         """
         Deserialize the given `Parquet` specification bytes to an object.
 
@@ -151,8 +176,8 @@ class ArrowSerializer:
         ----------
         cls : type
             The type to deserialize to.
-        table : pyarrow.Table
-            The table to deserialize.
+        batch : pyarrow.RecordBatch
+            The RecordBatch to deserialize.
 
         Returns
         -------
@@ -164,14 +189,28 @@ class ArrowSerializer:
             If `chunk` cannot be deserialized.
 
         """
-        delegate = _PARQUET_DESERIALIZER.get(cls)
+        delegate = _ARROW_DESERIALIZER.get(cls)
         if delegate is None:
+            if cls in RUST_SERIALIZERS:
+                return ArrowSerializer.deserialize_rust(cls=cls, batch=batch)
             raise TypeError(
                 f"Cannot deserialize object `{cls}`. Register a "
                 f"deserialization method via `arrow.serializer.register_parquet()`",
             )
 
-        return delegate(table)
+        return delegate(batch)
+
+    @staticmethod
+    def deserialize_rust(cls, batch: pa.RecordBatch) -> list[DATA_OR_EVENTS]:
+        Wrangler = {
+            QuoteTick: QuoteTickDataWrangler,
+            TradeTick: TradeTickDataWrangler,
+            Bar: BarDataWrangler,
+            OrderBookDelta: OrderBookDeltaDataWrangler,
+        }[cls]
+        wrangler = Wrangler.from_schema(batch.schema)
+        ticks = wrangler.from_arrow(pa.Table.from_batches([batch]))
+        return ticks
 
 
 def make_dict_serializer(schema: pa.Schema):
@@ -186,6 +225,7 @@ def make_dict_serializer(schema: pa.Schema):
 
 def make_dict_deserializer(cls):
     def inner(table: pa.Table) -> list[DATA_OR_EVENTS]:
+        assert isinstance(table, pa.Table)
         return [cls.from_dict(d) for d in table.to_pylist()]
 
     return inner
@@ -203,14 +243,14 @@ RUST_SERIALIZERS = {
     OrderBookDeltas,
 }
 
-assert not set(NAUTILUS_PARQUET_SCHEMA).intersection(RUST_SERIALIZERS)
-assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_PARQUET_SCHEMA))
+# Check we have each type defined only once (rust or python)
+assert not set(NAUTILUS_ARROW_SCHEMA).intersection(RUST_SERIALIZERS)
+assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_ARROW_SCHEMA))
 
-for _cls in NAUTILUS_PARQUET_SCHEMA:
-    schema = NAUTILUS_PARQUET_SCHEMA[_cls]
+for _cls in NAUTILUS_ARROW_SCHEMA:
     register_arrow(
         cls=_cls,
-        schema=schema,
-        serializer=make_dict_serializer(schema),
+        schema=NAUTILUS_ARROW_SCHEMA[_cls],
+        serializer=make_dict_serializer(NAUTILUS_ARROW_SCHEMA[_cls]),
         deserializer=make_dict_deserializer(_cls),
     )

@@ -38,7 +38,7 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     df: pd.DataFrame = pd.read_csv(path)
 
     # Act
-    wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+    wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
     ticks = wrangler.from_pandas(df)
 
     # Act

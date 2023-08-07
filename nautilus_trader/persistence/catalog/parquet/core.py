@@ -16,10 +16,9 @@
 import os
 import pathlib
 import platform
-from io import BytesIO
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Callable, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -36,21 +35,19 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
 from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
 from nautilus_trader.persistence.wranglers import list_from_capsule
-from nautilus_trader.serialization.arrow.serializer import RUST_SERIALIZERS
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
@@ -120,32 +117,17 @@ class ParquetDataCatalog(BaseDataCatalog):
         return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
     # -- WRITING -----------------------------------------------------------------------------------
-    def objects_to_rust_table(self, data: list[Data], cls: type) -> pa.Table:
-        processed = self._unpack_container_objects(cls, data)
-        batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
-        batches_stream = BytesIO(batches_bytes)
-        reader = pa.ipc.open_stream(batches_stream)
-        return reader.read_all()
-
-    def _unpack_container_objects(self, cls: type, data: list[Any]):
-        if cls == OrderBookDeltas:
-            return [delta for deltas in data for delta in deltas.deltas]
-        return data
-
     def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
         assert len(data) > 0
         assert all(type(obj) is cls for obj in data)  # same type
+        batch = self.serializer.serialize_batch(data, cls=cls)
+        assert batch is not None
+        return pa.Table.from_batches([batch])
 
-        if cls in RUST_SERIALIZERS:
-            table = self.objects_to_rust_table(data, cls=cls)
-        else:
-            table = self.serializer.serialize_batch(data, cls=cls)
-        assert table is not None
-        return table
-
-    def _make_path(self, cls: type[Data], instrument_id: Optional[str] = None) -> str:
+    def _make_path(self, cls: type[Data], instrument_id: Optional[InstrumentId] = None) -> str:
         if instrument_id is not None:
-            return f"{self.path}/data/{class_to_filename(cls)}/{instrument_id}"
+            clean_instrument_id = instrument_id.value.replace("/", "-")
+            return f"{self.path}/data/{class_to_filename(cls)}/{clean_instrument_id}"
         else:
             return f"{self.path}/data/{class_to_filename(cls)}"
 
@@ -200,13 +182,14 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: Optional[str] = None,
         **kwargs,
     ):
+        assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
         name = cls.__name__
         file_prefix = class_to_filename(cls)
         data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
         session = DataBackendSession()
         # TODO (bm) - fix this glob, query once on catalog creation?
         for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
-            assert pathlib.Path(fn).exists()
+            assert self.fs.exists(fn)
             if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
                 continue
             table = f"{file_prefix}_{idx}"
@@ -313,7 +296,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: Union[pa.Table, pd.DataFrame],
         cls: type,
     ):
-        data = ArrowSerializer.deserialize(cls=cls, table=table)
+        if isinstance(table, pd.DataFrame):
+            table = pa.Table.from_pandas(table)
+        data = ArrowSerializer.deserialize(cls=cls, batch=table)
         return data
 
     def _query_subclasses(

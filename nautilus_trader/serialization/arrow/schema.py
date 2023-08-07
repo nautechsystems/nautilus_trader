@@ -42,7 +42,7 @@ from nautilus_trader.model.events import OrderUpdated
 # TODO; Should all move down to rust
 
 
-NAUTILUS_PARQUET_SCHEMA = {
+NAUTILUS_ARROW_SCHEMA = {
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import abc
 from typing import Any
 
 import pandas as pd
@@ -36,7 +36,30 @@ from nautilus_trader.model.instruments import Instrument
 # These classes are only intended to be used under the hood of the ParquetDataCatalog v2 at this stage
 
 
-class OrderBookDeltaDataWrangler:
+class WranglerBase(abc.ABC):
+    @classmethod
+    def from_instrument(cls, instrument: Instrument, **kwargs):
+        return cls(  # type: ignore
+            instrument_id=instrument.id.value,
+            price_precision=instrument.price_precision,
+            size_precision=instrument.size_precision,
+            **kwargs,
+        )
+
+    @classmethod
+    def from_schema(cls, schema: pa.Schema):
+        metadata = schema.metadata
+
+        def decode(k, v):
+            if k in (b"price_precision", b"size_precision"):
+                return int(v.decode())
+            elif k in (b"instrument_id", b"bar_type"):
+                return v.decode()
+
+        return cls(**{k: decode(k, v) for k, v in metadata.items()})
+
+
+class OrderBookDeltaDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `OrderBookDelta` objects.
 
@@ -52,12 +75,16 @@ class OrderBookDeltaDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument) -> None:
-        self.instrument = instrument
+    def __init__(
+        self,
+        instrument_id: Instrument,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
         self._inner = RustOrderBookDeltaDataWrangler(
-            instrument_id=instrument.id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            instrument_id=instrument_id.value,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
@@ -137,7 +164,7 @@ class OrderBookDeltaDataWrangler:
         return self.from_arrow(table)
 
 
-class QuoteTickDataWrangler:
+class QuoteTickDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
 
@@ -153,12 +180,11 @@ class QuoteTickDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument) -> None:
-        self.instrument = instrument
+    def __init__(self, instrument_id: str, price_precision: int, size_precision: int) -> None:
         self._inner = RustQuoteTickDataWrangler(
-            instrument_id=instrument.id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            instrument_id=instrument_id,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
@@ -253,7 +279,7 @@ class QuoteTickDataWrangler:
         return self.from_arrow(table)
 
 
-class TradeTickDataWrangler:
+class TradeTickDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `TradeTick` objects.
 
@@ -269,12 +295,16 @@ class TradeTickDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument) -> None:
-        self.instrument = instrument
+    def __init__(
+        self,
+        instrument_id: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
         self._inner = RustTradeTickDataWrangler(
-            instrument_id=instrument.id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            instrument_id=instrument_id,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
@@ -366,7 +396,7 @@ def _map_aggressor_side(val: bool) -> int:
     return 1 if val else 2
 
 
-class BarDataWrangler:
+class BarDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `Bar` objects.
 
@@ -382,13 +412,17 @@ class BarDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument, bar_type: BarType) -> None:
-        self.instrument = instrument
+    def __init__(
+        self,
+        bar_type: BarType,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
         self.bar_type = bar_type
         self._inner = RustBarDataWrangler(
-            bar_type=bar_type.instrument_id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            bar_type=bar_type,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
