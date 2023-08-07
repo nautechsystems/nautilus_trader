@@ -22,7 +22,7 @@ use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, tr
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
-    types::{PyBytes, PyDict},
+    types::PyBytes,
 };
 
 use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
@@ -33,7 +33,7 @@ const ERROR_EMPTY_DATA: &str = "`data` was empty";
 pub struct DataTransformer {}
 
 impl DataTransformer {
-    /// Transforms the given `data` into a vector of [`OrderBookDelta`] objects.
+    /// Transforms the given Python objects `data` into a vector of [`OrderBookDelta`] objects.
     fn pyobjects_to_order_book_deltas(
         py: Python<'_>,
         data: Vec<PyObject>,
@@ -46,43 +46,37 @@ impl DataTransformer {
         Ok(deltas)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`QuoteTick`] objects.
-    fn pydicts_to_quote_ticks(
-        py: Python<'_>,
-        data_dicts: Vec<Py<PyDict>>,
-    ) -> PyResult<Vec<QuoteTick>> {
-        let ticks: Vec<QuoteTick> = data_dicts
+    /// Transforms the given Python objects `data` into a vector of [`QuoteTick`] objects.
+    fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
+        let ticks: Vec<QuoteTick> = data
             .into_iter()
-            .map(|dict| QuoteTick::from_dict(py, dict))
+            .map(|obj| QuoteTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
 
         Ok(ticks)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`TradeTick`] objects.
-    fn pydicts_to_trade_ticks(
-        py: Python<'_>,
-        data_dicts: Vec<Py<PyDict>>,
-    ) -> PyResult<Vec<TradeTick>> {
-        let ticks: Vec<TradeTick> = data_dicts
+    /// Transforms the given Python objects `data` into a vector of [`TradeTick`] objects.
+    fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
+        let ticks: Vec<TradeTick> = data
             .into_iter()
-            .map(|dict| TradeTick::from_dict(py, dict))
+            .map(|obj| TradeTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
 
         Ok(ticks)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`Bar`] objects.
-    fn pydicts_to_bars(py: Python<'_>, data_dicts: Vec<Py<PyDict>>) -> PyResult<Vec<Bar>> {
-        let bars: Vec<Bar> = data_dicts
+    /// Transforms the given Python objects `data` into a vector of [`Bar`] objects.
+    fn pyobjects_to_bars(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<Bar>> {
+        let bars: Vec<Bar> = data
             .into_iter()
-            .map(|dict| Bar::from_dict(py, dict))
+            .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<Bar>>>()?;
 
         Ok(bars)
     }
 
-    /// Transforms the given `batches` into Python `bytes`.
+    /// Transforms the given record `batches` into Python `bytes`.
     fn record_batches_to_pybytes(
         py: Python<'_>,
         batches: Vec<RecordBatch>,
@@ -138,36 +132,15 @@ impl DataTransformer {
                 Self::pyo3_order_book_deltas_to_batches_bytes(py, deltas)
             }
             stringify!(QuoteTick) => {
-                let mut data_dicts: Vec<Py<PyDict>> = vec![];
-                for obj in &data {
-                    let dict: Py<PyDict> = obj
-                        .call_method1(py, "to_dict", (obj.clone(),))?
-                        .extract(py)?;
-                    data_dicts.push(dict);
-                }
-                let ticks = Self::pydicts_to_quote_ticks(py, data_dicts)?;
+                let ticks = Self::pyobjects_to_quote_ticks(py, data)?;
                 Self::pyo3_quote_ticks_to_batches_bytes(py, ticks)
             }
             stringify!(TradeTick) => {
-                let mut data_dicts: Vec<Py<PyDict>> = vec![];
-                for obj in &data {
-                    let dict: Py<PyDict> = obj
-                        .call_method1(py, "to_dict", (obj.clone(),))?
-                        .extract(py)?;
-                    data_dicts.push(dict);
-                }
-                let ticks = Self::pydicts_to_trade_ticks(py, data_dicts)?;
+                let ticks = Self::pyobjects_to_trade_ticks(py, data)?;
                 Self::pyo3_trade_ticks_to_batches_bytes(py, ticks)
             }
             stringify!(Bar) => {
-                let mut data_dicts: Vec<Py<PyDict>> = vec![];
-                for obj in &data {
-                    let dict: Py<PyDict> = obj
-                        .call_method1(py, "to_dict", (obj.clone(),))?
-                        .extract(py)?;
-                    data_dicts.push(dict);
-                }
-                let bars = Self::pydicts_to_bars(py, data_dicts)?;
+                let bars = Self::pyobjects_to_bars(py, data)?;
                 Self::pyo3_bars_to_batches_bytes(py, bars)
             }
             _ => Err(PyValueError::new_err(format!(

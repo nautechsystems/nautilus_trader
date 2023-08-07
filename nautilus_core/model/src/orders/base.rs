@@ -21,12 +21,12 @@ use thiserror;
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
-        OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
-        OrderSubmitted, OrderTriggered, OrderUpdated,
+        OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -51,20 +51,26 @@ impl OrderStatus {
         let new_state = match (self, event) {
             (OrderStatus::Initialized, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,
             (OrderStatus::Initialized, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,
-            (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // Covers external orders
-            (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // Covers external orders
-            (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Covers emulated and external orders
-            (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // Covers emulated and external orders
-            (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered, // Covers emulated and external orders
+            (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // External orders
+            (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // External orders
+            (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // External orders
+            (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // External orders
+            (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered, // External orders
+            (OrderStatus::Initialized, OrderEvent::OrderEmulated(_)) => OrderStatus::Emulated,  // Emulated orders
+            (OrderStatus::Initialized, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
+            (OrderStatus::Emulated, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Emulated orders
+            (OrderStatus::Emulated, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // Emulated orders
+            (OrderStatus::Emulated, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
+            (OrderStatus::Released, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,  // Emulated orders
+            (OrderStatus::Released, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,  // Emulated orders
             (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
             (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
             (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
-            (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Covers FOK and IOC cases
+            (OrderStatus::Submitted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // FOK and IOC cases
             (OrderStatus::Submitted, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,
-            (OrderStatus::Submitted, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered,  // Covers emulated StopLimit order
             (OrderStatus::Submitted, OrderEvent::OrderPartiallyFilled(_)) => OrderStatus::PartiallyFilled,
             (OrderStatus::Submitted, OrderEvent::OrderFilled(_)) => OrderStatus::Filled,
-            (OrderStatus::Accepted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // Covers StopLimit order
+            (OrderStatus::Accepted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // StopLimit order
             (OrderStatus::Accepted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
             (OrderStatus::Accepted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
             (OrderStatus::Accepted, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,
@@ -123,6 +129,7 @@ pub trait Order {
     fn order_type(&self) -> OrderType;
     fn quantity(&self) -> Quantity;
     fn time_in_force(&self) -> TimeInForce;
+    fn expire_time(&self) -> Option<UnixNanos>;
     fn price(&self) -> Option<Price>;
     fn trigger_price(&self) -> Option<Price>;
     fn trigger_type(&self) -> Option<TriggerType>;
@@ -130,7 +137,12 @@ pub trait Order {
     fn is_post_only(&self) -> bool;
     fn is_reduce_only(&self) -> bool;
     fn is_quote_quantity(&self) -> bool;
+    fn display_qty(&self) -> Option<Quantity>;
+    fn limit_offset(&self) -> Option<Price>;
+    fn trailing_offset(&self) -> Option<Price>;
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType>;
     fn emulation_trigger(&self) -> Option<TriggerType>;
+    fn trigger_instrument_id(&self) -> Option<InstrumentId>;
     fn contingency_type(&self) -> Option<ContingencyType>;
     fn order_list_id(&self) -> Option<OrderListId>;
     fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>>;
@@ -237,6 +249,49 @@ pub trait Order {
     }
 }
 
+impl<T> From<&T> for OrderInitialized
+where
+    T: Order,
+{
+    fn from(order: &T) -> Self {
+        Self {
+            trader_id: order.trader_id(),
+            strategy_id: order.strategy_id(),
+            instrument_id: order.instrument_id(),
+            client_order_id: order.client_order_id(),
+            order_side: order.side(),
+            order_type: order.order_type(),
+            quantity: order.quantity(),
+            price: order.price(),
+            trigger_price: order.trigger_price(),
+            trigger_type: order.trigger_type(),
+            time_in_force: order.time_in_force(),
+            expire_time: order.expire_time(),
+            post_only: order.is_post_only(),
+            reduce_only: order.is_reduce_only(),
+            quote_quantity: order.is_quote_quantity(),
+            display_qty: order.display_qty(),
+            limit_offset: order.limit_offset(),
+            trailing_offset: order.trailing_offset(),
+            trailing_offset_type: order.trailing_offset_type(),
+            emulation_trigger: order.emulation_trigger(),
+            trigger_instrument_id: order.trigger_instrument_id(),
+            contingency_type: order.contingency_type(),
+            order_list_id: order.order_list_id(),
+            linked_order_ids: order.linked_order_ids(),
+            parent_order_id: order.parent_order_id(),
+            exec_algorithm_id: order.exec_algorithm_id(),
+            exec_algorithm_params: order.exec_algorithm_params(),
+            exec_spawn_id: order.exec_spawn_id(),
+            tags: order.tags(),
+            event_id: order.init_id(),
+            ts_event: order.ts_init(),
+            ts_init: order.ts_init(),
+            reconciliation: false as u8,
+        }
+    }
+}
+
 pub struct OrderCore {
     pub events: Vec<OrderEvent>,
     pub venue_order_ids: Vec<VenueOrderId>,
@@ -258,10 +313,8 @@ pub struct OrderCore {
     pub quantity: Quantity,
     pub time_in_force: TimeInForce,
     pub liquidity_side: Option<LiquiditySide>,
-    pub is_post_only: bool,
     pub is_reduce_only: bool,
     pub is_quote_quantity: bool,
-    pub emulation_trigger: Option<TriggerType>,
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -291,10 +344,8 @@ impl OrderCore {
         order_type: OrderType,
         quantity: Quantity,
         time_in_force: TimeInForce,
-        post_only: bool,
         reduce_only: bool,
         quote_quantity: bool,
-        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -327,10 +378,8 @@ impl OrderCore {
             quantity,
             time_in_force,
             liquidity_side: None,
-            is_post_only: post_only,
             is_reduce_only: reduce_only,
             is_quote_quantity: quote_quantity,
-            emulation_trigger,
             contingency_type,
             order_list_id,
             linked_order_ids,

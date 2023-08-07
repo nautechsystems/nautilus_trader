@@ -33,6 +33,7 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport currency_type_from_str
 from nautilus_trader.model.enums_c cimport currency_type_to_str
 from nautilus_trader.model.enums_c cimport order_type_to_str
@@ -48,6 +49,7 @@ from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Money
@@ -77,8 +79,19 @@ cdef str _ORDERS = "orders"
 cdef str _POSITIONS = "positions"
 cdef str _ACTORS = "actors"
 cdef str _STRATEGIES = "strategies"
+
+cdef str _INDEX_ORDER_IDS = "index:order_ids"
 cdef str _INDEX_ORDER_POSITION = "index:order_position"
 cdef str _INDEX_ORDER_CLIENT = "index:order_client"
+cdef str _INDEX_ORDERS = "index:orders"
+cdef str _INDEX_ORDERS_OPEN = "index:orders_open"
+cdef str _INDEX_ORDERS_CLOSED = "index:orders_closed"
+cdef str _INDEX_ORDERS_EMULATED = "index:orders_emulated"
+cdef str _INDEX_ORDERS_INFLIGHT = "index:orders_inflight"
+cdef str _INDEX_POSITIONS = "index:positions"
+cdef str _INDEX_POSITIONS_OPEN = "index:positions_open"
+cdef str _INDEX_POSITIONS_CLOSED = "index:positions_closed"
+
 cdef str _SNAPSHOTS_ORDERS = "snapshots:orders"
 cdef str _SNAPSHOTS_POSITIONS = "snapshots:positions"
 cdef str _HEARTBEAT = "health:heartbeat"
@@ -142,8 +155,17 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_actors      = f"{self._key_trader}:{_ACTORS}:"      # noqa
         self._key_strategies  = f"{self._key_trader}:{_STRATEGIES}:"  # noqa
 
+        self._key_index_order_ids = f"{self._key_trader}:{_INDEX_ORDER_IDS}:"
         self._key_index_order_position = f"{self._key_trader}:{_INDEX_ORDER_POSITION}:"
         self._key_index_order_client = f"{self._key_trader}:{_INDEX_ORDER_CLIENT}:"
+        self._key_index_orders = f"{self._key_trader}:{_INDEX_ORDERS}"
+        self._key_index_orders_open = f"{self._key_trader}:{_INDEX_ORDERS_OPEN}"
+        self._key_index_orders_closed = f"{self._key_trader}:{_INDEX_ORDERS_CLOSED}"
+        self._key_index_orders_emulated = f"{self._key_trader}:{_INDEX_ORDERS_EMULATED}"
+        self._key_index_orders_inflight = f"{self._key_trader}:{_INDEX_ORDERS_INFLIGHT}"
+        self._key_index_positions = f"{self._key_trader}:{_INDEX_POSITIONS}"
+        self._key_index_positions_open = f"{self._key_trader}:{_INDEX_POSITIONS_OPEN}"
+        self._key_index_positions_closed = f"{self._key_trader}:{_INDEX_POSITIONS_CLOSED}"
 
         self._key_snapshots_orders = f"{self._key_trader}:{_SNAPSHOTS_ORDERS}:"
         self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"
@@ -827,6 +849,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(order.client_order_id)} already existed and was appended to.",
             )
 
+        self._redis.sadd(self._key_index_orders, order.client_order_id.to_str())
+
+        if order.emulation_trigger != TriggerType.NO_TRIGGER:
+            self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
+
         self._log.debug(f"Added {order}.")
 
         if position_id is not None:
@@ -856,7 +883,33 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 f"The {repr(position.id)} already existed and was appended to.",
             )
 
+        self._redis.sadd(self._key_index_positions, position.id.to_str())
+        self._redis.sadd(self._key_index_positions_open, position.id.to_str())
+
         self._log.debug(f"Added {position}.")
+
+    cpdef void index_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id):
+        """
+        Add an index entry for the given `venue_order_id` to `client_order_id`.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to index.
+        venue_order_id : VenueOrderId
+            The venue order ID to index.
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+        Condition.not_none(venue_order_id, "venue_order_id")
+
+        self._redis.hset(
+            self._key_index_order_ids,
+            client_order_id.to_str(),
+            venue_order_id.to_str(),
+        )
+
+        self._log.debug(f"Indexed {client_order_id!r} -> {venue_order_id!r}")
 
     cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id):
         """
@@ -970,6 +1023,30 @@ cdef class RedisCacheDatabase(CacheDatabase):
         if reply == 1:  # Reply = The length of the list after the push operation
             self._log.error(f"The updated Order(id={order.client_order_id.to_str()}) did not already exist.")
 
+        if order.venue_order_id is not None:
+            # Assumes order_id does not change
+            self.index_venue_order_id(order.client_order_id, order.venue_order_id)
+
+        # Update in-flight state
+        if order.is_inflight_c():
+            self._redis.sadd(self._key_index_orders_inflight, order.client_order_id.to_str())
+        else:
+            self._redis.srem(self._key_index_orders_inflight, order.client_order_id.to_str())
+
+        # Update open/closed state
+        if order.is_open_c():
+            self._redis.srem(self._key_index_orders_closed, order.client_order_id.to_str())
+            self._redis.sadd(self._key_index_orders_open, order.client_order_id.to_str())
+        elif order.is_closed_c():
+            self._redis.srem(self._key_index_orders_open, order.client_order_id.to_str())
+            self._redis.sadd(self._key_index_orders_closed, order.client_order_id.to_str())
+
+        # Update emulation state
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
+            self._redis.srem(self._key_index_orders_emulated, order.client_order_id.to_str())
+        else:
+            self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
+
         self._log.debug(f"Updated {order}.")
 
     cpdef void update_position(self, Position position):
@@ -986,6 +1063,13 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef bytes serialized_event = self._serializer.serialize(position.last_event_c())
         cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), serialized_event)
+
+        if position.is_open_c():
+            self._redis.sadd(self._key_index_positions_open, position.id.to_str())
+            self._redis.srem(self._key_index_positions_closed, position.id.to_str())
+        elif position.is_closed_c():
+            self._redis.sadd(self._key_index_positions_closed, position.id.to_str())
+            self._redis.srem(self._key_index_positions_open, position.id.to_str())
 
         self._log.debug(f"Updated {position}.")
 

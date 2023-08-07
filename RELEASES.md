@@ -3,7 +3,8 @@
 Released on TBD (UTC)
 
 ### Enhancements
-None
+- Added `ActorExecutor` with `Actor` API for creating and running threaded tasks in live environments
+- Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
 None

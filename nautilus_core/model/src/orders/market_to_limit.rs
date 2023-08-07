@@ -23,7 +23,8 @@ use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use super::base::{Order, OrderCore};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     events::order::{OrderEvent, OrderInitialized},
     identifiers::{
@@ -39,6 +40,7 @@ pub struct MarketToLimitOrder {
     core: OrderCore,
     pub price: Option<Price>,
     pub expire_time: Option<UnixNanos>,
+    pub is_post_only: bool,
     pub display_qty: Option<Quantity>,
 }
 
@@ -58,7 +60,6 @@ impl MarketToLimitOrder {
         reduce_only: bool,
         quote_quantity: bool,
         display_qty: Option<Quantity>,
-        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -80,10 +81,8 @@ impl MarketToLimitOrder {
                 OrderType::MarketToLimit,
                 quantity,
                 time_in_force,
-                post_only,
                 reduce_only,
                 quote_quantity,
-                emulation_trigger,
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -97,6 +96,7 @@ impl MarketToLimitOrder {
             ),
             price: None, // Price will be determined on fill
             expire_time,
+            is_post_only: post_only,
             display_qty,
         }
     }
@@ -117,7 +117,6 @@ impl Default for MarketToLimitOrder {
             false,
             false,
             false,
-            None,
             None,
             None,
             None,
@@ -200,6 +199,10 @@ impl Order for MarketToLimitOrder {
         self.time_in_force
     }
 
+    fn expire_time(&self) -> Option<UnixNanos> {
+        self.expire_time
+    }
+
     fn price(&self) -> Option<Price> {
         self.price
     }
@@ -228,8 +231,28 @@ impl Order for MarketToLimitOrder {
         self.is_quote_quantity
     }
 
+    fn display_qty(&self) -> Option<Quantity> {
+        self.display_qty
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        None
+    }
+
     fn emulation_trigger(&self) -> Option<TriggerType> {
-        self.emulation_trigger
+        None
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        None
     }
 
     fn contingency_type(&self) -> Option<ContingencyType> {
@@ -320,7 +343,6 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.reduce_only,
             event.quote_quantity,
             event.display_qty,
-            event.emulation_trigger,
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,
@@ -332,44 +354,5 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.event_id,
             event.ts_event,
         )
-    }
-}
-
-impl From<&MarketToLimitOrder> for OrderInitialized {
-    fn from(order: &MarketToLimitOrder) -> Self {
-        Self {
-            trader_id: order.trader_id,
-            strategy_id: order.strategy_id,
-            instrument_id: order.instrument_id,
-            client_order_id: order.client_order_id,
-            order_side: order.side,
-            order_type: order.order_type,
-            quantity: order.quantity,
-            price: None,
-            trigger_price: None,
-            trigger_type: None,
-            time_in_force: order.time_in_force,
-            expire_time: order.expire_time,
-            post_only: order.is_post_only,
-            reduce_only: order.is_reduce_only,
-            quote_quantity: order.is_quote_quantity,
-            display_qty: order.display_qty,
-            limit_offset: None,
-            trailing_offset: None,
-            trailing_offset_type: None,
-            emulation_trigger: order.emulation_trigger,
-            contingency_type: order.contingency_type,
-            order_list_id: order.order_list_id,
-            linked_order_ids: order.linked_order_ids.clone(),
-            parent_order_id: order.parent_order_id,
-            exec_algorithm_id: order.exec_algorithm_id,
-            exec_algorithm_params: order.exec_algorithm_params.clone(),
-            exec_spawn_id: order.exec_spawn_id,
-            tags: order.tags.clone(),
-            event_id: order.init_id,
-            ts_event: order.ts_init,
-            ts_init: order.ts_init,
-            reconciliation: false,
-        }
     }
 }

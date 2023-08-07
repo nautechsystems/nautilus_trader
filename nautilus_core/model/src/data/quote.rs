@@ -18,6 +18,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{correctness, serialization::Serializable, time::UnixNanos};
@@ -109,6 +110,47 @@ impl QuoteTick {
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
+
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str)
+            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .unwrap();
+
+        let bid_py: &PyAny = obj.getattr("bid")?;
+        let bid_raw: i64 = bid_py.getattr("raw")?.extract()?;
+        let bid_prec: u8 = bid_py.getattr("precision")?.extract()?;
+        let bid = Price::from_raw(bid_raw, bid_prec);
+
+        let ask_py: &PyAny = obj.getattr("ask")?;
+        let ask_raw: i64 = ask_py.getattr("raw")?.extract()?;
+        let ask_prec: u8 = ask_py.getattr("precision")?.extract()?;
+        let ask = Price::from_raw(ask_raw, ask_prec);
+
+        let bid_size_py: &PyAny = obj.getattr("bid_size")?;
+        let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
+        let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
+        let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec);
+
+        let ask_size_py: &PyAny = obj.getattr("ask_size")?;
+        let ask_size_raw: u64 = ask_size_py.getattr("raw")?.extract()?;
+        let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
+        let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec);
+
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        Ok(Self::new(
+            instrument_id,
+            bid,
+            ask,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        ))
+    }
 }
 
 impl Serializable for QuoteTick {}
@@ -174,12 +216,12 @@ impl QuoteTick {
     }
 
     #[getter]
-    fn bid_price(&self) -> Price {
+    fn bid(&self) -> Price {
         self.bid
     }
 
     #[getter]
-    fn ask_price(&self) -> Price {
+    fn ask(&self) -> Price {
         self.ask
     }
 
@@ -265,7 +307,7 @@ mod tests {
     use std::str::FromStr;
 
     use nautilus_core::serialization::Serializable;
-    use pyo3::Python;
+    use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
     use crate::{
@@ -332,6 +374,17 @@ mod tests {
             let dict = tick.as_dict(py).unwrap();
             let parsed = QuoteTick::from_dict(py, dict).unwrap();
             assert_eq!(parsed, tick);
+        });
+    }
+
+    #[test]
+    fn test_from_pyobject() {
+        let tick = create_stub_quote_tick();
+
+        Python::with_gil(|py| {
+            let tick_pyobject = tick.into_py(py);
+            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_tick, tick);
         });
     }
 

@@ -714,7 +714,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_order(order)
         self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}",
+            topic=f"events.order.{order.strategy_id}",
             msg=denied,
         )
 
@@ -877,7 +877,7 @@ cdef class ExecutionEngine(Component):
                 return  # Cannot process event further
 
             # Set the correct ClientOrderId for the event
-            event.client_order_id = client_order_id
+            event.set_client_order_id(client_order_id)
             self._log.info(
                 f"Order with {repr(client_order_id)} was found in the cache.",
                 color=LogColor.GREEN,
@@ -939,7 +939,7 @@ cdef class ExecutionEngine(Component):
                 self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
-            fill.position_id = PositionId(f"{fill.instrument_id.to_str()}-{fill.strategy_id.to_str()}")
+            fill.position_id = PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
         else:
             raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
@@ -959,7 +959,7 @@ cdef class ExecutionEngine(Component):
 
         self._cache.update_order(order)
         self._msgbus.publish_c(
-            topic=f"events.order.{event.strategy_id.to_str()}",
+            topic=f"events.order.{event.strategy_id}",
             msg=event,
         )
 
@@ -1031,7 +1031,7 @@ cdef class ExecutionEngine(Component):
         )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.to_str()}",
+            topic=f"events.position.{event.strategy_id}",
             msg=event,
         )
 
@@ -1064,7 +1064,7 @@ cdef class ExecutionEngine(Component):
             )
 
         self._msgbus.publish_c(
-            topic=f"events.position.{event.strategy_id.to_str()}",
+            topic=f"events.position.{event.strategy_id}",
             msg=event,
         )
 

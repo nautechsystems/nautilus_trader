@@ -18,11 +18,11 @@
 use std::{ffi::c_char, str::FromStr};
 
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use strum::{AsRefStr, Display, EnumString, FromRepr};
+use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
-use crate::{enum_strum_serde, enum_value_getter};
+use crate::{enum_for_python, enum_strum_serde, python::EnumIterator};
 
 pub trait FromU8 {
     fn from_u8(value: u8) -> Option<Self>
@@ -44,6 +44,7 @@ pub trait FromU8 {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -72,6 +73,7 @@ pub enum AccountType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -98,6 +100,7 @@ pub enum AggregationSource {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -110,6 +113,17 @@ pub enum AggressorSide {
     Buyer = 1,
     /// The SELL order was the aggressor for the trade.
     Seller = 2,
+}
+
+impl FromU8 for AggressorSide {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(AggressorSide::NoAggressor),
+            1 => Some(AggressorSide::Buyer),
+            2 => Some(AggressorSide::Seller),
+            _ => None,
+        }
+    }
 }
 
 /// A broad financial market asset class.
@@ -126,6 +140,7 @@ pub enum AggressorSide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -167,6 +182,7 @@ pub enum AssetClass {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -203,6 +219,7 @@ pub enum AssetType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -257,6 +274,7 @@ pub enum BarAggregation {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -299,6 +317,7 @@ impl FromU8 for BookAction {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -341,6 +360,7 @@ impl FromU8 for BookType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -371,6 +391,7 @@ pub enum ContingencyType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -397,6 +418,7 @@ pub enum CurrencyType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -423,6 +445,7 @@ pub enum InstrumentCloseType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -452,6 +475,7 @@ pub enum LiquiditySide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -484,6 +508,7 @@ pub enum MarketStatus {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -514,6 +539,7 @@ pub enum OmsType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -540,6 +566,7 @@ pub enum OptionKind {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -600,6 +627,7 @@ impl FromU8 for OrderSide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -610,26 +638,30 @@ pub enum OrderStatus {
     Initialized = 1,
     /// The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
     Denied = 2,
-    /// The order was submitted by the Nautilus system to the external service or trading venue (closed/done).
-    Submitted = 3,
+    /// The order became emulated by the Nautilus system in the `OrderEmulator` component.
+    Emulated = 3,
+    /// The order was released by the Nautilus system from the `OrderEmulator` component.
+    Released = 4,
+    /// The order was submitted by the Nautilus system to the external service or trading venue (awaiting acknowledgement).
+    Submitted = 5,
     /// The order was acknowledged by the trading venue as being received and valid (may now be working).
-    Accepted = 4,
+    Accepted = 6,
     /// The order was rejected by the trading venue.
-    Rejected = 5,
+    Rejected = 7,
     /// The order was canceled (closed/done).
-    Canceled = 6,
+    Canceled = 8,
     /// The order reached a GTD expiration (closed/done).
-    Expired = 7,
-    /// The order STOP price was triggered (closed/done).
-    Triggered = 8,
-    /// The order is currently pending a request to modify at the trading venue.
-    PendingUpdate = 9,
-    /// The order is currently pending a request to cancel at the trading venue.
-    PendingCancel = 10,
-    /// The order has been partially filled at the trading venue.
-    PartiallyFilled = 11,
-    /// The order has been completely filled at the trading venue (closed/done).
-    Filled = 12,
+    Expired = 9,
+    /// The order STOP price was triggered on a trading venue.
+    Triggered = 10,
+    /// The order is currently pending a request to modify on a trading venue.
+    PendingUpdate = 11,
+    /// The order is currently pending a request to cancel on a trading venue.
+    PendingCancel = 12,
+    /// The order has been partially filled on a trading venue.
+    PartiallyFilled = 13,
+    /// The order has been completely filled on a trading venue (closed/done).
+    Filled = 14,
 }
 
 /// The type of order.
@@ -646,6 +678,7 @@ pub enum OrderStatus {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -686,6 +719,7 @@ pub enum OrderType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -717,6 +751,7 @@ pub enum PositionSide {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -747,6 +782,7 @@ pub enum PriceType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -783,6 +819,7 @@ pub enum TimeInForce {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -811,6 +848,7 @@ pub enum TradingState {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -843,6 +881,7 @@ pub enum TrailingOffsetType {
     Ord,
     AsRefStr,
     FromRepr,
+    EnumIter,
     EnumString,
 )]
 #[strum(ascii_case_insensitive)]
@@ -896,29 +935,29 @@ enum_strum_serde!(TradingState);
 enum_strum_serde!(TrailingOffsetType);
 enum_strum_serde!(TriggerType);
 
-enum_value_getter!(AccountType);
-enum_value_getter!(AggregationSource);
-enum_value_getter!(AggressorSide);
-enum_value_getter!(AssetClass);
-enum_value_getter!(BarAggregation);
-enum_value_getter!(BookAction);
-enum_value_getter!(BookType);
-enum_value_getter!(ContingencyType);
-enum_value_getter!(CurrencyType);
-enum_value_getter!(InstrumentCloseType);
-enum_value_getter!(LiquiditySide);
-enum_value_getter!(MarketStatus);
-enum_value_getter!(OmsType);
-enum_value_getter!(OptionKind);
-enum_value_getter!(OrderSide);
-enum_value_getter!(OrderStatus);
-enum_value_getter!(OrderType);
-enum_value_getter!(PositionSide);
-enum_value_getter!(PriceType);
-enum_value_getter!(TimeInForce);
-enum_value_getter!(TradingState);
-enum_value_getter!(TrailingOffsetType);
-enum_value_getter!(TriggerType);
+enum_for_python!(AccountType);
+enum_for_python!(AggregationSource);
+enum_for_python!(AggressorSide);
+enum_for_python!(AssetClass);
+enum_for_python!(BarAggregation);
+enum_for_python!(BookAction);
+enum_for_python!(BookType);
+enum_for_python!(ContingencyType);
+enum_for_python!(CurrencyType);
+enum_for_python!(InstrumentCloseType);
+enum_for_python!(LiquiditySide);
+enum_for_python!(MarketStatus);
+enum_for_python!(OmsType);
+enum_for_python!(OptionKind);
+enum_for_python!(OrderSide);
+enum_for_python!(OrderStatus);
+enum_for_python!(OrderType);
+enum_for_python!(PositionSide);
+enum_for_python!(PriceType);
+enum_for_python!(TimeInForce);
+enum_for_python!(TradingState);
+enum_for_python!(TrailingOffsetType);
+enum_for_python!(TriggerType);
 
 #[no_mangle]
 pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
@@ -1305,4 +1344,23 @@ pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerTy
     let value = cstr_to_string(ptr);
     TriggerType::from_str(&value)
         .unwrap_or_else(|_| panic!("invalid `TriggerType` enum string value, was '{value}'"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_name() {
+        assert_eq!(OrderSide::NoOrderSide.name(), "NO_ORDER_SIDE");
+        assert_eq!(OrderSide::Buy.name(), "BUY");
+        assert_eq!(OrderSide::Sell.name(), "SELL");
+    }
+
+    #[test]
+    fn test_value() {
+        assert_eq!(OrderSide::NoOrderSide.value(), 0);
+        assert_eq!(OrderSide::Buy.value(), 1);
+        assert_eq!(OrderSide::Sell.value(), 2);
+    }
 }

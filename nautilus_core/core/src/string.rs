@@ -15,55 +15,11 @@
 
 use std::{
     ffi::{c_char, CStr, CString},
-    fmt, str,
+    str,
 };
 
 use pyo3::{ffi, types::PyString, FromPyPointer, Python};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
-
-#[repr(C)]
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct SerializableUstr(pub Ustr);
-
-impl Serialize for SerializableUstr {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut s = String::new();
-        fmt::write(&mut s, format_args!("{}", self.0)).map_err(serde::ser::Error::custom)?;
-        serializer.serialize_str(&s)
-    }
-}
-
-impl<'de> Deserialize<'de> for SerializableUstr {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(SerializableUstr(Ustr::from(s.as_str())))
-    }
-}
-
-impl Default for SerializableUstr {
-    fn default() -> Self {
-        Self(Ustr::from(""))
-    }
-}
-
-impl fmt::Debug for SerializableUstr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl fmt::Display for SerializableUstr {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 /// Returns an owned string from a valid Python object pointer.
 ///
@@ -78,6 +34,21 @@ impl fmt::Display for SerializableUstr {
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
+}
+
+/// Convert a C string pointer into an owned `String`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// - If `ptr` is null.
+#[must_use]
+pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 /// Convert a C string pointer into an owned `String`.
