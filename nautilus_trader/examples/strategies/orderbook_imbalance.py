@@ -176,7 +176,7 @@ class OrderBookImbalance(Strategy):
 
         bid_size = self._book.best_bid_size()
         ask_size = self._book.best_ask_size()
-        if not (bid_size and ask_size):
+        if not (bid_size > 0 and ask_size > 0):
             return
 
         smaller = min(bid_size, ask_size)

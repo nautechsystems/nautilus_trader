@@ -138,7 +138,7 @@ cdef class Symbol(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return symbol_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t mem):
@@ -181,7 +181,7 @@ cdef class Venue(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return venue_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef Venue from_mem_c(Venue_t mem):
@@ -262,7 +262,7 @@ cdef class InstrumentId(Identifier):
         return ustr_to_pystr(self._mem.symbol.value) == ustr_to_pystr(other._mem.symbol.value) and ustr_to_pystr(self._mem.venue.value) == ustr_to_pystr(other._mem.venue.value)
 
     def __hash__ (self) -> int:
-        return instrument_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.symbol.value) + ustr_to_pystr(self._mem.venue.value))
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
@@ -347,7 +347,7 @@ cdef class ComponentId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
-        return component_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef ComponentId from_mem_c(ComponentId_t mem):
@@ -394,7 +394,7 @@ cdef class ClientId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
-        return client_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef ClientId from_mem_c(ClientId_t mem):
@@ -450,7 +450,7 @@ cdef class TraderId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
-        return trader_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef TraderId from_mem_c(TraderId_t mem):
@@ -523,7 +523,7 @@ cdef class StrategyId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
-        return strategy_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef StrategyId from_mem_c(StrategyId_t mem):
@@ -594,7 +594,7 @@ cdef class ExecAlgorithmId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__(self) -> int:
-        return exec_algorithm_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef ExecAlgorithmId from_mem_c(ExecAlgorithmId_t mem):
@@ -649,7 +649,7 @@ cdef class AccountId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return account_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef AccountId from_mem_c(AccountId_t mem):
@@ -718,7 +718,7 @@ cdef class ClientOrderId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return client_order_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef ClientOrderId from_mem_c(ClientOrderId_t mem):
@@ -783,7 +783,7 @@ cdef class VenueOrderId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return venue_order_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef VenueOrderId from_mem_c(VenueOrderId_t mem):
@@ -826,7 +826,7 @@ cdef class OrderListId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return order_list_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef OrderListId from_mem_c(OrderListId_t mem):
@@ -869,7 +869,7 @@ cdef class PositionId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return position_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef PositionId from_mem_c(PositionId_t mem):
@@ -924,7 +924,7 @@ cdef class TradeId(Identifier):
         return ustr_to_pystr(self._mem.value) == ustr_to_pystr(other._mem.value)
 
     def __hash__ (self) -> int:
-        return trade_id_hash(&self._mem)
+        return hash(ustr_to_pystr(self._mem.value))
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):

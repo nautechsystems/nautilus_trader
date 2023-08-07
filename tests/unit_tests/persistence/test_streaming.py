@@ -51,7 +51,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="file",
             instrument_id=instrument.id.value,
             flush_interval_ms=5000,
-            bypass_logging=False,
+            bypass_logging=True,
         )
 
         node = BacktestNode(configs=[run_config])
@@ -61,7 +61,7 @@ class TestPersistenceStreaming:
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=backtest_result[0].instance_id,
+            instance_id=backtest_result[0].instance_id,
             raise_on_failed_deserialize=True,
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
