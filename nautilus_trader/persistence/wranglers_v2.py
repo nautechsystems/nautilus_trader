@@ -56,7 +56,7 @@ class WranglerBase(abc.ABC):
             elif k in (b"instrument_id", b"bar_type"):
                 return v.decode()
 
-        return cls(**{k: decode(k, v) for k, v in metadata.items()})
+        return cls(**{k.decode(): decode(k, v) for k, v in metadata.items()})
 
 
 class OrderBookDeltaDataWrangler(WranglerBase):

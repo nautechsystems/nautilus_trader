@@ -120,9 +120,11 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
         assert len(data) > 0
         assert all(type(obj) is cls for obj in data)  # same type
-        batch = self.serializer.serialize_batch(data, cls=cls)
-        assert batch is not None
-        return pa.Table.from_batches([batch])
+        table = self.serializer.serialize_batch(data, cls=cls)
+        assert table is not None
+        if isinstance(table, pa.RecordBatch):
+            table = pa.Table.from_batches([table])
+        return table
 
     def _make_path(self, cls: type[Data], instrument_id: Optional[InstrumentId] = None) -> str:
         if instrument_id is not None:

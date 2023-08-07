@@ -127,7 +127,7 @@ class ArrowSerializer:
         if isinstance(data, GenericData):
             data = data.data
         cls = cls or type(data)
-        delegate = _ARROW_DESERIALIZER.get(cls)
+        delegate = _ARROW_SERIALIZER.get(cls)
         if delegate is None:
             if cls in RUST_SERIALIZERS:
                 return ArrowSerializer.rust_objects_to_record_batch([data], cls=cls)
@@ -225,7 +225,7 @@ def make_dict_serializer(schema: pa.Schema):
 
 def make_dict_deserializer(cls):
     def inner(table: pa.Table) -> list[DATA_OR_EVENTS]:
-        assert isinstance(table, pa.Table)
+        assert isinstance(table, (pa.Table, pa.RecordBatch))
         return [cls.from_dict(d) for d in table.to_pylist()]
 
     return inner
