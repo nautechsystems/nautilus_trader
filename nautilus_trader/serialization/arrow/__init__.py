@@ -13,9 +13,4 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.serialization.arrow_old.serializer import register_parquet
-
-
-for cls in Instrument.__subclasses__():
-    register_parquet(cls, partition_keys=())
+from nautilus_trader.serialization.arrow import implementations  # noqa: F401

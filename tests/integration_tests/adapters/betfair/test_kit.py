@@ -211,6 +211,7 @@ class BetfairTestStubs:
             logging=LoggingConfig(bypass_logging=bypass_logging),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(
+                catalog_fs_protocol=catalog_fs_protocol,
                 catalog_path=catalog_path,
                 flush_interval_ms=flush_interval_ms,
             )

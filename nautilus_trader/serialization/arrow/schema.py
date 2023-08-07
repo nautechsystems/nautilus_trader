@@ -19,15 +19,10 @@ import pyarrow as pa
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
-from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import OrderBookDelta
-from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
-from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatusUpdate
-from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
@@ -42,33 +37,12 @@ from nautilus_trader.model.events import OrderRejected
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
-from nautilus_trader.model.events import PositionChanged
-from nautilus_trader.model.events import PositionClosed
-from nautilus_trader.model.events import PositionOpened
-from nautilus_trader.model.instruments import BettingInstrument
-from nautilus_trader.model.instruments import CryptoFuture
-from nautilus_trader.model.instruments import CryptoPerpetual
-from nautilus_trader.model.instruments import CurrencyPair
-from nautilus_trader.model.instruments import Equity
-from nautilus_trader.model.instruments import FuturesContract
-from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.serialization.arrow_old.serializer import register_parquet
+
+
+# TODO; Should all move down to rust
 
 
 NAUTILUS_PARQUET_SCHEMA = {
-    OrderBookDelta: pa.schema(
-        {
-            "action": pa.uint8(),
-            "side": pa.uint8(),
-            "price": pa.int64(),
-            "size": pa.uint64(),
-            "order_id": pa.uint64(),
-            "flags": pa.uint8(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "OrderBookDelta"},
-    ),
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
@@ -76,43 +50,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.uint64(),
         },
         metadata={"type": "Ticker"},
-    ),
-    QuoteTick: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "bid": pa.string(),
-            "bid_size": pa.string(),
-            "ask": pa.string(),
-            "ask_size": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "QuoteTick"},
-    ),
-    TradeTick: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "price": pa.string(),
-            "size": pa.string(),
-            "aggressor_side": pa.dictionary(pa.int8(), pa.string()),
-            "trade_id": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "TradeTick"},
-    ),
-    Bar: pa.schema(
-        {
-            "bar_type": pa.dictionary(pa.int16(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "open": pa.string(),
-            "high": pa.string(),
-            "low": pa.string(),
-            "close": pa.string(),
-            "volume": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
     ),
     VenueStatusUpdate: pa.schema(
         {
@@ -165,27 +102,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "ts_init": pa.uint64(),
         },
         metadata={"type": "TradingStateChanged"},
-    ),
-    AccountState: pa.schema(
-        {
-            "account_id": pa.dictionary(pa.int16(), pa.string()),
-            "account_type": pa.dictionary(pa.int8(), pa.string()),
-            "base_currency": pa.dictionary(pa.int16(), pa.string()),
-            "balance_total": pa.float64(),
-            "balance_locked": pa.float64(),
-            "balance_free": pa.float64(),
-            "balance_currency": pa.dictionary(pa.int16(), pa.string()),
-            "margin_initial": pa.float64(),
-            "margin_maintenance": pa.float64(),
-            "margin_currency": pa.dictionary(pa.int16(), pa.string()),
-            "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "reported": pa.bool_(),
-            "info": pa.binary(),
-            "event_id": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "AccountState"},
     ),
     OrderInitialized: pa.schema(
         {
@@ -429,249 +345,6 @@ NAUTILUS_PARQUET_SCHEMA = {
             "reconciliation": pa.bool_(),
         },
     ),
-    PositionOpened: pa.schema(
-        {
-            "trader_id": pa.dictionary(pa.int16(), pa.string()),
-            "strategy_id": pa.dictionary(pa.int16(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "account_id": pa.dictionary(pa.int16(), pa.string()),
-            "position_id": pa.string(),
-            "opening_order_id": pa.string(),
-            "entry": pa.string(),
-            "side": pa.string(),
-            "signed_qty": pa.float64(),
-            "quantity": pa.float64(),
-            "peak_qty": pa.float64(),
-            "last_qty": pa.float64(),
-            "last_px": pa.float64(),
-            "currency": pa.string(),
-            "avg_px_open": pa.float64(),
-            "realized_pnl": pa.float64(),
-            "event_id": pa.string(),
-            "duration_ns": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    PositionChanged: pa.schema(
-        {
-            "trader_id": pa.dictionary(pa.int16(), pa.string()),
-            "strategy_id": pa.dictionary(pa.int16(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "account_id": pa.dictionary(pa.int16(), pa.string()),
-            "position_id": pa.string(),
-            "opening_order_id": pa.string(),
-            "entry": pa.string(),
-            "side": pa.string(),
-            "signed_qty": pa.float64(),
-            "quantity": pa.float64(),
-            "peak_qty": pa.float64(),
-            "last_qty": pa.float64(),
-            "last_px": pa.float64(),
-            "currency": pa.string(),
-            "avg_px_open": pa.float64(),
-            "avg_px_close": pa.float64(),
-            "realized_return": pa.float64(),
-            "realized_pnl": pa.float64(),
-            "unrealized_pnl": pa.float64(),
-            "event_id": pa.string(),
-            "ts_opened": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    PositionClosed: pa.schema(
-        {
-            "trader_id": pa.dictionary(pa.int16(), pa.string()),
-            "account_id": pa.dictionary(pa.int16(), pa.string()),
-            "strategy_id": pa.dictionary(pa.int16(), pa.string()),
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "position_id": pa.string(),
-            "opening_order_id": pa.string(),
-            "closing_order_id": pa.string(),
-            "entry": pa.string(),
-            "side": pa.string(),
-            "signed_qty": pa.float64(),
-            "quantity": pa.float64(),
-            "peak_qty": pa.float64(),
-            "last_qty": pa.float64(),
-            "last_px": pa.float64(),
-            "currency": pa.string(),
-            "avg_px_open": pa.float64(),
-            "avg_px_close": pa.float64(),
-            "realized_return": pa.float64(),
-            "realized_pnl": pa.float64(),
-            "event_id": pa.string(),
-            "ts_opened": pa.uint64(),
-            "ts_closed": pa.uint64(),
-            "duration_ns": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    BettingInstrument: pa.schema(
-        {
-            "venue_name": pa.string(),
-            "currency": pa.string(),
-            "id": pa.string(),
-            "event_type_id": pa.string(),
-            "event_type_name": pa.string(),
-            "competition_id": pa.string(),
-            "competition_name": pa.string(),
-            "event_id": pa.string(),
-            "event_name": pa.string(),
-            "event_country_code": pa.string(),
-            "event_open_date": pa.string(),
-            "betting_type": pa.string(),
-            "market_id": pa.string(),
-            "market_name": pa.string(),
-            "market_start_time": pa.string(),
-            "market_type": pa.string(),
-            "selection_id": pa.string(),
-            "selection_name": pa.string(),
-            "selection_handicap": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "BettingInstrument"},
-    ),
-    CurrencyPair: pa.schema(
-        {
-            "id": pa.dictionary(pa.int64(), pa.string()),
-            "raw_symbol": pa.string(),
-            "base_currency": pa.dictionary(pa.int16(), pa.string()),
-            "quote_currency": pa.dictionary(pa.int16(), pa.string()),
-            "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
-            "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "lot_size": pa.dictionary(pa.int16(), pa.string()),
-            "max_quantity": pa.dictionary(pa.int16(), pa.string()),
-            "min_quantity": pa.dictionary(pa.int16(), pa.string()),
-            "max_notional": pa.dictionary(pa.int16(), pa.string()),
-            "min_notional": pa.dictionary(pa.int16(), pa.string()),
-            "max_price": pa.dictionary(pa.int16(), pa.string()),
-            "min_price": pa.dictionary(pa.int16(), pa.string()),
-            "margin_init": pa.string(),
-            "margin_maint": pa.string(),
-            "maker_fee": pa.string(),
-            "taker_fee": pa.string(),
-            "info": pa.binary(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    CryptoPerpetual: pa.schema(
-        {
-            "id": pa.dictionary(pa.int64(), pa.string()),
-            "raw_symbol": pa.string(),
-            "base_currency": pa.dictionary(pa.int16(), pa.string()),
-            "quote_currency": pa.dictionary(pa.int16(), pa.string()),
-            "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
-            "is_inverse": pa.bool_(),
-            "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
-            "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "max_quantity": pa.dictionary(pa.int16(), pa.string()),
-            "min_quantity": pa.dictionary(pa.int16(), pa.string()),
-            "max_notional": pa.dictionary(pa.int16(), pa.string()),
-            "min_notional": pa.dictionary(pa.int16(), pa.string()),
-            "max_price": pa.dictionary(pa.int16(), pa.string()),
-            "min_price": pa.dictionary(pa.int16(), pa.string()),
-            "margin_init": pa.string(),
-            "margin_maint": pa.string(),
-            "maker_fee": pa.string(),
-            "taker_fee": pa.string(),
-            "info": pa.binary(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    CryptoFuture: pa.schema(
-        {
-            "id": pa.dictionary(pa.int64(), pa.string()),
-            "raw_symbol": pa.string(),
-            "underlying": pa.dictionary(pa.int16(), pa.string()),
-            "quote_currency": pa.dictionary(pa.int16(), pa.string()),
-            "settlement_currency": pa.dictionary(pa.int16(), pa.string()),
-            "expiry_date": pa.dictionary(pa.int16(), pa.string()),
-            "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
-            "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "max_quantity": pa.dictionary(pa.int16(), pa.string()),
-            "min_quantity": pa.dictionary(pa.int16(), pa.string()),
-            "max_notional": pa.dictionary(pa.int16(), pa.string()),
-            "min_notional": pa.dictionary(pa.int16(), pa.string()),
-            "max_price": pa.dictionary(pa.int16(), pa.string()),
-            "min_price": pa.dictionary(pa.int16(), pa.string()),
-            "margin_init": pa.string(),
-            "margin_maint": pa.string(),
-            "maker_fee": pa.string(),
-            "taker_fee": pa.string(),
-            "info": pa.binary(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    Equity: pa.schema(
-        {
-            "id": pa.dictionary(pa.int64(), pa.string()),
-            "raw_symbol": pa.string(),
-            "currency": pa.dictionary(pa.int16(), pa.string()),
-            "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
-            "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "multiplier": pa.dictionary(pa.int16(), pa.string()),
-            "lot_size": pa.dictionary(pa.int16(), pa.string()),
-            "isin": pa.string(),
-            "margin_init": pa.string(),
-            "margin_maint": pa.string(),
-            "maker_fee": pa.string(),
-            "taker_fee": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    FuturesContract: pa.schema(
-        {
-            "id": pa.dictionary(pa.int64(), pa.string()),
-            "raw_symbol": pa.string(),
-            "underlying": pa.dictionary(pa.int16(), pa.string()),
-            "asset_class": pa.dictionary(pa.int8(), pa.string()),
-            "currency": pa.dictionary(pa.int16(), pa.string()),
-            "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
-            "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "multiplier": pa.dictionary(pa.int16(), pa.string()),
-            "lot_size": pa.dictionary(pa.int16(), pa.string()),
-            "expiry_date": pa.dictionary(pa.int16(), pa.string()),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-    OptionsContract: pa.schema(
-        {
-            "id": pa.dictionary(pa.int64(), pa.string()),
-            "raw_symbol": pa.string(),
-            "underlying": pa.dictionary(pa.int16(), pa.string()),
-            "asset_class": pa.dictionary(pa.int8(), pa.string()),
-            "currency": pa.dictionary(pa.int16(), pa.string()),
-            "price_precision": pa.uint8(),
-            "size_precision": pa.uint8(),
-            "price_increment": pa.dictionary(pa.int16(), pa.string()),
-            "size_increment": pa.dictionary(pa.int16(), pa.string()),
-            "multiplier": pa.dictionary(pa.int16(), pa.string()),
-            "lot_size": pa.dictionary(pa.int16(), pa.string()),
-            "expiry_date": pa.dictionary(pa.int64(), pa.string()),
-            "strike_price": pa.dictionary(pa.int64(), pa.string()),
-            "kind": pa.dictionary(pa.int8(), pa.string()),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
     BinanceBar: pa.schema(
         {
             "bar_type": pa.dictionary(pa.int16(), pa.string()),
@@ -690,20 +363,3 @@ NAUTILUS_PARQUET_SCHEMA = {
         },
     ),
 }
-
-NAUTILUS_PARQUET_SCHEMA_RUST = {
-    QuoteTick: pa.schema(
-        {
-            "bid": pa.int64(),
-            "ask": pa.int64(),
-            "bid_size": pa.uint64(),
-            "ask_size": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-    ),
-}
-
-# default schemas
-for cls, schema in NAUTILUS_PARQUET_SCHEMA.items():
-    register_parquet(cls, schema=schema)

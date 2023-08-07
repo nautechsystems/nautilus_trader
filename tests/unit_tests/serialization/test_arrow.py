@@ -37,7 +37,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.serialization.arrow_old.serializer import ParquetSerializer
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
@@ -64,7 +64,7 @@ def _reset():
     assert catalog.fs.exists("/.nautilus/catalog/")
 
 
-class TestParquetSerializer:
+class TestArrowSerializer:
     def setup(self):
         # Fixture Setup
         _reset()
@@ -102,10 +102,8 @@ class TestParquetSerializer:
 
     def _test_serialization(self, obj: Any):
         cls = type(obj)
-        serialized = ParquetSerializer.serialize(obj)
-        if not isinstance(serialized, list):
-            serialized = [serialized]
-        deserialized = ParquetSerializer.deserialize(cls=cls, chunk=serialized)
+        serialized = ArrowSerializer.serialize(obj)
+        deserialized = ArrowSerializer.deserialize(cls, serialized)
 
         # Assert
         expected = obj
@@ -113,9 +111,9 @@ class TestParquetSerializer:
             expected = [expected]
         assert deserialized == expected
         self.catalog.write_data([obj])
-        df = self.catalog._query(cls=cls)
+        df = self.catalog.query(cls=cls)
         assert len(df) in (1, 2)
-        nautilus = self.catalog._query(cls=cls, as_dataframe=False)[0]
+        nautilus = self.catalog.query(cls=cls, as_dataframe=False)[0]
         assert nautilus.ts_init == 0
         return True
 
@@ -134,7 +132,6 @@ class TestParquetSerializer:
         bar = TestDataStubs.bar_5decimal()
         self._test_serialization(obj=bar)
 
-    @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
@@ -144,8 +141,8 @@ class TestParquetSerializer:
             ts_init=0,
         )
 
-        serialized = ParquetSerializer.serialize(delta)
-        [deserialized] = ParquetSerializer.deserialize(cls=OrderBookDelta, chunk=serialized)
+        serialized = ArrowSerializer.serialize(delta)
+        [deserialized] = ArrowSerializer.deserialize(cls=OrderBookDelta, chunk=serialized)
 
         # Assert
         expected = OrderBookDeltas(
@@ -155,7 +152,6 @@ class TestParquetSerializer:
         assert deserialized == expected
         self.catalog.write_data([delta])
 
-    @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas(self):
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
@@ -187,14 +183,13 @@ class TestParquetSerializer:
             ],
         )
 
-        serialized = ParquetSerializer.serialize(deltas)
-        deserialized = ParquetSerializer.deserialize(cls=OrderBookDeltas, chunk=serialized)
+        serialized = ArrowSerializer.serialize(deltas)
+        deserialized = ArrowSerializer.deserialize(cls=OrderBookDeltas, chunk=serialized)
 
         # Assert
         assert deserialized == [deltas]
         self.catalog.write_data([deltas])
 
-    @pytest.mark.skip(reason="Reimplement serialization for order book data")
     def test_serialize_and_deserialize_order_book_deltas_grouped(self):
         kw = {
             "instrument_id": "AUD/USD.SIM",
@@ -236,8 +231,8 @@ class TestParquetSerializer:
             deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
         )
 
-        serialized = ParquetSerializer.serialize(deltas)
-        [deserialized] = ParquetSerializer.deserialize(cls=OrderBookDeltas, chunk=serialized)
+        serialized = ArrowSerializer.serialize(deltas)
+        [deserialized] = ArrowSerializer.deserialize(cls=OrderBookDeltas, chunk=serialized)
 
         # Assert
         assert deserialized == deltas
@@ -249,22 +244,11 @@ class TestParquetSerializer:
             BookAction.ADD,
         ]
 
-    @pytest.mark.skip(reason="Snapshots marked for deletion")
-    def test_serialize_and_deserialize_order_book_snapshot(self):
-        book = TestDataStubs.order_book_snapshot(AUDUSD_SIM.id)
-
-        serialized = ParquetSerializer.serialize(book)
-        deserialized = ParquetSerializer.deserialize(cls=OrderBookDelta, chunk=serialized)
-
-        # Assert
-        assert deserialized == [book]
-        self.catalog.write_data([book])
-
     def test_serialize_and_deserialize_component_state_changed(self):
         event = TestEventStubs.component_state_changed()
 
-        serialized = ParquetSerializer.serialize(event)
-        [deserialized] = ParquetSerializer.deserialize(
+        serialized = ArrowSerializer.serialize(event)
+        [deserialized] = ArrowSerializer.deserialize(
             cls=ComponentStateChanged,
             chunk=[serialized],
         )
@@ -277,8 +261,8 @@ class TestParquetSerializer:
     def test_serialize_and_deserialize_trading_state_changed(self):
         event = TestEventStubs.trading_state_changed()
 
-        serialized = ParquetSerializer.serialize(event)
-        [deserialized] = ParquetSerializer.deserialize(cls=TradingStateChanged, chunk=[serialized])
+        serialized = ArrowSerializer.serialize(event)
+        [deserialized] = ArrowSerializer.deserialize(cls=TradingStateChanged, chunk=[serialized])
 
         # Assert
         assert deserialized == event
@@ -293,8 +277,8 @@ class TestParquetSerializer:
         ],
     )
     def test_serialize_and_deserialize_account_state(self, event):
-        serialized = ParquetSerializer.serialize(event)
-        [deserialized] = ParquetSerializer.deserialize(cls=AccountState, chunk=serialized)
+        serialized = ArrowSerializer.serialize(event, cls=AccountState)
+        [deserialized] = ArrowSerializer.deserialize(cls=AccountState, table=serialized)
 
         # Assert
         assert deserialized == event
@@ -433,9 +417,9 @@ class TestParquetSerializer:
         ],
     )
     def test_serialize_and_deserialize_instruments(self, instrument):
-        serialized = ParquetSerializer.serialize(instrument)
+        serialized = ArrowSerializer.serialize(instrument)
         assert serialized
-        deserialized = ParquetSerializer.deserialize(cls=type(instrument), chunk=[serialized])
+        deserialized = ArrowSerializer.deserialize(cls=type(instrument), chunk=[serialized])
 
         # Assert
         assert deserialized == [instrument]

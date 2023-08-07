@@ -20,12 +20,13 @@ import pyarrow as pa
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.base import GenericData
-from nautilus_trader.persistence.catalog.parquet.schema import NAUTILUS_PARQUET_SCHEMA
+from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
 
 
 _PARQUET_SERIALIZER: dict[type, Callable] = {}
@@ -53,13 +54,11 @@ def _clear_all(**kwargs):
         _CHUNK = set()
 
 
-def register_parquet(
+def register_arrow(
     cls: type,
     schema: Optional[pa.Schema],
     serializer: Optional[Callable],
     deserializer: Optional[Callable] = None,
-    # partition_keys: Optional[tuple[str]] = None,
-    # table: Optional[type] = None
 ):
     """
     Register a new class for serialization to parquet.
@@ -94,10 +93,29 @@ def register_parquet(
         _SCHEMAS[cls] = schema
 
 
-class ParquetSerializer:
+class ArrowSerializer:
     """
-    Provides an object serializer for the `Parquet` specification.
+    Serialize nautilus objects to arrow RecordBatches.
     """
+
+    @staticmethod
+    def serialize(
+        data: DATA_OR_EVENTS,
+        cls: Optional[type[DATA_OR_EVENTS]] = None,
+    ) -> pa.RecordBatch:
+        if isinstance(data, GenericData):
+            data = data.data
+        cls = cls or type(data)
+        delegate = _PARQUET_SERIALIZER.get(cls)
+        if delegate is None:
+            raise TypeError(
+                f"Cannot serialize object `{cls}`. Register a "
+                f"serialization method via `nautilus_trader.persistence.catalog.parquet.serializers.register_parquet()`",
+            )
+
+        batch = delegate(data)
+        assert isinstance(batch, pa.RecordBatch)
+        return batch
 
     @staticmethod
     def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.Table:
@@ -121,22 +139,11 @@ class ParquetSerializer:
             If `obj` cannot be serialized.
 
         """
-        if cls is GenericData:
-            data = [obj.data for obj in data]
-
-        delegate = _PARQUET_SERIALIZER.get(cls)
-        if delegate is None:
-            raise TypeError(
-                f"Cannot serialize object `{cls}`. Register a "
-                f"serialization method via `nautilus_trader.persistence.catalog.parquet.serializers.register_parquet()`",
-            )
-
-        table = delegate(data)
-        assert isinstance(table, pa.Table)
-        return table
+        batches = [ArrowSerializer.serialize(obj, cls) for obj in data]
+        return pa.Table.from_batches(batches, schema=batches[0].schema)
 
     @staticmethod
-    def deserialize(cls: type, table: pa.Table):
+    def deserialize(cls: type, table: pa.RecordBatch):
         """
         Deserialize the given `Parquet` specification bytes to an object.
 
@@ -169,8 +176,10 @@ class ParquetSerializer:
 
 def make_dict_serializer(schema: pa.Schema):
     def inner(data: list[DATA_OR_EVENTS]):
+        if not isinstance(data, list):
+            data = [data]
         dicts = [d.to_dict(d) for d in data]
-        return dicts_to_table(dicts, schema=schema)
+        return dicts_to_record_batch(dicts, schema=schema)
 
     return inner
 
@@ -182,13 +191,14 @@ def make_dict_deserializer(cls):
     return inner
 
 
-def dicts_to_table(data: list[dict], schema: pa.Schema) -> pa.Table:
-    return pa.Table.from_pylist(data, schema=schema)
+def dicts_to_record_batch(data: list[dict], schema: pa.Schema) -> pa.RecordBatch:
+    return pa.RecordBatch.from_pylist(data, schema=schema)
 
 
 RUST_SERIALIZERS = {
     QuoteTick,
     TradeTick,
+    Bar,
     OrderBookDelta,
     OrderBookDeltas,
 }
@@ -196,11 +206,11 @@ RUST_SERIALIZERS = {
 assert not set(NAUTILUS_PARQUET_SCHEMA).intersection(RUST_SERIALIZERS)
 assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_PARQUET_SCHEMA))
 
-for cls in NAUTILUS_PARQUET_SCHEMA:
-    schema = NAUTILUS_PARQUET_SCHEMA[cls]
-    register_parquet(
-        cls=cls,
+for _cls in NAUTILUS_PARQUET_SCHEMA:
+    schema = NAUTILUS_PARQUET_SCHEMA[_cls]
+    register_arrow(
+        cls=_cls,
         schema=schema,
         serializer=make_dict_serializer(schema),
-        deserializer=make_dict_deserializer(cls),
+        deserializer=make_dict_deserializer(_cls),
     )

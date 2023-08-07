@@ -13,19 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import itertools
 from typing import Optional
 
 import msgspec
 import pandas as pd
+import pyarrow as pa
+from pyarrow import RecordBatch
 
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
-def serialize(state: AccountState):
+def serialize(state: AccountState) -> RecordBatch:
     result: dict[tuple[Currency, Optional[InstrumentId]], dict] = {}
 
     base = state.to_dict(state)
@@ -70,10 +71,10 @@ def serialize(state: AccountState):
             },
         )
 
-    return list(result.values())
+    return pa.RecordBatch.from_pylist(result.values(), schema=SCHEMA)
 
 
-def _deserialize(values):
+def _deserialize(values) -> AccountState:
     balances = []
     for v in values:
         total = v.get("balance_total")
@@ -113,20 +114,40 @@ def _deserialize(values):
     return AccountState.from_dict(state)
 
 
-def deserialize(data: list[dict]):
-    results = []
-    for _, chunk in itertools.groupby(
-        sorted(data, key=lambda x: x["event_id"]),
-        key=lambda x: x["event_id"],
-    ):
-        chunk = list(chunk)  # type: ignore
-        results.append(_deserialize(values=chunk))
-    return sorted(results, key=lambda x: x.ts_init)
+def deserialize(data: pa.RecordBatch):
+    account_states = []
+    for event_id in data.column("event_id").unique().to_pylist():
+        event = data.filter(pa.compute.equal(data["event_id"], event_id))
+        account = _deserialize(values=event.to_pylist())
+        account_states.append(account)
+    return account_states
 
 
-register_parquet(
+SCHEMA = pa.schema(
+    {
+        "account_id": pa.dictionary(pa.int16(), pa.string()),
+        "account_type": pa.dictionary(pa.int8(), pa.string()),
+        "base_currency": pa.dictionary(pa.int16(), pa.string()),
+        "balance_total": pa.float64(),
+        "balance_locked": pa.float64(),
+        "balance_free": pa.float64(),
+        "balance_currency": pa.dictionary(pa.int16(), pa.string()),
+        "margin_initial": pa.float64(),
+        "margin_maintenance": pa.float64(),
+        "margin_currency": pa.dictionary(pa.int16(), pa.string()),
+        "margin_instrument_id": pa.dictionary(pa.int64(), pa.string()),
+        "reported": pa.bool_(),
+        "info": pa.binary(),
+        "event_id": pa.string(),
+        "ts_event": pa.uint64(),
+        "ts_init": pa.uint64(),
+    },
+    metadata={"type": "AccountState"},
+)
+
+register_arrow(
     AccountState,
+    schema=SCHEMA,
     serializer=serialize,
     deserializer=deserialize,
-    chunk=True,
 )

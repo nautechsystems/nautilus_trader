@@ -13,9 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.serialization.arrow_old.implementations import account_state  # noqa: F401
-from nautilus_trader.serialization.arrow_old.implementations import bar  # noqa: F401
-from nautilus_trader.serialization.arrow_old.implementations import instruments  # noqa: F401
-from nautilus_trader.serialization.arrow_old.implementations import order_book  # noqa: F401
-from nautilus_trader.serialization.arrow_old.implementations import order_events  # noqa: F401
-from nautilus_trader.serialization.arrow_old.implementations import position_events  # noqa: F401
+from nautilus_trader.serialization.arrow.implementations import account_state  # noqa: F401
+from nautilus_trader.serialization.arrow.implementations import instruments  # noqa: F401
+from nautilus_trader.serialization.arrow.implementations import position_events  # noqa: F401

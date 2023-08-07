@@ -47,12 +47,12 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.parquet.serializers import RUST_SERIALIZERS
-from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
-from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
 from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
 from nautilus_trader.persistence.wranglers import list_from_capsule
+from nautilus_trader.serialization.arrow.serializer import RUST_SERIALIZERS
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
+from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
 timestamp_like = Union[int, str, float]
@@ -90,7 +90,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             self.fs_protocol,
             **self.fs_storage_options,
         )
-        self.serializer = ParquetSerializer()
+        self.serializer = ArrowSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
 
         path = make_path_posix(str(path))
@@ -313,7 +313,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: Union[pa.Table, pd.DataFrame],
         cls: type,
     ):
-        data = ParquetSerializer.deserialize(cls=cls, table=table)
+        data = ArrowSerializer.deserialize(cls=cls, table=table)
         return data
 
     def _query_subclasses(
@@ -394,7 +394,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             # Apply post read fixes
             try:
                 objs = self._handle_table_nautilus(
-                    table=df,
+                    table=pa.Table.from_pandas(df),
                     cls=class_mapping[cls_name],
                 )
                 data[cls_name] = objs
