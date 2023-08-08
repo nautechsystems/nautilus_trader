@@ -409,5 +409,5 @@ def read_feather_file(
         with fs.open(path) as f:
             reader = pa.ipc.open_stream(f)
             return reader.read_all()
-    except (pa.ArrowInvalid, FileNotFoundError):
+    except (pa.ArrowInvalid, OSError):
         return None

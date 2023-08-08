@@ -82,7 +82,7 @@ class StreamingFeatherWriter:
 
         self._schemas = list_schemas()
         self.logger = logger
-        self._files: dict[str, BinaryIO] = {}
+        self._files: dict[object, BinaryIO] = {}
         self._writers: dict[str, RecordBatchStreamWriter] = {}
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
@@ -125,14 +125,12 @@ class StreamingFeatherWriter:
         metadata = self._extract_obj_metadata(obj)
         schema = self._schemas[cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
-        full_path = f"{self.path}/{table_name}.feather"
+        full_path = f"{self.path}/{table_name}_{obj.instrument_id.value}.feather"
+        key = (table_name, obj.instrument_id.value)
         self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
-        f = self.fs.open(full_path, "wb")
-        self._files[table_name] = f
-        self._instrument_writers[(table_name, obj.instrument_id.value)] = pa.ipc.new_stream(
-            f,
-            schema,
-        )
+        f = self.fs.open(full_path, "ab")
+        self._files[key] = f
+        self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
 
     def _extract_obj_metadata(self, obj: Union[TradeTick, QuoteTick, Bar, OrderBookDelta]):
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
@@ -200,9 +198,7 @@ class StreamingFeatherWriter:
             else:
                 return
         if table in self._per_instrument_writers:
-            writer: RecordBatchStreamWriter = self._instrument_writers[
-                (table, obj.instrument_id.value)  # type: ignore
-            ]
+            writer: RecordBatchStreamWriter = self._instrument_writers[(table, obj.instrument_id.value)]  # type: ignore
         else:
             writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
         serialized = ArrowSerializer.serialize_batch([obj], cls=cls)
@@ -238,11 +234,11 @@ class StreamingFeatherWriter:
         Flush and close all stream writers.
         """
         self.flush()
-        for cls in tuple(self._writers):
-            self._writers[cls].close()
-            del self._writers[cls]
-        for cls in self._files:
-            self._files[cls].close()
+        for wcls in tuple(self._writers):
+            self._writers[wcls].close()
+            del self._writers[wcls]
+        for fcls in self._files:
+            self._files[fcls].close()
 
 
 def generate_signal_class(name: str, value_type: type) -> type:
