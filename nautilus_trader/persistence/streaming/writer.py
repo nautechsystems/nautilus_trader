@@ -25,11 +25,11 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
-from nautilus_trader.persistence.catalog.parquet.serializers import list_schemas
-from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
 from nautilus_trader.persistence.catalog.parquet.util import GENERIC_DATA_PREFIX
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
+from nautilus_trader.serialization.arrow.serializer import list_schemas
+from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 class StreamingFeatherWriter:
@@ -142,7 +142,7 @@ class StreamingFeatherWriter:
             else:
                 return
         writer: RecordBatchStreamWriter = self._writers[table]
-        serialized = ParquetSerializer.serialize_batch([obj], cls=cls)
+        serialized = ArrowSerializer.serialize_batch([obj], cls=cls)
         if not serialized:
             return
         try:
@@ -260,7 +260,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
             "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[value_type],
         },
     )
-    register_parquet(
+    register_arrow(
         cls=SignalData,
         serializer=serialize_signal,
         deserializer=deserialize_signal,

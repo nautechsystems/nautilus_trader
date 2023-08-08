@@ -19,7 +19,7 @@ import pandas as pd
 
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.persistence.catalog.parquet.serializers import register_parquet
+from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.trading.filters import NewsImpact
 
@@ -47,7 +47,7 @@ class TestPersistenceStubs:
             )
             return NewsEventData(**data)
 
-        register_parquet(
+        register_arrow(
             cls=NewsEventData,
             serializer=_news_event_to_dict,
             deserializer=_news_event_from_dict,

@@ -62,7 +62,7 @@ class _TestBacktestConfig:
             fs.rm(path, recursive=True)
 
     def test_backtest_config_pickle(self):
-        pickle.loads(pickle.dumps(self))  # noqa: S301
+        pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")

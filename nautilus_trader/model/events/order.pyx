@@ -568,7 +568,7 @@ cdef class OrderInitialized(OrderEvent):
             "client_order_id": obj.client_order_id.value,
             "order_side": order_side_to_str(obj.side),
             "order_type": order_type_to_str(obj.order_type),
-            "quantity": obj.quantity.as_double(),
+            "quantity": str(obj.quantity),
             "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,

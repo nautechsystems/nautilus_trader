@@ -23,8 +23,8 @@ from typing import Callable, Optional, Union
 import fsspec
 import pandas as pd
 import pyarrow as pa
-import pyarrow.dataset
 import pyarrow.dataset as pds
+import pyarrow.parquet as pq
 from fsspec.implementations.local import make_path_posix
 from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
@@ -141,19 +141,25 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs,
     ):
         table = self._objects_to_table(data, cls=cls)
-
-        # Make base path
         path = self._make_path(cls=cls, instrument_id=instrument_id)
+        kw = dict(**self.dataset_kwargs, **kwargs)
 
-        # Write parquet file
-        pyarrow.dataset.write_dataset(
-            data=table,
-            base_dir=path,
-            format="parquet",
-            filesystem=self.fs,
-            **self.dataset_kwargs,
-            **kwargs,
-        )
+        if "partitioning" not in kw:
+            self._fast_write(table=table, path=path, fs=self.fs)
+        else:
+            # Write parquet file
+            pds.write_dataset(
+                data=table,
+                base_dir=path,
+                format="parquet",
+                filesystem=self.fs,
+                **self.dataset_kwargs,
+                **kwargs,
+            )
+
+    def _fast_write(self, table: pa.Table, path: str, fs: fsspec.AbstractFileSystem):
+        fs.mkdirs(path, exist_ok=True)
+        pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs)
 
     def write_data(self, data: list[Union[Data, Event]], **kwargs):
         def key(obj) -> tuple[str, Optional[str]]:

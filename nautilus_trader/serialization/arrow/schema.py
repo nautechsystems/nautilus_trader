@@ -111,7 +111,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "client_order_id": pa.string(),
             "order_side": pa.dictionary(pa.int8(), pa.string()),
             "order_type": pa.dictionary(pa.int8(), pa.string()),
-            "quantity": pa.float64(),
+            "quantity": pa.string(),
             "time_in_force": pa.dictionary(pa.int8(), pa.string()),
             "post_only": pa.bool_(),
             "reduce_only": pa.bool_(),

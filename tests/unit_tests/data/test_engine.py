@@ -52,9 +52,6 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.core import write_objects
-from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -64,7 +61,6 @@ from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.filters import NewsEvent
-from tests import TEST_DATA_DIR
 from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 
@@ -2062,7 +2058,7 @@ class TestDataEngine:
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
-        write_objects(catalog=catalog, chunk=[instrument])
+        catalog.write_data([instrument])
 
         self.data_engine.register_catalog(catalog)
 
@@ -2091,7 +2087,7 @@ class TestDataEngine:
 
         idealpro = Venue("IDEALPRO")
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=idealpro)
-        write_objects(catalog=catalog, chunk=[instrument])
+        catalog.write_data([instrument])
 
         self.data_engine.register_catalog(catalog)
 
@@ -2312,27 +2308,13 @@ class TestDataEngine:
             bars = wrangler.process(data.set_index("timestamp"))
             return bars
 
-        binance_spot_header = [
-            "timestamp",
-            "open",
-            "high",
-            "low",
-            "close",
-            "volume",
-            "ts_close",
-            "quote_volume",
-            "n_trades",
-            "taker_buy_base_volume",
-            "taker_buy_quote_volume",
-            "ignore",
-        ]
-        reader = CSVReader(block_parser=parser, header=binance_spot_header)
-
-        _ = process_files(
-            glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
-            reader=reader,
-            catalog=catalog,
-        )
+        raise NotImplementedError
+        # reader = CSVReader(block_parser=parser, header=binance_spot_header)
+        # _ = process_files(
+        #     glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
+        #     reader=reader,
+        #     catalog=catalog,
+        # )
 
         self.data_engine.register_catalog(catalog)
 
