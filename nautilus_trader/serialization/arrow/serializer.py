@@ -39,6 +39,7 @@ _ARROW_DESERIALIZER: dict[type, Callable] = {}
 _SCHEMAS: dict[type, pa.Schema] = {}
 
 DATA_OR_EVENTS = Union[Data, Event]
+TABLE_OR_BATCH = Union[pa.Table, pa.RecordBatch]
 
 
 def get_schema(cls: type):
@@ -110,14 +111,12 @@ class ArrowSerializer:
         return data
 
     @staticmethod
-    def rust_objects_to_record_batch(data: list[Data], cls: type) -> pa.RecordBatch:
+    def rust_objects_to_record_batch(data: list[Data], cls: type) -> TABLE_OR_BATCH:
         processed = ArrowSerializer._unpack_container_objects(cls, data)
         batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
         reader = pa.ipc.open_stream(BytesIO(batches_bytes))
         table: pa.Table = reader.read_all()
-        batches = table.to_batches()
-        assert len(batches) == 1, len(batches)
-        return batches[0]
+        return table
 
     @staticmethod
     def serialize(
@@ -162,7 +161,7 @@ class ArrowSerializer:
             If `obj` cannot be serialized.
 
         """
-        if cls in RUST_SERIALIZERS:
+        if cls in RUST_SERIALIZERS or cls.__name__ in RUST_STR_SERIALIZERS:
             return ArrowSerializer.rust_objects_to_record_batch(data, cls=cls)
         batches = [ArrowSerializer.serialize(obj, cls) for obj in data]
         return pa.Table.from_batches(batches, schema=batches[0].schema)
@@ -192,7 +191,9 @@ class ArrowSerializer:
         delegate = _ARROW_DESERIALIZER.get(cls)
         if delegate is None:
             if cls in RUST_SERIALIZERS:
-                return ArrowSerializer.deserialize_rust(cls=cls, batch=batch)
+                if isinstance(batch, pa.RecordBatch):
+                    batch = pa.Table.from_batches([batch])
+                return ArrowSerializer._deserialize_rust(cls=cls, table=batch)
             raise TypeError(
                 f"Cannot deserialize object `{cls}`. Register a "
                 f"deserialization method via `arrow.serializer.register_parquet()`",
@@ -201,15 +202,16 @@ class ArrowSerializer:
         return delegate(batch)
 
     @staticmethod
-    def deserialize_rust(cls, batch: pa.RecordBatch) -> list[DATA_OR_EVENTS]:
+    def _deserialize_rust(cls, table: pa.Table) -> list[DATA_OR_EVENTS]:
         Wrangler = {
             QuoteTick: QuoteTickDataWrangler,
             TradeTick: TradeTickDataWrangler,
             Bar: BarDataWrangler,
             OrderBookDelta: OrderBookDeltaDataWrangler,
+            OrderBookDeltas: OrderBookDeltaDataWrangler,
         }[cls]
-        wrangler = Wrangler.from_schema(batch.schema)
-        ticks = wrangler.from_arrow(pa.Table.from_batches([batch]))
+        wrangler = Wrangler.from_schema(table.schema)
+        ticks = wrangler.from_arrow(table)
         return ticks
 
 
@@ -242,6 +244,7 @@ RUST_SERIALIZERS = {
     OrderBookDelta,
     OrderBookDeltas,
 }
+RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
 
 # Check we have each type defined only once (rust or python)
 assert not set(NAUTILUS_ARROW_SCHEMA).intersection(RUST_SERIALIZERS)

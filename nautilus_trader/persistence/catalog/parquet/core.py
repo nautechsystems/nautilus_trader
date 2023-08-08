@@ -42,7 +42,6 @@ from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
@@ -126,9 +125,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = pa.Table.from_batches([table])
         return table
 
-    def _make_path(self, cls: type[Data], instrument_id: Optional[InstrumentId] = None) -> str:
+    def _make_path(self, cls: type[Data], instrument_id: Optional[str] = None) -> str:
         if instrument_id is not None:
-            clean_instrument_id = instrument_id.value.replace("/", "-")
+            assert isinstance(instrument_id, str), "instrument_id must be a string"
+            clean_instrument_id = instrument_id.replace("/", "-")
             return f"{self.path}/data/{class_to_filename(cls)}/{clean_instrument_id}"
         else:
             return f"{self.path}/data/{class_to_filename(cls)}"
@@ -159,9 +159,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         def key(obj) -> tuple[str, Optional[str]]:
             name = type(obj).__name__
             if isinstance(obj, Instrument):
-                return name, obj.id
+                return name, obj.id.value
             elif hasattr(obj, "instrument_id"):
-                return name, obj.instrument_id
+                return name, obj.instrument_id.value
             return name, None
 
         name_to_cls = {cls.__name__: cls for cls in {type(d) for d in data}}

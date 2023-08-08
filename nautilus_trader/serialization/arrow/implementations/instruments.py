@@ -196,8 +196,21 @@ SCHEMAS = {
 
 def serialize_instrument(obj) -> pa.RecordBatch:
     data = obj.to_dict(obj)
-    schema = SCHEMAS[obj.__class__]
-    return pa.RecordBatch.from_pydict(data, schema)
+    schema = SCHEMAS[obj.__class__].with_metadata({"class": obj.__class__.__name__})
+    return pa.RecordBatch.from_pylist([data], schema)
+
+
+def deserialize_instrument(batch: pa.RecordBatch) -> list[Instrument]:
+    Cls = {
+        b"BettingInstrument": BettingInstrument,
+        b"CurrencyPair": CurrencyPair,
+        b"CryptoPerpetual": CryptoPerpetual,
+        b"CryptoFuture": CryptoFuture,
+        b"Equity": Equity,
+        b"FuturesContract": FuturesContract,
+        b"OptionsContract": OptionsContract,
+    }[batch.schema.metadata[b"class"]]
+    return [Cls.from_dict(data) for data in batch.to_pylist()]
 
 
 for cls in Instrument.__subclasses__():
@@ -205,4 +218,5 @@ for cls in Instrument.__subclasses__():
         cls=cls,
         schema=SCHEMAS[cls],
         serializer=serialize_instrument,
+        deserializer=deserialize_instrument,
     )

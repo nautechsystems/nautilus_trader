@@ -23,7 +23,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
@@ -142,7 +142,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(cls=OrderBookDeltas, instrument_ids=instrument_ids, **kwargs)
+        return self.query(cls=OrderBookDelta, instrument_ids=instrument_ids, **kwargs)
 
     def generic_data(
         self,

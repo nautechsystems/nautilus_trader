@@ -77,12 +77,12 @@ class OrderBookDeltaDataWrangler(WranglerBase):
 
     def __init__(
         self,
-        instrument_id: Instrument,
+        instrument_id: str,
         price_precision: int,
         size_precision: int,
     ) -> None:
         self._inner = RustOrderBookDeltaDataWrangler(
-            instrument_id=instrument_id.value,
+            instrument_id=instrument_id,
             price_precision=price_precision,
             size_precision=size_precision,
         )

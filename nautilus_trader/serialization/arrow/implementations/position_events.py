@@ -50,19 +50,22 @@ def serialize(event: PositionEvent):
     if "unrealized_pnl" in values:
         unrealized = Money.from_str(values["unrealized_pnl"])
         values["unrealized_pnl"] = unrealized.as_double()
-    return values
+    return pa.RecordBatch.from_pylist([values], schema=SCHEMAS[type(event)])
 
 
 def deserialize(cls):
-    def inner(data: dict) -> Union[PositionOpened, PositionChanged, PositionClosed]:
-        for k in ("quantity", "last_qty", "peak_qty", "last_px"):
-            if k in data:
-                data[k] = str(data[k])
-        if "realized_pnl" in data:
-            data["realized_pnl"] = f"{data['realized_pnl']} {data['currency']}"
-        if "unrealized_pnl" in data:
-            data["unrealized_pnl"] = f"{data['unrealized_pnl']} {data['currency']}"
-        return cls.from_dict(data)
+    def inner(batch: pa.RecordBatch) -> Union[PositionOpened, PositionChanged, PositionClosed]:
+        def parse(data):
+            for k in ("quantity", "last_qty", "peak_qty", "last_px"):
+                if k in data:
+                    data[k] = str(data[k])
+            if "realized_pnl" in data:
+                data["realized_pnl"] = f"{data['realized_pnl']} {data['currency']}"
+            if "unrealized_pnl" in data:
+                data["unrealized_pnl"] = f"{data['unrealized_pnl']} {data['currency']}"
+            return data
+
+        return [cls.from_dict(parse(d)) for d in batch.to_pylist()]
 
     return inner
 
@@ -85,7 +88,7 @@ SCHEMAS = {
             "last_px": pa.float64(),
             "currency": pa.string(),
             "avg_px_open": pa.float64(),
-            "realized_pnl": pa.string(),
+            "realized_pnl": pa.float64(),
             "event_id": pa.string(),
             "duration_ns": pa.uint64(),
             "ts_event": pa.uint64(),
@@ -111,8 +114,8 @@ SCHEMAS = {
             "avg_px_open": pa.float64(),
             "avg_px_close": pa.float64(),
             "realized_return": pa.float64(),
-            "realized_pnl": pa.string(),
-            "unrealized_pnl": pa.string(),
+            "realized_pnl": pa.float64(),
+            "unrealized_pnl": pa.float64(),
             "event_id": pa.string(),
             "ts_opened": pa.uint64(),
             "ts_event": pa.uint64(),
@@ -139,7 +142,7 @@ SCHEMAS = {
             "avg_px_open": pa.float64(),
             "avg_px_close": pa.float64(),
             "realized_return": pa.float64(),
-            "realized_pnl": pa.string(),
+            "realized_pnl": pa.float64(),
             "event_id": pa.string(),
             "ts_opened": pa.uint64(),
             "ts_closed": pa.uint64(),
