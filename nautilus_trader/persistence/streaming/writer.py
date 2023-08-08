@@ -125,10 +125,11 @@ class StreamingFeatherWriter:
         metadata = self._extract_obj_metadata(obj)
         schema = self._schemas[cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
-        full_path = f"{self.path}/{table_name}_{obj.instrument_id.value}.feather"
+        folder = f"{self.path}/{table_name}"
         key = (table_name, obj.instrument_id.value)
-        self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
-        f = self.fs.open(full_path, "ab")
+        self.fs.makedirs(folder, exist_ok=True)
+        full_path = f"{folder}/{obj.instrument_id.value}.feather"
+        f = self.fs.open(full_path, "wb")
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
 
@@ -190,7 +191,9 @@ class StreamingFeatherWriter:
             if table.startswith("Signal"):
                 self._create_writer(cls=cls)
             elif table in self._per_instrument_writers:
-                self._create_instrument_writer(cls=cls, obj=obj)
+                key = (table, obj.instrument_id.value)  # type: ignore
+                if key not in self._instrument_writers:
+                    self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
@@ -326,3 +329,18 @@ def generate_signal_class(name: str, value_type: type) -> type:
     )
 
     return SignalData
+
+
+def read_feather_file(
+    path: str,
+    fs: Optional[fsspec.AbstractFileSystem] = None,
+) -> Optional[pa.Table]:
+    fs = fs or fsspec.filesystem("file")
+    if not fs.exists(path):
+        return None
+    try:
+        with fs.open(path) as f:
+            reader = pa.ipc.open_stream(f)
+            return reader.read_all()
+    except (pa.ArrowInvalid, OSError):
+        return None

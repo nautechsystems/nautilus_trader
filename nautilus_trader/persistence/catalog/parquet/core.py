@@ -16,6 +16,9 @@
 import os
 import pathlib
 import platform
+from collections import defaultdict
+from collections import namedtuple
+from collections.abc import Generator
 from itertools import groupby
 from pathlib import Path
 from typing import Callable, Optional, Union
@@ -44,14 +47,15 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.persistence.streaming.writer import read_feather_file
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
 timestamp_like = Union[int, str, float]
+FeatherFile = namedtuple("FeatherFile", ["path", "class_name"])
 
 
 class ParquetDataCatalog(BaseDataCatalog):
@@ -374,13 +378,12 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def _read_feather(self, kind: str, instance_id: str, raise_on_failed_deserialize: bool = False):
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
-        data = {}
-        glob_path = f"{self.path}/{kind}/{instance_id}.feather/*.feather"
-
-        for path in list(self.fs.glob(glob_path)):
-            cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
+        data = defaultdict(list)
+        for feather_file in self._list_feather_files(kind=kind, instance_id=instance_id):
+            path = feather_file.path
+            cls_name = feather_file.class_name
             table: pa.Table = read_feather_file(path=path, fs=self.fs)
-            if len(table) == 0:
+            if table is None or len(table) == 0:
                 continue
 
             if table is None:
@@ -390,24 +393,26 @@ class ParquetDataCatalog(BaseDataCatalog):
             try:
                 cls = class_mapping[cls_name]
                 objs = self._handle_table_nautilus(table=table, cls=cls)
-                data[cls_name] = objs
+                data[cls_name].extend(objs)
             except Exception as e:
                 if raise_on_failed_deserialize:
                     raise
                 print(f"Failed to deserialize {cls_name}: {e}")
         return sorted(sum(data.values(), []), key=lambda x: x.ts_init)
 
+    def _list_feather_files(
+        self,
+        kind: str,
+        instance_id: str,
+    ) -> Generator[FeatherFile, None, None]:
+        prefix = f"{self.path}/{kind}/{instance_id}"
 
-def read_feather_file(
-    path: str,
-    fs: Optional[fsspec.AbstractFileSystem] = None,
-) -> Optional[pa.Table]:
-    fs = fs or fsspec.filesystem("file")
-    if not fs.exists(path):
-        return None
-    try:
-        with fs.open(path) as f:
-            reader = pa.ipc.open_stream(f)
-            return reader.read_all()
-    except (pa.ArrowInvalid, OSError):
-        return None
+        # Non-instrument feather files
+        for fn in self.fs.glob(f"{self.path}/{kind}/{instance_id}/*.feather"):
+            cls_name = fn.replace(prefix + "/", "").replace(".feather", "")
+            yield FeatherFile(path=fn, class_name=cls_name)
+
+        # Per-instrument feather files
+        for ins_fn in self.fs.glob(f"{self.path}/{kind}/{instance_id}/**/*.feather"):
+            ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
+            yield FeatherFile(path=ins_fn, class_name=ins_cls_name)

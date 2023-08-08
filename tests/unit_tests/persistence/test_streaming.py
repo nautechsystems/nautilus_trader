@@ -67,15 +67,15 @@ class TestPersistenceStreaming:
         result = dict(Counter([r.__class__.__name__ for r in result]))
 
         expected = {
-            "AccountState": 670,
-            "BettingInstrument": 1,
+            "AccountState": 772,
+            "BettingInstrument": 2,
             "ComponentStateChanged": 21,
-            "OrderAccepted": 324,
-            "OrderBookDeltas": 1078,
-            "OrderFilled": 346,
-            "OrderInitialized": 325,
-            "OrderSubmitted": 325,
-            "PositionChanged": 343,
+            "OrderAccepted": 375,
+            "OrderBookDelta": 1307,
+            "OrderFilled": 397,
+            "OrderInitialized": 376,
+            "OrderSubmitted": 376,
+            "PositionChanged": 394,
             "PositionClosed": 2,
             "PositionOpened": 3,
             "TradeTick": 198,
