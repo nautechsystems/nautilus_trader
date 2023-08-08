@@ -240,7 +240,8 @@ cdef class ExecAlgorithm(Actor):
 
         """
         Condition.not_none(command, "command")
-        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
+        # TODO: Add `exec_algorithm_id` to cancel order commands
+        # Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
@@ -857,7 +858,8 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        # TODO: Order could also be RELEASED
+        # Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
 
         cdef bint updating = False  # Set validation flag (must become true)
 
