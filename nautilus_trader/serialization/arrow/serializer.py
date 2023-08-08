@@ -63,7 +63,7 @@ def _clear_all(**kwargs):
 def register_arrow(
     cls: type,
     schema: Optional[pa.Schema],
-    serializer: Optional[Callable],
+    serializer: Optional[Callable] = None,
     deserializer: Optional[Callable] = None,
 ):
     """
@@ -88,7 +88,7 @@ def register_arrow(
 
     """
     PyCondition.type(schema, pa.Schema, "schema")
-    PyCondition.type(serializer, Callable, "serializer")
+    PyCondition.type_or_none(serializer, Callable, "serializer")
     PyCondition.type_or_none(deserializer, Callable, "deserializer")
 
     if serializer is not None:
@@ -140,7 +140,7 @@ class ArrowSerializer:
         return batch
 
     @staticmethod
-    def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.RecordBatch:
+    def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.Table:
         """
         Serialize the given instrument to `Parquet` specification bytes.
 
@@ -234,7 +234,10 @@ def make_dict_deserializer(cls):
 
 
 def dicts_to_record_batch(data: list[dict], schema: pa.Schema) -> pa.RecordBatch:
-    return pa.RecordBatch.from_pylist(data, schema=schema)
+    try:
+        return pa.RecordBatch.from_pylist(data, schema=schema)
+    except Exception as e:
+        print(e)
 
 
 RUST_SERIALIZERS = {
@@ -246,14 +249,21 @@ RUST_SERIALIZERS = {
 }
 RUST_STR_SERIALIZERS = {s.__name__ for s in RUST_SERIALIZERS}
 
+# TODO - breaking while we don't have access to rust schemas
 # Check we have each type defined only once (rust or python)
-assert not set(NAUTILUS_ARROW_SCHEMA).intersection(RUST_SERIALIZERS)
-assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_ARROW_SCHEMA))
+# assert not set(NAUTILUS_ARROW_SCHEMA).intersection(RUST_SERIALIZERS)
+# assert not RUST_SERIALIZERS.intersection(set(NAUTILUS_ARROW_SCHEMA))
 
 for _cls in NAUTILUS_ARROW_SCHEMA:
-    register_arrow(
-        cls=_cls,
-        schema=NAUTILUS_ARROW_SCHEMA[_cls],
-        serializer=make_dict_serializer(NAUTILUS_ARROW_SCHEMA[_cls]),
-        deserializer=make_dict_deserializer(_cls),
-    )
+    if _cls in RUST_SERIALIZERS:
+        register_arrow(
+            cls=_cls,
+            schema=NAUTILUS_ARROW_SCHEMA[_cls],
+        )
+    else:
+        register_arrow(
+            cls=_cls,
+            schema=NAUTILUS_ARROW_SCHEMA[_cls],
+            serializer=make_dict_serializer(NAUTILUS_ARROW_SCHEMA[_cls]),
+            deserializer=make_dict_deserializer(_cls),
+        )

@@ -205,10 +205,14 @@ class BetfairTestStubs:
         bypass_risk=False,
         flush_interval_ms: Optional[int] = None,
         bypass_logging: bool = True,
+        log_level: str = "WARNING",
         venue_name: str = "BETFAIR",
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            logging=LoggingConfig(bypass_logging=bypass_logging),
+            logging=LoggingConfig(
+                log_level=log_level,
+                bypass_logging=bypass_logging,
+            ),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(
                 catalog_fs_protocol=catalog_fs_protocol,

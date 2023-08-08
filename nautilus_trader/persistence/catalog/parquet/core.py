@@ -379,17 +379,17 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         for path in list(self.fs.glob(glob_path)):
             cls_name = camel_to_snake_case(pathlib.Path(path).stem).replace("__", "_")
-            df = read_feather_file(path=path, fs=self.fs)
+            table: pa.Table = read_feather_file(path=path, fs=self.fs)
+            if len(table) == 0:
+                continue
 
-            if df is None:
+            if table is None:
                 print(f"No data for {cls_name}")
                 continue
             # Apply post read fixes
             try:
-                objs = self._handle_table_nautilus(
-                    table=pa.Table.from_pandas(df),
-                    cls=class_mapping[cls_name],
-                )
+                cls = class_mapping[cls_name]
+                objs = self._handle_table_nautilus(table=table, cls=cls)
                 data[cls_name] = objs
             except Exception as e:
                 if raise_on_failed_deserialize:
@@ -398,13 +398,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         return sorted(sum(data.values(), []), key=lambda x: x.ts_init)
 
 
-def read_feather_file(path: str, fs: Optional[fsspec.AbstractFileSystem] = None):
+def read_feather_file(
+    path: str,
+    fs: Optional[fsspec.AbstractFileSystem] = None,
+) -> Optional[pa.Table]:
     fs = fs or fsspec.filesystem("file")
     if not fs.exists(path):
-        return
+        return None
     try:
         with fs.open(path) as f:
             reader = pa.ipc.open_stream(f)
-            return reader.read_pandas()
+            return reader.read_all()
     except (pa.ArrowInvalid, FileNotFoundError):
-        return
+        return None

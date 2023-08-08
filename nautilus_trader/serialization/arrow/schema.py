@@ -19,9 +19,13 @@ import pyarrow as pa
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatusUpdate
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
@@ -43,6 +47,51 @@ from nautilus_trader.model.events import OrderUpdated
 
 
 NAUTILUS_ARROW_SCHEMA = {
+    # TODO - remove when rust schemas exposed
+    OrderBookDeltas: pa.schema(
+        [
+            pa.field("action", pa.uint8(), nullable=False),
+            pa.field("side", pa.uint8(), nullable=False),
+            pa.field("price", pa.int64(), nullable=False),
+            pa.field("size", pa.uint64(), nullable=False),
+            pa.field("order_id", pa.uint64(), nullable=False),
+            pa.field("flags", pa.uint8(), nullable=False),
+            pa.field("sequence", pa.uint64(), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("ts_init", pa.uint64(), nullable=False),
+        ],
+    ),
+    Bar: pa.schema(
+        {
+            "open": pa.int64(),
+            "high": pa.int64(),
+            "low": pa.int64(),
+            "close": pa.int64(),
+            "volume": pa.uint64(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+    ),
+    TradeTick: pa.schema(
+        [
+            pa.field("price", pa.int64(), nullable=False),
+            pa.field("size", pa.uint64(), nullable=False),
+            pa.field("aggressor_side", pa.uint8(), nullable=False),
+            pa.field("trade_id", pa.string(), nullable=False),
+            pa.field("ts_event", pa.uint64(), nullable=False),
+            pa.field("ts_init", pa.uint64(), nullable=False),
+        ],
+    ),
+    QuoteTick: pa.schema(
+        {
+            "bid": pa.int64(),
+            "ask": pa.int64(),
+            "bid_size": pa.uint64(),
+            "ask_size": pa.uint64(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+    ),
     Ticker: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
@@ -124,8 +173,11 @@ NAUTILUS_ARROW_SCHEMA = {
             "trailing_offset_type": pa.dictionary(pa.int8(), pa.string()),
             "expire_time_ns": pa.uint64(),
             "display_qty": pa.string(),
+            "quote_quantity": pa.bool_(),
+            "options": pa.string(),
             # --------------------- #
             "emulation_trigger": pa.string(),
+            "trigger_instrument_id": pa.string(),
             "contingency_type": pa.string(),
             "order_list_id": pa.string(),
             "linked_order_ids": pa.string(),

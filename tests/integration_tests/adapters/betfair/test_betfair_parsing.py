@@ -180,7 +180,7 @@ class TestBetfairParsingStreaming:
         assert result[0] == TradeTick.from_dict(
             {
                 "type": "TradeTick",
-                "instrument_id": "1.205822330|49808334|0.0.BETFAIR",
+                "instrument_id": "1.205822330-49808334-0.0.BETFAIR",
                 "price": "3.95",
                 "size": "46.950000",
                 "aggressor_side": "NO_AGGRESSOR",
@@ -192,7 +192,7 @@ class TestBetfairParsingStreaming:
         assert result[1] == BetfairTicker.from_dict(
             {
                 "type": "BetfairTicker",
-                "instrument_id": "1.205822330|49808334|0.0.BETFAIR",
+                "instrument_id": "1.205822330-49808334-0.0.BETFAIR",
                 "ts_event": 0,
                 "ts_init": 0,
                 "last_traded_price": 0.2531646,
@@ -263,7 +263,7 @@ class TestBetfairParsingStreaming:
                 instrument_id = update.instrument_id
                 if instrument_id not in books:
                     instrument = TestInstrumentProvider.betting_instrument(
-                        *instrument_id.value.split("|"),
+                        *instrument_id.value.split("-", maxsplit=2),
                     )
                     books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)
@@ -603,7 +603,7 @@ class TestBetfairParsing:
         starting_prices = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
         assert len(starting_prices) == 8
         assert starting_prices[0].instrument_id == InstrumentId.from_str(
-            "1.208011084|45967562|0.0-BSP.BETFAIR",
+            "1.208011084-45967562-0.0-BSP.BETFAIR",
         )
         assert starting_prices[0].bsp == 2.0008034621107256
 
@@ -616,6 +616,6 @@ class TestBetfairParsing:
             upd
             for upd in updates
             if isinstance(upd, BSPOrderBookDeltas)
-            and upd.instrument_id == InstrumentId.from_str("1.205880280|49892033|0.0-BSP.BETFAIR")
+            and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-0.0-BSP.BETFAIR")
         ]
         assert len(single_instrument_bsp_updates) == 1

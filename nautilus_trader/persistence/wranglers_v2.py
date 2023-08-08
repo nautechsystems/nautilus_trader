@@ -48,15 +48,18 @@ class WranglerBase(abc.ABC):
 
     @classmethod
     def from_schema(cls, schema: pa.Schema):
-        metadata = schema.metadata
-
         def decode(k, v):
             if k in (b"price_precision", b"size_precision"):
                 return int(v.decode())
             elif k in (b"instrument_id", b"bar_type"):
                 return v.decode()
 
-        return cls(**{k.decode(): decode(k, v) for k, v in metadata.items()})
+        metadata = schema.metadata
+        ignore_keys = {b"class", b"pandas"}
+
+        return cls(
+            **{k.decode(): decode(k, v) for k, v in metadata.items() if k not in ignore_keys},
+        )
 
 
 class OrderBookDeltaDataWrangler(WranglerBase):

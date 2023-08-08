@@ -467,7 +467,7 @@ def runner_change_to_bsp_order_book_deltas(
         deltas.append(delta)
 
     for spl in rc.spl:
-        book_order = _price_volume_to_book_order(spb, OrderSide.BUY)
+        book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
         delta = OrderBookDelta(
             bsp_instrument_id,
             BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,

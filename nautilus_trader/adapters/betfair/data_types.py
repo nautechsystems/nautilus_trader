@@ -26,6 +26,7 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
 from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_object
@@ -222,6 +223,7 @@ register_arrow(
     cls=BetfairTicker,
     schema=BetfairTicker.schema(),
     serializer=make_dict_serializer(schema=BetfairTicker.schema()),
+    deserializer=make_dict_deserializer(BetfairTicker),
 )
 
 # Register serialization/parquet BetfairStartingPrice
@@ -229,6 +231,7 @@ register_arrow(
     cls=BetfairStartingPrice,
     schema=BetfairStartingPrice.schema(),
     serializer=make_dict_serializer(schema=BetfairStartingPrice.schema()),
+    deserializer=make_dict_deserializer(BetfairStartingPrice),
 )
 
 # Register serialization/parquet BSPOrderBookDeltas

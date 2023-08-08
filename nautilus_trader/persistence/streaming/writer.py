@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-from typing import Any, BinaryIO, Optional
+from typing import Any, BinaryIO, Optional, Union
 
 import fsspec
 import pyarrow as pa
@@ -23,9 +23,12 @@ from pyarrow import RecordBatchStreamWriter
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.persistence.catalog.parquet.util import GENERIC_DATA_PREFIX
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -81,6 +84,14 @@ class StreamingFeatherWriter:
         self.logger = logger
         self._files: dict[str, BinaryIO] = {}
         self._writers: dict[str, RecordBatchStreamWriter] = {}
+        self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
+        self._per_instrument_writers = {
+            "trade_tick",
+            "quote_tick",
+            "bar",
+            "order_book_delta",
+            "ticker",
+        }
         self._create_writers()
 
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
@@ -93,23 +104,68 @@ class StreamingFeatherWriter:
         table_name = class_to_filename(cls)
         if table_name in self._writers:
             return
-        prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
+        if table_name in self._per_instrument_writers:
+            return
         schema = self._schemas[cls]
-        full_path = f"{self.path}/{prefix}{table_name}.feather"
+        full_path = f"{self.path}/{table_name}.feather"
 
         self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
         f = self.fs.open(full_path, "wb")
-        self._files[cls] = f
-
+        self._files[table_name] = f
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
     def _create_writers(self):
         for cls in self._schemas:
             self._create_writer(cls=cls)
 
+    def _create_instrument_writer(self, cls, obj):
+        """
+        Create an arrow writer with instrument specific metadata in the schema.
+        """
+        metadata = self._extract_obj_metadata(obj)
+        schema = self._schemas[cls].with_metadata(metadata)
+        table_name = class_to_filename(cls)
+        full_path = f"{self.path}/{table_name}.feather"
+        self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
+        f = self.fs.open(full_path, "wb")
+        self._files[table_name] = f
+        self._instrument_writers[(table_name, obj.instrument_id.value)] = pa.ipc.new_stream(
+            f,
+            schema,
+        )
+
+    def _extract_obj_metadata(self, obj: Union[TradeTick, QuoteTick, Bar, OrderBookDelta]):
+        metadata = {b"instrument_id": obj.instrument_id.value.encode()}
+        if isinstance(obj, (TradeTick, QuoteTick)):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.price.precision).encode(),
+                    b"size_precision": str(obj.size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDelta):
+            metadata.update(
+                {
+                    b"price_precision": str(obj.order.price.precision).encode(),
+                    b"size_precision": str(obj.order.size.precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDeltas):
+            delta = obj.deltas[0]
+            metadata.update(
+                {
+                    b"price_precision": str(delta.order.price.precision).encode(),
+                    b"size_precision": str(delta.order.size.precision).encode(),
+                },
+            )
+        else:
+            raise NotImplementedError
+
+        return metadata
+
     @property
     def closed(self) -> bool:
-        return all(self._files[cls].closed for cls in self._files)
+        return all(self._files[table_name].closed for table_name in self._files)
 
     def write(self, obj: object) -> None:
         """
@@ -135,19 +191,25 @@ class StreamingFeatherWriter:
         if table not in self._writers:
             if table.startswith("Signal"):
                 self._create_writer(cls=cls)
+            elif table in self._per_instrument_writers:
+                self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
                 return
             else:
                 return
-        writer: RecordBatchStreamWriter = self._writers[table]
+        if table in self._per_instrument_writers:
+            writer: RecordBatchStreamWriter = self._instrument_writers[
+                (table, obj.instrument_id.value)  # type: ignore
+            ]
+        else:
+            writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
         serialized = ArrowSerializer.serialize_batch([obj], cls=cls)
         if not serialized:
             return
         try:
-            for batch in serialized.to_batches():
-                writer.write_batch(batch)
+            writer.write_table(serialized)
             self.check_flush()
         except Exception as e:
             self.logger.error(f"Failed to serialize {cls=}")

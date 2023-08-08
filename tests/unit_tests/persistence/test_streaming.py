@@ -51,7 +51,7 @@ class TestPersistenceStreaming:
             catalog_fs_protocol="file",
             instrument_id=instrument.id.value,
             flush_interval_ms=5000,
-            bypass_logging=True,
+            bypass_logging=False,
         )
 
         node = BacktestNode(configs=[run_config])
