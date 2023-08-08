@@ -46,6 +46,11 @@ cdef class OrderEmulator(Actor):
     cdef set _subscribed_strategies
     cdef set _monitored_positions
 
+    cdef readonly int command_count
+    """The total count of commands received by the emulator.\n\n:returns: `int`"""
+    cdef readonly int event_count
+    """The total count of events received by the emulator.\n\n:returns: `int`"""
+
     cpdef void execute(self, TradingCommand command)
     cpdef MatchingCore create_matching_core(self, InstrumentId instrument_id, Price price_increment)
     cdef void _handle_submit_order(self, SubmitOrder command)
