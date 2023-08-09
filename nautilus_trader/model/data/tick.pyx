@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
+
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -440,6 +443,56 @@ cdef class QuoteTick(Data):
         """
         return QuoteTick.to_dict_c(obj)
 
+    @staticmethod
+    def from_pyo3(list pyo3_ticks) -> list[QuoteTick]:
+        """
+        Return quote ticks converted from the given pyo3 provided objects.
+
+        Parameters
+        ----------
+        pyo3_ticks : list[RustQuoteTick]
+            The Rust pyo3 quote ticks to convert from.
+
+        Returns
+        -------
+        list[QuoteTick]
+
+        """
+        cdef list output = []
+
+        cdef InstrumentId instrument_id = None
+        cdef uint8_t bid_prec = 0
+        cdef uint8_t ask_prec = 0
+        cdef uint8_t bid_size_prec = 0
+        cdef uint8_t ask_size_prec = 0
+
+        cdef:
+            QuoteTick tick
+        for pyo3_tick in pyo3_ticks:
+            if instrument_id is None:
+                instrument_id = InstrumentId.from_str_c(pyo3_tick.instrument_id.value)
+                bid_prec = pyo3_tick.bid.precision
+                ask_prec = pyo3_tick.ask.precision
+                bid_size_prec = pyo3_tick.bid_size.precision
+                ask_size_prec = pyo3_tick.ask_size.precision
+
+            tick = QuoteTick.from_raw_c(
+                instrument_id,
+                pyo3_tick.bid.raw,
+                pyo3_tick.ask.raw,
+                bid_prec,
+                ask_prec,
+                pyo3_tick.bid_size.raw,
+                pyo3_tick.ask_size.raw,
+                bid_size_prec,
+                ask_size_prec,
+                pyo3_tick.ts_event,
+                pyo3_tick.ts_init,
+            )
+            output.append(tick)
+
+        return output
+
     cpdef Price extract_price(self, PriceType price_type):
         """
         Extract the price for the given price type.
@@ -848,3 +901,47 @@ cdef class TradeTick(Data):
 
         """
         return TradeTick.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3(list pyo3_ticks) -> list[TradeTick]:
+        """
+        Return trade ticks converted from the given pyo3 provided objects.
+
+        Parameters
+        ----------
+        pyo3_ticks : list[RustTradeTick]
+            The Rust pyo3 trade ticks to convert from.
+
+        Returns
+        -------
+        list[TradeTick]
+
+        """
+        cdef list output = []
+
+        cdef InstrumentId instrument_id = None
+        cdef uint8_t price_prec = 0
+        cdef uint8_t size_prec = 0
+
+        cdef:
+            TradeTick tick
+        for pyo3_tick in pyo3_ticks:
+            if instrument_id is None:
+                instrument_id = InstrumentId.from_str_c(pyo3_tick.instrument_id.value)
+                price_prec = pyo3_tick.price.precision
+                size_prec = pyo3_tick.price.precision
+
+            tick = TradeTick.from_raw_c(
+                instrument_id,
+                pyo3_tick.price.raw,
+                price_prec,
+                pyo3_tick.size.raw,
+                size_prec,
+                pyo3_tick.aggressor_side.value,
+                TradeId(pyo3_tick.trade_id.value),
+                pyo3_tick.ts_event,
+                pyo3_tick.ts_init,
+            )
+            output.append(tick)
+
+        return output

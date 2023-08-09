@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport timedelta
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -914,6 +915,49 @@ cdef class Bar(Data):
 
         """
         return Bar.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3(list pyo3_bars) -> list[Bar]:
+        """
+        Return bars converted from the given pyo3 provided objects.
+
+        Parameters
+        ----------
+        pyo3_bars : list[RustBar]
+            The Rust pyo3 bars to convert from.
+
+        Returns
+        -------
+        list[Bar]
+
+        """
+        cdef list output = []
+
+        cdef BarType bar_type = None
+        cdef uint8_t price_prec = 0
+        cdef uint8_t volume_prec = 0
+
+        cdef:
+            Bar bar
+        for pyo3_bar in pyo3_bars:
+            if bar_type is None:
+                bar_type = BarType.from_str_c(str(pyo3_bar.bar_type))
+                price_prec = pyo3_bar.open.precision
+                volume_prec = pyo3_bar.volume.precision
+
+            bar = Bar(
+                bar_type,
+                Price.from_raw_c(pyo3_bar.open.raw, price_prec),
+                Price.from_raw_c(pyo3_bar.high.raw, price_prec),
+                Price.from_raw_c(pyo3_bar.low.raw, price_prec),
+                Price.from_raw_c(pyo3_bar.close.raw, price_prec),
+                Quantity.from_raw_c(pyo3_bar.volume.raw, volume_prec),
+                pyo3_bar.ts_event,
+                pyo3_bar.ts_init,
+            )
+            output.append(bar)
+
+        return output
 
     cpdef bint is_single_price(self):
         """
