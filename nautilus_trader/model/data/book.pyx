@@ -513,6 +513,56 @@ cdef class OrderBookDelta(Data):
         """
         return OrderBookDelta.clear_c(instrument_id, ts_event, ts_init, sequence)
 
+    @staticmethod
+    def from_pyo3(list pyo3_deltas) -> list[OrderBookDelta]:
+        """
+        Return order book deltas converted from the given pyo3 provided objects.
+
+        Parameters
+        ----------
+        pyo3_deltas : list[RustOrderBookDelta]
+            The Rust pyo3 order book deltas to convert from.
+
+        Returns
+        -------
+        list[OrderBookDelta]
+
+        """
+        cdef list output = []
+
+        cdef InstrumentId instrument_id = None
+        cdef uint8_t price_prec = 0
+        cdef uint8_t size_prec = 0
+
+        cdef:
+            OrderBookDelta delta
+            BookOrder book_order
+        for pyo3_delta in pyo3_deltas:
+            if instrument_id is None:
+                instrument_id = InstrumentId.from_str_c(pyo3_delta.instrument_id.value)
+                price_prec = pyo3_delta.order.price.precision
+                size_prec = pyo3_delta.order.size.precision
+
+            book_order = BookOrder(
+               pyo3_delta.order.side.value,
+               Price.from_raw_c(pyo3_delta.order.price.raw, price_prec),
+               Quantity.from_raw_c(pyo3_delta.order.size.raw, size_prec),
+               pyo3_delta.order.order_id,
+            )
+
+            delta = OrderBookDelta(
+                instrument_id,
+                pyo3_delta.action.value,
+                book_order,
+                pyo3_delta.ts_event,
+                pyo3_delta.ts_init,
+                pyo3_delta.sequence,
+                pyo3_delta.flags,
+            )
+            output.append(delta)
+
+        return output
+
 
 cdef class OrderBookDeltas(Data):
     """

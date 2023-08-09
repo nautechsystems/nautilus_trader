@@ -16,6 +16,8 @@
 import pandas as pd
 from fsspec.utils import pathlib
 
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -36,8 +38,12 @@ def test_quote_tick_data_wrangler() -> None:
     wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
     ticks = wrangler.from_pandas(df)
 
+    cython_ticks = QuoteTick.from_pyo3(ticks)
+
     # Assert
     assert len(ticks) == 100_000
+    assert len(cython_ticks) == 100_000
+    assert isinstance(cython_ticks[0], QuoteTick)
     assert str(ticks[0]) == "AUD/USD.SIM,0.67067,0.67070,1000000,1000000,1580398089820000000"
     assert str(ticks[-1]) == "AUD/USD.SIM,0.66934,0.66938,1000000,1000000,1580504394501000000"
 
@@ -51,7 +57,11 @@ def test_trade_tick_data_wrangler() -> None:
     wrangler = TradeTickDataWrangler.from_instrument(ETHUSDT_BINANCE)
     ticks = wrangler.from_pandas(df)
 
+    cython_ticks = TradeTick.from_pyo3(ticks)
+
     # Assert
     assert len(ticks) == 69806
+    assert len(cython_ticks) == 69806
+    assert isinstance(cython_ticks[0], TradeTick)
     assert str(ticks[0]) == "ETHUSDT.BINANCE,423.76,2.67900,BUYER,148568980,1597399200223000000"
     assert str(ticks[-1]) == "ETHUSDT.BINANCE,426.89,0.16100,BUYER,148638715,1597417198693000000"

@@ -55,7 +55,7 @@ from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
 timestamp_like = Union[int, str, float]
-FeatherFile = namedtuple("FeatherFile", ["path", "class_name"])
+FeatherFile = namedtuple("FeatherFile", ["path", "class_name"])  # noqa
 
 
 class ParquetDataCatalog(BaseDataCatalog):
