@@ -311,6 +311,17 @@ class ParquetDataCatalog(BaseDataCatalog):
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
         data = ArrowSerializer.deserialize(cls=cls, batch=table)
+        # TODO (bm/cs) remove when pyo3 objects are used everywhere.
+        module = data[0].__class__.__module__
+        if "builtins" in module:
+            cython_cls = {
+                "OrderBookDeltas": OrderBookDelta,
+                "OrderBookDelta": OrderBookDelta,
+                "TradeTick": TradeTick,
+                "QuoteTick": QuoteTick,
+                "Bar": Bar,
+            }.get(cls.__name__, cls.__name__)
+            data = cython_cls.from_pyo3(data)
         return data
 
     def _query_subclasses(

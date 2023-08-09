@@ -28,6 +28,7 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.streaming.writer import generate_signal_class
@@ -41,9 +42,7 @@ class TestPersistenceStreaming:
     def setup(self):
         self.catalog: Optional[ParquetDataCatalog] = None
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
-    def test_feather_writer(self, betfair_catalog):
-        # Arrange
+    def _run_default_backtest(self, betfair_catalog):
         self.catalog = betfair_catalog
         instrument = self.catalog.instruments()[0]
         run_config = BetfairTestStubs.betfair_backtest_run_config(
@@ -59,9 +58,17 @@ class TestPersistenceStreaming:
         # Act
         backtest_result = node.run()
 
+        return backtest_result
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
+    def test_feather_writer(self, betfair_catalog):
+        # Arrange
+        backtest_result = self._run_default_backtest(betfair_catalog)
+        instance_id = backtest_result[0].instance_id
+
         # Assert
         result = self.catalog.read_backtest(
-            instance_id=backtest_result[0].instance_id,
+            instance_id=instance_id,
             raise_on_failed_deserialize=True,
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))
@@ -222,3 +229,18 @@ class TestPersistenceStreaming:
         assert self.catalog.fs.exists(config_file)
         raw = self.catalog.fs.open(config_file, "rb").read()
         assert msgspec.json.decode(raw, type=NautilusKernelConfig)
+
+    def test_feather_reader_returns_cython_objects(self, betfair_catalog):
+        # Arrange
+        backtest_result = self._run_default_backtest(betfair_catalog)
+        instance_id = backtest_result[0].instance_id
+
+        # Act
+        result = self.catalog.read_backtest(
+            instance_id=instance_id,
+            raise_on_failed_deserialize=True,
+        )
+
+        # Assert
+        assert len([d for d in result if isinstance(d, TradeTick)]) == 198
+        assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
