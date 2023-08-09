@@ -363,11 +363,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
 
     def list_backtest_runs(self) -> list[str]:
-        glob_path = f"{self.path}/backtest/*.feather"
+        glob_path = f"{self.path}/backtest/*"
         return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
     def list_live_runs(self) -> list[str]:
-        glob_path = f"{self.path}/live/*.feather"
+        glob_path = f"{self.path}/live/*"
         return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
     def read_live_run(self, instance_id: str, **kwargs):

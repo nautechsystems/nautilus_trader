@@ -306,6 +306,28 @@ class _TestPersistenceCatalog:
         assert quote_ticks[0].ts_init == start_timestamp
         assert quote_ticks[-1].ts_init == end_timestamp
 
+    def test_list_backtest_runs(self, betfair_catalog):
+        # Arrange
+        mock_folder = f"{betfair_catalog.path}/backtest/abc"
+        betfair_catalog.fs.mkdir(mock_folder)
+
+        # Act
+        result = betfair_catalog.list_backtest_runs()
+
+        # Assert
+        assert result == ["abc"]
+
+    def test_list_live_runs(self, betfair_catalog):
+        # Arrange
+        mock_folder = f"{betfair_catalog.path}/live/abc"
+        betfair_catalog.fs.mkdir(mock_folder)
+
+        # Act
+        result = betfair_catalog.list_live_runs()
+
+        # Assert
+        assert result == ["abc"]
+
 
 class TestPersistenceCatalogFile(_TestPersistenceCatalog):
     fs_protocol = "file"
