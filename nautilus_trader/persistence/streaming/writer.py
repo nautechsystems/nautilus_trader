@@ -188,7 +188,7 @@ class StreamingFeatherWriter:
             cls = obj.data_type.type
         table = class_to_filename(cls)
         if table not in self._writers:
-            if table.startswith("Signal"):
+            if table.startswith("genericdata_signal"):
                 self._create_writer(cls=cls)
             elif table in self._per_instrument_writers:
                 key = (table, obj.instrument_id.value)  # type: ignore
@@ -298,21 +298,20 @@ def generate_signal_class(name: str, value_type: type) -> type:
     SignalData.__name__ = f"Signal{name.title()}"
 
     # Parquet serialization
-    def serialize_signal(data: list) -> pa.Table:
-        return pa.Table.from_pylist(
+    def serialize_signal(data: SignalData) -> pa.RecordBatch:
+        return pa.RecordBatch.from_pylist(
             [
                 {
-                    "ts_init": d.ts_init,
-                    "ts_event": d.ts_event,
-                    "value": d.value,
-                }
-                for d in data
+                    "ts_init": data.ts_init,
+                    "ts_event": data.ts_event,
+                    "value": data.value,
+                },
             ],
             schema=schema,
         )
 
-    def deserialize_signal(data):
-        return SignalData(**data)
+    def deserialize_signal(table: pa.Table):
+        return [SignalData(**d) for d in table.to_pylist()]
 
     schema = pa.schema(
         {

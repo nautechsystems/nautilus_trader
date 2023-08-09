@@ -88,21 +88,26 @@ class TestPersistenceStreaming:
         self.catalog = betfair_catalog
         TestPersistenceStubs.setup_news_event_persistence()
 
+        # Load news events into catalog
+        news_events = TestPersistenceStubs.news_events()
+        self.catalog.write_data(news_events)
+
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
+            catalog_fs_protocol="file",
             data_cls=NewsEventData.fully_qualified_name(),
             client_id="NewsClient",
         )
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
+            catalog_fs_protocol="file",
             data_cls=InstrumentStatusUpdate.fully_qualified_name(),
         )
 
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
         )
 
         run_config = BacktestRunConfig(
@@ -117,7 +122,7 @@ class TestPersistenceStreaming:
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=r[0].instance_id,
+            instance_id=r[0].instance_id,
             raise_on_failed_deserialize=True,
         )
 
@@ -130,12 +135,13 @@ class TestPersistenceStreaming:
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
+            catalog_fs_protocol="file",
             data_cls=TradeTick,
         )
 
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
         )
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(
@@ -158,7 +164,7 @@ class TestPersistenceStreaming:
 
         # Assert
         result = self.catalog.read_backtest(
-            backtest_run_id=r[0].instance_id,
+            instance_id=r[0].instance_id,
             raise_on_failed_deserialize=True,
         )
 
@@ -184,10 +190,11 @@ class TestPersistenceStreaming:
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
         )
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol="memory",
+            catalog_fs_protocol="file",
             data_cls=TradeTick,
         )
 
@@ -211,7 +218,7 @@ class TestPersistenceStreaming:
         r = node.run()
 
         # Assert
-        config_file = f"{self.catalog.path}/backtest/{r[0].instance_id}.feather/config.json"
+        config_file = f"{self.catalog.path}/backtest/{r[0].instance_id}/config.json"
         assert self.catalog.fs.exists(config_file)
         raw = self.catalog.fs.open(config_file, "rb").read()
         assert msgspec.json.decode(raw, type=NautilusKernelConfig)
