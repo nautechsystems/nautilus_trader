@@ -171,49 +171,6 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
     assert set_result == set_expected
 
 
-@pytest.mark.skip(reason="Removed bdatl/bdatb levels - no longer used")
-def test_market_sub_image_no_market_def(data_client, mock_data_engine_process):
-    # Arrange
-    raw = BetfairStreaming.mcm_SUB_IMAGE_no_market_def()
-
-    # Act
-    data_client.on_market_update(raw)
-
-    # Assert
-    result = Counter(
-        [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list],
-    )
-    expected = Counter(
-        {
-            "InstrumentStatusUpdate": 270,
-            "OrderBookSnapshot": 270,
-            "BetfairTicker": 170,
-            "InstrumentClose": 22,
-            "OrderBookDeltas": 4,
-        },
-    )
-    assert result == expected
-
-
-@pytest.mark.skip(reason="Removed bdatl/bdatb levels - no longer used")
-def test_market_resub_delta(data_client, mock_data_engine_process):
-    # Arrange
-    raw = BetfairStreaming.mcm_RESUB_DELTA()
-
-    # Act
-    data_client.on_market_update(raw)
-
-    # Assert
-    result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = (
-        ["OrderBookDeltas"] * 272
-        + ["InstrumentStatusUpdate"] * 12
-        + ["GenericData"] * 12
-        + ["OrderBookDeltas"] * 12
-    )
-    assert result == expected
-
-
 def test_market_update(data_client, mock_data_engine_process):
     # Arrange, Act
     raw = BetfairStreaming.mcm_UPDATE()
@@ -479,7 +436,6 @@ def test_betfair_orderbook(data_client) -> None:
             book.check_integrity()  # Asserts correctness
 
 
-@pytest.mark.skip(reason="Reimplementing")
 def test_bsp_deltas_apply(data_client, instrument):
     # Arrange
     book = TestDataStubs.make_book(
