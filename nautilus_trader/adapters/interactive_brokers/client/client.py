@@ -543,13 +543,15 @@ class InteractiveBrokersClient(Component, EWrapper):
                 serverVersion=self._client.serverVersion(),
             )
             fields = []
+            connection_retries_remaining = 5
 
             # sometimes I get news before the server version, thus the loop
             while len(fields) != 2:
+                connection_retries_remaining -= 1
                 self._client.decoder.interpret(fields)
                 await asyncio.sleep(1)
                 buf = await self._loop.run_in_executor(None, self._client.conn.recvMsg)
-                if not self._client.conn.isConnected():
+                if not self._client.conn.isConnected() or connection_retries_remaining <= 0:
                     # recvMsg() triggers disconnect() where there's a socket.error or 0 length buffer
                     # if we don't then drop out of the while loop it infinitely loops
                     self._log.warning("Disconnected; resetting connection")
@@ -562,6 +564,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                     fields = comm.read_fields(msg)
                     self._log.debug(f"fields {fields}")
                 else:
+                    self._log.debug(f"Received empty buffer from socket (retries_remaining={connection_retries_remaining})")
                     fields = []
 
             (server_version, conn_time) = fields
