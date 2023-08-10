@@ -285,8 +285,8 @@ class TestBinanceSpotDataClient:
         assert len(handler) == 1  # <-- handler received tick
         assert handler[0] == QuoteTick(
             instrument_id=ETHUSDT_BINANCE.id,
-            bid=Price.from_str("4507.24000000"),
-            ask=Price.from_str("4507.25000000"),
+            bid_price=Price.from_str("4507.24000000"),
+            ask_price=Price.from_str("4507.25000000"),
             bid_size=Quantity.from_str("2.35950000"),
             ask_size=Quantity.from_str("2.84570000"),
             ts_event=handler[0].ts_init,  # TODO: WIP

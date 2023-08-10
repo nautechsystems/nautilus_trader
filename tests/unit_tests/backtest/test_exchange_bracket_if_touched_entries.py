@@ -199,8 +199,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=3100.00,
-            ask=3100.00,
+            bid_price=3100.00,
+            ask_price=3100.00,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -296,8 +296,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ts_event=0,
@@ -324,8 +324,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=next_tick_price,
-            ask=next_tick_price,
+            bid_price=next_tick_price,
+            ask_price=next_tick_price,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -402,8 +402,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ts_event=0,
@@ -430,8 +430,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=next_tick_price,
-            ask=next_tick_price,
+            bid_price=next_tick_price,
+            ask_price=next_tick_price,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -520,8 +520,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ts_event=0,
@@ -548,8 +548,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=next_tick_price,
-            ask=next_tick_price,
+            bid_price=next_tick_price,
+            ask_price=next_tick_price,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -635,8 +635,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ts_event=0,
@@ -663,8 +663,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=next_tick_price,
-            ask=next_tick_price,
+            bid_price=next_tick_price,
+            ask_price=next_tick_price,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -748,8 +748,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Arrange: Prepare market
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ts_event=0,
@@ -776,8 +776,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=next_tick_price,
-            ask=next_tick_price,
+            bid_price=next_tick_price,
+            ask_price=next_tick_price,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -860,8 +860,8 @@ class TestSimulatedExchangeEmulatedContingencyOrders:
 
         tick1 = QuoteTick(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
-            bid=ETHUSDT_PERP_BINANCE.make_price(3100.0),
-            ask=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            bid_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
+            ask_price=ETHUSDT_PERP_BINANCE.make_price(3100.0),
             bid_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ask_size=ETHUSDT_PERP_BINANCE.make_qty(10.000),
             ts_event=0,

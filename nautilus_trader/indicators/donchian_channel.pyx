@@ -67,8 +67,8 @@ cdef class DonchianChannel(Indicator):
         """
         Condition.not_none(tick, "tick")
 
-        cdef double ask = Price.raw_to_f64_c(tick._mem.ask.raw)
-        cdef double bid = Price.raw_to_f64_c(tick._mem.bid.raw)
+        cdef double ask = Price.raw_to_f64_c(tick._mem.ask_price.raw)
+        cdef double bid = Price.raw_to_f64_c(tick._mem.bid_price.raw)
         self.update_raw(ask, bid)
 
     cpdef void handle_trade_tick(self, TradeTick tick):

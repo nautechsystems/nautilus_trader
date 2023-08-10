@@ -600,20 +600,20 @@ cdef class OrderMatchingEngine:
         self.iterate(tick.ts_init)
 
         # High
-        tick._mem.bid = self._last_bid_bar._mem.high  # Direct memory assignment
-        tick._mem.ask = self._last_ask_bar._mem.high  # Direct memory assignment
+        tick._mem.bid_price = self._last_bid_bar._mem.high  # Direct memory assignment
+        tick._mem.ask_price = self._last_ask_bar._mem.high  # Direct memory assignment
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
         # Low
-        tick._mem.bid = self._last_bid_bar._mem.low  # Assigning memory directly
-        tick._mem.ask = self._last_ask_bar._mem.low  # Assigning memory directly
+        tick._mem.bid_price = self._last_bid_bar._mem.low  # Assigning memory directly
+        tick._mem.ask_price = self._last_ask_bar._mem.low  # Assigning memory directly
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
         # Close
-        tick._mem.bid = self._last_bid_bar._mem.close  # Assigning memory directly
-        tick._mem.ask = self._last_ask_bar._mem.close  # Assigning memory directly
+        tick._mem.bid_price = self._last_bid_bar._mem.close  # Assigning memory directly
+        tick._mem.ask_price = self._last_ask_bar._mem.close  # Assigning memory directly
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 

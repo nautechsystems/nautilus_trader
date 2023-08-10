@@ -397,9 +397,9 @@ cdef extern from "../includes/model.h":
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
         # The top of book bid price.
-        Price_t bid;
+        Price_t bid_price;
         # The top of book ask price.
-        Price_t ask;
+        Price_t ask_price;
         # The top of book bid size.
         Quantity_t bid_size;
         # The top of book ask size.

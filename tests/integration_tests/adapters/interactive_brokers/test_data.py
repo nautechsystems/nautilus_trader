@@ -177,8 +177,8 @@ async def test_on_quote_tick_update_nans(data_client, instrument):
         {
             "type": "QuoteTick",
             "instrument_id": "AAPL.NASDAQ",
-            "bid": "0.00",
-            "ask": "0.00",
+            "bid_price": "0.00",
+            "ask_price": "0.00",
             "bid_size": "44600",
             "ask_size": "29500",
             "ts_event": 0,

@@ -74,8 +74,8 @@ def parser(line):
     dt = pd.Timestamp(datetime.datetime.strptime(ts.decode(), "%Y%m%d %H%M%S%f"), tz='UTC')
     yield QuoteTick(
         instrument_id=AUDUSD.id,
-        bid=Price.from_str(bid.decode()),
-        ask=Price.from_str(ask.decode()),
+        bid_price=Price.from_str(bid.decode()),
+        ask_price=Price.from_str(ask.decode()),
         bid_size=Quantity.from_int(100_000),
         ask_size=Quantity.from_int(100_000),
         ts_event=dt_to_unix_nanos(dt),

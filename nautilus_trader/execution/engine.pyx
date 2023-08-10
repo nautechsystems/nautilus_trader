@@ -656,7 +656,7 @@ cdef class ExecutionEngine(Component):
         cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
         cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
         if last_quote is not None:
-            last_px = last_quote.ask if order_side == OrderSide.BUY else last_quote.bid
+            last_px = last_quote.ask_price if order_side == OrderSide.BUY else last_quote.bid_price
         else:
             if last_trade is not None:
                 last_px = last_trade.price
