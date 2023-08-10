@@ -1905,6 +1905,8 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
+            if ouo_order.status == OrderStatus.EMULATED:
+                continue  # Order is not on the exchange yet
             if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
                 continue
             if order.leaves_qty._mem.raw == 0:
@@ -1925,6 +1927,8 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
+            if contingent_order.status == OrderStatus.EMULATED:
+                continue  # Order is not on the exchange yet
             if not contingent_order.is_closed_c():
                 self.cancel_order(contingent_order, cancel_contingencies=False)
 
