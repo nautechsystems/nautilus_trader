@@ -81,6 +81,26 @@ cdef class BookOrder:
             order_id,
         )
 
+    def __getstate__(self):
+        return (
+            self._mem.side,
+            self._mem.price.raw,
+            self._mem.price.precision,
+            self._mem.size.raw ,
+            self._mem.size.precision,
+            self._mem.order_id,
+        )
+
+    def __setstate__(self, state):
+        self._mem = book_order_from_raw(
+            state[0],
+            state[1],
+            state[2],
+            state[3],
+            state[4],
+            state[5],
+        )
+
     def __eq__(self, BookOrder other) -> bool:
         return book_order_eq(&self._mem, &other._mem)
 
@@ -233,10 +253,10 @@ cdef class OrderBookDelta(Data):
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         The UNIX timestamp (nanoseconds) when the data object was initialized.
-    sequence : uint64_t, default 0
-        The unique sequence number for the update. If default 0 then will increment the `sequence`.
     flags : uint8_t, default 0 (no flags)
         A combination of packet end with matching engine status.
+    sequence : uint64_t, default 0
+        The unique sequence number for the update. If default 0 then will increment the `sequence`.
     """
 
     def __init__(
@@ -246,8 +266,8 @@ cdef class OrderBookDelta(Data):
         BookOrder order,
         uint64_t ts_event,
         uint64_t ts_init,
-        uint64_t sequence=0,
         uint8_t flags=0,
+        uint64_t sequence=0,
     ):
         # Placeholder for now
         cdef BookOrder_t book_order = order._mem if order is not None else book_order_from_raw(
@@ -268,6 +288,42 @@ cdef class OrderBookDelta(Data):
             ts_init,
         )
 
+    def __getstate__(self):
+        return (
+            self.instrument_id.value,
+            self._mem.action,
+            self._mem.order.side,
+            self._mem.order.price.raw,
+            self._mem.order.price.precision,
+            self._mem.order.size.raw ,
+            self._mem.order.size.precision,
+            self._mem.order.order_id,
+            self._mem.flags,
+            self._mem.sequence,
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        cdef BookOrder_t book_order = book_order_from_raw(
+            state[2],
+            state[3],
+            state[4],
+            state[5],
+            state[6],
+            state[7],
+        )
+        self._mem = orderbook_delta_new(
+            instrument_id._mem,
+            state[1],
+            book_order,
+            state[8],
+            state[9],
+            state[10],
+            state[11],
+        )
+
     def __eq__(self, OrderBookDelta other) -> bool:
         return orderbook_delta_eq(&self._mem, &other._mem)
 
@@ -280,10 +336,10 @@ cdef class OrderBookDelta(Data):
             f"instrument_id={self.instrument_id}, "
             f"action={book_action_to_str(self.action)}, "
             f"order={self.order}, "
-            f"ts_event={self.ts_event}, "
-            f"ts_init={self.ts_init}, "
-            f"sequence={self.sequence}, "
-            f"flags={self.flags})"
+            f"flags={self._mem.flags}, "
+            f"sequence={self._mem.sequence}, "
+            f"ts_event={self._mem.ts_event}, "
+            f"ts_init={self._mem.ts_init})"
         )
 
     @property
