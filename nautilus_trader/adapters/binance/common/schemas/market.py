@@ -480,8 +480,8 @@ class BinanceQuoteData(msgspec.Struct, frozen=True):
     ) -> QuoteTick:
         return QuoteTick(
             instrument_id=instrument_id,
-            bid=Price.from_str(self.b),
-            ask=Price.from_str(self.a),
+            bid_price=Price.from_str(self.b),
+            ask_price=Price.from_str(self.a),
             bid_size=Quantity.from_str(self.B),
             ask_size=Quantity.from_str(self.A),
             ts_event=ts_init,

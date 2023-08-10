@@ -189,7 +189,7 @@ impl DataTransformer {
         let first = data.first().unwrap();
         let metadata = QuoteTick::get_metadata(
             &first.instrument_id,
-            first.bid.precision,
+            first.bid_price.precision,
             first.bid_size.precision,
         );
 

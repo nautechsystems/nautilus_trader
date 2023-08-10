@@ -142,13 +142,11 @@ class TardisQuoteDataLoader:
         df = df.rename(
             columns={
                 "ask_amount": "ask_size",
-                "ask_price": "ask",
-                "bid_price": "bid",
                 "bid_amount": "bid_size",
             },
         )
 
-        return df[["bid", "ask", "bid_size", "ask_size"]]
+        return df[["bid_price", "ask_price", "bid_size", "ask_size"]]
 
 
 class ParquetTickDataLoader:

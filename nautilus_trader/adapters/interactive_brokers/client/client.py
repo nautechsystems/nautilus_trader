@@ -732,9 +732,9 @@ class InteractiveBrokersClient(Component, EWrapper):
         ts_event = pd.Timestamp.fromtimestamp(time, "UTC").value
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
-            bid=instrument.make_price(bid_price),
+            bid_price=instrument.make_price(bid_price),
+            ask_price=instrument.make_price(ask_price),
             bid_size=instrument.make_qty(bid_size),
-            ask=instrument.make_price(ask_price),
             ask_size=instrument.make_qty(ask_size),
             ts_event=ts_event,
             ts_init=max(
@@ -1283,9 +1283,9 @@ class InteractiveBrokersClient(Component, EWrapper):
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, "UTC").value
                 quote_tick = QuoteTick(
                     instrument_id=instrument_id,
-                    bid=instrument.make_price(tick.priceBid),
+                    bid_price=instrument.make_price(tick.priceBid),
+                    ask_price=instrument.make_price(tick.priceAsk),
                     bid_size=instrument.make_qty(tick.sizeBid),
-                    ask=instrument.make_price(tick.priceAsk),
                     ask_size=instrument.make_qty(tick.sizeAsk),
                     ts_event=ts_event,
                     ts_init=ts_event,

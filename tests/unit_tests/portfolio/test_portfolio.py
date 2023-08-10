@@ -427,8 +427,8 @@ class TestPortfolio:
         # Update the last quote
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("25001.00"),
-            ask=Price.from_str("25002.00"),
+            bid_price=Price.from_str("25001.00"),
+            ask_price=Price.from_str("25002.00"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -585,8 +585,8 @@ class TestPortfolio:
         # Update the last quote
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("25001.00"),
-            ask=Price.from_str("25002.00"),
+            bid_price=Price.from_str("25001.00"),
+            ask_price=Price.from_str("25002.00"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -655,8 +655,8 @@ class TestPortfolio:
 
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("10510.00"),
-            ask=Price.from_str("10511.00"),
+            bid_price=Price.from_str("10510.00"),
+            ask_price=Price.from_str("10511.00"),
             bid_size=Quantity.from_str("1.000000"),
             ask_size=Quantity.from_str("1.000000"),
             ts_event=0,
@@ -739,8 +739,8 @@ class TestPortfolio:
 
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("15510.15"),
-            ask=Price.from_str("15510.25"),
+            bid_price=Price.from_str("15510.15"),
+            ask_price=Price.from_str("15510.25"),
             bid_size=Quantity.from_str("12.62"),
             ask_size=Quantity.from_str("3.10"),
             ts_event=0,
@@ -803,8 +803,8 @@ class TestPortfolio:
 
         last_ethusd = QuoteTick(
             instrument_id=ETHUSD_BITMEX.id,
-            bid=Price.from_str("376.05"),
-            ask=Price.from_str("377.10"),
+            bid_price=Price.from_str("376.05"),
+            ask_price=Price.from_str("377.10"),
             bid_size=Quantity.from_str("16"),
             ask_size=Quantity.from_str("25"),
             ts_event=0,
@@ -813,8 +813,8 @@ class TestPortfolio:
 
         last_btcusd = QuoteTick(
             instrument_id=BTCUSD_BITMEX.id,
-            bid=Price.from_str("10500.05"),
-            ask=Price.from_str("10501.51"),
+            bid_price=Price.from_str("10500.05"),
+            ask_price=Price.from_str("10501.51"),
             bid_size=Quantity.from_str("2.54"),
             ask_size=Quantity.from_str("0.91"),
             ts_event=0,
@@ -956,8 +956,8 @@ class TestPortfolio:
 
         last_ethusd = QuoteTick(
             instrument_id=ETHUSD_BITMEX.id,
-            bid=Price.from_str("376.05"),
-            ask=Price.from_str("377.10"),
+            bid_price=Price.from_str("376.05"),
+            ask_price=Price.from_str("377.10"),
             bid_size=Quantity.from_str("16"),
             ask_size=Quantity.from_str("25"),
             ts_event=0,
@@ -966,8 +966,8 @@ class TestPortfolio:
 
         last_xbtusd = QuoteTick(
             instrument_id=BTCUSD_BITMEX.id,
-            bid=Price.from_str("50000.00"),
-            ask=Price.from_str("50000.00"),
+            bid_price=Price.from_str("50000.00"),
+            ask_price=Price.from_str("50000.00"),
             bid_size=Quantity.from_str("1"),
             ask_size=Quantity.from_str("1"),
             ts_event=0,
@@ -1017,8 +1017,8 @@ class TestPortfolio:
 
         last_audusd = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80501"),
-            ask=Price.from_str("0.80505"),
+            bid_price=Price.from_str("0.80501"),
+            ask_price=Price.from_str("0.80505"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1027,8 +1027,8 @@ class TestPortfolio:
 
         last_gbpusd = QuoteTick(
             instrument_id=GBPUSD_SIM.id,
-            bid=Price.from_str("1.30315"),
-            ask=Price.from_str("1.30317"),
+            bid_price=Price.from_str("1.30315"),
+            ask_price=Price.from_str("1.30317"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1133,8 +1133,8 @@ class TestPortfolio:
 
         last_audusd = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80501"),
-            ask=Price.from_str("0.80505"),
+            bid_price=Price.from_str("0.80501"),
+            ask_price=Price.from_str("0.80505"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1365,8 +1365,8 @@ class TestPortfolio:
 
         last_audusd = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80501"),
-            ask=Price.from_str("0.80505"),
+            bid_price=Price.from_str("0.80501"),
+            ask_price=Price.from_str("0.80505"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1375,8 +1375,8 @@ class TestPortfolio:
 
         last_gbpusd = QuoteTick(
             instrument_id=GBPUSD_SIM.id,
-            bid=Price.from_str("1.30315"),
-            ask=Price.from_str("1.30317"),
+            bid_price=Price.from_str("1.30315"),
+            ask_price=Price.from_str("1.30317"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,

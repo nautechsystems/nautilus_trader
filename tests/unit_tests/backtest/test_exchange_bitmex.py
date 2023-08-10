@@ -149,8 +149,8 @@ class TestBitmexExchange:
         # Prepare market
         quote1 = QuoteTick(
             instrument_id=XBTUSD_BITMEX.id,
-            bid=Price.from_str("11493.0"),
-            ask=Price.from_str("11493.5"),
+            bid_price=Price.from_str("11493.0"),
+            ask_price=Price.from_str("11493.5"),
             bid_size=Quantity.from_int(1_500_000),
             ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
@@ -181,8 +181,8 @@ class TestBitmexExchange:
 
         quote2 = QuoteTick(
             instrument_id=XBTUSD_BITMEX.id,
-            bid=Price.from_str("11491.0"),
-            ask=Price.from_str("11491.5"),
+            bid_price=Price.from_str("11491.0"),
+            ask_price=Price.from_str("11491.5"),
             bid_size=Quantity.from_int(1_500_000),
             ask_size=Quantity.from_int(1_500_000),
             ts_event=0,

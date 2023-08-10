@@ -156,8 +156,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -185,8 +185,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -214,8 +214,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -234,8 +234,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = QuoteTick(
             instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("90.010"),
-            ask=Price.from_str("90.011"),
+            bid_price=Price.from_str("90.010"),
+            ask_price=Price.from_str("90.011"),
             bid_size=Quantity.from_int(100_000),
             ask_size=Quantity.from_int(100_000),
             ts_event=0,
@@ -254,8 +254,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -274,8 +274,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = QuoteTick(
             instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("89.998"),
-            ask=Price.from_str("89.999"),
+            bid_price=Price.from_str("89.998"),
+            ask_price=Price.from_str("89.999"),
             bid_size=Quantity.from_int(100_000),
             ask_size=Quantity.from_int(100_000),
             ts_event=0,

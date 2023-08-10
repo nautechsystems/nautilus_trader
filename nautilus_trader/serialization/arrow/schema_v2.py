@@ -43,9 +43,9 @@ NAUTILUS_PARQUET_SCHEMA_V2 = {
     ),
     QuoteTick: pa.schema(
         {
-            "bid": pa.int64(),
+            "bid_price": pa.int64(),
             "bid_size": pa.uint64(),
-            "ask": pa.int64(),
+            "ask_price": pa.int64(),
             "ask_size": pa.uint64(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),

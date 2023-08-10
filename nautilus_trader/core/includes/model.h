@@ -726,11 +726,11 @@ typedef struct QuoteTick_t {
     /**
      * The top of book bid price.
      */
-    struct Price_t bid;
+    struct Price_t bid_price;
     /**
      * The top of book ask price.
      */
-    struct Price_t ask;
+    struct Price_t ask_price;
     /**
      * The top of book bid size.
      */

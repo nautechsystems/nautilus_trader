@@ -2,15 +2,25 @@
 
 Released on TBD (UTC)
 
+This release includes a large breaking change to quote tick bid and ask price property and 
+parameter naming. This was done in the interest of maintaining our generally explicit naming 
+standards, and has caused confusion for some users in the past. Data using 'bid' and 'ask' columns should
+still work with the legacy data wranglers, as columns are renamed under the hood to accommodate
+this change.
+
 ### Enhancements
 - Added `ActorExecutor` with `Actor` API for creating and running threaded tasks in live environments
+- Added `OrderEmulated` event and associated `OrderStatus.EMULATED` enum variant
+- Added `OrderReleased` event and associated `OrderStatus.RELEASED` enum variant
 - Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
-None
+- Renamed `QuoteTick.bid` to `bid_price` including all associated parameters (for explicit naming standards)
+- Renamed `QuoteTick.ask` to `ask_price` including all associated parameters (for explicit naming standards)
 
 ### Fixes
-None
+- Fixed execution algorithm `position_id` assignment in `HEDGING` mode
+- Fixed `OrderMatchingEngine` processing of emulated orders
 
 ---
 
