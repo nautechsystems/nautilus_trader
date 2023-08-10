@@ -751,9 +751,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             trade = self._cache.trade_tick(order.instrument_id)
             if quote:
                 if order.side == OrderSide.BUY:
-                    activation_price = quote.ask
+                    activation_price = quote.ask_price
                 elif order.side == OrderSide.SELL:
-                    activation_price = quote.bid
+                    activation_price = quote.bid_price
             elif trade:
                 activation_price = trade.price
             else:

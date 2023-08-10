@@ -14,8 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from collections import namedtuple
-from typing import Annotated, Any, Callable, Optional, Union
+from typing import Annotated, Any, Callable, NamedTuple, Optional, Union
 
 import msgspec
 
@@ -26,7 +25,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 # fmt: on
 
-IBPosition = namedtuple("IBPosition", ["account", "contract", "quantity", "avg_cost"])
+
+class IBPosition(NamedTuple):
+    account: Any  # TODO: More specific type
+    contract: Any  # TODO: More specific type
+    quantity: Any  # TODO: More specific type
+    avg_cost: Any  # TODO: More specific type
 
 
 class Request(msgspec.Struct, frozen=True):

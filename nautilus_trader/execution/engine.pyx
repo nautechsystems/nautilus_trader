@@ -656,7 +656,7 @@ cdef class ExecutionEngine(Component):
         cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
         cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
         if last_quote is not None:
-            last_px = last_quote.ask if order_side == OrderSide.BUY else last_quote.bid
+            last_px = last_quote.ask_price if order_side == OrderSide.BUY else last_quote.bid_price
         else:
             if last_trade is not None:
                 last_px = last_trade.price
@@ -931,19 +931,43 @@ cdef class ExecutionEngine(Component):
         if oms_type == OmsType.HEDGING:
             if fill.position_id is not None:
                 # Already assigned
-                return
-            # Assign new position ID
-            position_id = self._pos_id_generator.generate(fill.strategy_id)
-            fill.position_id = position_id
-            if self.debug:
-                self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
+                position_id = fill.position_id
+            else:
+                # Assign new position ID
+                position_id = self._pos_id_generator.generate(fill.strategy_id)
+                if self.debug:
+                    self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
-            fill.position_id = PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
+            position_id = PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
         else:
             raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
             )
+
+        fill.position_id = position_id
+
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
+
+        # Check execution algorithm position ID
+        if order.exec_algorithm_id is None or order.exec_spawn_id is None:
+            return
+
+        cdef Order primary = self._cache.order(order.exec_spawn_id)
+        assert primary is not None
+        if primary.position_id is None:
+            primary.position_id = position_id
+            self._cache.add_position_id(
+                position_id,
+                primary.instrument_id.venue,
+                primary.client_order_id,
+                primary.strategy_id,
+            )
+            self._log.debug(f"Assigned primary order {repr(position_id)}.", LogColor.MAGENTA)
 
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event):
         try:

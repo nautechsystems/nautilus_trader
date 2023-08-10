@@ -19,12 +19,17 @@ use nautilus_core::{string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
 
 // use crate::types::price::Price;
 // use crate::types::quantity::Quantity;
-use super::order::{OrderAccepted, OrderDenied, OrderRejected, OrderSubmitted};
+use super::order::{
+    OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,
+};
 // use crate::enums::{OrderSide, OrderType, TimeInForce, TriggerType};
 use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::{
-    account_id::AccountId, instrument_id::InstrumentId, strategy_id::StrategyId,
-    trader_id::TraderId, venue_order_id::VenueOrderId,
+use crate::{
+    identifiers::{
+        account_id::AccountId, instrument_id::InstrumentId, strategy_id::StrategyId,
+        trader_id::TraderId, venue_order_id::VenueOrderId,
+    },
+    types::price::Price,
 };
 
 // #[no_mangle]
@@ -106,6 +111,50 @@ pub unsafe extern "C" fn order_denied_new(
         instrument_id,
         client_order_id,
         reason: cstr_to_ustr(reason_ptr),
+        event_id,
+        ts_event,
+        ts_init,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn order_emulated_new(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderEmulated {
+    OrderEmulated {
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        event_id,
+        ts_event,
+        ts_init,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn order_released_new(
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    released_price: Price,
+    event_id: UUID4,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> OrderReleased {
+    OrderReleased {
+        trader_id,
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        released_price,
         event_id,
         ts_event,
         ts_init,

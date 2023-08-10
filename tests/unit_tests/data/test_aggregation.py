@@ -269,8 +269,8 @@ class TestTickBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -327,8 +327,8 @@ class TestTickBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -337,8 +337,8 @@ class TestTickBarAggregator:
 
         tick2 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00002"),
-            ask=Price.from_str("1.00005"),
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -347,8 +347,8 @@ class TestTickBarAggregator:
 
         tick3 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00003"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -502,8 +502,8 @@ class TestVolumeBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3_000),
             ask_size=Quantity.from_int(2_000),
             ts_event=0,
@@ -560,8 +560,8 @@ class TestVolumeBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3_000),
             ask_size=Quantity.from_int(2_000),
             ts_event=0,
@@ -570,8 +570,8 @@ class TestVolumeBarAggregator:
 
         tick2 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00002"),
-            ask=Price.from_str("1.00005"),
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(4_000),
             ask_size=Quantity.from_int(2_000),
             ts_event=0,
@@ -580,8 +580,8 @@ class TestVolumeBarAggregator:
 
         tick3 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00003"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(3_000),
             ask_size=Quantity.from_int(2_000),
             ts_event=0,
@@ -672,8 +672,8 @@ class TestVolumeBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(2_000),
             ask_size=Quantity.from_int(2_000),
             ts_event=0,
@@ -682,8 +682,8 @@ class TestVolumeBarAggregator:
 
         tick2 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00002"),
-            ask=Price.from_str("1.00005"),
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(3_000),
             ask_size=Quantity.from_int(3_000),
             ts_event=0,
@@ -692,8 +692,8 @@ class TestVolumeBarAggregator:
 
         tick3 = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00003"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(25_000),
             ask_size=Quantity.from_int(25_000),
             ts_event=0,
@@ -870,8 +870,8 @@ class TestTestValueBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(3_000),
             ask_size=Quantity.from_int(2_000),
             ts_event=0,
@@ -930,8 +930,8 @@ class TestTestValueBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(20_000),
             ask_size=Quantity.from_int(20_000),
             ts_event=0,
@@ -940,8 +940,8 @@ class TestTestValueBarAggregator:
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00002"),
-            ask=Price.from_str("1.00005"),
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(60_000),
             ask_size=Quantity.from_int(20_000),
             ts_event=0,
@@ -950,8 +950,8 @@ class TestTestValueBarAggregator:
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00003"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(30_500),
             ask_size=Quantity.from_int(20_000),
             ts_event=0,
@@ -1186,8 +1186,8 @@ class TestTimeBarAggregator:
 
         tick1 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00001"),
-            ask=Price.from_str("1.00004"),
+            bid_price=Price.from_str("1.00001"),
+            ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1196,8 +1196,8 @@ class TestTimeBarAggregator:
 
         tick2 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00002"),
-            ask=Price.from_str("1.00005"),
+            bid_price=Price.from_str("1.00002"),
+            ask_price=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1206,8 +1206,8 @@ class TestTimeBarAggregator:
 
         tick3 = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00003"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds

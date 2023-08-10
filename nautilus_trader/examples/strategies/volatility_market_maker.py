@@ -295,7 +295,7 @@ class VolatilityMarketMaker(Strategy):
             self.log.error("No instrument loaded.")
             return
 
-        price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
+        price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
@@ -318,7 +318,7 @@ class VolatilityMarketMaker(Strategy):
             self.log.error("No instrument loaded.")
             return
 
-        price: Decimal = last.ask + (self.atr.value * self.atr_multiple)
+        price: Decimal = last.ask_price + (self.atr.value * self.atr_multiple)
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,

@@ -26,7 +26,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport order_accepted_new
 from nautilus_trader.core.rust.model cimport order_denied_new
+from nautilus_trader.core.rust.model cimport order_emulated_new
 from nautilus_trader.core.rust.model cimport order_rejected_new
+from nautilus_trader.core.rust.model cimport order_released_new
 from nautilus_trader.core.rust.model cimport order_submitted_new
 from nautilus_trader.core.rust.model cimport strategy_id_new
 from nautilus_trader.core.rust.model cimport trader_id_new
@@ -887,6 +889,512 @@ cdef class OrderDenied(OrderEvent):
 
         """
         return OrderDenied.to_dict_c(obj)
+
+
+cdef class OrderEmulated(OrderEvent):
+    """
+    Represents an event where an order has become emulated by the Nautilus system.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    event_id : UUID4
+        The event ID.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
+        UUID4 event_id not None,
+        uint64_t ts_init,
+    ):
+        self._mem = order_emulated_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            event_id._mem,
+            ts_init,
+            ts_init,
+        )
+
+    def __eq__(self, Event other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or `None`
+
+        """
+        return None  # No assignment from venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or `None`
+
+        """
+        return None  # No assignment
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
+    @staticmethod
+    cdef OrderEmulated from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return OrderEmulated(
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            event_id=UUID4(values["event_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(OrderEmulated obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "OrderEmulated",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_init,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> OrderEmulated:
+        """
+        Return an order emulated event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderEmulated
+
+        """
+        return OrderEmulated.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(OrderEmulated obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return OrderEmulated.to_dict_c(obj)
+
+
+cdef class OrderReleased(OrderEvent):
+    """
+    Represents an event where an order was released from the `OrderEmulator` by the Nautilus system.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID.
+    strategy_id : StrategyId
+        The strategy ID.
+    instrument_id : InstrumentId
+        The instrument ID.
+    client_order_id : ClientOrderId
+        The client order ID.
+    released_price : Price
+        The price which released the order from the emulator.
+    event_id : UUID4
+        The event ID.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        ClientOrderId client_order_id not None,
+        Price released_price not None,
+        UUID4 event_id not None,
+        uint64_t ts_init,
+    ):
+        self._mem = order_released_new(
+            trader_id._mem,
+            strategy_id._mem,
+            instrument_id._mem,
+            client_order_id._mem,
+            released_price._mem,
+            event_id._mem,
+            ts_init,
+            ts_init,
+        )
+
+    def __eq__(self, Event other) -> bool:
+        return self.id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self.id)
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"released_price={self.released_price})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"trader_id={self.trader_id}, "
+            f"strategy_id={self.strategy_id}, "
+            f"instrument_id={self.instrument_id}, "
+            f"client_order_id={self.client_order_id}, "
+            f"released_price={self.released_price}, "
+            f"event_id={self.id}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    def set_client_order_id(self, ClientOrderId client_order_id):
+        self._client_order_id = client_order_id
+
+    @property
+    def trader_id(self) -> TraderId:
+        """
+        The trader ID associated with the event.
+
+        Returns
+        -------
+        TraderId
+
+        """
+        return TraderId.from_mem_c(self._mem.trader_id)
+
+    @property
+    def strategy_id(self) -> TraderId:
+        """
+        The strategy ID associated with the event.
+
+        Returns
+        -------
+        StrategyId
+
+        """
+        return StrategyId.from_mem_c(self._mem.strategy_id)
+
+    @property
+    def instrument_id(self) -> InstrumentId:
+        """
+        The instrument ID associated with the event.
+
+        Returns
+        -------
+        InstrumentId
+
+        """
+        return InstrumentId.from_mem_c(self._mem.instrument_id)
+
+    @property
+    def client_order_id(self) -> ClientOrderId:
+        """
+        The client order ID associated with the event.
+
+        Returns
+        -------
+        ClientOrderId
+
+        """
+        return ClientOrderId.from_mem_c(self._mem.client_order_id)
+
+    @property
+    def venue_order_id(self) -> VenueOrderId | None:
+        """
+        The venue order ID associated with the event.
+
+        Returns
+        -------
+        VenueOrderId or `None`
+
+        """
+        return None  # No assignment from venue
+
+    @property
+    def account_id(self) -> AccountId | None:
+        """
+        The account ID associated with the event.
+
+        Returns
+        -------
+        AccountId or `None`
+
+        """
+        return None  # No assignment
+
+    @property
+    def released_price(self) -> Price:
+        """
+        The released price for the event.
+
+        Returns
+        -------
+        Price
+
+        """
+        return Price.from_mem_c(self._mem.released_price)
+
+    @property
+    def reconciliation(self) -> bool:
+        """
+        If the event was generated during reconciliation.
+
+        Returns
+        -------
+        bool
+
+        """
+        return False  # Internal system event
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return UUID4.from_mem_c(self._mem.event_id)
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._mem.ts_init
+
+    @staticmethod
+    cdef OrderReleased from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        return OrderReleased(
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            client_order_id=ClientOrderId(values["client_order_id"]),
+            released_price=Price.from_str_c(values["released_price"]),
+            event_id=UUID4(values["event_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(OrderReleased obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "OrderReleased",
+            "trader_id": obj.trader_id.value,
+            "strategy_id": obj.strategy_id.value,
+            "instrument_id": obj.instrument_id.value,
+            "client_order_id": obj.client_order_id.value,
+            "released_price": str(obj.released_price),
+            "event_id": obj.id.value,
+            "ts_event": obj.ts_init,
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> OrderReleased:
+        """
+        Return an order released event from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        OrderReleased
+
+        """
+        return OrderReleased.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(OrderReleased obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return OrderReleased.to_dict_c(obj)
 
 
 cdef class OrderSubmitted(OrderEvent):

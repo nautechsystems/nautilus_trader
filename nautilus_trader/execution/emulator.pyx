@@ -48,10 +48,12 @@ from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport trigger_type_to_str
 from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.identifiers cimport ClientId
@@ -103,6 +105,10 @@ cdef class OrderEmulator(Actor):
         self._subscribed_trades: set[InstrumentId] = set()
         self._subscribed_strategies: set[StrategyId] = set()
         self._monitored_positions: set[PositionId] = set()
+
+        # Counters
+        self.command_count: int = 0
+        self.event_count: int = 0
 
         # Register endpoints
         self._msgbus.register(endpoint="OrderEmulator.execute", handler=self.execute)
@@ -185,7 +191,20 @@ cdef class OrderEmulator(Actor):
             self._handle_submit_order(command)
 
     cpdef void on_event(self, Event event):
-        self._log.info(f"Received {event}.", LogColor.MAGENTA)
+        """
+        Handle the given `event`.
+
+        Parameters
+        ----------
+        event : Event
+            The received event to handle.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
+        self.event_count += 1
+
         if isinstance(event, OrderRejected):
             self._handle_order_rejected(event)
         elif isinstance(event, OrderCanceled):
@@ -206,6 +225,9 @@ cdef class OrderEmulator(Actor):
         self._commands_submit_order.clear()
         self._matching_cores.clear()
 
+        self.command_count = 0
+        self.event_count = 0
+
     cpdef void on_dispose(self):
         pass
 
@@ -224,6 +246,7 @@ cdef class OrderEmulator(Actor):
         Condition.not_none(command, "command")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+        self.command_count += 1
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
@@ -348,8 +371,28 @@ cdef class OrderEmulator(Actor):
         if order.client_order_id not in self._commands_submit_order:
             return  # Already released
 
+        # Generate event
+        cdef OrderEmulated event = OrderEmulated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        order.apply(event)
+        self.cache.update_order(order)
+
+        self._send_risk_event(event)
+
         # Hold in matching core
         matching_core.add_order(order)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
 
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
@@ -401,7 +444,7 @@ cdef class OrderEmulator(Actor):
             ts_event=ts_now,
             ts_init=ts_now,
         )
-        self.msgbus.send(endpoint="ExecEngine.process", msg=event)
+        self._send_exec_event(event)
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -416,6 +459,8 @@ cdef class OrderEmulator(Actor):
             matching_core.sort_bid_orders()
         elif order.side == OrderSide.SELL:
             matching_core.sort_ask_orders()
+        else:
+            raise RuntimeError("invalid `OrderSide`")
 
     cdef void _handle_cancel_order(self, CancelOrder command):
         cdef Order order = self.cache.order(command.client_order_id)
@@ -718,7 +763,6 @@ cdef class OrderEmulator(Actor):
             ts_event=ts_now,
             ts_init=ts_now,
         )
-
         order.apply(event)
         self.cache.update_order(order)
 
@@ -727,25 +771,11 @@ cdef class OrderEmulator(Actor):
 # -------------------------------------------------------------------------------------------------
 
     cpdef void _trigger_stop_order(self, Order order):
-        cdef OrderTriggered event
         if (
             order.order_type == OrderType.STOP_LIMIT
             or order.order_type == OrderType.LIMIT_IF_TOUCHED
             or order.order_type == OrderType.TRAILING_STOP_LIMIT
         ):
-            # Generate event
-            event = OrderTriggered(
-                trader_id=order.trader_id,
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,  # Probably None
-                account_id=order.account_id,  # Probably None
-                event_id=UUID4(),
-                ts_event=self._clock.timestamp_ns(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            order.apply(event)
             self._fill_limit_order(order)
         elif (
             order.order_type == OrderType.STOP_MARKET
@@ -764,8 +794,6 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
-
-        self.log.info(f"Releasing {order}...")
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -793,6 +821,37 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
+        # Determine triggered price
+        if order.side == OrderSide.BUY:
+            released_price = matching_core.ask
+        elif order.side == OrderSide.SELL:
+            released_price = matching_core.bid
+        else:
+            raise RuntimeError("invalid `OrderSide`")
+
+        # Generate event
+        cdef OrderReleased event = OrderReleased(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            released_price=released_price,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        transformed.apply(event)
+        self.cache.update_order(transformed)
+
+        self._send_risk_event(event)
+
+        self.log.info(f"Releasing {transformed}...", LogColor.MAGENTA)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{transformed.strategy_id.to_str()}",
+            msg=event,
+        )
+
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
@@ -810,8 +869,6 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
-
-        self.log.info(f"Releasing {order}...")
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -839,6 +896,37 @@ cdef class OrderEmulator(Actor):
             msg=transformed.last_event_c(),
         )
 
+        # Determine triggered price
+        if order.side == OrderSide.BUY:
+            released_price = matching_core.ask
+        elif order.side == OrderSide.SELL:
+            released_price = matching_core.bid
+        else:
+            raise RuntimeError("invalid `OrderSide`")
+
+        # Generate event
+        cdef OrderReleased event = OrderReleased(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            released_price=released_price,
+            event_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        transformed.apply(event)
+        self.cache.update_order(transformed)
+
+        self._send_risk_event(event)
+
+        self.log.info(f"Releasing {transformed}...", LogColor.MAGENTA)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{transformed.strategy_id.to_str()}",
+            msg=event,
+        )
+
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
@@ -853,8 +941,8 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `QuoteTick`: no matching core for instrument {tick.instrument_id}.")
             return
 
-        matching_core.set_bid_raw(tick._mem.bid.raw)
-        matching_core.set_ask_raw(tick._mem.ask.raw)
+        matching_core.set_bid_raw(tick._mem.bid_price.raw)
+        matching_core.set_ask_raw(tick._mem.ask_price.raw)
 
         self._iterate_orders(matching_core)
 
@@ -902,9 +990,9 @@ cdef class OrderEmulator(Actor):
         cdef QuoteTick quote_tick = self.cache.quote_tick(matching_core.instrument_id)
         cdef TradeTick trade_tick = self.cache.trade_tick(matching_core.instrument_id)
         if bid is None and quote_tick is not None:
-            bid = quote_tick.bid
+            bid = quote_tick.bid_price
         if ask is None and quote_tick is not None:
-            ask = quote_tick.ask
+            ask = quote_tick.ask_price
         if last is None and trade_tick is not None:
             last = trade_tick.price
         # TODO(cs): ------------------------------------------------------------
@@ -944,6 +1032,7 @@ cdef class OrderEmulator(Actor):
             ts_init=ts_now,
         )
         order.apply(event)
+        self.cache.update_order(order)
 
         self._send_risk_event(event)
 

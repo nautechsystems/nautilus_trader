@@ -18,7 +18,9 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport OrderAccepted_t
 from nautilus_trader.core.rust.model cimport OrderDenied_t
+from nautilus_trader.core.rust.model cimport OrderEmulated_t
 from nautilus_trader.core.rust.model cimport OrderRejected_t
+from nautilus_trader.core.rust.model cimport OrderReleased_t
 from nautilus_trader.core.rust.model cimport OrderSubmitted_t
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.currency cimport Currency
@@ -110,6 +112,26 @@ cdef class OrderDenied(OrderEvent):
     @staticmethod
     cdef dict to_dict_c(OrderDenied obj)
 
+
+
+cdef class OrderEmulated(OrderEvent):
+    cdef OrderEmulated_t _mem
+
+    @staticmethod
+    cdef OrderEmulated from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderEmulated obj)
+
+
+cdef class OrderReleased(OrderEvent):
+    cdef OrderReleased_t _mem
+
+    @staticmethod
+    cdef OrderReleased from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(OrderReleased obj)
 
 
 cdef class OrderSubmitted(OrderEvent):
