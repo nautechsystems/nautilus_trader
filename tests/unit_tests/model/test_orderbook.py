@@ -586,3 +586,15 @@ class TestOrderBook:
         expected_bid = Price(0.990099, 6)
         expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
         assert book.best_bid_price() == expected_bid
+
+    def test_order_book_deepcopy(self):
+        book = OrderBook(
+            instrument_id=self.instrument.id,
+            book_type=BookType.L1_TBBO,
+        )
+        order = TestDataStubs.order(price=10.0, side=OrderSide.BUY)
+        book.update(order, 0)
+        import copy
+
+        new = copy.deepcopy(book)
+        assert isinstance(new, OrderBook)

@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from operator import itemgetter
 
 import pandas as pd
@@ -581,6 +580,26 @@ cdef class OrderBook(Data):
 
         """
         return cstr_to_pystr(orderbook_pprint_to_cstr(&self._mem, num_levels))
+
+    def __deepcopy__(self, memo):
+        """ Temporary custom implementation of deepcopy """
+        from nautilus_trader.model.enums import BookType
+        from nautilus_trader.model.identifiers import InstrumentId
+
+        orders = []
+        for level in self.bids() + self.asks():
+            for order in level.orders():
+                orders.append(order)
+
+        # New book
+        new_book = OrderBook(
+            instrument_id=InstrumentId.from_str(self.instrument_id.value),
+            book_type=BookType(self.book_type)
+        )
+        for order in orders:
+            new_order = BookOrder.from_dict(order.to_dict(order))
+            new_book.update(new_order, 0, 0)
+        return new_book
 
 
 cdef class Level:
