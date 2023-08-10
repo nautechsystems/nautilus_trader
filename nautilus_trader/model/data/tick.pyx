@@ -267,12 +267,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     cdef QuoteTick from_raw_c(
         InstrumentId instrument_id,
-        int64_t raw_bid,
-        int64_t raw_ask,
+        int64_t bid_price_raw,
+        int64_t ask_price_raw,
         uint8_t bid_price_prec,
         uint8_t ask_price_prec,
-        uint64_t raw_bid_size,
-        uint64_t raw_ask_size,
+        uint64_t bid_size_raw,
+        uint64_t ask_size_raw,
         uint8_t bid_size_prec,
         uint8_t ask_size_prec,
         uint64_t ts_event,
@@ -281,12 +281,12 @@ cdef class QuoteTick(Data):
         cdef QuoteTick tick = QuoteTick.__new__(QuoteTick)
         tick._mem = quote_tick_new(
             instrument_id._mem,
-            raw_bid,
-            raw_ask,
+            bid_price_raw,
+            ask_price_raw,
             bid_price_prec,
             ask_price_prec,
-            raw_bid_size,
-            raw_ask_size,
+            bid_size_raw,
+            ask_size_raw,
             bid_size_prec,
             ask_size_prec,
             ts_event,
@@ -346,12 +346,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     def from_raw(
         InstrumentId instrument_id,
-        int64_t raw_bid,
-        int64_t raw_ask,
+        int64_t bid_price_raw,
+        int64_t ask_price_raw,
         uint8_t bid_price_prec,
         uint8_t ask_price_prec,
-        uint64_t raw_bid_size,
-        uint64_t raw_ask_size,
+        uint64_t bid_size_raw ,
+        uint64_t ask_size_raw,
         uint8_t bid_size_prec,
         uint8_t ask_size_prec,
         uint64_t ts_event,
@@ -364,17 +364,17 @@ cdef class QuoteTick(Data):
         ----------
         instrument_id : InstrumentId
             The quotes instrument ID.
-        raw_bid : int64_t
+        bid_price_raw : int64_t
             The raw top of book bid price (as a scaled fixed precision integer).
-        raw_ask : int64_t
+        ask_price_raw : int64_t
             The raw top of book ask price (as a scaled fixed precision integer).
         bid_price_prec : uint8_t
             The bid price precision.
         ask_price_prec : uint8_t
             The ask price precision.
-        raw_bid_size : Quantity
+        bid_size_raw : uint64_t
             The raw top of book bid size (as a scaled fixed precision integer).
-        raw_ask_size : Quantity
+        ask_size_raw : uint64_t
             The raw top of book ask size (as a scaled fixed precision integer).
         bid_size_prec : uint8_t
             The bid size precision.
@@ -402,12 +402,12 @@ cdef class QuoteTick(Data):
 
         return QuoteTick.from_raw_c(
             instrument_id,
-            raw_bid,
-            raw_ask,
+            bid_price_raw,
+            ask_price_raw,
             bid_price_prec,
             ask_price_prec,
-            raw_bid_size,
-            raw_ask_size,
+            bid_size_raw,
+            ask_size_raw,
             bid_size_prec,
             ask_size_prec,
             ts_event,
@@ -721,9 +721,9 @@ cdef class TradeTick(Data):
     @staticmethod
     cdef TradeTick from_raw_c(
         InstrumentId instrument_id,
-        int64_t raw_price,
+        int64_t price_raw,
         uint8_t price_prec,
-        uint64_t raw_size,
+        uint64_t size_raw,
         uint8_t size_prec,
         AggressorSide aggressor_side,
         TradeId trade_id,
@@ -733,9 +733,9 @@ cdef class TradeTick(Data):
         cdef TradeTick tick = TradeTick.__new__(TradeTick)
         tick._mem = trade_tick_new(
             instrument_id._mem,
-            raw_price,
+            price_raw,
             price_prec,
-            raw_size,
+            size_raw,
             size_prec,
             aggressor_side,
             trade_id._mem,
@@ -823,9 +823,9 @@ cdef class TradeTick(Data):
     @staticmethod
     def from_raw(
         InstrumentId instrument_id,
-        int64_t raw_price,
+        int64_t price_raw,
         uint8_t price_prec,
-        uint64_t raw_size,
+        uint64_t size_raw,
         uint8_t size_prec,
         AggressorSide aggressor_side,
         TradeId trade_id,
@@ -839,11 +839,11 @@ cdef class TradeTick(Data):
         ----------
         instrument_id : InstrumentId
             The trade instrument ID.
-        raw_price : int64_t
+        price_raw : int64_t
             The traded raw price (as a scaled fixed precision integer).
         price_prec : uint8_t
             The traded price precision.
-        raw_size : uint64_t
+        size_raw : uint64_t
             The traded raw size (as a scaled fixed precision integer).
         size_prec : uint8_t
             The traded size precision.
@@ -863,9 +863,9 @@ cdef class TradeTick(Data):
         """
         return TradeTick.from_raw_c(
             instrument_id,
-            raw_price,
+            price_raw,
             price_prec,
-            raw_size,
+            size_raw,
             size_prec,
             aggressor_side,
             trade_id,

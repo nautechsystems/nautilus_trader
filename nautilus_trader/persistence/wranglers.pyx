@@ -263,21 +263,21 @@ cdef class QuoteTickDataWrangler:
     # cpdef method for Python wrap() (called with map)
     cpdef QuoteTick _build_tick_from_raw(
         self,
-        int64_t raw_bid,
-        int64_t raw_ask,
-        uint64_t raw_bid_size,
-        uint64_t raw_ask_size,
+        int64_t bid_price_raw,
+        int64_t ask_price_raw,
+        uint64_t bid_size_raw,
+        uint64_t ask_size_raw,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
         return QuoteTick.from_raw_c(
             self.instrument.id,
-            raw_bid,
-            raw_ask,
+            bid_price_raw,
+            ask_price_raw,
             self.instrument.price_precision,
             self.instrument.price_precision,
-            raw_bid_size,
-            raw_ask_size,
+            bid_size_raw,
+            ask_size_raw,
             self.instrument.size_precision,
             self.instrument.size_precision,
             ts_event,
@@ -383,8 +383,8 @@ cdef class TradeTickDataWrangler:
     # cpdef method for Python wrap() (called with map)
     cpdef TradeTick _build_tick_from_raw(
         self,
-        int64_t raw_price,
-        uint64_t raw_size,
+        int64_t price_raw,
+        uint64_t size_raw,
         AggressorSide aggressor_side,
         str trade_id,
         uint64_t ts_event,
@@ -392,9 +392,9 @@ cdef class TradeTickDataWrangler:
     ):
         return TradeTick.from_raw_c(
             self.instrument.id,
-            raw_price,
+            price_raw,
             self.instrument.price_precision,
-            raw_size,
+            size_raw,
             self.instrument.size_precision,
             aggressor_side,
             TradeId(trade_id),
