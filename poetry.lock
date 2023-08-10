@@ -2396,13 +2396,13 @@ sphinx = ["matplotlib", "myst-nb", "numpy", "sphinx-book-theme", "sphinx-design"
 
 [[package]]
 name = "sphinxcontrib-applehelp"
-version = "1.0.5"
+version = "1.0.6"
 description = "sphinxcontrib-applehelp is a Sphinx extension which outputs Apple help books"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_applehelp-1.0.5-py3-none-any.whl", hash = "sha256:2bf6dc21596142496e3a7623adc6918014e6a9bbfeeeb37d27543727bebabd0f"},
-    {file = "sphinxcontrib_applehelp-1.0.5.tar.gz", hash = "sha256:e58ca6b828d1c9ef3f8b51ff5bfe989507399977da1bb389b393199d45066357"},
+    {file = "sphinxcontrib_applehelp-1.0.6-py3-none-any.whl", hash = "sha256:c0578efa23cab5a2f3aaa8af5691b952433f4fdfaac255befd3452448e7ea4a4"},
+    {file = "sphinxcontrib_applehelp-1.0.6.tar.gz", hash = "sha256:a59274de7a952a99af36b8a5092352d9249279c0e3280b7dceaae8e15873c942"},
 ]
 
 [package.dependencies]
@@ -2414,13 +2414,13 @@ test = ["pytest"]
 
 [[package]]
 name = "sphinxcontrib-devhelp"
-version = "1.0.3"
+version = "1.0.4"
 description = "sphinxcontrib-devhelp is a sphinx extension which outputs Devhelp documents"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_devhelp-1.0.3-py3-none-any.whl", hash = "sha256:09009e3b1dde7447c9c6973723c786253b9a9342ff0a856bc6957092ee106cd9"},
-    {file = "sphinxcontrib_devhelp-1.0.3.tar.gz", hash = "sha256:ced21e99bceed8694117b8361b67df624d8788309399f24bd948a254e64cc017"},
+    {file = "sphinxcontrib_devhelp-1.0.4-py3-none-any.whl", hash = "sha256:d4e20a17f78865d4096733989b5efa0d5e7743900e98e1f6ecd6f489380febc8"},
+    {file = "sphinxcontrib_devhelp-1.0.4.tar.gz", hash = "sha256:4fd751c63dc40895ac8740948f26bf1a3c87e4e441cc008672abd1cb2bc8a3d1"},
 ]
 
 [package.dependencies]
@@ -2432,13 +2432,13 @@ test = ["pytest"]
 
 [[package]]
 name = "sphinxcontrib-htmlhelp"
-version = "2.0.2"
+version = "2.0.3"
 description = "sphinxcontrib-htmlhelp is a sphinx extension which renders HTML help files"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_htmlhelp-2.0.2-py3-none-any.whl", hash = "sha256:3fc535431dced1d3f50d30e3d9135873a724f6c38eeb4ac967ebb5c06d7bff9c"},
-    {file = "sphinxcontrib_htmlhelp-2.0.2.tar.gz", hash = "sha256:f9515c1e2deac30498a8fa54b23a477943fc7432d6e7fcf23f7d90e12d3fdcd4"},
+    {file = "sphinxcontrib_htmlhelp-2.0.3-py3-none-any.whl", hash = "sha256:abee4e6c5471203ad2fc40dc6a16ed99884a5d6b15a6f79c9269a7e82cf04149"},
+    {file = "sphinxcontrib_htmlhelp-2.0.3.tar.gz", hash = "sha256:14358d0f88ccf58447f2b54343cdcc0012f32de2f8d27cf934fdbc0b362f9597"},
 ]
 
 [package.dependencies]
@@ -2464,13 +2464,13 @@ test = ["flake8", "mypy", "pytest"]
 
 [[package]]
 name = "sphinxcontrib-qthelp"
-version = "1.0.4"
+version = "1.0.5"
 description = "sphinxcontrib-qthelp is a sphinx extension which outputs QtHelp documents"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_qthelp-1.0.4-py3-none-any.whl", hash = "sha256:82f0871fb042efa309ee8c7929d228ed5c4be478d9914492b4bad5bfa469c160"},
-    {file = "sphinxcontrib_qthelp-1.0.4.tar.gz", hash = "sha256:f0a1c141420499af2f1a1ff438f9fc910a3548f7a82a1169d9efcc674fcf79c6"},
+    {file = "sphinxcontrib_qthelp-1.0.5-py3-none-any.whl", hash = "sha256:962730a6ad15d21fd6760b14c9e95c00a097413595aa6ee871dd9dfa4b002a16"},
+    {file = "sphinxcontrib_qthelp-1.0.5.tar.gz", hash = "sha256:d31d1a1beaf3894866bb318fb712f1edc82687f1c06235a01e5b2c50c36d5c40"},
 ]
 
 [package.dependencies]
@@ -2482,13 +2482,13 @@ test = ["pytest"]
 
 [[package]]
 name = "sphinxcontrib-serializinghtml"
-version = "1.1.6"
+version = "1.1.7"
 description = "sphinxcontrib-serializinghtml is a sphinx extension which outputs \"serialized\" HTML files (json and pickle)"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "sphinxcontrib_serializinghtml-1.1.6-py3-none-any.whl", hash = "sha256:f7e8e508f5c973601fa29a9114aa60bc11164db3d6c55aa7fd51710185477237"},
-    {file = "sphinxcontrib_serializinghtml-1.1.6.tar.gz", hash = "sha256:e04d06ac23c527378d62459ec968204afce0ef266733209d628b9a1a4051a78d"},
+    {file = "sphinxcontrib_serializinghtml-1.1.7-py3-none-any.whl", hash = "sha256:424164fc3a8b4355a29d5ea8b7f18199022d160c8f7b96e68bb6c50217729b87"},
+    {file = "sphinxcontrib_serializinghtml-1.1.7.tar.gz", hash = "sha256:ca31afee32e1508cff4034e258060ce2c81a3b1c49e77da60fdb61f0e7a73c22"},
 ]
 
 [package.dependencies]
@@ -2533,13 +2533,13 @@ files = [
 
 [[package]]
 name = "tqdm"
-version = "4.65.2"
+version = "4.66.0"
 description = "Fast, Extensible Progress Meter"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "tqdm-4.65.2-py3-none-any.whl", hash = "sha256:6c431f7dee4f57284c8f4bd2eb1d4af00d730d38cc6098bd79880bcbec676276"},
-    {file = "tqdm-4.65.2.tar.gz", hash = "sha256:5f7d8b4ac76016ce9d51a7f0ea30d30984888d97c474fdc4a4148abfb5ee76aa"},
+    {file = "tqdm-4.66.0-py3-none-any.whl", hash = "sha256:39d459c7140b7890174e69d4d68d6291bc774a55b4bc5d93c0b760798ac5a03e"},
+    {file = "tqdm-4.66.0.tar.gz", hash = "sha256:cc6e7e52202d894e66632c5c8a9330bd0e3ff35d2965c93ca832114a3d865362"},
 ]
 
 [package.dependencies]
@@ -2906,4 +2906,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "4c16d1b5b0766a8295ceebde06cfdb8747e25382ad57a06a66290eb9a4ed3b55"
+content-hash = "6046554bfe9b0f19f09654195e8f44c922f89b7503f9a0f37d786fe933142ef2"

@@ -1905,7 +1905,11 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
-            if ouo_order.order_type != OrderType.MARKET and ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
+            if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
+                continue
+            if order.leaves_qty._mem.raw == 0:
+                self.cancel_order(ouo_order)
+            elif ouo_order.leaves_qty._mem.raw != order.leaves_qty._mem.raw:
                 self.update_order(
                     ouo_order,
                     order.leaves_qty,
