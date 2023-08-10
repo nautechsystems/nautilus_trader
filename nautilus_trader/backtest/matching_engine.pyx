@@ -1778,6 +1778,9 @@ cdef class OrderMatchingEngine:
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void accept_order(self, Order order):
+        if order.is_closed_c():
+            return  # Temporary guard to prevent invalid processing
+
         # Check if order already accepted (being added back into the matching engine)
         if not order.status_c() == OrderStatus.ACCEPTED:
             self._generate_order_accepted(order)
