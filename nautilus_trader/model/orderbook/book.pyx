@@ -581,25 +581,22 @@ cdef class OrderBook(Data):
         """
         return cstr_to_pystr(orderbook_pprint_to_cstr(&self._mem, num_levels))
 
-    def __deepcopy__(self, memo):
-        """ Temporary custom implementation of deepcopy """
-        from nautilus_trader.model.enums import BookType
-        from nautilus_trader.model.identifiers import InstrumentId
+    cpdef list flatten(self,  int num_levels=3):
+        """
+        Flatten an orderbook down to a list of levels.
+        """
+        shared = {
+            "instrument_id": self.instrument_id.value,
+            "ts_last": self.ts_last,
+            "type": "OrderBook",
+        }
+        data = []
+        for side, ladder in zip(("bid", "ask"), (self.bids(), self.asks())):
+            for num, lvl in enumerate(ladder[:num_levels]):
+                level = {"price": lvl.price, "volume": lvl.volume(), "side": side, "level": num + 1}
+                data.append({**shared, **level})
 
-        orders = []
-        for level in self.bids() + self.asks():
-            for order in level.orders():
-                orders.append(order)
-
-        # New book
-        new_book = OrderBook(
-            instrument_id=InstrumentId.from_str(self.instrument_id.value),
-            book_type=BookType(self.book_type)
-        )
-        for order in orders:
-            new_order = BookOrder.from_dict(order.to_dict(order))
-            new_book.update(new_order, 0, 0)
-        return new_book
+        return data
 
 
 cdef class Level:
