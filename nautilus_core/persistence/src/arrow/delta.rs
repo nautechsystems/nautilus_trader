@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
     array::{Array, Int64Array, UInt64Array, UInt8Array},
-    datatypes::{DataType, Field, Schema, SchemaRef},
+    datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -31,7 +31,7 @@ use super::DecodeDataFromRecordBatch;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
-    fn get_schema(metadata: HashMap<String, String>) -> SchemaRef {
+    fn get_schema(metadata: HashMap<String, String>) -> Schema {
         let fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
@@ -44,7 +44,7 @@ impl ArrowSchemaProvider for OrderBookDelta {
             Field::new("ts_init", DataType::UInt64, false),
         ];
 
-        Schema::new_with_metadata(fields, metadata).into()
+        Schema::new_with_metadata(fields, metadata)
     }
 }
 
@@ -104,7 +104,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
 
         // Build record batch
         RecordBatch::try_new(
-            Self::get_schema(metadata.clone()),
+            Self::get_schema(metadata.clone()).into(),
             vec![
                 Arc::new(action_array),
                 Arc::new(side_array),
@@ -212,7 +212,7 @@ mod tests {
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata).into();
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
     }
 
@@ -311,7 +311,7 @@ mod tests {
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(metadata.clone()),
+            OrderBookDelta::get_schema(metadata.clone()).into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),

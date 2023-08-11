@@ -15,9 +15,7 @@
 
 use std::io::Cursor;
 
-use datafusion::arrow::{
-    datatypes::SchemaRef, ipc::writer::StreamWriter, record_batch::RecordBatch,
-};
+use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
@@ -80,7 +78,7 @@ impl DataTransformer {
     fn record_batches_to_pybytes(
         py: Python<'_>,
         batches: Vec<RecordBatch>,
-        schema: SchemaRef,
+        schema: Schema,
     ) -> PyResult<Py<PyBytes>> {
         // Create a cursor to write to a byte array in memory
         let mut cursor = Cursor::new(Vec::new());
