@@ -29,7 +29,7 @@ use super::DecodeDataFromRecordBatch;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
-    fn get_schema(metadata: std::collections::HashMap<String, String>) -> Schema {
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
             Field::new("open", DataType::Int64, false),
             Field::new("high", DataType::Int64, false),
@@ -40,7 +40,10 @@ impl ArrowSchemaProvider for Bar {
             Field::new("ts_init", DataType::UInt64, false),
         ];
 
-        Schema::new_with_metadata(fields, metadata)
+        match metadata {
+            Some(metadata) => Schema::new_with_metadata(fields, metadata),
+            None => Schema::new(fields),
+        }
     }
 }
 
@@ -93,7 +96,7 @@ impl EncodeToRecordBatch for Bar {
 
         // Build record batch
         RecordBatch::try_new(
-            Self::get_schema(metadata.clone()).into(),
+            Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(open_array),
                 Arc::new(high_array),
@@ -174,7 +177,7 @@ mod tests {
     fn test_get_schema() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
-        let schema = Bar::get_schema(metadata.clone());
+        let schema = Bar::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
             Field::new("open", DataType::Int64, false),
             Field::new("high", DataType::Int64, false),
@@ -264,7 +267,7 @@ mod tests {
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            Bar::get_schema(metadata.clone()).into(),
+            Bar::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(open),
                 Arc::new(high),

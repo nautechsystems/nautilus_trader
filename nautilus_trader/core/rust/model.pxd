@@ -433,7 +433,7 @@ cdef extern from "../includes/model.h":
     # method/rule and price type.
     cdef struct BarSpecification_t:
         # The step for binning samples for bar aggregation.
-        uint64_t step;
+        uintptr_t step;
         # The type of bar aggregation.
         uint8_t aggregation;
         # The price type to use for aggregation.
@@ -626,7 +626,7 @@ cdef extern from "../includes/model.h":
 
     Data_t data_clone(const Data_t *data);
 
-    BarSpecification_t bar_specification_new(uint64_t step,
+    BarSpecification_t bar_specification_new(uintptr_t step,
                                              uint8_t aggregation,
                                              uint8_t price_type);
 
