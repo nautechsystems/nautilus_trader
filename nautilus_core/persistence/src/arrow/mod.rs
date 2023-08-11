@@ -23,9 +23,7 @@ use std::{
     io::{self, Write},
 };
 
-use datafusion::arrow::{
-    datatypes::SchemaRef, ipc::writer::StreamWriter, record_batch::RecordBatch,
-};
+use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
 use thiserror;
@@ -52,7 +50,7 @@ pub enum DataStreamingError {
 }
 
 pub trait ArrowSchemaProvider {
-    fn get_schema(metadata: HashMap<String, String>) -> SchemaRef;
+    fn get_schema(metadata: HashMap<String, String>) -> Schema;
 }
 
 pub trait EncodeToRecordBatch

@@ -92,6 +92,7 @@ impl QuoteTick {
         size_precision: u8,
     ) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
+        metadata.insert("type".to_string(), instrument_id.to_string());
         metadata.insert("instrument_id".to_string(), instrument_id.to_string());
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());

@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
     array::{Array, Int64Array, UInt64Array},
-    datatypes::{DataType, Field, Schema, SchemaRef},
+    datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -29,7 +29,7 @@ use super::DecodeDataFromRecordBatch;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
-    fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
+    fn get_schema(metadata: std::collections::HashMap<String, String>) -> Schema {
         let fields = vec![
             Field::new("open", DataType::Int64, false),
             Field::new("high", DataType::Int64, false),
@@ -40,7 +40,7 @@ impl ArrowSchemaProvider for Bar {
             Field::new("ts_init", DataType::UInt64, false),
         ];
 
-        Schema::new_with_metadata(fields, metadata).into()
+        Schema::new_with_metadata(fields, metadata)
     }
 }
 
@@ -93,7 +93,7 @@ impl EncodeToRecordBatch for Bar {
 
         // Build record batch
         RecordBatch::try_new(
-            Self::get_schema(metadata.clone()),
+            Self::get_schema(metadata.clone()).into(),
             vec![
                 Arc::new(open_array),
                 Arc::new(high_array),
@@ -184,7 +184,7 @@ mod tests {
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata).into();
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
     }
 
@@ -264,7 +264,7 @@ mod tests {
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            Bar::get_schema(metadata.clone()),
+            Bar::get_schema(metadata.clone()).into(),
             vec![
                 Arc::new(open),
                 Arc::new(high),
