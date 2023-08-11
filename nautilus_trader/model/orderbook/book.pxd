@@ -58,7 +58,6 @@ cdef class OrderBook(Data):
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
     cpdef str pprint(self, int num_levels=*)
-    cpdef list flatten(self,  int num_levels=*)
 
 
 cdef class Level:

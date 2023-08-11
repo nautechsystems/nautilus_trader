@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import pickle
 
 import msgspec
 import pandas as pd
@@ -587,119 +588,18 @@ class TestOrderBook:
         expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
         assert book.best_bid_price() == expected_bid
 
-    def test_order_book_flatten(self):
-        book = OrderBook(
-            instrument_id=self.instrument.id,
-            book_type=BookType.L1_TBBO,
+    def test_book_order_pickle_round_trip(self):
+        # Arrange
+        book = TestDataStubs.make_book(
+            instrument=self.instrument,
+            book_type=BookType.L2_MBP,
+            bids=[(0.0040000, 100.0)],
+            asks=[(0.0010000, 55.81)],
         )
+        # Act
+        pickled = pickle.dumps(book)
+        unpickled = pickle.loads(pickled)  # noqa
 
-        deltas = [
-            OrderBookDelta.from_dict(d)
-            for d in [
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "CLEAR",
-                    "order": {"side": "NO_ORDER_SIDE", "price": "0", "size": "0", "order_id": 0},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "2", "size": "77", "order_id": 181},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "1", "size": "2", "order_id": 103},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "1", "size": "40", "order_id": 107},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "1", "size": "12", "order_id": 101},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "2", "size": "331", "order_id": 192},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "2", "size": "119", "order_id": 185},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "2", "size": "9", "order_id": 194},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "BUY", "price": "2", "size": "17", "order_id": 193},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-                {
-                    "type": "OrderBookDelta",
-                    "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                    "action": "UPDATE",
-                    "order": {"side": "SELL", "price": "2", "size": "0", "order_id": 195},
-                    "flags": 0,
-                    "sequence": 0,
-                    "ts_event": 1576840503572000000,
-                    "ts_init": 1576840503572000000,
-                },
-            ]
-        ]
-
-        for delta in deltas:
-            book.apply(delta)
-            data = book.flatten(3)
-            print(data)
+        # Assert
+        assert str(book) == str(unpickled)
+        assert book.bids()[0].orders()[0].price == Price.from_str("0.00400")

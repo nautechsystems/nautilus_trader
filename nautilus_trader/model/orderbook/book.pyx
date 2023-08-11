@@ -110,6 +110,28 @@ cdef class OrderBook(Data):
             f"{self.pprint()}"
         )
 
+    def __getstate__(self):
+        orders = [order.to_dict(order) for level in self.bids() + self.asks() for order in level.orders()]
+        return (
+            self.instrument_id.value,
+            self.book_type.value,
+            orders
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        cdef book_type = state[1]
+
+        self._mem = orderbook_new(
+            instrument_id._mem,
+            book_type
+        )
+        orders = state[2]
+        print(orders)
+        for order in orders:
+            book_order = BookOrder.from_dict_c(order)
+            self.add(book_order, 0, 0)
+
     @property
     def instrument_id(self) -> InstrumentId:
         """
@@ -580,23 +602,6 @@ cdef class OrderBook(Data):
 
         """
         return cstr_to_pystr(orderbook_pprint_to_cstr(&self._mem, num_levels))
-
-    cpdef list flatten(self,  int num_levels=3):
-        """
-        Flatten an orderbook down to a list of levels.
-        """
-        shared = {
-            "instrument_id": self.instrument_id.value,
-            "ts_last": self.ts_last,
-            "type": "OrderBook",
-        }
-        data = []
-        for side, ladder in zip(("bid", "ask"), (self.bids(), self.asks())):
-            for num, lvl in enumerate(ladder[:num_levels]):
-                level = {"price": lvl.price, "volume": lvl.volume(), "side": side, "level": num + 1}
-                data.append({**shared, **level})
-
-        return data
 
 
 cdef class Level:
