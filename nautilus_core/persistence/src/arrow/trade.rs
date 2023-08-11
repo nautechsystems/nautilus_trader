@@ -31,7 +31,7 @@ use super::DecodeDataFromRecordBatch;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for TradeTick {
-    fn get_schema(metadata: std::collections::HashMap<String, String>) -> Schema {
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
@@ -41,7 +41,10 @@ impl ArrowSchemaProvider for TradeTick {
             Field::new("ts_init", DataType::UInt64, false),
         ];
 
-        Schema::new_with_metadata(fields, metadata)
+        match metadata {
+            Some(metadata) => Schema::new_with_metadata(fields, metadata),
+            None => Schema::new(fields),
+        }
     }
 }
 
@@ -92,7 +95,7 @@ impl EncodeToRecordBatch for TradeTick {
 
         // Build record batch
         RecordBatch::try_new(
-            Self::get_schema(metadata.clone()).into(),
+            Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(price_array),
                 Arc::new(size_array),
@@ -173,7 +176,7 @@ mod tests {
     fn test_get_schema() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
-        let schema = TradeTick::get_schema(metadata.clone());
+        let schema = TradeTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
@@ -258,7 +261,7 @@ mod tests {
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            TradeTick::get_schema(metadata.clone()).into(),
+            TradeTick::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(price),
                 Arc::new(size),

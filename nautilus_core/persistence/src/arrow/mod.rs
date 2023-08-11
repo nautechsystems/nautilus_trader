@@ -50,7 +50,7 @@ pub enum DataStreamingError {
 }
 
 pub trait ArrowSchemaProvider {
-    fn get_schema(metadata: HashMap<String, String>) -> Schema;
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
 }
 
 pub trait EncodeToRecordBatch

@@ -170,7 +170,7 @@ impl DataTransformer {
             .map(|delta| OrderBookDelta::encode_batch(&metadata, &[delta]))
             .collect();
 
-        let schema = OrderBookDelta::get_schema(metadata);
+        let schema = OrderBookDelta::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -197,7 +197,7 @@ impl DataTransformer {
             .map(|quote| QuoteTick::encode_batch(&metadata, &[quote]))
             .collect();
 
-        let schema = QuoteTick::get_schema(metadata);
+        let schema = QuoteTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -224,7 +224,7 @@ impl DataTransformer {
             .map(|trade| TradeTick::encode_batch(&metadata, &[trade]))
             .collect();
 
-        let schema = TradeTick::get_schema(metadata);
+        let schema = TradeTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -248,7 +248,7 @@ impl DataTransformer {
             .map(|bar| Bar::encode_batch(&metadata, &[bar]))
             .collect();
 
-        let schema = TradeTick::get_schema(metadata);
+        let schema = TradeTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 }
