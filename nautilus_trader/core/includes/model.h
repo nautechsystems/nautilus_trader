@@ -1458,6 +1458,9 @@ enum TriggerType trigger_type_from_cstr(const char *ptr);
 /**
  * # Safety
  *
+ * - Assumes valid C string pointers.
+ * # Safety
+ *
  * - Assumes `reason_ptr` is a valid C string pointer.
  */
 struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,

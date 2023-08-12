@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
 use crate::{
@@ -72,9 +73,9 @@ impl MarketIfTouchedOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
@@ -289,7 +290,7 @@ impl Order for MarketIfTouchedOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
+    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
         self.exec_algorithm_params.clone()
     }
 
@@ -297,8 +298,8 @@ impl Order for MarketIfTouchedOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<String> {
-        self.tags.clone()
+    fn tags(&self) -> Option<Ustr> {
+        self.tags
     }
 
     fn filled_qty(&self) -> Quantity {
@@ -361,8 +362,8 @@ impl From<OrderInitialized> for MarketIfTouchedOrder {
                 .expect("Error initializing order: `trigger_type` was `None` for `MarketIfTouchedOrder`"),
             event.time_in_force,
             event.expire_time,
-            event.reduce_only,
-            event.quote_quantity,
+            event.reduce_only != 0,    // Temporary hack
+            event.quote_quantity != 0, // Temporary hack
             event.display_qty,
             event.emulation_trigger,
             event.trigger_instrument_id,

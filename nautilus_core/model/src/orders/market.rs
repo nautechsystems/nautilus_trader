@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
 use crate::{
@@ -58,9 +59,9 @@ impl MarketOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
@@ -261,7 +262,7 @@ impl Order for MarketOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
+    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
         self.exec_algorithm_params.clone()
     }
 
@@ -269,8 +270,8 @@ impl Order for MarketOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<String> {
-        self.tags.clone()
+    fn tags(&self) -> Option<Ustr> {
+        self.tags
     }
 
     fn filled_qty(&self) -> Quantity {
@@ -324,8 +325,8 @@ impl From<OrderInitialized> for MarketOrder {
             event.order_side,
             event.quantity,
             event.time_in_force,
-            event.reduce_only,
-            event.quote_quantity,
+            event.reduce_only != 0,    // Temporary hack
+            event.quote_quantity != 0, // Temporary hack
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,

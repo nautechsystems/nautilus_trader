@@ -19,6 +19,7 @@ use std::{
 };
 
 use serde_json::{Result, Value};
+use ustr::Ustr;
 
 use crate::string::cstr_to_string;
 
@@ -69,6 +70,54 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
         let bytes = c_str.to_bytes();
         let json_string = std::str::from_utf8(bytes).unwrap();
         let result: Result<HashMap<String, Value>> = serde_json::from_str(json_string);
+        match result {
+            Ok(map) => Some(map),
+            Err(err) => {
+                eprintln!("Error parsing JSON: {err}");
+                None
+            }
+        }
+    }
+}
+
+/// Convert a C bytes pointer into an owned `Option<HashMap<Ustr, Ustr>>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
+pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Ustr, Ustr>> {
+    if ptr.is_null() {
+        None
+    } else {
+        let c_str = CStr::from_ptr(ptr);
+        let bytes = c_str.to_bytes();
+        let json_string = std::str::from_utf8(bytes).unwrap();
+        let result: Result<HashMap<Ustr, Ustr>> = serde_json::from_str(json_string);
+        match result {
+            Ok(map) => Some(map),
+            Err(err) => {
+                eprintln!("Error parsing JSON: {err}");
+                None
+            }
+        }
+    }
+}
+
+/// Convert a C bytes pointer into an owned `Option<Vec<String>>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
+pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String>> {
+    if ptr.is_null() {
+        None
+    } else {
+        let c_str = CStr::from_ptr(ptr);
+        let bytes = c_str.to_bytes();
+        let json_string = std::str::from_utf8(bytes).unwrap();
+        let result: Result<Vec<String>> = serde_json::from_str(json_string);
         match result {
             Ok(map) => Some(map),
             Err(err) => {

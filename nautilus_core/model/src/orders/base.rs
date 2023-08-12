@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use thiserror;
+use ustr::Ustr;
 
 use crate::{
     enums::{
@@ -148,9 +149,9 @@ pub trait Order {
     fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>>;
     fn parent_order_id(&self) -> Option<ClientOrderId>;
     fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId>;
-    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>>;
+    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>>;
     fn exec_spawn_id(&self) -> Option<ClientOrderId>;
-    fn tags(&self) -> Option<String>;
+    fn tags(&self) -> Option<Ustr>;
     fn filled_qty(&self) -> Quantity;
     fn leaves_qty(&self) -> Quantity;
     fn avg_px(&self) -> Option<f64>;
@@ -267,9 +268,9 @@ where
             trigger_type: order.trigger_type(),
             time_in_force: order.time_in_force(),
             expire_time: order.expire_time(),
-            post_only: order.is_post_only(),
-            reduce_only: order.is_reduce_only(),
-            quote_quantity: order.is_quote_quantity(),
+            post_only: order.is_post_only() as u8,
+            reduce_only: order.is_reduce_only() as u8,
+            quote_quantity: order.is_quote_quantity() as u8,
             display_qty: order.display_qty(),
             limit_offset: order.limit_offset(),
             trailing_offset: order.trailing_offset(),
@@ -320,9 +321,9 @@ pub struct OrderCore {
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
     pub parent_order_id: Option<ClientOrderId>,
     pub exec_algorithm_id: Option<ExecAlgorithmId>,
-    pub exec_algorithm_params: Option<HashMap<String, String>>,
+    pub exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
     pub exec_spawn_id: Option<ClientOrderId>,
-    pub tags: Option<String>,
+    pub tags: Option<Ustr>,
     pub filled_qty: Quantity,
     pub leaves_qty: Quantity,
     pub avg_px: Option<f64>,
@@ -351,9 +352,9 @@ impl OrderCore {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
