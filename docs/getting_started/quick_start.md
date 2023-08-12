@@ -14,7 +14,7 @@ deleted when the container is deleted.
 - To get started, install docker:
   - Go to [docker.com](https://docs.docker.com/get-docker/) and follow the instructions 
 - From a terminal, download the latest image
-  - `docker pull ghcr.io/nautechsystems/jupyterlab:develop`
+  - `docker pull ghcr.io/nautechsystems/jupyterlab:develop --platform linux/amd64`
 - Run the docker container, exposing the jupyter port: 
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:develop`
 - Open your web browser to `localhost:{port}`
@@ -196,7 +196,7 @@ venue = BacktestVenueConfig(
     oms_type="NETTING",
     account_type="MARGIN",
     base_currency="USD",
-    starting_balances=["1_000_000 USD"]
+    starting_balances=["1_000_000 USD"],
 )
 ```
 
