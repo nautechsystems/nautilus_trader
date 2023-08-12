@@ -34,7 +34,7 @@ RUN (cd nautilus_core && cargo build --release)
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
-RUN poetry install --only main
+RUN poetry install --only main --all-extras
 RUN poetry build -f wheel
 RUN python -m pip install ./dist/*whl --force
 RUN find /usr/local/lib/python3.11/site-packages -name "*.pyc" -exec rm -f {} \;
