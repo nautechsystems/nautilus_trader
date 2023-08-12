@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import copy
 import sys
 from collections import Counter
 from typing import Optional
@@ -27,9 +27,12 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.streaming.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -244,3 +247,24 @@ class TestPersistenceStreaming:
         # Assert
         assert len([d for d in result if isinstance(d, TradeTick)]) == 198
         assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
+
+    def test_feather_reader_order_book_deltas(self, betfair_catalog):
+        # Arrange
+        backtest_result = self._run_default_backtest(betfair_catalog)
+        book = OrderBook(
+            instrument_id=InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR"),
+            book_type=BookType.L2_MBP,
+        )
+
+        # Act
+        result = self.catalog.read_backtest(
+            instance_id=backtest_result[0].instance_id,
+            raise_on_failed_deserialize=True,
+        )
+
+        updates = [d for d in result if isinstance(d, OrderBookDelta)]
+
+        # Assert
+        for update in updates[:2]:
+            book.apply_delta(update)
+            copy.deepcopy(book)
