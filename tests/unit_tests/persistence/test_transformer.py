@@ -18,8 +18,13 @@ from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
+import pytest
 
 from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -66,3 +71,73 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     assert len(ticks) == 69_806
     assert len(reader.read_all()) == len(ticks)
     reader.close()
+
+
+def test_get_schema_map_with_unsupported_type() -> None:
+    # Arrange, Act, Assert
+    with pytest.raises(TypeError):
+        DataTransformer.get_schema_map(str)
+
+
+@pytest.mark.parametrize(
+    ("data_type", "expected_map"),
+    [
+        [
+            OrderBookDelta,
+            {
+                "action": "UInt8",
+                "flags": "UInt8",
+                "order_id": "UInt64",
+                "price": "Int64",
+                "sequence": "UInt64",
+                "side": "UInt8",
+                "size": "UInt64",
+                "ts_event": "UInt64",
+                "ts_init": "UInt64",
+            },
+        ],
+        [
+            QuoteTick,
+            {
+                "bid_price": "Int64",
+                "ask_price": "Int64",
+                "bid_size": "UInt64",
+                "ask_size": "UInt64",
+                "ts_event": "UInt64",
+                "ts_init": "UInt64",
+            },
+        ],
+        [
+            TradeTick,
+            {
+                "price": "Int64",
+                "size": "UInt64",
+                "aggressor_side": "UInt8",
+                "trade_id": "Utf8",
+                "ts_event": "UInt64",
+                "ts_init": "UInt64",
+            },
+        ],
+        [
+            Bar,
+            {
+                "open": "Int64",
+                "high": "Int64",
+                "low": "Int64",
+                "close": "Int64",
+                "volume": "UInt64",
+                "ts_event": "UInt64",
+                "ts_init": "UInt64",
+            },
+        ],
+    ],
+)
+def test_get_schema_map_for_all_implemented_types(
+    data_type: type,
+    expected_map: dict[str, str],
+) -> None:
+    # Arrange, Act
+    schema_map = DataTransformer.get_schema_map(data_type)
+
+    # Assert
+    assert schema_map == expected_map

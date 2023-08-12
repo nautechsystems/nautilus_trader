@@ -185,6 +185,19 @@ mod tests {
     }
 
     #[test]
+    fn test_get_schema_map() {
+        let arrow_schema = QuoteTick::get_schema_map();
+        let mut expected_map = HashMap::new();
+        expected_map.insert("bid_price".to_string(), "Int64".to_string());
+        expected_map.insert("ask_price".to_string(), "Int64".to_string());
+        expected_map.insert("bid_size".to_string(), "UInt64".to_string());
+        expected_map.insert("ask_size".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        assert_eq!(arrow_schema, expected_map);
+    }
+
+    #[test]
     fn test_encode_quote_tick() {
         // Create test data
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();

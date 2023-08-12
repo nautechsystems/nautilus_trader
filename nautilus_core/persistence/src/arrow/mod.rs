@@ -51,6 +51,16 @@ pub enum DataStreamingError {
 
 pub trait ArrowSchemaProvider {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
+    fn get_schema_map() -> HashMap<String, String> {
+        let schema = Self::get_schema(None);
+        let mut map = HashMap::new();
+        for field in schema.fields() {
+            let name = field.name().to_string();
+            let data_type = format!("{:?}", field.data_type());
+            map.insert(name, data_type);
+        }
+        map
+    }
 }
 
 pub trait EncodeToRecordBatch
