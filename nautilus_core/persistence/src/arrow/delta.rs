@@ -220,6 +220,22 @@ mod tests {
     }
 
     #[test]
+    fn test_get_schema_map() {
+        let schema_map = OrderBookDelta::get_schema_map();
+        let mut expected_map = HashMap::new();
+        expected_map.insert("action".to_string(), "UInt8".to_string());
+        expected_map.insert("side".to_string(), "UInt8".to_string());
+        expected_map.insert("price".to_string(), "Int64".to_string());
+        expected_map.insert("size".to_string(), "UInt64".to_string());
+        expected_map.insert("order_id".to_string(), "UInt64".to_string());
+        expected_map.insert("flags".to_string(), "UInt8".to_string());
+        expected_map.insert("sequence".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        assert_eq!(schema_map, expected_map);
+    }
+
+    #[test]
     fn test_encode_batch() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);

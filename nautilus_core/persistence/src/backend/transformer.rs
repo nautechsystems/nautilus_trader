@@ -18,9 +18,9 @@ use std::io::Cursor;
 use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
-    types::PyBytes,
+    types::{IntoPyDict, PyBytes, PyDict, PyType},
 };
 
 use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
@@ -105,6 +105,24 @@ impl DataTransformer {
 
 #[pymethods]
 impl DataTransformer {
+    #[staticmethod]
+    pub fn get_schema_map(py: Python<'_>, cls: &PyType) -> PyResult<Py<PyDict>> {
+        let cls_str: &str = cls.getattr("__name__")?.extract()?;
+        let result_map = match cls_str {
+            stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
+            stringify!(QuoteTick) => QuoteTick::get_schema_map(),
+            stringify!(TradeTick) => TradeTick::get_schema_map(),
+            stringify!(Bar) => Bar::get_schema_map(),
+            _ => {
+                return Err(PyTypeError::new_err(format!(
+                    "Arrow schema for `{cls_str}` is not currently implemented in Rust."
+                )));
+            }
+        };
+
+        Ok(result_map.into_py_dict(py).into())
+    }
+
     /// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed
     /// to `pa.ipc.open_stream` to create a `RecordBatchReader`.
     #[staticmethod]

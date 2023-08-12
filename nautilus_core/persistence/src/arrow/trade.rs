@@ -190,6 +190,19 @@ mod tests {
     }
 
     #[test]
+    fn test_get_schema_map() {
+        let schema_map = TradeTick::get_schema_map();
+        let mut expected_map = HashMap::new();
+        expected_map.insert("price".to_string(), "Int64".to_string());
+        expected_map.insert("size".to_string(), "UInt64".to_string());
+        expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
+        expected_map.insert("trade_id".to_string(), "Utf8".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        assert_eq!(schema_map, expected_map);
+    }
+
+    #[test]
     fn test_encode_trade_tick() {
         // Create test data
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();

@@ -192,6 +192,20 @@ mod tests {
     }
 
     #[test]
+    fn test_get_schema_map() {
+        let schema_map = Bar::get_schema_map();
+        let mut expected_map = HashMap::new();
+        expected_map.insert("open".to_string(), "Int64".to_string());
+        expected_map.insert("high".to_string(), "Int64".to_string());
+        expected_map.insert("low".to_string(), "Int64".to_string());
+        expected_map.insert("close".to_string(), "Int64".to_string());
+        expected_map.insert("volume".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        assert_eq!(schema_map, expected_map);
+    }
+
+    #[test]
     fn test_encode_batch() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
