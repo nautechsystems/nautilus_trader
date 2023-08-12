@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
@@ -80,6 +81,6 @@ cdef class CacheDatabase:
     cpdef void update_strategy(self, Strategy strategy)
 
     cpdef void snapshot_order_state(self, Order order)
-    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl=*)
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl=*)
 
     cpdef void heartbeat(self, datetime timestamp)

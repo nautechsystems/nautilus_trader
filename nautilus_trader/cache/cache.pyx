@@ -1668,6 +1668,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
@@ -1698,7 +1699,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
 
-    cpdef void snapshot_position_state(self, Position position):
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot):
         """
         Snapshot the state dictionary for the given `position`.
 
@@ -1708,6 +1709,8 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to snapshot the state for.
+        ts_snapshot : uint64_t
+            The UNIX timestamp (nanoseconds) when the snapshot was taken.
 
         """
         Condition.not_none(position, "position")
@@ -1720,6 +1723,7 @@ cdef class Cache(CacheFacade):
 
         self._database.snapshot_position_state(
             position,
+            ts_snapshot,
             self._calculate_unrealized_pnl(position),
         )
 
@@ -1832,6 +1836,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
