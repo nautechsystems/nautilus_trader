@@ -30,7 +30,7 @@ use crate::{
 
 #[no_mangle]
 pub extern "C" fn bar_specification_new(
-    step: u64,
+    step: usize,
     aggregation: u8,
     price_type: u8,
 ) -> BarSpecification {

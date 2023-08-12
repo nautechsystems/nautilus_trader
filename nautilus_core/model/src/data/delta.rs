@@ -76,6 +76,7 @@ impl OrderBookDelta {
         }
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -88,6 +89,7 @@ impl OrderBookDelta {
         metadata
     }
 
+    /// Create a new [`OrderBookDelta`] extracted from the given [`PyAny`].
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;

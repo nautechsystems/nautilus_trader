@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
     array::{Array, Int64Array, UInt64Array},
-    datatypes::{DataType, Field, Schema, SchemaRef},
+    datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -30,7 +30,7 @@ use super::DecodeDataFromRecordBatch;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for QuoteTick {
-    fn get_schema(metadata: std::collections::HashMap<String, String>) -> SchemaRef {
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
             Field::new("bid_price", DataType::Int64, false),
             Field::new("ask_price", DataType::Int64, false),
@@ -40,7 +40,10 @@ impl ArrowSchemaProvider for QuoteTick {
             Field::new("ts_init", DataType::UInt64, false),
         ];
 
-        Schema::new_with_metadata(fields, metadata).into()
+        match metadata {
+            Some(metadata) => Schema::new_with_metadata(fields, metadata),
+            None => Schema::new(fields),
+        }
     }
 }
 
@@ -91,7 +94,7 @@ impl EncodeToRecordBatch for QuoteTick {
 
         // Build record batch
         RecordBatch::try_new(
-            Self::get_schema(metadata.clone()),
+            Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(bid_price_array),
                 Arc::new(ask_price_array),
@@ -168,7 +171,7 @@ mod tests {
     fn test_get_schema() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
-        let schema = QuoteTick::get_schema(metadata.clone());
+        let schema = QuoteTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
             Field::new("bid_price", DataType::Int64, false),
             Field::new("ask_price", DataType::Int64, false),
@@ -177,8 +180,21 @@ mod tests {
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata).into();
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
+    }
+
+    #[test]
+    fn test_get_schema_map() {
+        let arrow_schema = QuoteTick::get_schema_map();
+        let mut expected_map = HashMap::new();
+        expected_map.insert("bid_price".to_string(), "Int64".to_string());
+        expected_map.insert("ask_price".to_string(), "Int64".to_string());
+        expected_map.insert("bid_size".to_string(), "UInt64".to_string());
+        expected_map.insert("ask_size".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        assert_eq!(arrow_schema, expected_map);
     }
 
     #[test]
@@ -252,7 +268,7 @@ mod tests {
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            QuoteTick::get_schema(metadata.clone()),
+            QuoteTick::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(bid_price),
                 Arc::new(ask_price),

@@ -86,6 +86,7 @@ impl QuoteTick {
         }
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -98,19 +99,7 @@ impl QuoteTick {
         metadata
     }
 
-    #[must_use]
-    pub fn extract_price(&self, price_type: PriceType) -> Price {
-        match price_type {
-            PriceType::Bid => self.bid_price,
-            PriceType::Ask => self.ask_price,
-            PriceType::Mid => Price::from_raw(
-                (self.bid_price.raw + self.ask_price.raw) / 2,
-                cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
-            ),
-            _ => panic!("Cannot extract with price type {price_type}"),
-        }
-    }
-
+    /// Create a new [`Bar`] extracted from the given [`PyAny`].
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
@@ -150,6 +139,19 @@ impl QuoteTick {
             ts_event,
             ts_init,
         ))
+    }
+
+    #[must_use]
+    pub fn extract_price(&self, price_type: PriceType) -> Price {
+        match price_type {
+            PriceType::Bid => self.bid_price,
+            PriceType::Ask => self.ask_price,
+            PriceType::Mid => Price::from_raw(
+                (self.bid_price.raw + self.ask_price.raw) / 2,
+                cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
+            ),
+            _ => panic!("Cannot extract with price type {price_type}"),
+        }
     }
 }
 
