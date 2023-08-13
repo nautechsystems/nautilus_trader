@@ -510,11 +510,11 @@ mod tests {
 class Counter:
     def __init__(self):
         self.count = 0
-        
+
     def handler(self, bytes):
         if bytes.decode() == 'ping':
             self.count = self.count + 1
-        
+
     def get_count(self):
         return self.count
 
