@@ -30,6 +30,7 @@ from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -111,6 +112,8 @@ cdef class ExecutionEngine(Component):
     cpdef void _handle_event(self, OrderEvent event)
     cpdef OmsType _determine_oms_type(self, OrderFilled fill)
     cpdef void _determine_position_id(self, OrderFilled fill, OmsType oms_type)
+    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill)
+    cpdef PositionId _determine_netting_position_id(self, OrderFilled fill)
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event)
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type)
     cpdef Position _open_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)

@@ -353,10 +353,10 @@ cdef class Order:
         return self._fsm.state == OrderStatus.EMULATED
 
     cdef bint is_primary_c(self):
-        return self.exec_algorithm_id is not None and self.exec_spawn_id is None
+        return self.exec_algorithm_id is not None and self.exec_spawn_id == self.client_order_id
 
     cdef bint is_spawned_c(self):
-        return self.exec_spawn_id is not None
+        return self.exec_algorithm_id is not None and self.exec_spawn_id != self.client_order_id
 
     cdef bint is_contingency_c(self):
         return self.contingency_type != ContingencyType.NO_CONTINGENCY

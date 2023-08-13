@@ -928,30 +928,24 @@ cdef class ExecutionEngine(Component):
                 self._log.debug(f"Assigned {repr(position_id)} to {fill}.", LogColor.MAGENTA)
             return
 
+        # TODO(cs): Optimize away the need to fetch order from cache
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
+
         if oms_type == OmsType.HEDGING:
-            if fill.position_id is not None:
-                # Already assigned
-                position_id = fill.position_id
-            else:
-                # Assign new position ID
-                position_id = self._pos_id_generator.generate(fill.strategy_id)
-                if self.debug:
-                    self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
+            position_id = self._determine_hedging_position_id(fill)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
-            position_id = PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
+            position_id = self._determine_netting_position_id(fill)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
             )
 
         fill.position_id = position_id
-
-        cdef Order order = self._cache.order(fill.client_order_id)
-        if order is None:
-            raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
-            )
 
         # Check execution algorithm position ID
         if order.exec_algorithm_id is None or order.exec_spawn_id is None:
@@ -968,6 +962,37 @@ cdef class ExecutionEngine(Component):
                 primary.strategy_id,
             )
             self._log.debug(f"Assigned primary order {repr(position_id)}.", LogColor.MAGENTA)
+
+    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill):
+        if fill.position_id is not None:
+            # Already assigned
+            return fill.position_id
+
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
+
+        cdef:
+            list exec_spawn_orders
+            Order spawned_order
+        if order.exec_spawn_id is not None:
+            exec_spawn_orders = self._cache.orders_for_exec_spawn(order.exec_spawn_id)
+            for spawned_order in exec_spawn_orders:
+                if spawned_order.position_id is not None:
+                    self._log.debug(f"Found spawned {repr(spawned_order.position_id)} for {fill}.", LogColor.MAGENTA)
+                    # Use position ID for execution spawn
+                    return order.position_id
+
+        # Assign new position ID
+        position_id = self._pos_id_generator.generate(fill.strategy_id)
+        if self.debug:
+            self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
+        return position_id
+
+    cpdef PositionId _determine_netting_position_id(self, OrderFilled fill):
+        return PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
 
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event):
         try:
