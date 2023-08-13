@@ -794,14 +794,9 @@ cdef class Cache(CacheFacade):
 
             # 8: Build _index_exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
             if order.exec_algorithm_id is not None:
-                if order.exec_spawn_id is None:
-                    if order.client_order_id not in self._index_exec_spawn_orders:
-                        self._index_exec_spawn_orders[order.client_order_id] = set()
-                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
-                else:
-                    if order.exec_spawn_id not in self._index_exec_spawn_orders:
-                        self._index_exec_spawn_orders[order.exec_spawn_id] = set()
-                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
+                if order.exec_spawn_id not in self._index_exec_spawn_orders:
+                    self._index_exec_spawn_orders[order.exec_spawn_id] = set()
+                self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
             # 9: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
@@ -1486,20 +1481,11 @@ cdef class Cache(CacheFacade):
                 exec_algorithm_orders.add(order.client_order_id)
 
             # Set exec_spawn_id index
-            if order.exec_spawn_id is None:
-                # Primary order
-                exec_spawn_orders = self._index_exec_spawn_orders.get(order.client_order_id)
-                if not exec_spawn_orders:
-                    self._index_exec_spawn_orders[order.client_order_id] = {order.client_order_id}
-                else:
-                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
+            exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+            if not exec_spawn_orders:
+                self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
             else:
-                # Secondary order
-                exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
-                if not exec_spawn_orders:
-                    self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
-                else:
-                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
+                self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
         # Update emulation
         if order.emulation_trigger == TriggerType.NO_TRIGGER:

@@ -635,13 +635,13 @@ cdef class ExecAlgorithm(Actor):
         cdef ClientId client_id = None
         cdef SubmitOrder command = None
 
-        if order.exec_spawn_id is not None:
+        if order.is_spawned_c():
             # Handle new spawned order
             primary = self.cache.order(order.exec_spawn_id)
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
-                    "Cannot submit order: cannot find primary order for {repr(order.exec_spawn_id)}."
+                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}."
                 )
                 return
 
@@ -650,7 +650,7 @@ cdef class ExecAlgorithm(Actor):
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
-                    f"Cannot submit order: order already exists for {repr(order.client_order_id)}.",
+                    f"Cannot submit order: order already exists for {order.client_order_id!r}.",
                 )
                 return
 
