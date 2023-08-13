@@ -312,8 +312,6 @@ pub struct OrderCore {
     pub venue_order_ids: Vec<VenueOrderId>,
     pub trade_ids: Vec<TradeId>,
     pub previous_status: Option<OrderStatus>,
-    pub has_price: bool,
-    pub has_trigger_price: bool,
     pub status: OrderStatus,
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -377,8 +375,6 @@ impl OrderCore {
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             previous_status: None,
-            has_price: true,          // TODO
-            has_trigger_price: false, // TODO
             status: OrderStatus::Initialized,
             trader_id,
             strategy_id,
