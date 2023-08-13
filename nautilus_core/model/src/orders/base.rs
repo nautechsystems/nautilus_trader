@@ -36,7 +36,7 @@ use crate::{
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -329,6 +329,7 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderCore {
     pub events: Vec<OrderEvent>,
+    pub commissions: HashMap<Currency, Money>,
     pub venue_order_ids: Vec<VenueOrderId>,
     pub trade_ids: Vec<TradeId>,
     pub previous_status: Option<OrderStatus>,
@@ -392,6 +393,7 @@ impl OrderCore {
     ) -> Self {
         Self {
             events: Vec::new(),
+            commissions: HashMap::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             previous_status: None,
@@ -600,6 +602,21 @@ impl OrderCore {
             (OrderSide::Sell, PositionSide::Long) => self.leaves_qty <= position_qty,
             _ => true,
         }
+    }
+
+    // TODO: Add as_decimal
+    // fn signed_decimal_qty(&self) -> Decimal {
+    //     match self.side {
+    //         OrderSide::Buy => self.quantity
+    //     }
+    // }
+
+    fn commission(&self, currency: &Currency) -> Option<Money> {
+        self.commissions.get(currency).copied()
+    }
+
+    fn commissions(&self) -> HashMap<Currency, Money> {
+        self.commissions.clone()
     }
 }
 
