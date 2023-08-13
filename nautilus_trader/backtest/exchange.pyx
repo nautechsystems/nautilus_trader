@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections import deque
 from decimal import Decimal
 from heapq import heappush
 from typing import Optional
@@ -30,7 +31,6 @@ from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -210,7 +210,7 @@ cdef class SimulatedExchange:
         for instrument in instruments:
             self.add_instrument(instrument)
 
-        self._message_queue = Queue()
+        self._message_queue = deque()
         self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
         self._inflight_counter: dict[uint64_t, int] = {}
 
@@ -606,7 +606,7 @@ cdef class SimulatedExchange:
         Condition.not_none(command, "command")
 
         if self.latency_model is None:
-            self._message_queue.put_nowait(command)
+            self._message_queue.appendleft(command)
         else:
             heappush(self._inflight_queue, self.generate_inflight_command(command))
 
@@ -777,7 +777,7 @@ cdef class SimulatedExchange:
             ts = self._inflight_queue[0][0][0]
             if ts <= ts_now:
                 # Place message on queue to be processed
-                self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
+                self._message_queue.appendleft(self._inflight_queue.pop(0)[1])
                 self._inflight_counter.pop(ts, None)
             else:
                 break
@@ -786,8 +786,8 @@ cdef class SimulatedExchange:
             TradingCommand command
             Order order
             list orders
-        while self._message_queue.count > 0:
-            command = self._message_queue.get_nowait()
+        while self._message_queue:
+            command = self._message_queue.pop()
             if isinstance(command, SubmitOrder):
                 self._matching_engines[command.instrument_id].process_order(command.order, self.exec_client.account_id)
             elif isinstance(command, SubmitOrderList):
@@ -821,7 +821,7 @@ cdef class SimulatedExchange:
         for matching_engine in self._matching_engines.values():
             matching_engine.reset()
 
-        self._message_queue = Queue()
+        self._message_queue = deque()
         self._inflight_queue.clear()
         self._inflight_counter.clear()
 

@@ -21,7 +21,6 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 
 
@@ -29,7 +28,7 @@ cdef class Throttler:
     cdef Clock _clock
     cdef LoggerAdapter _log
     cdef uint64_t _interval_ns
-    cdef Queue _buffer
+    cdef object _buffer
     cdef str _timer_name
     cdef object _timestamps
     cdef object _output_send

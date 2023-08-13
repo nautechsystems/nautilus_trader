@@ -48,6 +48,9 @@ format:
 pre-commit: format
 	pre-commit run --all-files
 
+.PHONY: pre-flight
+pre-flight: format pre-commit cargo-test build-debug pytest
+
 .PHONY: ruff
 ruff:
 	ruff check . --fix

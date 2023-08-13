@@ -794,14 +794,9 @@ cdef class Cache(CacheFacade):
 
             # 8: Build _index_exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
             if order.exec_algorithm_id is not None:
-                if order.exec_spawn_id is None:
-                    if order.client_order_id not in self._index_exec_spawn_orders:
-                        self._index_exec_spawn_orders[order.client_order_id] = set()
-                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
-                else:
-                    if order.exec_spawn_id not in self._index_exec_spawn_orders:
-                        self._index_exec_spawn_orders[order.exec_spawn_id] = set()
-                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
+                if order.exec_spawn_id not in self._index_exec_spawn_orders:
+                    self._index_exec_spawn_orders[order.exec_spawn_id] = set()
+                self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
             # 9: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
@@ -1486,20 +1481,11 @@ cdef class Cache(CacheFacade):
                 exec_algorithm_orders.add(order.client_order_id)
 
             # Set exec_spawn_id index
-            if order.exec_spawn_id is None:
-                # Primary order
-                exec_spawn_orders = self._index_exec_spawn_orders.get(order.client_order_id)
-                if not exec_spawn_orders:
-                    self._index_exec_spawn_orders[order.client_order_id] = {order.client_order_id}
-                else:
-                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
+            exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+            if not exec_spawn_orders:
+                self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
             else:
-                # Secondary order
-                exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
-                if not exec_spawn_orders:
-                    self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
-                else:
-                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
+                self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
         # Update emulation
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
@@ -1668,6 +1654,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
@@ -1698,7 +1685,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
 
-    cpdef void snapshot_position_state(self, Position position):
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot):
         """
         Snapshot the state dictionary for the given `position`.
 
@@ -1708,6 +1695,8 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to snapshot the state for.
+        ts_snapshot : uint64_t
+            The UNIX timestamp (nanoseconds) when the snapshot was taken.
 
         """
         Condition.not_none(position, "position")
@@ -1720,6 +1709,7 @@ cdef class Cache(CacheFacade):
 
         self._database.snapshot_position_state(
             position,
+            ts_snapshot,
             self._calculate_unrealized_pnl(position),
         )
 
@@ -1832,6 +1822,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 

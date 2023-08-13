@@ -19,6 +19,7 @@ from typing import Optional
 from nautilus_trader.config import CacheDatabaseConfig
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
@@ -1092,7 +1093,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         self._log.debug(f"Added state snapshot {order}.")
 
-    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl = None):
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl = None):
         """
         Snapshot the state of the given `position`.
 
@@ -1100,6 +1101,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
         ----------
         position : Position
             The position for the state snapshot.
+        ts_snapshot : uint64_t
+            The UNIX timestamp (nanoseconds) when the snapshot was taken.
         unrealized_pnl : Money, optional
             The unrealized PnL for the state snapshot.
 
@@ -1110,6 +1113,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         if unrealized_pnl is not None:
             position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+
+        position_state["ts_snapshot"] = ts_snapshot
 
         cdef bytes snapshot_bytes = self._serializer.serialize(position_state)
         self._redis.rpush(self._key_snapshots_positions + position.id.to_str(), snapshot_bytes)

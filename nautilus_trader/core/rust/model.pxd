@@ -954,6 +954,9 @@ cdef extern from "../includes/model.h":
 
     # # Safety
     #
+    # - Assumes valid C string pointers.
+    # # Safety
+    #
     # - Assumes `reason_ptr` is a valid C string pointer.
     OrderDenied_t order_denied_new(TraderId_t trader_id,
                                    StrategyId_t strategy_id,
