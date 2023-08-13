@@ -694,7 +694,7 @@ class NautilusKernel:
 
     async def start_async(self) -> None:
         """
-        Start the Nautilus system kernel in an asychnronous context with an event loop.
+        Start the Nautilus system kernel in an asynchronous context with an event loop.
 
         Raises
         ------
