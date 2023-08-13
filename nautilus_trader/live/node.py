@@ -430,7 +430,7 @@ class TradingNode:
                 )
 
             self._is_running = True
-            await self.kernel.start()
+            await self.kernel.start_async()
 
             if self.kernel.loop.is_running():
                 self.kernel.log.info("RUNNING.")
