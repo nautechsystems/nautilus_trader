@@ -265,6 +265,6 @@ class TestPersistenceStreaming:
         updates = [d for d in result if isinstance(d, OrderBookDelta)]
 
         # Assert
-        for update in updates[:2]:
+        for update in updates[:10]:
             book.apply_delta(update)
             copy.deepcopy(book)

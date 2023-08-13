@@ -60,10 +60,10 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={
             "type": "OrderBookDelta",
-            "book_type": ...,
-            "instrument_id": ...,
-            "price_precision": ...,
-            "size_precision": ...,
+            # "book_type": ...,
+            # "instrument_id": ...,
+            # "price_precision": ...,
+            # "size_precision": ...,
         },
     ),
     QuoteTick: pa.schema(
@@ -77,9 +77,9 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={
             "type": "QuoteTick",
-            "instrument_id": ...,
-            "price_precision": ...,
-            "size_precision": ...,
+            # "instrument_id": ...,
+            # "price_precision": ...,
+            # "size_precision": ...,
         },
     ),
     TradeTick: pa.schema(
@@ -93,9 +93,9 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={
             "type": "TradeTick",
-            "instrument_id": ...,
-            "price_precision": ...,
-            "size_precision": ...,
+            # "instrument_id": ...,
+            # "price_precision": ...,
+            # "size_precision": ...,
         },
     ),
     Bar: pa.schema(
@@ -110,10 +110,10 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={
             "type": "Bar",
-            "bar_type": ...,
-            "instrument_id": ...,
-            "price_precision": ...,
-            "size_precision": ...,
+            # "bar_type": ...,
+            # "instrument_id": ...,
+            # "price_precision": ...,
+            # "size_precision": ...,
         },
     ),
     VenueStatusUpdate: pa.schema(

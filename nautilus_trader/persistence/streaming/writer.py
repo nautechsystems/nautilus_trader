@@ -123,7 +123,8 @@ class StreamingFeatherWriter:
         Create an arrow writer with instrument specific metadata in the schema.
         """
         metadata = self._extract_obj_metadata(obj)
-        schema = self._schemas[cls].with_metadata(metadata)
+        mapped_cls = {OrderBookDeltas: OrderBookDelta}.get(cls, cls)
+        schema = self._schemas[mapped_cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
         folder = f"{self.path}/{table_name}"
         key = (table_name, obj.instrument_id.value)
