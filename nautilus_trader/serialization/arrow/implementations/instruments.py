@@ -23,7 +23,6 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
-from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 SCHEMAS = {
@@ -212,12 +211,3 @@ def deserialize_instrument(batch: pa.RecordBatch) -> list[Instrument]:
         b"OptionsContract": OptionsContract,
     }[ins_type]
     return [Cls.from_dict(data) for data in batch.to_pylist()]
-
-
-for cls in Instrument.__subclasses__():
-    register_arrow(
-        cls=cls,
-        schema=SCHEMAS[cls],
-        serializer=serialize_instrument,
-        deserializer=deserialize_instrument,
-    )
