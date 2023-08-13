@@ -42,29 +42,41 @@ from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
 
 
-# TODO; Should all move down to rust
-
-
 NAUTILUS_ARROW_SCHEMA = {
     # TODO - remove when rust schemas exposed
     OrderBookDelta: pa.schema(
+        [
+            pa.field("action", pa.uint8(), False),
+            pa.field("side", pa.uint8(), False),
+            pa.field("price", pa.int64(), False),
+            pa.field("size", pa.uint64(), False),
+            pa.field("order_id", pa.uint64(), False),
+            pa.field("flags", pa.uint8(), False),
+            pa.field("sequence", pa.uint64(), False),
+            pa.field("ts_event", pa.uint64(), False),
+            pa.field("ts_init", pa.uint64(), False),
+        ],
+    ),
+    Bar: pa.schema(
         {
-            "action": pa.uint8(),
-            "side": pa.uint8(),
-            "price": pa.int64(),
-            "size": pa.uint64(),
-            "order_id": pa.uint64(),
-            "flags": pa.uint8(),
+            "open": pa.int64(),
+            "high": pa.int64(),
+            "low": pa.int64(),
+            "close": pa.int64(),
+            "volume": pa.uint64(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
-        metadata={
-            "type": "OrderBookDelta",
-            # "book_type": ...,
-            # "instrument_id": ...,
-            # "price_precision": ...,
-            # "size_precision": ...,
-        },
+    ),
+    TradeTick: pa.schema(
+        [
+            pa.field("price", pa.int64(), False),
+            pa.field("size", pa.uint64(), False),
+            pa.field("aggressor_side", pa.uint8(), False),
+            pa.field("trade_id", pa.string(), False),
+            pa.field("ts_event", pa.uint64(), False),
+            pa.field("ts_init", pa.uint64(), False),
+        ],
     ),
     QuoteTick: pa.schema(
         {
@@ -77,40 +89,6 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={
             "type": "QuoteTick",
-            # "instrument_id": ...,
-            # "price_precision": ...,
-            # "size_precision": ...,
-        },
-    ),
-    TradeTick: pa.schema(
-        {
-            "price": pa.int64(),
-            "size": pa.uint64(),
-            "aggressor_side": pa.int8(),
-            "trade_id": pa.string(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={
-            "type": "TradeTick",
-            # "instrument_id": ...,
-            # "price_precision": ...,
-            # "size_precision": ...,
-        },
-    ),
-    Bar: pa.schema(
-        {
-            "open": pa.int64(),
-            "high": pa.int64(),
-            "low": pa.int64(),
-            "close": pa.int64(),
-            "volume": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={
-            "type": "Bar",
-            # "bar_type": ...,
             # "instrument_id": ...,
             # "price_precision": ...,
             # "size_precision": ...,
