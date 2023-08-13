@@ -96,7 +96,7 @@ impl ExponentialMovingAverage {
     }
 
     #[pyo3(name = "is_initialized")]
-    fn is_initialized(&self) -> bool {
+    fn is_initialized_py(&self) -> bool {
         self._is_initialized
     }
 
