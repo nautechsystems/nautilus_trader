@@ -23,7 +23,6 @@ from nautilus_trader.backtest.models cimport LatencyModel
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.currency cimport Currency
@@ -95,7 +94,7 @@ cdef class SimulatedExchange:
     """The exchange instruments.\n\n:returns: `dict[InstrumentId, Instrument]`"""
 
     cdef dict _matching_engines
-    cdef Queue _message_queue
+    cdef object _message_queue
     cdef list _inflight_queue
     cdef dict _inflight_counter
 
