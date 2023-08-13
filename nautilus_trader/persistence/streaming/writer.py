@@ -29,6 +29,8 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -92,6 +94,7 @@ class StreamingFeatherWriter:
             "order_book_delta",
             "ticker",
         }
+        self._instruments: dict[InstrumentId, Instrument] = {}
         self._create_writers()
 
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
@@ -135,27 +138,28 @@ class StreamingFeatherWriter:
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
 
     def _extract_obj_metadata(self, obj: Union[TradeTick, QuoteTick, Bar, OrderBookDelta]):
+        instrument = self._instruments[obj.instrument_id]
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
         if isinstance(obj, (TradeTick, QuoteTick)):
             metadata.update(
                 {
-                    b"price_precision": str(obj.price.precision).encode(),
-                    b"size_precision": str(obj.size.precision).encode(),
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
         elif isinstance(obj, OrderBookDelta):
             metadata.update(
                 {
-                    b"price_precision": str(obj.order.price.precision).encode(),
-                    b"size_precision": str(obj.order.size.precision).encode(),
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
         elif isinstance(obj, OrderBookDeltas):
-            delta = obj.deltas[0]
+            obj.deltas[0]
             metadata.update(
                 {
-                    b"price_precision": str(delta.order.price.precision).encode(),
-                    b"size_precision": str(delta.order.size.precision).encode(),
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
         else:
@@ -167,7 +171,7 @@ class StreamingFeatherWriter:
     def closed(self) -> bool:
         return all(self._files[table_name].closed for table_name in self._files)
 
-    def write(self, obj: object) -> None:
+    def write(self, obj: object) -> None:  # noqa: C901
         """
         Write the object to the stream.
 
@@ -187,6 +191,9 @@ class StreamingFeatherWriter:
         cls = obj.__class__
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
+        elif isinstance(obj, Instrument):
+            if obj.id not in self._instruments:
+                self._instruments[obj.id] = obj
         table = class_to_filename(cls)
         if table not in self._writers:
             if table.startswith("genericdata_signal"):

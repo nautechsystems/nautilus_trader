@@ -95,7 +95,7 @@ class TestOrderBook:
         # Act
 
         # Assert
-        for update in updates[:2]:
+        for update in updates:
             book.apply_delta(update)
             copy.deepcopy(book)
 
@@ -664,114 +664,28 @@ class TestOrderBook:
 
     def test_orderbook_deep_copy(self):
         # Arrange
-        book = OrderBook(
-            instrument_id=InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR"),
-            book_type=BookType.L2_MBP,
-        )
+        instrument_id = InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR")
+        book = OrderBook(instrument_id, BookType.L2_MBP)
 
-        raw_updates = [
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "CLEAR",
-                "order": {"side": "NO_ORDER_SIDE", "price": "0", "size": "0", "order_id": 0},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "2", "size": "77", "order_id": 181},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "1", "size": "2", "order_id": 103},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "1", "size": "40", "order_id": 107},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "1", "size": "12", "order_id": 101},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "2", "size": "331", "order_id": 192},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "2", "size": "119", "order_id": 185},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "2", "size": "9", "order_id": 194},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "BUY", "price": "2", "size": "17", "order_id": 193},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
-            {
-                "type": "OrderBookDelta",
-                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
-                "action": "UPDATE",
-                "order": {"side": "SELL", "price": "2", "size": "0", "order_id": 195},
-                "flags": 0,
-                "sequence": 0,
-                "ts_event": 1576840503572000000,
-                "ts_init": 1576840503572000000,
-            },
+        def make_delta(side: OrderSide, price: float, size: float):
+            order = BookOrder(
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                side=side,
+                order_id=0,
+            )
+            return TestDataStubs.order_book_delta(
+                instrument_id=instrument_id,
+                order=order,
+            )
+
+        updates = [
+            TestDataStubs.order_book_delta_clear(instrument_id=instrument_id),
+            make_delta(OrderSide.BUY, price=2.0, size=77.0),
+            make_delta(OrderSide.BUY, price=1.0, size=2.0),
+            make_delta(OrderSide.BUY, price=1.0, size=40.0),
+            make_delta(OrderSide.BUY, price=1.0, size=331.0),
         ]
-        updates = [OrderBookDelta.from_dict(u) for u in raw_updates]
 
         # Act
         for update in updates:

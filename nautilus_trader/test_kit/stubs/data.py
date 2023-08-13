@@ -22,6 +22,7 @@ import pytz
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
@@ -50,7 +51,6 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.model.orders import Order
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -312,12 +312,24 @@ class TestDataStubs:
     @staticmethod
     def order_book_delta(
         instrument_id: Optional[InstrumentId] = None,
-        order: Optional[Order] = None,
+        order: Optional[BookOrder] = None,
     ) -> OrderBookDeltas:
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            action=BookAction.ADD,
+            action=BookAction.UPDATE,
             order=order or TestDataStubs.order(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def order_book_delta_clear(
+        instrument_id: Optional[InstrumentId] = None,
+    ) -> OrderBookDeltas:
+        return OrderBookDelta(
+            instrument_id=instrument_id or TestIdStubs.audusd_id(),
+            action=BookAction.CLEAR,
+            order=NULL_ORDER,
             ts_event=0,
             ts_init=0,
         )
