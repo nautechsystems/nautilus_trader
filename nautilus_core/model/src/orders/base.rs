@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 use thiserror;
 use ustr::Ustr;
 
@@ -32,8 +33,8 @@ use crate::{
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -135,6 +136,8 @@ pub trait Order {
     fn trader_id(&self) -> TraderId;
     fn strategy_id(&self) -> StrategyId;
     fn instrument_id(&self) -> InstrumentId;
+    fn symbol(&self) -> Symbol;
+    fn venue(&self) -> Venue;
     fn client_order_id(&self) -> ClientOrderId;
     fn venue_order_id(&self) -> Option<VenueOrderId>;
     fn position_id(&self) -> Option<PositionId>;
@@ -209,6 +212,18 @@ pub trait Order {
         self.emulation_trigger().is_some()
     }
 
+    fn is_primary(&self) -> bool {
+        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
+        self.exec_algorithm_id().is_some()
+            && self.client_order_id() == self.exec_spawn_id().unwrap()
+    }
+
+    fn is_secondary(&self) -> bool {
+        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
+        self.exec_algorithm_id().is_some()
+            && self.client_order_id() != self.exec_spawn_id().unwrap()
+    }
+
     fn is_contingency(&self) -> bool {
         self.contingency_type().is_some()
     }
@@ -234,6 +249,10 @@ pub trait Order {
                     | OrderStatus::PendingUpdate
                     | OrderStatus::PartiallyFilled
             )
+    }
+
+    fn is_canceled(&self) -> bool {
+        self.status() == OrderStatus::Canceled
     }
 
     fn is_closed(&self) -> bool {
@@ -307,6 +326,7 @@ where
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderCore {
     pub events: Vec<OrderEvent>,
     pub venue_order_ids: Vec<VenueOrderId>,
