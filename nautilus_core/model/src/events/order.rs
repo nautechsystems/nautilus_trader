@@ -34,7 +34,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum OrderEvent {
     OrderInitialized(Box<OrderInitialized>),
     OrderDenied(OrderDenied),

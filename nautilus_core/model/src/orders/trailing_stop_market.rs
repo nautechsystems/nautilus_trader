@@ -31,8 +31,8 @@ use crate::{
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -184,6 +184,14 @@ impl Order for TrailingStopMarketOrder {
 
     fn instrument_id(&self) -> InstrumentId {
         self.instrument_id
+    }
+
+    fn symbol(&self) -> Symbol {
+        self.instrument_id.symbol
+    }
+
+    fn venue(&self) -> Venue {
+        self.instrument_id.venue
     }
 
     fn client_order_id(&self) -> ClientOrderId {
