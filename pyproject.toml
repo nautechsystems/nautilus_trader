@@ -55,7 +55,7 @@ psutil = "^5.9.5"
 pyarrow = "^12.0.1"
 pytz = "^2023.3.0"
 toml = "^0.10.2"
-tqdm = "^4.66.0"
+tqdm = "^4.66.1"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.3", optional = true}
 redis = {version = "^4.6.0", optional = true}
@@ -76,9 +76,9 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "^23.7.0"
 docformatter = "^1.7.5"
-mypy = "^1.4.1"
+mypy = "^1.5.0"
 pre-commit = "^3.3.3"
-ruff = "^0.0.283"
+ruff = "^0.0.284"
 types-pytz = "^2023.3"
 types-redis = "^4.6"
 types-requests = "^2.31"
@@ -88,7 +88,7 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.2.7"
+coverage = "^7.3.0"
 pytest = "^7.4.0"
 pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.1"

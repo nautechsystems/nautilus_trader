@@ -22,9 +22,8 @@ from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatusUpdate
 from nautilus_trader.model.events import OrderAccepted
@@ -48,18 +47,56 @@ from nautilus_trader.model.events import OrderUpdated
 
 NAUTILUS_ARROW_SCHEMA = {
     # TODO - remove when rust schemas exposed
-    OrderBookDeltas: pa.schema(
-        [
-            pa.field("action", pa.uint8(), nullable=False),
-            pa.field("side", pa.uint8(), nullable=False),
-            pa.field("price", pa.int64(), nullable=False),
-            pa.field("size", pa.uint64(), nullable=False),
-            pa.field("order_id", pa.uint64(), nullable=False),
-            pa.field("flags", pa.uint8(), nullable=False),
-            pa.field("sequence", pa.uint64(), nullable=False),
-            pa.field("ts_event", pa.uint64(), nullable=False),
-            pa.field("ts_init", pa.uint64(), nullable=False),
-        ],
+    OrderBookDelta: pa.schema(
+        {
+            "action": pa.uint8(),
+            "side": pa.uint8(),
+            "price": pa.int64(),
+            "size": pa.uint64(),
+            "order_id": pa.uint64(),
+            "flags": pa.uint8(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+        metadata={
+            "type": "OrderBookDelta",
+            "book_type": ...,
+            "instrument_id": ...,
+            "price_precision": ...,
+            "size_precision": ...,
+        },
+    ),
+    QuoteTick: pa.schema(
+        {
+            "bid_price": pa.int64(),
+            "bid_size": pa.uint64(),
+            "ask_price": pa.int64(),
+            "ask_size": pa.uint64(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+        metadata={
+            "type": "QuoteTick",
+            "instrument_id": ...,
+            "price_precision": ...,
+            "size_precision": ...,
+        },
+    ),
+    TradeTick: pa.schema(
+        {
+            "price": pa.int64(),
+            "size": pa.uint64(),
+            "aggressor_side": pa.int8(),
+            "trade_id": pa.string(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+        metadata={
+            "type": "TradeTick",
+            "instrument_id": ...,
+            "price_precision": ...,
+            "size_precision": ...,
+        },
     ),
     Bar: pa.schema(
         {
@@ -71,34 +108,13 @@ NAUTILUS_ARROW_SCHEMA = {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
-    ),
-    TradeTick: pa.schema(
-        [
-            pa.field("price", pa.int64(), nullable=False),
-            pa.field("size", pa.uint64(), nullable=False),
-            pa.field("aggressor_side", pa.uint8(), nullable=False),
-            pa.field("trade_id", pa.string(), nullable=False),
-            pa.field("ts_event", pa.uint64(), nullable=False),
-            pa.field("ts_init", pa.uint64(), nullable=False),
-        ],
-    ),
-    QuoteTick: pa.schema(
-        {
-            "bid": pa.int64(),
-            "ask": pa.int64(),
-            "bid_size": pa.uint64(),
-            "ask_size": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
+        metadata={
+            "type": "Bar",
+            "bar_type": ...,
+            "instrument_id": ...,
+            "price_precision": ...,
+            "size_precision": ...,
         },
-    ),
-    Ticker: pa.schema(
-        {
-            "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "Ticker"},
     ),
     VenueStatusUpdate: pa.schema(
         {

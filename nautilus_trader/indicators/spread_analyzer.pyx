@@ -77,8 +77,8 @@ cdef class SpreadAnalyzer(Indicator):
             if len(self._spreads) == self.capacity:
                 self._set_initialized(True)
 
-        cdef double ask = Price.raw_to_f64_c(tick._mem.ask.raw)
-        cdef double bid = Price.raw_to_f64_c(tick._mem.bid.raw)
+        cdef double bid = Price.raw_to_f64_c(tick._mem.bid_price.raw)
+        cdef double ask = Price.raw_to_f64_c(tick._mem.ask_price.raw)
         cdef double spread = ask - bid
 
         self.current = spread

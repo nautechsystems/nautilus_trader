@@ -51,6 +51,24 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+/// Convert a C string pointer into an owned `Option<Ustr>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer or NULL.
+///
+/// # Panics
+///
+/// - If `ptr` is null.
+#[must_use]
+pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
+    if !ptr.is_null() {
+        Some(cstr_to_ustr(ptr))
+    } else {
+        None
+    }
+}
+
 /// Convert a C string pointer into an owned `String`.
 ///
 /// # Safety

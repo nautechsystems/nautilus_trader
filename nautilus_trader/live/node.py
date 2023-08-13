@@ -411,7 +411,10 @@ class TradingNode:
                 await asyncio.sleep(interval)
                 open_positions = self.kernel.cache.positions_open()
                 for position in open_positions:
-                    self.cache.snapshot_position_state(position)
+                    self.cache.snapshot_position_state(
+                        position=position,
+                        ts_snapshot=self.kernel.clock.timestamp_ns(),
+                    )
         except asyncio.CancelledError:
             pass
 

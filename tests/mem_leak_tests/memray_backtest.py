@@ -33,61 +33,61 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
+count = 0
+total_runs = 128
+
 if __name__ == "__main__":
-    # Configure backtest engine
-    config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
-        logging=LoggingConfig(bypass_logging=True),
-    )
-
-    # Build the backtest engine
-    engine = BacktestEngine(config=config)
-
-    ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-
-    # Add a trading venue (multiple venues possible)
-    BINANCE = Venue("BINANCE")
-    engine.add_venue(
-        venue=BINANCE,
-        oms_type=OmsType.NETTING,
-        account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
-        base_currency=None,  # Multi-currency account
-        starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
-    )
-
-    # Add instruments
-    engine.add_instrument(ETHUSDT_BINANCE)
-
-    # Add data
-    provider = TestDataProvider()
-    wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
-    engine.add_data(ticks)
-
-    # Configure your strategy
-    config = EMACrossTWAPConfig(
-        instrument_id=str(ETHUSDT_BINANCE.id),
-        bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
-        trade_size=Decimal("0.05"),
-        fast_ema_period=10,
-        slow_ema_period=20,
-        twap_horizon_secs=10.0,
-        twap_interval_secs=2.5,
-    )
-
-    # Instantiate and add your strategy
-    strategy = EMACrossTWAP(config=config)
-    engine.add_strategy(strategy=strategy)
-
-    # Instantiate and add your execution algorithm
-    exec_algorithm = TWAPExecAlgorithm()
-    engine.add_exec_algorithm(exec_algorithm)
-
-    count = 0
-    total_runs = 128
     while count < total_runs:
-        count += 1
         print(f"Run: {count}/{total_runs}")
+
+        # Configure backtest engine
+        config = BacktestEngineConfig(
+            trader_id="BACKTESTER-001",
+            logging=LoggingConfig(bypass_logging=True),
+        )
+
+        # Build the backtest engine
+        engine = BacktestEngine(config=config)
+
+        ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
+
+        # Add a trading venue (multiple venues possible)
+        BINANCE = Venue("BINANCE")
+        engine.add_venue(
+            venue=BINANCE,
+            oms_type=OmsType.NETTING,
+            account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
+            base_currency=None,  # Multi-currency account
+            starting_balances=[Money(1_000_000.0, USDT), Money(10.0, ETH)],
+        )
+
+        # Add instruments
+        engine.add_instrument(ETHUSDT_BINANCE)
+
+        # Add data
+        provider = TestDataProvider()
+        wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
+        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        engine.add_data(ticks)
+
+        # Configure your strategy
+        config = EMACrossTWAPConfig(
+            instrument_id=str(ETHUSDT_BINANCE.id),
+            bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
+            trade_size=Decimal("0.05"),
+            fast_ema_period=10,
+            slow_ema_period=20,
+            twap_horizon_secs=10.0,
+            twap_interval_secs=2.5,
+        )
+
+        # Instantiate and add your strategy
+        strategy = EMACrossTWAP(config=config)
+        engine.add_strategy(strategy=strategy)
+
+        # Instantiate and add your execution algorithm
+        exec_algorithm = TWAPExecAlgorithm()
+        engine.add_exec_algorithm(exec_algorithm)
 
         # Run the engine (from start to end of data)
         engine.run()
@@ -95,5 +95,7 @@ if __name__ == "__main__":
         # For repeated backtest runs make sure to reset the engine
         engine.reset()
 
-    # Good practice to dispose of the object
-    engine.dispose()
+        # Good practice to dispose of the object
+        engine.dispose()
+
+        count += 1

@@ -502,16 +502,16 @@ class TestExecAlgorithm:
 
         tick1: QuoteTick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5005.0,
-            ask=5005.0,
+            bid_price=5005.0,
+            ask_price=5005.0,
             bid_size=10.000,
             ask_size=10.000,
         )
 
         tick2: QuoteTick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
             bid_size=10.000,
             ask_size=10.000,
         )

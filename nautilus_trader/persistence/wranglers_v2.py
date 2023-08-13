@@ -211,7 +211,7 @@ class QuoteTickDataWrangler(WranglerBase):
         """
         Process the given `data` into Nautilus `QuoteTick` objects.
 
-        Expects columns ['bid', 'ask'] with 'timestamp' index.
+        Expects columns ['bid_price', 'ask_price'] with 'timestamp' index.
         Note: The 'bid_size' and 'ask_size' columns are optional, will then use
         the `default_size`.
 
@@ -235,14 +235,16 @@ class QuoteTickDataWrangler(WranglerBase):
         # Rename columns
         df = df.rename(
             columns={
+                "bid": "bid_price",
+                "ask": "ask_price",
                 "timestamp": "ts_event",
                 "ts_recv": "ts_init",
             },
         )
 
         # Scale prices and quantities
-        df["bid"] = (df["bid"] * 1e9).astype(pd.Int64Dtype())
-        df["ask"] = (df["ask"] * 1e9).astype(pd.Int64Dtype())
+        df["bid_price"] = (df["bid_price"] * 1e9).astype(pd.Int64Dtype())
+        df["ask_price"] = (df["ask_price"] * 1e9).astype(pd.Int64Dtype())
 
         # Create bid_size and ask_size columns
         if "bid_size" in df.columns:
@@ -274,7 +276,7 @@ class QuoteTickDataWrangler(WranglerBase):
             df["ts_init"] = df["ts_event"] + ts_init_delta
 
         # Reorder the columns and drop index column
-        df = df[["bid", "ask", "bid_size", "ask_size", "ts_event", "ts_init"]]
+        df = df[["bid_price", "ask_price", "bid_size", "ask_size", "ts_event", "ts_init"]]
         df = df.reset_index(drop=True)
 
         table = pa.Table.from_pandas(df)

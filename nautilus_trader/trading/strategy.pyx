@@ -791,9 +791,6 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if order.exec_algorithm_id is not None:
-            self._send_algo_command(command, order.exec_algorithm_id)
-
         if order.is_emulated_c():
             self._send_emulator_command(command)
         else:

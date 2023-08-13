@@ -240,8 +240,7 @@ cdef class ExecAlgorithm(Actor):
 
         """
         Condition.not_none(command, "command")
-        # TODO: Add `exec_algorithm_id` to cancel order commands
-        # Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
+        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
@@ -624,8 +623,12 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
-        Condition.true(order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED), "order", "order status was not either ``INITIALIZED`` or ``RELEASED``")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
+        Condition.true(
+            order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            "order",
+            "order status was not either ``INITIALIZED`` or ``RELEASED``",
+        )
 
         cdef Order primary = None
         cdef PositionId position_id = None
@@ -840,7 +843,7 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `order.status` is not ``INITIALIZED``.
+            If `order.status` is not ``INITIALIZED`` or ``RELEASED``.
         ValueError
             If `price` is not ``None`` and order does not have a `price`.
         ValueError
@@ -858,8 +861,11 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        # TODO: Order could also be RELEASED
-        # Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        Condition.true(
+            order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            "order",
+            "order status was not either ``INITIALIZED`` or ``RELEASED``",
+        )
 
         cdef bint updating = False  # Set validation flag (must become true)
 

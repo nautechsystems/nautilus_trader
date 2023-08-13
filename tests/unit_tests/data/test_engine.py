@@ -1620,18 +1620,18 @@ class TestDataEngine:
 
         tick1 = TestDataStubs.quote_tick(
             instrument=BTCUSDT_BINANCE,
-            bid=50_000.0,
-            ask=50_001.0,
+            bid_price=50_000.0,
+            ask_price=50_001.0,
         )
         tick2 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_BINANCE,
-            bid=10_000.0,
-            ask=10_000.0,
+            bid_price=10_000.0,
+            ask_price=10_000.0,
         )
         tick3 = TestDataStubs.quote_tick(
             instrument=BTCUSDT_BINANCE,
-            bid=50_001.0,
-            ask=50_002.0,
+            bid_price=50_001.0,
+            ask_price=50_002.0,
         )
 
         # Act
@@ -1647,8 +1647,8 @@ class TestDataEngine:
         assert synthetic_tick.to_dict(synthetic_tick) == {
             "type": "QuoteTick",
             "instrument_id": "BTC-ETH.SYNTH",
-            "bid": "30000.50000000",
-            "ask": "30001.00000000",
+            "bid_price": "30000.50000000",
+            "ask_price": "30001.00000000",
             "bid_size": "1",
             "ask_size": "1",
             "ts_event": 0,

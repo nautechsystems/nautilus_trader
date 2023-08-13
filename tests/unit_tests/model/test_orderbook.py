@@ -43,6 +43,62 @@ class TestOrderBook:
         )
         self.sample_book = self.make_sample_book()
 
+    def test_order_book_pickleable(self):
+        # Arrange
+        book = OrderBook(
+            instrument_id=InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR"),
+            book_type=BookType.L2_MBP,
+        )
+        raw_updates = [
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
+                "action": "CLEAR",
+                "order": {"side": "NO_ORDER_SIDE", "price": "0", "size": "0", "order_id": 0},
+                "flags": 0,
+                "sequence": 0,
+                "ts_event": 1576840503572000000,
+                "ts_init": 1576840503572000000,
+            },
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
+                "action": "UPDATE",
+                "order": {"side": "BUY", "price": "2", "size": "77", "order_id": 181},
+                "flags": 0,
+                "sequence": 0,
+                "ts_event": 1576840503572000000,
+                "ts_init": 1576840503572000000,
+            },
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
+                "action": "UPDATE",
+                "order": {"side": "BUY", "price": "1", "size": "2", "order_id": 103},
+                "flags": 0,
+                "sequence": 0,
+                "ts_event": 1576840503572000000,
+                "ts_init": 1576840503572000000,
+            },
+            {
+                "type": "OrderBookDelta",
+                "instrument_id": "1.166564490-237491-0.0.BETFAIR",
+                "action": "UPDATE",
+                "order": {"side": "BUY", "price": "1", "size": "40", "order_id": 107},
+                "flags": 0,
+                "sequence": 0,
+                "ts_event": 1576840503572000000,
+                "ts_init": 1576840503572000000,
+            },
+        ]
+        updates = [OrderBookDelta.from_dict(upd) for upd in raw_updates]
+        # Act
+
+        # Assert
+        for update in updates[:2]:
+            book.apply_delta(update)
+            copy.deepcopy(book)
+
     def make_sample_book(self):
         return TestDataStubs.make_book(
             instrument=self.instrument,

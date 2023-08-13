@@ -87,7 +87,7 @@ cdef class QuoteTickDataWrangler:
         """
         Process the given tick dataset into Nautilus `QuoteTick` objects.
 
-        Expects columns ['bid', 'ask'] with 'timestamp' index.
+        Expects columns ['bid_price', 'ask_price'] with 'timestamp' index.
         Note: The 'bid_size' and 'ask_size' columns are optional, will then use
         the `default_volume`.
 
@@ -112,6 +112,12 @@ cdef class QuoteTickDataWrangler:
 
         as_utc_index(data)
 
+        columns = {
+            "bid": "bid_price",
+            "ask": "ask_price",
+        }
+        data.rename(columns=columns, inplace=True)
+
         if "bid_size" not in data.columns:
             data["bid_size"] = float(default_volume)
         if "ask_size" not in data.columns:
@@ -122,8 +128,8 @@ cdef class QuoteTickDataWrangler:
 
         return list(map(
             self._build_tick,
-            data["bid"],
-            data["ask"],
+            data["bid_price"],
+            data["ask_price"],
             data["bid_size"],
             data["ask_size"],
             ts_events,
@@ -183,29 +189,29 @@ cdef class QuoteTickDataWrangler:
             ask_data["volume"] = float(default_volume * 4)
 
         cdef dict data_open = {
-            "bid": bid_data["open"],
-            "ask": ask_data["open"],
+            "bid_price": bid_data["open"],
+            "ask_price": ask_data["open"],
             "bid_size": bid_data["volume"] / 4,
             "ask_size": ask_data["volume"] / 4,
         }
 
         cdef dict data_high = {
-            "bid": bid_data["high"],
-            "ask": ask_data["high"],
+            "bid_price": bid_data["high"],
+            "ask_price": ask_data["high"],
             "bid_size": bid_data["volume"] / 4,
             "ask_size": ask_data["volume"] / 4,
         }
 
         cdef dict data_low = {
-            "bid": bid_data["low"],
-            "ask": ask_data["low"],
+            "bid_price": bid_data["low"],
+            "ask_price": ask_data["low"],
             "bid_size": bid_data["volume"] / 4,
             "ask_size": ask_data["volume"] / 4,
         }
 
         cdef dict data_close = {
-            "bid": bid_data["close"],
-            "ask": ask_data["close"],
+            "bid_price": bid_data["close"],
+            "ask_price": ask_data["close"],
             "bid_size": bid_data["volume"] / 4,
             "ask_size": ask_data["volume"] / 4,
         }
@@ -242,8 +248,8 @@ cdef class QuoteTickDataWrangler:
         if is_raw:
             return list(map(
                 self._build_tick_from_raw,
-                df_ticks_final["bid"],
-                df_ticks_final["ask"],
+                df_ticks_final["bid_price"],
+                df_ticks_final["ask_price"],
                 df_ticks_final["bid_size"],
                 df_ticks_final["ask_size"],
                 ts_events,
@@ -252,8 +258,8 @@ cdef class QuoteTickDataWrangler:
         else:
             return list(map(
                 self._build_tick,
-                df_ticks_final["bid"],
-                df_ticks_final["ask"],
+                df_ticks_final["bid_price"],
+                df_ticks_final["ask_price"],
                 df_ticks_final["bid_size"],
                 df_ticks_final["ask_size"],
                 ts_events,
@@ -263,21 +269,21 @@ cdef class QuoteTickDataWrangler:
     # cpdef method for Python wrap() (called with map)
     cpdef QuoteTick _build_tick_from_raw(
         self,
-        int64_t raw_bid,
-        int64_t raw_ask,
-        uint64_t raw_bid_size,
-        uint64_t raw_ask_size,
+        int64_t bid_price_raw,
+        int64_t ask_price_raw,
+        uint64_t bid_size_raw,
+        uint64_t ask_size_raw,
         uint64_t ts_event,
         uint64_t ts_init,
     ):
         return QuoteTick.from_raw_c(
             self.instrument.id,
-            raw_bid,
-            raw_ask,
+            bid_price_raw,
+            ask_price_raw,
             self.instrument.price_precision,
             self.instrument.price_precision,
-            raw_bid_size,
-            raw_ask_size,
+            bid_size_raw,
+            ask_size_raw,
             self.instrument.size_precision,
             self.instrument.size_precision,
             ts_event,
@@ -383,8 +389,8 @@ cdef class TradeTickDataWrangler:
     # cpdef method for Python wrap() (called with map)
     cpdef TradeTick _build_tick_from_raw(
         self,
-        int64_t raw_price,
-        uint64_t raw_size,
+        int64_t price_raw,
+        uint64_t size_raw,
         AggressorSide aggressor_side,
         str trade_id,
         uint64_t ts_event,
@@ -392,9 +398,9 @@ cdef class TradeTickDataWrangler:
     ):
         return TradeTick.from_raw_c(
             self.instrument.id,
-            raw_price,
+            price_raw,
             self.instrument.price_precision,
-            raw_size,
+            size_raw,
             self.instrument.size_precision,
             aggressor_side,
             TradeId(trade_id),

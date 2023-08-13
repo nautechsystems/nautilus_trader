@@ -48,8 +48,8 @@ class TestQuoteTick:
 
         tick = QuoteTick(
             instrument_id=instrument_id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00001"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=3,
@@ -65,8 +65,8 @@ class TestQuoteTick:
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00001"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -87,8 +87,8 @@ class TestQuoteTick:
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00001"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(500_000),
             ask_size=Quantity.from_int(800_000),
             ts_event=0,
@@ -109,8 +109,8 @@ class TestQuoteTick:
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00001"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=1,
@@ -124,8 +124,8 @@ class TestQuoteTick:
         assert result == {
             "type": "QuoteTick",
             "instrument_id": "AUD/USD.SIM",
-            "bid": "1.00000",
-            "ask": "1.00001",
+            "bid_price": "1.00000",
+            "ask_price": "1.00001",
             "bid_size": "1",
             "ask_size": "1",
             "ts_event": 1,
@@ -136,8 +136,8 @@ class TestQuoteTick:
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00001"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=1,
@@ -168,8 +168,8 @@ class TestQuoteTick:
 
         # Assert
         assert tick.instrument_id == AUDUSD_SIM.id
-        assert tick.bid == Price.from_str("1.00000")
-        assert tick.ask == Price.from_str("1.00001")
+        assert tick.bid_price == Price.from_str("1.00000")
+        assert tick.ask_price == Price.from_str("1.00001")
         assert tick.bid_size == Quantity.from_int(1)
         assert tick.ask_size == Quantity.from_int(2)
         assert tick.ts_event == 1
@@ -179,8 +179,8 @@ class TestQuoteTick:
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("1.00000"),
-            ask=Price.from_str("1.00001"),
+            bid_price=Price.from_str("1.00000"),
+            ask_price=Price.from_str("1.00001"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=1,

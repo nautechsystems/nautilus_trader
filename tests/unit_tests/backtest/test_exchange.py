@@ -255,8 +255,8 @@ class TestSimulatedExchange:
         # Arrange
         tick = TestDataStubs.quote_tick(
             USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
 
         # Act
@@ -456,8 +456,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.exchange.process_quote_tick(tick)
         self.portfolio.update_quote_tick(tick)
@@ -508,8 +508,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -533,8 +533,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -558,8 +558,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
@@ -587,8 +587,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
@@ -616,8 +616,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -642,8 +642,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -668,8 +668,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -694,8 +694,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
@@ -726,8 +726,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=500_000,
             ask_size=500_000,
         )
@@ -758,8 +758,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -783,8 +783,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -812,8 +812,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -848,8 +848,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -868,8 +868,8 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,  # <-- hit bid again
+            bid_price=90.002,
+            ask_price=90.005,  # <-- hit bid again
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -887,8 +887,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -913,8 +913,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -940,8 +940,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -968,8 +968,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -988,8 +988,8 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=89.900,
-            ask=89.950,
+            bid_price=89.900,
+            ask_price=89.950,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1003,8 +1003,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -1031,8 +1031,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1051,7 +1051,7 @@ class TestSimulatedExchange:
         # Quantity is refreshed -> Ensure we don't trade the entire amount
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            ask=90.0,
+            ask_price=90.0,
             ask_size=10_000,
         )
         self.data_engine.process(tick)
@@ -1085,8 +1085,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.000,
-            ask=90.010,
+            bid_price=90.000,
+            ask_price=90.010,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1106,8 +1106,8 @@ class TestSimulatedExchange:
         # Quantity is refreshed -> Ensure we don't trade the entire amount
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.010,  # <-- in cross for purpose of test
-            ask=90.000,
+            bid_price=90.010,  # <-- in cross for purpose of test
+            ask_price=90.000,
             bid_size=10_000,
             ask_size=10_000,
         )
@@ -1133,8 +1133,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.005,
-            ask=90.005,
+            bid_price=90.005,
+            ask_price=90.005,
             bid_size=Quantity.from_int(10_000),
             ask_size=Quantity.from_int(10_000),
         )
@@ -1158,8 +1158,8 @@ class TestSimulatedExchange:
         # Quantity is refreshed -> Ensure we don't trade the entire amount
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.005,
-            ask=90.005,
+            bid_price=90.005,
+            ask_price=90.005,
             bid_size=10_000,
             ask_size=10_000,
         )
@@ -1185,8 +1185,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1230,8 +1230,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1273,8 +1273,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1319,8 +1319,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1360,8 +1360,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1394,8 +1394,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1429,8 +1429,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1465,8 +1465,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1512,8 +1512,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1549,8 +1549,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1598,8 +1598,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1669,8 +1669,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1699,8 +1699,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1729,8 +1729,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1761,8 +1761,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=Price.from_str("90.002"),
-            ask=Price.from_str("90.005"),
+            bid_price=Price.from_str("90.002"),
+            ask_price=Price.from_str("90.005"),
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1794,8 +1794,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1850,8 +1850,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.005,
-            ask=90.005,
+            bid_price=90.005,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1886,8 +1886,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1920,8 +1920,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -1957,8 +1957,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -1978,8 +1978,8 @@ class TestSimulatedExchange:
         # Trigger order
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.009,
-            ask=90.010,
+            bid_price=90.009,
+            ask_price=90.010,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -2004,8 +2004,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -2025,8 +2025,8 @@ class TestSimulatedExchange:
         # Trigger order
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.009,
-            ask=90.010,
+            bid_price=90.009,
+            ask_price=90.010,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -2049,8 +2049,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -2069,8 +2069,8 @@ class TestSimulatedExchange:
         # Trigger order
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.009,
-            ask=90.010,
+            bid_price=90.009,
+            ask_price=90.010,
         )
         self.data_engine.process(tick2)
         self.exchange.process_quote_tick(tick2)
@@ -2093,8 +2093,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -2142,8 +2142,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -2162,8 +2162,8 @@ class TestSimulatedExchange:
 
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=96.709,
-            ask=96.710,
+            bid_price=96.709,
+            ask_price=96.710,
             ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
             ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
         )
@@ -2179,8 +2179,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -2200,8 +2200,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=96.710,
-            ask=96.711,
+            bid_price=96.710,
+            ask_price=96.711,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -2218,8 +2218,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -2238,8 +2238,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=96.710,
-            ask=96.712,
+            bid_price=96.710,
+            ask_price=96.712,
         )
 
         self.exchange.process_quote_tick(tick2)
@@ -2252,8 +2252,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -2273,8 +2273,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.005,
-            ask=90.006,
+            bid_price=90.005,
+            ask_price=90.006,
             ts_event=1_000_000_000,
             ts_init=1_000_000_000,
         )
@@ -2289,8 +2289,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -2308,8 +2308,8 @@ class TestSimulatedExchange:
 
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.006,
-            ask=90.007,
+            bid_price=90.006,
+            ask_price=90.007,
             ts_event=1_000_000_000,
             ts_init=1_000_000_000,
         )
@@ -2317,8 +2317,8 @@ class TestSimulatedExchange:
         # Act
         tick3 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.000,
-            ask=90.001,
+            bid_price=90.000,
+            ask_price=90.001,
             ts_event=100_000,
             ts_init=100_000,
         )
@@ -2334,8 +2334,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick1 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
@@ -2353,8 +2353,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.000,
-            ask=90.001,
+            bid_price=90.000,
+            ask_price=90.001,
             ts_event=100_000,
             ts_init=100_000,
         )
@@ -2371,8 +2371,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -2390,8 +2390,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=89.997,
-            ask=89.999,
+            bid_price=89.997,
+            ask_price=89.999,
         )
 
         self.exchange.process_quote_tick(tick2)
@@ -2406,8 +2406,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -2425,8 +2425,8 @@ class TestSimulatedExchange:
         # Act
         tick2 = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.101,
-            ask=90.102,
+            bid_price=90.101,
+            ask_price=90.102,
         )
 
         self.exchange.process_quote_tick(tick2)
@@ -2441,8 +2441,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -2466,8 +2466,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.005,
+            bid_price=90.002,
+            ask_price=90.005,
         )
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
@@ -2484,8 +2484,8 @@ class TestSimulatedExchange:
 
         quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=100.003,
-            ask=100.004,
+            bid_price=100.003,
+            ask_price=100.004,
         )
 
         self.exchange.process_quote_tick(quote)
@@ -2555,8 +2555,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         open_quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=90.002,
-            ask=90.003,
+            bid_price=90.002,
+            ask_price=90.003,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -2575,8 +2575,8 @@ class TestSimulatedExchange:
 
         reduce_quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=100.003,
-            ask=100.004,
+            bid_price=100.003,
+            ask_price=100.004,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -2610,8 +2610,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=13.0,
+            bid_price=14.0,
+            ask_price=13.0,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -2641,8 +2641,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=13.0,
+            bid_price=14.0,
+            ask_price=13.0,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )
@@ -2669,8 +2669,8 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=10.0,
-            ask=11.0,
+            bid_price=10.0,
+            ask_price=11.0,
             bid_size=1_000_000,
             ask_size=1_000_000,
         )

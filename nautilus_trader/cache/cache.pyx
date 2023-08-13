@@ -907,9 +907,9 @@ cdef class Cache(CacheFacade):
         if position.side == PositionSide.FLAT:
             return Money(0.0, position.settlement_currency)
         elif position.side == PositionSide.LONG:
-            last = quote.ask
+            last = quote.ask_price
         else:
-            last = quote.bid
+            last = quote.bid_price
 
         return position.unrealized_pnl(last)
 
@@ -1668,6 +1668,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
@@ -1698,7 +1699,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
 
-    cpdef void snapshot_position_state(self, Position position):
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot):
         """
         Snapshot the state dictionary for the given `position`.
 
@@ -1708,6 +1709,8 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to snapshot the state for.
+        ts_snapshot : uint64_t
+            The UNIX timestamp (nanoseconds) when the snapshot was taken.
 
         """
         Condition.not_none(position, "position")
@@ -1720,6 +1723,7 @@ cdef class Cache(CacheFacade):
 
         self._database.snapshot_position_state(
             position,
+            ts_snapshot,
             self._calculate_unrealized_pnl(position),
         )
 
@@ -1832,6 +1836,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
@@ -2442,8 +2447,8 @@ cdef class Cache(CacheFacade):
         cdef:
             InstrumentId instrument_id
             str base_quote
-            Price bid
-            Price ask
+            Price bid_price
+            Price ask_price
             Bar bid_bar
             Bar ask_bar
         for instrument_id, base_quote in self._xrate_symbols.items():
@@ -2452,19 +2457,19 @@ cdef class Cache(CacheFacade):
 
             ticks = self._quote_ticks.get(instrument_id)
             if ticks:
-                bid = ticks[0].bid
-                ask = ticks[0].ask
+                bid_price = ticks[0].bid_price
+                ask_price = ticks[0].ask_price
             else:
                 # No quotes for instrument_id
                 bid_bar = self._bars_bid.get(instrument_id)
                 ask_bar = self._bars_ask.get(instrument_id)
                 if bid_bar is None or ask_bar is None:
                     continue # No prices for instrument_id
-                bid = bid_bar.close
-                ask = ask_bar.close
+                bid_price = bid_bar.close
+                ask_price = ask_bar.close
 
-            bid_quotes[base_quote] = bid.as_f64_c()
-            ask_quotes[base_quote] = ask.as_f64_c()
+            bid_quotes[base_quote] = bid_price.as_f64_c()
+            ask_quotes[base_quote] = ask_price.as_f64_c()
 
         return bid_quotes, ask_quotes
 

@@ -600,20 +600,20 @@ cdef class OrderMatchingEngine:
         self.iterate(tick.ts_init)
 
         # High
-        tick._mem.bid = self._last_bid_bar._mem.high  # Direct memory assignment
-        tick._mem.ask = self._last_ask_bar._mem.high  # Direct memory assignment
+        tick._mem.bid_price = self._last_bid_bar._mem.high  # Direct memory assignment
+        tick._mem.ask_price = self._last_ask_bar._mem.high  # Direct memory assignment
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
         # Low
-        tick._mem.bid = self._last_bid_bar._mem.low  # Assigning memory directly
-        tick._mem.ask = self._last_ask_bar._mem.low  # Assigning memory directly
+        tick._mem.bid_price = self._last_bid_bar._mem.low  # Assigning memory directly
+        tick._mem.ask_price = self._last_ask_bar._mem.low  # Assigning memory directly
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
         # Close
-        tick._mem.bid = self._last_bid_bar._mem.close  # Assigning memory directly
-        tick._mem.ask = self._last_ask_bar._mem.close  # Assigning memory directly
+        tick._mem.bid_price = self._last_bid_bar._mem.close  # Assigning memory directly
+        tick._mem.ask_price = self._last_ask_bar._mem.close  # Assigning memory directly
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
@@ -1778,6 +1778,9 @@ cdef class OrderMatchingEngine:
 # -- EVENT HANDLING -------------------------------------------------------------------------------
 
     cpdef void accept_order(self, Order order):
+        if order.is_closed_c():
+            return  # Temporary guard to prevent invalid processing
+
         # Check if order already accepted (being added back into the matching engine)
         if not order.status_c() == OrderStatus.ACCEPTED:
             self._generate_order_accepted(order)
@@ -1905,6 +1908,8 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
+            if ouo_order.status == OrderStatus.EMULATED:
+                continue  # Order is not on the exchange yet
             if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
                 continue
             if order.leaves_qty._mem.raw == 0:
@@ -1925,6 +1930,8 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
+            if contingent_order.status == OrderStatus.EMULATED:
+                continue  # Order is not on the exchange yet
             if not contingent_order.is_closed_c():
                 self.cancel_order(contingent_order, cancel_contingencies=False)
 

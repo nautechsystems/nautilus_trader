@@ -138,12 +138,12 @@ class OrderBookImbalance(Strategy):
         Actions to be performed when a delta is received.
         """
         bid = BookOrder(
-            price=tick.bid.as_double(),
+            price=tick.bid_price.as_double(),
             size=tick.bid_size.as_double(),
             side=OrderSide.BUY,
         )
         ask = BookOrder(
-            price=tick.ask.as_double(),
+            price=tick.ask_price.as_double(),
             size=tick.ask_size.as_double(),
             side=OrderSide.SELL,
         )

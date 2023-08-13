@@ -941,8 +941,8 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `QuoteTick`: no matching core for instrument {tick.instrument_id}.")
             return
 
-        matching_core.set_bid_raw(tick._mem.bid.raw)
-        matching_core.set_ask_raw(tick._mem.ask.raw)
+        matching_core.set_bid_raw(tick._mem.bid_price.raw)
+        matching_core.set_ask_raw(tick._mem.ask_price.raw)
 
         self._iterate_orders(matching_core)
 
@@ -990,9 +990,9 @@ cdef class OrderEmulator(Actor):
         cdef QuoteTick quote_tick = self.cache.quote_tick(matching_core.instrument_id)
         cdef TradeTick trade_tick = self.cache.trade_tick(matching_core.instrument_id)
         if bid is None and quote_tick is not None:
-            bid = quote_tick.bid
+            bid = quote_tick.bid_price
         if ask is None and quote_tick is not None:
-            ask = quote_tick.ask
+            ask = quote_tick.ask_price
         if last is None and trade_tick is not None:
             last = trade_tick.price
         # TODO(cs): ------------------------------------------------------------

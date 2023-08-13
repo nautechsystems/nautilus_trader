@@ -397,9 +397,9 @@ cdef extern from "../includes/model.h":
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
         # The top of book bid price.
-        Price_t bid;
+        Price_t bid_price;
         # The top of book ask price.
-        Price_t ask;
+        Price_t ask_price;
         # The top of book bid size.
         Quantity_t bid_size;
         # The top of book ask size.
@@ -433,7 +433,7 @@ cdef extern from "../includes/model.h":
     # method/rule and price type.
     cdef struct BarSpecification_t:
         # The step for binning samples for bar aggregation.
-        uint64_t step;
+        uintptr_t step;
         # The type of bar aggregation.
         uint8_t aggregation;
         # The price type to use for aggregation.
@@ -626,7 +626,7 @@ cdef extern from "../includes/model.h":
 
     Data_t data_clone(const Data_t *data);
 
-    BarSpecification_t bar_specification_new(uint64_t step,
+    BarSpecification_t bar_specification_new(uintptr_t step,
                                              uint8_t aggregation,
                                              uint8_t price_type);
 
@@ -952,6 +952,9 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
 
+    # # Safety
+    #
+    # - Assumes valid C string pointers.
     # # Safety
     #
     # - Assumes `reason_ptr` is a valid C string pointer.

@@ -74,8 +74,8 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
             ts = pd.Timestamp(r[0], tz="UTC").value
             tick = QuoteTick(
                 instrument_id=instrument_id,
-                bid=Price(r[1], 5),
-                ask=Price(r[2], 5),
+                bid_price=Price(r[1], 5),
+                ask_price=Price(r[2], 5),
                 bid_size=Quantity.from_int(1_000_000),
                 ask_size=Quantity.from_int(1_000_000),
                 ts_event=ts,

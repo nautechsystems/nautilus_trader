@@ -15,6 +15,7 @@
 
 import gc
 import sys
+from typing import Any
 
 
 def is_nautilus_class(cls: type) -> bool:
@@ -28,7 +29,7 @@ def is_nautilus_class(cls: type) -> bool:
     return bool(any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__))
 
 
-def get_size_of(obj) -> int:
+def get_size_of(obj: Any) -> int:
     """
     Return the bytes size in memory of the given object.
 

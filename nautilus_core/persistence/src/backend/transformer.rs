@@ -15,14 +15,12 @@
 
 use std::io::Cursor;
 
-use datafusion::arrow::{
-    datatypes::SchemaRef, ipc::writer::StreamWriter, record_batch::RecordBatch,
-};
+use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
-    types::PyBytes,
+    types::{IntoPyDict, PyBytes, PyDict, PyType},
 };
 
 use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
@@ -80,7 +78,7 @@ impl DataTransformer {
     fn record_batches_to_pybytes(
         py: Python<'_>,
         batches: Vec<RecordBatch>,
-        schema: SchemaRef,
+        schema: Schema,
     ) -> PyResult<Py<PyBytes>> {
         // Create a cursor to write to a byte array in memory
         let mut cursor = Cursor::new(Vec::new());
@@ -107,6 +105,24 @@ impl DataTransformer {
 
 #[pymethods]
 impl DataTransformer {
+    #[staticmethod]
+    pub fn get_schema_map(py: Python<'_>, cls: &PyType) -> PyResult<Py<PyDict>> {
+        let cls_str: &str = cls.getattr("__name__")?.extract()?;
+        let result_map = match cls_str {
+            stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
+            stringify!(QuoteTick) => QuoteTick::get_schema_map(),
+            stringify!(TradeTick) => TradeTick::get_schema_map(),
+            stringify!(Bar) => Bar::get_schema_map(),
+            _ => {
+                return Err(PyTypeError::new_err(format!(
+                    "Arrow schema for `{cls_str}` is not currently implemented in Rust."
+                )));
+            }
+        };
+
+        Ok(result_map.into_py_dict(py).into())
+    }
+
     /// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed
     /// to `pa.ipc.open_stream` to create a `RecordBatchReader`.
     #[staticmethod]
@@ -172,7 +188,7 @@ impl DataTransformer {
             .map(|delta| OrderBookDelta::encode_batch(&metadata, &[delta]))
             .collect();
 
-        let schema = OrderBookDelta::get_schema(metadata);
+        let schema = OrderBookDelta::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -189,7 +205,7 @@ impl DataTransformer {
         let first = data.first().unwrap();
         let metadata = QuoteTick::get_metadata(
             &first.instrument_id,
-            first.bid.precision,
+            first.bid_price.precision,
             first.bid_size.precision,
         );
 
@@ -199,7 +215,7 @@ impl DataTransformer {
             .map(|quote| QuoteTick::encode_batch(&metadata, &[quote]))
             .collect();
 
-        let schema = QuoteTick::get_schema(metadata);
+        let schema = QuoteTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -226,7 +242,7 @@ impl DataTransformer {
             .map(|trade| TradeTick::encode_batch(&metadata, &[trade]))
             .collect();
 
-        let schema = TradeTick::get_schema(metadata);
+        let schema = TradeTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -250,7 +266,7 @@ impl DataTransformer {
             .map(|bar| Bar::encode_batch(&metadata, &[bar]))
             .collect();
 
-        let schema = TradeTick::get_schema(metadata);
+        let schema = TradeTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 }

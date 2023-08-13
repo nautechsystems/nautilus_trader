@@ -87,8 +87,8 @@ class TestObjectPerformance(PerformanceHarness):
         def create_quote_tick():
             QuoteTick(
                 instrument_id=audusd_sim.id,
-                bid=Price.from_str("1.00000"),
-                ask=Price.from_str("1.00001"),
+                bid_price=Price.from_str("1.00000"),
+                ask_price=Price.from_str("1.00001"),
                 bid_size=Quantity.from_int(1),
                 ask_size=Quantity.from_int(1),
                 ts_event=0,

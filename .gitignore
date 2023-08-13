@@ -35,6 +35,7 @@ dist/
 env/
 log/
 logs/
+secrets/
 *temp/
 *target/
 venv*/
