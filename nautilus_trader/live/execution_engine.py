@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from asyncio import Queue
 from decimal import Decimal
 from typing import Any
 
@@ -24,7 +25,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.queue import Queue
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
@@ -117,8 +117,14 @@ class LiveExecutionEngine(ExecutionEngine):
         )
 
         self._loop: asyncio.AbstractEventLoop = loop
-        self._cmd_queue: Queue = Queue(maxsize=config.qsize)
-        self._evt_queue: Queue = Queue(maxsize=config.qsize)
+        self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+        self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+
+        # Async tasks
+        self._cmd_queue_task: asyncio.Task | None = None
+        self._evt_queue_task: asyncio.Task | None = None
+        self._inflight_check_task: asyncio.Task | None = None
+        self._kill: bool = False
 
         # Settings
         self._reconciliation: bool = config.reconciliation
@@ -135,12 +141,6 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
-
-        # Async tasks
-        self._cmd_queue_task: asyncio.Task | None = None
-        self._evt_queue_task: asyncio.Task | None = None
-        self._inflight_check_task: asyncio.Task | None = None
-        self._kill: bool = False
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -264,8 +264,8 @@ class LiveExecutionEngine(ExecutionEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(command, "command")
@@ -276,9 +276,10 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full "
-                f"at {self._cmd_queue.qsize()} items.",
+                f"at {self._cmd_queue.qsize():_} items.",
             )
-            self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._cmd_queue.put(command))
 
     def process(self, event: OrderEvent) -> None:
         """
@@ -294,8 +295,8 @@ class LiveExecutionEngine(ExecutionEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(event, "event")
@@ -305,9 +306,10 @@ class LiveExecutionEngine(ExecutionEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_evt_queue.put` as queue full "
-                f"at {self._evt_queue.qsize()} items.",
+                f"at {self._evt_queue.qsize():_} items.",
             )
-            self._loop.create_task(self._evt_queue.put(event))  # Blocking until qsize reduces
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._evt_queue.put(event))
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 

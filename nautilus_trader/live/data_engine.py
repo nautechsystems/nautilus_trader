@@ -16,11 +16,11 @@
 from __future__ import annotations
 
 import asyncio
+from asyncio import Queue
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.queue import Queue
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
@@ -80,10 +80,10 @@ class LiveDataEngine(DataEngine):
         )
 
         self._loop: asyncio.AbstractEventLoop = loop
-        self._cmd_queue: Queue = Queue(maxsize=config.qsize)
-        self._req_queue: Queue = Queue(maxsize=config.qsize)
-        self._res_queue: Queue = Queue(maxsize=config.qsize)
-        self._data_queue: Queue = Queue(maxsize=config.qsize)
+        self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+        self._req_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+        self._res_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+        self._data_queue: asyncio.Queue = Queue(maxsize=config.qsize)
 
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
@@ -234,8 +234,8 @@ class LiveDataEngine(DataEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(command, "command")
@@ -248,7 +248,8 @@ class LiveDataEngine(DataEngine):
                 f"Blocking on `_cmd_queue.put` as queue full at "
                 f"{self._cmd_queue.qsize()} items.",
             )
-            self._loop.create_task(self._cmd_queue.put(command))  # Blocking until qsize reduces
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._cmd_queue.put(command))
 
     def request(self, request: DataRequest) -> None:
         """
@@ -264,8 +265,8 @@ class LiveDataEngine(DataEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(request, "request")
@@ -278,7 +279,8 @@ class LiveDataEngine(DataEngine):
                 f"Blocking on `_req_queue.put` as queue full at "
                 f"{self._req_queue.qsize()} items.",
             )
-            self._loop.create_task(self._req_queue.put(request))  # Blocking until qsize reduces
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._req_queue.put(request))
 
     def response(self, response: DataResponse) -> None:
         """
@@ -294,8 +296,8 @@ class LiveDataEngine(DataEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(response, "response")
@@ -305,9 +307,10 @@ class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_res_queue.put` as queue full at "
-                f"{self._res_queue.qsize()} items.",
+                f"{self._res_queue.qsize():_} items.",
             )
-            self._loop.create_task(self._res_queue.put(response))  # Blocking until qsize reduces
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._res_queue.put(response))
 
     def process(self, data: Data) -> None:
         """
@@ -323,8 +326,8 @@ class LiveDataEngine(DataEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(data, "data")
@@ -335,9 +338,10 @@ class LiveDataEngine(DataEngine):
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_data_queue.put` as queue full at "
-                f"{self._data_queue.qsize()} items.",
+                f"{self._data_queue.qsize():_} items.",
             )
-            self._loop.create_task(self._data_queue.put(data))  # Blocking until qsize reduces
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._data_queue.put(data))
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 
