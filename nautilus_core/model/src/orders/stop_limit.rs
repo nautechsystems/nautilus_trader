@@ -371,9 +371,9 @@ impl From<OrderInitialized> for StopLimitOrder {
                 .expect("Error initializing order: `trigger_type` was `None`"),
             event.time_in_force,
             event.expire_time,
-            event.post_only != 0,      // Temporary hack
-            event.reduce_only != 0,    // Temporary hack
-            event.quote_quantity != 0, // Temporary hack
+            event.post_only,
+            event.reduce_only,
+            event.quote_quantity,
             event.display_qty,
             event.emulation_trigger,
             event.trigger_instrument_id,
