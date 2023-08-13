@@ -46,6 +46,20 @@ pub enum OrderError {
     UnrecognizedEvent,
 }
 
+const VALID_STOP_ORDER_TYPES: &[OrderType] = &[
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
+const VALID_LIMIT_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Limit,
+    OrderType::StopLimit,
+    OrderType::LimitIfTouched,
+    OrderType::MarketIfTouched,
+];
+
 impl OrderStatus {
     #[rustfmt::skip]
     pub fn transition(&mut self, event: &OrderEvent) -> Result<OrderStatus, OrderError> {
@@ -268,9 +282,9 @@ where
             trigger_type: order.trigger_type(),
             time_in_force: order.time_in_force(),
             expire_time: order.expire_time(),
-            post_only: order.is_post_only() as u8,
-            reduce_only: order.is_reduce_only() as u8,
-            quote_quantity: order.is_quote_quantity() as u8,
+            post_only: order.is_post_only(),
+            reduce_only: order.is_reduce_only(),
+            quote_quantity: order.is_quote_quantity(),
             display_qty: order.display_qty(),
             limit_offset: order.limit_offset(),
             trailing_offset: order.trailing_offset(),
@@ -288,7 +302,7 @@ where
             event_id: order.init_id(),
             ts_event: order.ts_init(),
             ts_init: order.ts_init(),
-            reconciliation: false as u8,
+            reconciliation: false,
         }
     }
 }

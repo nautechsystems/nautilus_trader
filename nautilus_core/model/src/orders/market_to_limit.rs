@@ -340,9 +340,9 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.quantity,
             event.time_in_force,
             event.expire_time,
-            event.post_only != 0,      // Temporary hack
-            event.reduce_only != 0,    // Temporary hack
-            event.quote_quantity != 0, // Temporary hack
+            event.post_only,
+            event.reduce_only,
+            event.quote_quantity,
             event.display_qty,
             event.contingency_type,
             event.order_list_id,

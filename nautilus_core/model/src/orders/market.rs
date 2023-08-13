@@ -325,8 +325,8 @@ impl From<OrderInitialized> for MarketOrder {
             event.order_side,
             event.quantity,
             event.time_in_force,
-            event.reduce_only != 0,    // Temporary hack
-            event.quote_quantity != 0, // Temporary hack
+            event.reduce_only,
+            event.quote_quantity,
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,

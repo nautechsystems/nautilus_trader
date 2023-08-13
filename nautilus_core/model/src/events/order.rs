@@ -75,9 +75,9 @@ pub struct OrderInitialized {
     pub trailing_offset_type: Option<TrailingOffsetType>,
     pub time_in_force: TimeInForce,
     pub expire_time: Option<UnixNanos>,
-    pub post_only: u8,
-    pub reduce_only: u8,
-    pub quote_quantity: u8,
+    pub post_only: bool,
+    pub reduce_only: bool,
+    pub quote_quantity: bool,
     pub display_qty: Option<Quantity>,
     pub emulation_trigger: Option<TriggerType>,
     pub trigger_instrument_id: Option<InstrumentId>,
@@ -92,7 +92,7 @@ pub struct OrderInitialized {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 impl Default for OrderInitialized {
