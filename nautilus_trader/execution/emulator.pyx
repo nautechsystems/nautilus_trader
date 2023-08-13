@@ -674,6 +674,9 @@ cdef class OrderEmulator(Actor):
                     )
                     continue
 
+                if child_order.position_id is None:
+                    child_order.position_id = position_id
+
                 # Check if execution algorithm spawned order (only update based on primary)
                 if order.exec_spawn_id is None:
                     return
@@ -707,7 +710,9 @@ cdef class OrderEmulator(Actor):
             for client_order_id in order.linked_order_ids:
                 contingent_order = self.cache.order(client_order_id)
                 assert contingent_order
-                if contingent_order.client_order_id != order.client_order_id and not contingent_order.is_closed_c():
+                if contingent_order.is_closed_c():
+                    continue
+                if contingent_order.client_order_id != order.client_order_id:
                     self._cancel_order(matching_core, contingent_order)
         elif order.contingency_type == ContingencyType.OUO:
             self._handle_contingencies(order)

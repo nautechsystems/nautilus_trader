@@ -1023,8 +1023,6 @@ cdef class ExecutionEngine(Component):
             for client_order_id in order.linked_order_ids or []:
                 contingent_order = self._cache.order(client_order_id)
                 if contingent_order is not None and contingent_order.position_id is None:
-                    if contingent_order.is_reduce_only and contingent_order.quantity._mem.raw > position.quantity._mem.raw:
-                        return  # Cannot yet assign position ID as will reject `reduce_only` orders
                     contingent_order.position_id = position.id
                     self._cache.add_position_id(
                         order.position_id,
