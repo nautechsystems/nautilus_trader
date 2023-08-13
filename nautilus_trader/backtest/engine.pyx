@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
 import pickle
 from decimal import Decimal
 from typing import Optional, Union
@@ -998,7 +997,7 @@ cdef class BacktestEngine:
                 ###################################################################################
 
             # Common kernel start-up sequence
-            asyncio.run(self._kernel.start())
+            self._kernel.start()
 
             # Change logger clock for the run
             self._kernel.logger.change_clock(self.kernel.clock)
