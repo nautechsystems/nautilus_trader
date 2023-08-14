@@ -17,7 +17,7 @@ use std::{
     cmp::Ordering,
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Mul, Neg, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -168,17 +168,6 @@ impl Sub for Money {
     }
 }
 
-impl Mul for Money {
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        assert_eq!(self.currency, rhs.currency);
-        Self {
-            raw: self.raw * rhs.raw,
-            currency: self.currency,
-        }
-    }
-}
-
 impl AddAssign for Money {
     fn add_assign(&mut self, other: Self) {
         assert_eq!(self.currency, other.currency);
@@ -190,12 +179,6 @@ impl SubAssign for Money {
     fn sub_assign(&mut self, other: Self) {
         assert_eq!(self.currency, other.currency);
         self.raw -= other.raw;
-    }
-}
-
-impl MulAssign for Money {
-    fn mul_assign(&mut self, multiplier: Self) {
-        self.raw *= multiplier.raw;
     }
 }
 
@@ -330,6 +313,37 @@ mod tests {
     use crate::currencies::{BTC, USD};
 
     #[test]
+    #[should_panic]
+    fn test_money_different_currency_addition() {
+        let usd = Money::new(1000.0, USD.clone());
+        let btc = Money::new(1.0, BTC.clone());
+        let _result = usd + btc; // This should panic since currencies are different
+    }
+
+    #[test]
+    fn test_money_min_max_values() {
+        let min_money = Money::new(MONEY_MIN, USD.clone());
+        let max_money = Money::new(MONEY_MAX, USD.clone());
+        assert_eq!(min_money.raw, f64_to_fixed_i64(MONEY_MIN, USD.precision));
+        assert_eq!(max_money.raw, f64_to_fixed_i64(MONEY_MAX, USD.precision));
+    }
+
+    #[test]
+    fn test_money_addition_f64() {
+        let money = Money::new(1000.0, USD.clone());
+        let result = money + 500.0;
+        assert_eq!(result, 1500.0);
+    }
+
+    #[test]
+    fn test_money_negation() {
+        let money = Money::new(100.0, USD.clone());
+        let result = -money;
+        assert_eq!(result.as_f64(), -100.0);
+        assert_eq!(result.currency, USD.clone());
+    }
+
+    #[test]
     fn test_money_new_usd() {
         let money = Money::new(1000.0, USD.clone());
         assert_eq!(money.currency.code.as_str(), "USD");
@@ -347,29 +361,11 @@ mod tests {
         assert_eq!(money.to_string(), "10.30000000 BTC");
     }
 
-    // #[test]
-    // fn test_account_balance() {
-    //     let usd = Currency {
-    //         code: String::from("USD"),
-    //         precision: 2,
-    //         currency_type: CurrencyType::Fiat,
-    //     };
-    //     let balance = AccountBalance {
-    //         currency: usd,
-    //         total: Money {
-    //             amount: Decimal::new(103, 1),
-    //             currency: usd,
-    //         },
-    //         locked: Money {
-    //             amount: Decimal::new(0, 0),
-    //             currency: usd,
-    //         },
-    //         free: Money {
-    //             amount: Decimal::new(103, 1),
-    //             currency: usd,
-    //         },
-    //     };
-    //
-    //     assert_eq!(balance.to_string(), "10.30000000 BTC");
-    // }
+    #[test]
+    fn test_money_serialization_deserialization() {
+        let money = Money::new(123.45, USD.clone());
+        let serialized = serde_json::to_string(&money).unwrap();
+        let deserialized: Money = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(money, deserialized);
+    }
 }
