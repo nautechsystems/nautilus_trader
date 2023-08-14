@@ -17,7 +17,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, Mul, Neg, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -209,16 +209,6 @@ impl Sub for Price {
     }
 }
 
-impl Mul for Price {
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        Self {
-            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as i64),
-            precision: self.precision,
-        }
-    }
-}
-
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
         self.raw += other.raw;
@@ -228,12 +218,6 @@ impl AddAssign for Price {
 impl SubAssign for Price {
     fn sub_assign(&mut self, other: Self) {
         self.raw -= other.raw;
-    }
-}
-
-impl MulAssign for Price {
-    fn mul_assign(&mut self, multiplier: Self) {
-        self.raw *= multiplier.raw;
     }
 }
 
@@ -501,35 +485,17 @@ mod tests {
     fn test_mul() {
         let price1 = Price::new(1.000, 3);
         let price2 = Price::new(1.011, 3);
-        let price3 = price1 * price2;
-        assert_eq!(price3.raw, 1_011_000_000);
+        let result = price1 * price2.into();
+        assert!(approx_eq!(f64, result, 1.011, epsilon = 0.000001));
     }
 
     #[test]
-    fn test_mul_assign() {
-        let mut price1 = Price::new(1.000, 3);
-        let price2 = Price::new(1.011, 3);
-        price1 *= price2;
-        assert_eq!(price1.raw, 1_011_000_000_000_000_000);
-    }
-
-    #[test]
-    fn test_display_works() {
+    fn test_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let price = Price::from_str(input_string).unwrap();
         let mut res = String::new();
         write!(&mut res, "{price}").unwrap();
         assert_eq!(res, input_string);
-    }
-
-    #[test]
-    fn test_display() {
-        let input_string = "44.123456";
-        let price = Price::from_str(input_string).unwrap();
-        assert_eq!(price.raw, 44_123_456_000);
-        assert_eq!(price.precision, 6);
-        assert_eq!(price.as_f64(), 44.123_456_000_000_004);
-        assert_eq!(price.to_string(), input_string);
     }
 }

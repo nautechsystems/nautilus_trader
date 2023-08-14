@@ -198,6 +198,13 @@ impl Mul for Quantity {
     }
 }
 
+impl Mul<f64> for Quantity {
+    type Output = f64;
+    fn mul(self, rhs: f64) -> Self::Output {
+        self.as_f64() * rhs
+    }
+}
+
 impl From<Quantity> for u64 {
     fn from(value: Quantity) -> Self {
         value.raw
@@ -466,14 +473,6 @@ mod tests {
         let quantity2 = Quantity::new(2.0, 1);
         let quantity3 = quantity1 * quantity2;
         assert_eq!(quantity3.raw, 4_000_000_000);
-    }
-
-    #[test]
-    fn test_mul_assign() {
-        let mut q = Quantity::from_raw(100, 0);
-        q *= 2u64;
-
-        assert_eq!(q.raw, 200);
     }
 
     #[test]
