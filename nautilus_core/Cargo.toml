@@ -41,10 +41,10 @@ ustr = { git = "https://github.com/anderslanglands/ustr", features = ["serde"] }
 uuid = { version = "1.4.1", features = ["v4"] }
 
 # dev-dependencies
-criterion = "0.4.0"
+criterion = "0.5.1"
 float-cmp = "0.9.0"
 iai = "0.1"
-rstest = "0.17.0"
+rstest = "0.18.2"
 tempfile = "3.7.1"
 
 # build-dependencies

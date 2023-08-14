@@ -16,6 +16,7 @@
 use std::collections::HashMap;
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror;
 use ustr::Ustr;
@@ -590,6 +591,14 @@ impl OrderCore {
         }
     }
 
+    fn signed_decimal_qty(&self) -> Decimal {
+        match self.side {
+            OrderSide::Buy => self.quantity.as_decimal(),
+            OrderSide::Sell => -self.quantity.as_decimal(),
+            _ => panic!("invalid order side"),
+        }
+    }
+
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
         if side == PositionSide::Flat {
             return false;
@@ -603,13 +612,6 @@ impl OrderCore {
             _ => true,
         }
     }
-
-    // TODO: Add as_decimal
-    // fn signed_decimal_qty(&self) -> Decimal {
-    //     match self.side {
-    //         OrderSide::Buy => self.quantity
-    //     }
-    // }
 
     fn commission(&self, currency: &Currency) -> Option<Money> {
         self.commissions.get(currency).copied()
@@ -634,50 +636,42 @@ mod tests {
         orders::market::MarketOrder,
     };
 
-    #[rstest(
-        order_side,
-        expected_side,
-        case(OrderSide::Buy, OrderSide::Sell),
-        case(OrderSide::Sell, OrderSide::Buy),
-        case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)
-    )]
-    fn test_order_opposite_side(order_side: OrderSide, expected_side: OrderSide) {
+    #[rstest]
+    #[case(OrderSide::Buy, OrderSide::Sell)]
+    #[case(OrderSide::Sell, OrderSide::Buy)]
+    #[case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)]
+    fn test_order_opposite_side(#[case] order_side: OrderSide, #[case] expected_side: OrderSide) {
         let order = MarketOrder::default();
         let result = order.opposite_side(order_side);
         assert_eq!(result, expected_side)
     }
 
-    #[rstest(
-        position_side,
-        expected_side,
-        case(PositionSide::Long, OrderSide::Sell),
-        case(PositionSide::Short, OrderSide::Buy),
-        case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)
-    )]
-    fn test_closing_side(position_side: PositionSide, expected_side: OrderSide) {
+    #[rstest]
+    #[case(PositionSide::Long, OrderSide::Sell)]
+    #[case(PositionSide::Short, OrderSide::Buy)]
+    #[case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)]
+    fn test_closing_side(#[case] position_side: PositionSide, #[case] expected_side: OrderSide) {
         let order = MarketOrder::default();
         let result = order.closing_side(position_side);
         assert_eq!(result, expected_side)
     }
 
     #[rustfmt::skip]
-    #[rstest(
-        order_side, order_qty, position_side, position_qty, expected,
-        case(OrderSide::Buy, Quantity::from(100), PositionSide::Long, Quantity::from(50), false),
-        case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(50), true),
-        case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(100), true),
-        case(OrderSide::Buy, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false),
-        case(OrderSide::Sell, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false),
-        case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(50), true),
-        case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(100), true),
-        case(OrderSide::Sell, Quantity::from(100), PositionSide::Short, Quantity::from(50), false),
-    )]
+    #[rstest]
+    #[case(OrderSide::Buy, Quantity::from(100), PositionSide::Long, Quantity::from(50), false)]
+    #[case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(50), true)]
+    #[case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(100), true)]
+    #[case(OrderSide::Buy, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false)]
+    #[case(OrderSide::Sell, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false)]
+    #[case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(50), true)]
+    #[case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(100), true)]
+    #[case(OrderSide::Sell, Quantity::from(100), PositionSide::Short, Quantity::from(50), false)]
     fn test_would_reduce_only(
-        order_side: OrderSide,
-        order_qty: Quantity,
-        position_side: PositionSide,
-        position_qty: Quantity,
-        expected: bool,
+        #[case] order_side: OrderSide,
+        #[case] order_qty: Quantity,
+        #[case] position_side: PositionSide,
+        #[case] position_qty: Quantity,
+        #[case] expected: bool,
     ) {
         let order: MarketOrder = OrderInitializedBuilder::default()
             .order_side(order_side)
