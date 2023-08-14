@@ -78,6 +78,7 @@ cdef class OrderMatchingEngine:
     cdef bint _bar_execution
     cdef bint _reject_stop_orders
     cdef bint _support_gtd_orders
+    cdef bint _use_position_ids
     cdef bint _use_random_ids
     cdef bint _use_reduce_only
     cdef dict _account_ids
