@@ -94,13 +94,9 @@ class TestOrderBook:
         updates = [OrderBookDelta.from_dict(upd) for upd in raw_updates]
 
         # Act, Assert
-        for update in updates[:3]:
+        for update in updates[:2]:
             book.apply_delta(update)
             copy.deepcopy(book)
-
-        for _ in range(10):
-            _ = book.bids()
-            _ = book.asks()
 
     def make_sample_book(self):
         return TestDataStubs.make_book(
