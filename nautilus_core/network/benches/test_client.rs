@@ -23,7 +23,7 @@ const TOTAL: usize = 1_000_000;
 
 #[tokio::main]
 async fn main() {
-    let client = HttpClient::new(Vec::new());
+    let client = HttpClient::py_new(Vec::new());
     let mut reqs = Vec::new();
     for _ in 0..(TOTAL / CONCURRENCY) {
         for _ in 0..CONCURRENCY {
