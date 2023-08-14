@@ -77,6 +77,7 @@ impl MarketOrder {
                 time_in_force,
                 reduce_only,
                 quote_quantity,
+                None, // Emulation trigger
                 contingency_type,
                 order_list_id,
                 linked_order_ids,

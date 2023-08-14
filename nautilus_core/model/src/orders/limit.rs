@@ -43,7 +43,6 @@ pub struct LimitOrder {
     pub expire_time: Option<UnixNanos>,
     pub is_post_only: bool,
     pub display_qty: Option<Quantity>,
-    pub emulation_trigger: Option<TriggerType>,
     pub trigger_instrument_id: Option<InstrumentId>,
 }
 
@@ -89,6 +88,7 @@ impl LimitOrder {
                 time_in_force,
                 reduce_only,
                 quote_quantity,
+                emulation_trigger,
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -104,7 +104,6 @@ impl LimitOrder {
             expire_time,
             is_post_only: post_only,
             display_qty,
-            emulation_trigger,
             trigger_instrument_id,
         }
     }
