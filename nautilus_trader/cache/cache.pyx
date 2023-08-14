@@ -1782,7 +1782,7 @@ cdef class Cache(CacheFacade):
             self._index_orders_closed.add(order.client_order_id)
 
         # Update emulation
-        if order.emulation_trigger == TriggerType.NO_TRIGGER:
+        if order.is_closed_c() or order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
