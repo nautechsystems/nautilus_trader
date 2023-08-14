@@ -45,8 +45,12 @@ use crate::{
 pub enum OrderError {
     #[error("Invalid state transition")]
     InvalidStateTransition,
+    #[error("Invalid event for order type")]
+    InvalidOrderEvent,
     #[error("Unrecognized event")]
     UnrecognizedEvent,
+    #[error("No previous state")]
+    NoPreviousState,
 }
 
 const VALID_STOP_ORDER_TYPES: &[OrderType] = &[
@@ -180,6 +184,7 @@ pub trait Order {
     fn ts_last(&self) -> UnixNanos;
 
     fn events(&self) -> Vec<&OrderEvent>;
+    fn update(&mut self, event: OrderUpdated);
 
     fn last_event(&self) -> &OrderEvent {
         // Safety: `Order` specification guarantees at least one event (`OrderInitialized`)
@@ -437,6 +442,9 @@ impl OrderCore {
     }
 
     fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        assert_eq!(self.client_order_id, event.client_order_id());
+        assert_eq!(self.strategy_id, event.strategy_id());
+
         let new_status = self.status.transition(&event)?;
         self.previous_status = Some(self.status);
         self.status = new_status;
@@ -459,6 +467,7 @@ impl OrderCore {
             _ => return Err(OrderError::UnrecognizedEvent),
         }
 
+        self.ts_last = event.ts_event();
         self.events.push(event);
         Ok(())
     }
@@ -496,11 +505,15 @@ impl OrderCore {
     }
 
     fn modify_rejected(&mut self, _event: &OrderModifyRejected) {
-        self.status = self.previous_status.unwrap();
+        self.status = self
+            .previous_status
+            .unwrap_or_else(|| panic!("{}", OrderError::NoPreviousState));
     }
 
     fn cancel_rejected(&mut self, _event: &OrderCancelRejected) {
-        self.status = self.previous_status.unwrap();
+        self.status = self
+            .previous_status
+            .unwrap_or_else(|| panic!("{}", OrderError::NoPreviousState));
     }
 
     fn triggered(&mut self, _event: &OrderTriggered) {}
@@ -510,36 +523,16 @@ impl OrderCore {
     fn expired(&mut self, _event: &OrderExpired) {}
 
     fn updated(&mut self, event: &OrderUpdated) {
-        match &event.venue_order_id {
-            Some(venue_order_id) => {
-                if self.venue_order_id.is_some()
-                    && venue_order_id != self.venue_order_id.as_ref().unwrap()
-                {
-                    self.venue_order_id = Some(*venue_order_id);
-                    self.venue_order_ids.push(*venue_order_id);
-                }
+        if let Some(venue_order_id) = &event.venue_order_id {
+            if self.venue_order_id.is_none()
+                || venue_order_id != self.venue_order_id.as_ref().unwrap()
+            {
+                self.venue_order_id = Some(*venue_order_id);
+                self.venue_order_ids.push(*venue_order_id);
             }
-            None => {}
         }
 
-        // TODO
-        // if let Some(price) = &event.price {
-        //     if self.price.is_some() {
-        //         self.price.replace(*price);
-        //     } else {
-        //         panic!("invalid update of `price` when None")
-        //     }
-        // }
-        //
-        // if let Some(trigger_price) = &event.trigger_price {
-        //     if self.trigger_price.is_some() {
-        //         self.trigger_price.replace(*trigger_price);
-        //     } else {
-        //         panic!("invalid update of `trigger_price` when None")
-        //     }
-        // }
-
-        self.quantity = event.quantity;
+        // self.update_order(event);  // TODO
         self.leaves_qty = self.quantity - self.filled_qty;
     }
 
@@ -650,6 +643,15 @@ mod tests {
         events::order::{OrderDeniedBuilder, OrderEvent, OrderInitializedBuilder},
         orders::market::MarketOrder,
     };
+
+    fn test_initialize_market_order() {
+        let order = MarketOrder::default();
+        assert_eq!(order.events().len(), 1);
+        assert_eq!(
+            stringify!(order.events().get(0)),
+            stringify!(OrderInitialized)
+        );
+    }
 
     #[rstest]
     #[case(OrderSide::Buy, OrderSide::Sell)]
