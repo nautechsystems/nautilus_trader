@@ -1128,6 +1128,9 @@ cdef class OrderFactory:
         dict entry_exec_algorithm_params = None,
         dict tp_exec_algorithm_params = None,
         dict sl_exec_algorithm_params = None,
+        str entry_tags = None,
+        str tp_tags = None,
+        str sl_tags = None,
     ):
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -1186,6 +1189,15 @@ cdef class OrderFactory:
             The execution algorithm parameters for the order.
         sl_exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
+        entry_tags : str, optional
+            The custom user tags for the entry order. These are optional and can
+            contain any arbitrary delimiter if required.
+        tp_tags : str, optional
+            The custom user tags for the take-profit order. These are optional and can
+            contain any arbitrary delimiter if required.
+        sl_tags : str, optional
+            The custom user tags for the stop-loss order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -1219,7 +1231,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
                 exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
-                tags="ENTRY",
+                tags=entry_tags,
             )
         elif entry_order_type == OrderType.LIMIT:
             entry_order = LimitOrder(
@@ -1245,7 +1257,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
                 exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
-                tags="ENTRY",
+                tags=entry_tags,
             )
         elif entry_order_type == OrderType.MARKET_IF_TOUCHED:
             entry_order = MarketIfTouchedOrder(
@@ -1271,7 +1283,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
                 exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
-                tags="ENTRY",
+                tags=entry_tags,
             )
         elif entry_order_type == OrderType.LIMIT_IF_TOUCHED:
             entry_order = LimitIfTouchedOrder(
@@ -1299,7 +1311,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
                 exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
-                tags="ENTRY",
+                tags=entry_tags,
             )
         else:
             raise ValueError(f"invalid `entry_order_type`, was {order_type_to_str(entry_order_type)}")
@@ -1332,7 +1344,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
                 exec_spawn_id=tp_client_order_id if tp_exec_algorithm_id is not None else None,
-                tags="TAKE_PROFIT",
+                tags=tp_tags,
             )
         elif tp_order_type == OrderType.LIMIT_IF_TOUCHED:
             tp_order = LimitIfTouchedOrder(
@@ -1361,7 +1373,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
                 exec_spawn_id=tp_client_order_id if tp_exec_algorithm_id is not None else None,
-                tags="TAKE_PROFIT",
+                tags=tp_tags,
             )
         elif tp_order_type == OrderType.MARKET_IF_TOUCHED:
             tp_order = MarketIfTouchedOrder(
@@ -1387,7 +1399,7 @@ cdef class OrderFactory:
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
                 exec_spawn_id=tp_client_order_id if tp_exec_algorithm_id is not None else None,
-                tags="TAKE_PROFIT",
+                tags=tp_tags,
             )
         else:
             raise ValueError(f"invalid `tp_order_type`, was {order_type_to_str(entry_order_type)}")
@@ -1418,7 +1430,7 @@ cdef class OrderFactory:
             exec_algorithm_id=sl_exec_algorithm_id,
             exec_algorithm_params=sl_exec_algorithm_params,
             exec_spawn_id=sl_client_order_id if sl_exec_algorithm_id is not None else None,
-            tags="STOP_LOSS",
+            tags=sl_tags,
         )
 
         return OrderList(
