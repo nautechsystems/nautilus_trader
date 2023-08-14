@@ -628,6 +628,7 @@ impl OrderCore {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -654,6 +655,21 @@ mod tests {
         let order = MarketOrder::default();
         let result = order.closing_side(position_side);
         assert_eq!(result, expected_side)
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, dec!(10_000))]
+    #[case(OrderSide::Sell, dec!(-10_000))]
+    fn test_signed_decimal_qty(#[case] order_side: OrderSide, #[case] expected: Decimal) {
+        let order: MarketOrder = OrderInitializedBuilder::default()
+            .order_side(order_side)
+            .quantity(Quantity::new(10_000.0, 0))
+            .build()
+            .unwrap()
+            .into();
+
+        let result = order.signed_decimal_qty();
+        assert_eq!(result, expected)
     }
 
     #[rustfmt::skip]
