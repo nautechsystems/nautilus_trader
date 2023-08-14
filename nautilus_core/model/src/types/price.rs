@@ -23,9 +23,10 @@ use std::{
 
 use nautilus_core::{correctness, parsing::precision_from_str};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::fixed::FIXED_SCALAR;
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
@@ -91,6 +92,13 @@ impl Price {
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
+
+    #[must_use]
+    pub fn as_decimal(&self) -> Decimal {
+        // Scale down the raw value to match the precision
+        let rescaled_raw = self.raw / i64::pow(10, (FIXED_PRECISION - self.precision) as u32);
+        Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
 }
 
 impl FromStr for Price {
@@ -112,14 +120,14 @@ impl From<&str> for Price {
 }
 
 impl From<Price> for f64 {
-    fn from(value: Price) -> Self {
-        value.as_f64()
+    fn from(price: Price) -> Self {
+        price.as_f64()
     }
 }
 
 impl From<&Price> for f64 {
-    fn from(value: &Price) -> Self {
-        value.as_f64()
+    fn from(price: &Price) -> Self {
+        price.as_f64()
     }
 }
 
@@ -285,19 +293,24 @@ impl<'de> Deserialize<'de> for Price {
 #[pymethods]
 impl Price {
     #[getter]
-    pub fn raw(&self) -> i64 {
+    fn raw(&self) -> i64 {
         self.raw
     }
 
     #[getter]
-    pub fn precision(&self) -> u8 {
+    fn precision(&self) -> u8 {
         self.precision
     }
 
-    #[must_use]
-    pub fn as_double(&self) -> f64 {
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
+
+    // #[pyo3(name = "as_decimal")]
+    // fn py_as_decimal(&self) -> Decimal {
+    //     self.as_decimal()
+    // }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -335,6 +348,9 @@ pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
 mod tests {
     use std::str::FromStr;
 
+    use float_cmp::approx_eq;
+    use rust_decimal_macros::dec;
+
     use super::*;
 
     #[test]
@@ -346,6 +362,8 @@ mod tests {
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
         assert!(!price.is_zero());
+        assert_eq!(price.as_decimal(), dec!(0.00812000));
+        assert!(approx_eq!(f64, price.as_f64(), 0.00812, epsilon = 0.000001));
     }
 
     #[test]

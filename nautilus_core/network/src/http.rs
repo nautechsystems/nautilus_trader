@@ -68,8 +68,7 @@ impl HttpResponse {
 impl HttpClient {
     #[new]
     #[pyo3(signature=(header_keys=[].to_vec()))]
-    #[must_use]
-    pub fn new(header_keys: Vec<String>) -> Self {
+    pub fn py_new(header_keys: Vec<String>) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
 
