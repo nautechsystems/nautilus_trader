@@ -183,9 +183,10 @@ pub trait Order {
     fn ts_init(&self) -> UnixNanos;
     fn ts_last(&self) -> UnixNanos;
 
-    fn events(&self) -> Vec<&OrderEvent>;
-    fn update(&mut self, event: OrderUpdated);
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError>;
+    fn update(&mut self, event: &OrderUpdated);
 
+    fn events(&self) -> Vec<&OrderEvent>;
     fn last_event(&self) -> &OrderEvent {
         // Safety: `Order` specification guarantees at least one event (`OrderInitialized`)
         self.events().last().unwrap()
@@ -441,7 +442,7 @@ impl OrderCore {
         }
     }
 
-    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+    pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
         assert_eq!(self.client_order_id, event.client_order_id());
         assert_eq!(self.strategy_id, event.strategy_id());
 
@@ -531,9 +532,6 @@ impl OrderCore {
                 self.venue_order_ids.push(*venue_order_id);
             }
         }
-
-        // self.update_order(event);  // TODO
-        self.leaves_qty = self.quantity - self.filled_qty;
     }
 
     fn filled(&mut self, event: &OrderFilled) {
@@ -720,9 +718,8 @@ mod tests {
 
     #[test]
     fn test_order_state_transition_denied() {
-        let init = OrderInitializedBuilder::default().build().unwrap();
+        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
         let denied = OrderDeniedBuilder::default().build().unwrap();
-        let mut order: MarketOrder = init.into();
         let event = OrderEvent::OrderDenied(denied);
 
         let _ = order.apply(event.clone());

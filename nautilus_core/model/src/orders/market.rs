@@ -324,7 +324,15 @@ impl Order for MarketOrder {
         self.trade_ids.iter().collect()
     }
 
-    fn update(&mut self, event: OrderUpdated) {
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event)
+        };
+        self.core.apply(event)?;
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
         if event.price.is_some() {
             panic!("{}", OrderError::InvalidOrderEvent);
         }
@@ -333,6 +341,7 @@ impl Order for MarketOrder {
         }
 
         self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
     }
 }
 

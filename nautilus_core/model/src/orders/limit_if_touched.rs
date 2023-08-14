@@ -21,7 +21,7 @@ use std::{
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore};
+use super::base::{Order, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -357,9 +357,15 @@ impl Order for LimitIfTouchedOrder {
         self.trade_ids.iter().collect()
     }
 
-    fn update(&mut self, event: OrderUpdated) {
-        self.quantity = event.quantity;
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event)
+        };
+        self.core.apply(event)?;
+        Ok(())
+    }
 
+    fn update(&mut self, event: &OrderUpdated) {
         if let Some(price) = event.price {
             self.price = price;
         }
@@ -367,6 +373,9 @@ impl Order for LimitIfTouchedOrder {
         if let Some(trigger_price) = event.trigger_price {
             self.trigger_price = trigger_price;
         }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
     }
 }
 

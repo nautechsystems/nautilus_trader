@@ -346,16 +346,25 @@ impl Order for LimitOrder {
         self.trade_ids.iter().collect()
     }
 
-    fn update(&mut self, event: OrderUpdated) {
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event)
+        };
+        self.core.apply(event)?;
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
         if event.trigger_price.is_some() {
             panic!("{}", OrderError::InvalidOrderEvent);
         }
 
-        self.quantity = event.quantity;
-
         if let Some(price) = event.price {
             self.price = price;
         }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
     }
 }
 
