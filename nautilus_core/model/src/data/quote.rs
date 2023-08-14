@@ -175,7 +175,7 @@ impl Display for QuoteTick {
 #[pymethods]
 impl QuoteTick {
     #[new]
-    fn new_py(
+    fn py_new(
         instrument_id: InstrumentId,
         bid_price: Price,
         ask_price: Price,

@@ -23,8 +23,10 @@ use std::{
 
 use nautilus_core::correctness;
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
+use super::fixed::FIXED_PRECISION;
 use crate::types::{
     currency::Currency,
     fixed::{f64_to_fixed_i64, fixed_i64_to_f64},
@@ -61,9 +63,30 @@ impl Money {
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
+
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
+    }
+
+    #[must_use]
+    pub fn as_decimal(&self) -> Decimal {
+        // Scale down the raw value to match the precision
+        let precision = self.currency.precision;
+        let rescaled_raw = self.raw / i64::pow(10, (FIXED_PRECISION - precision) as u32);
+        Decimal::from_i128_with_scale(rescaled_raw as i128, precision as u32)
+    }
+}
+
+impl From<Money> for f64 {
+    fn from(money: Money) -> Self {
+        money.as_f64()
+    }
+}
+
+impl From<&Money> for f64 {
+    fn from(money: &Money) -> Self {
+        money.as_f64()
     }
 }
 
@@ -247,19 +270,24 @@ impl<'de> Deserialize<'de> for Money {
 #[pymethods]
 impl Money {
     #[getter]
-    pub fn raw(&self) -> i64 {
+    fn raw(&self) -> i64 {
         self.raw
     }
 
     #[getter]
-    pub fn currency(&self) -> Currency {
+    fn currency(&self) -> Currency {
         self.currency
     }
 
-    #[must_use]
-    pub fn as_double(&self) -> f64 {
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
+
+    // #[pyo3(name = "as_decimal")]
+    // fn py_as_decimal(&self) -> Decimal {
+    //     self.as_decimal()
+    // }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -295,6 +323,9 @@ pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use float_cmp::approx_eq;
+    use rust_decimal_macros::dec;
+
     use super::*;
     use crate::currencies::{BTC, USD};
 
@@ -304,6 +335,8 @@ mod tests {
         assert_eq!(money.currency.code.as_str(), "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
+        assert_eq!(money.as_decimal(), dec!(1000.00));
+        assert!(approx_eq!(f64, money.as_f64(), 1000.0, epsilon = 0.001));
     }
 
     #[test]

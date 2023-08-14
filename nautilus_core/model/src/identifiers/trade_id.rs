@@ -56,7 +56,7 @@ impl Display for TradeId {
 #[pymethods]
 impl TradeId {
     #[getter]
-    pub fn value(&self) -> String {
+    fn value(&self) -> String {
         self.value.to_string()
     }
 }

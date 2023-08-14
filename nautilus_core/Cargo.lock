@@ -1220,6 +1220,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "float-cmp"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1915,6 +1924,7 @@ dependencies = [
  "criterion",
  "derive_builder",
  "evalexpr",
+ "float-cmp",
  "iai",
  "lazy_static",
  "nautilus-core",
@@ -1922,6 +1932,7 @@ dependencies = [
  "rmp-serde",
  "rstest",
  "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "strum 0.25.0",
@@ -2772,6 +2783,16 @@ dependencies = [
  "rkyv",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rust_decimal_macros"
+version = "1.31.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9c3bcd00383608992fd3e960f0a6e93a3b1e98218451aa1ca05a44505e5d52a"
+dependencies = [
+ "quote",
+ "rust_decimal",
 ]
 
 [[package]]
