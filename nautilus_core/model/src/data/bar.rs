@@ -38,7 +38,7 @@ use crate::{
 #[pyclass]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
-    pub step: u64,
+    pub step: usize,
     /// The type of bar aggregation.
     pub aggregation: BarAggregation,
     /// The price type to use for aggregation.
@@ -234,6 +234,7 @@ impl Bar {
         }
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         bar_type: &BarType,
         price_precision: u8,
@@ -246,6 +247,7 @@ impl Bar {
         metadata
     }
 
+    /// Create a new [`Bar`] extracted from the given [`PyAny`].
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
         let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 from operator import itemgetter
 
 import pandas as pd
@@ -110,6 +111,27 @@ cdef class OrderBook(Data):
             f"count: {self.count}\n"
             f"{self.pprint()}"
         )
+
+    def __getstate__(self):
+        cdef list orders = [o for level in self.bids() + self.asks() for o in level.orders()]
+        return (
+            self.instrument_id.value,
+            self.book_type.value,
+            pickle.dumps(orders),
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        self._mem = orderbook_new(
+            instrument_id._mem,
+            state[1],
+        )
+
+        cdef list orders = pickle.loads(state[2])
+
+        cdef int64_t i
+        for i in range(len(orders)):
+            self.add(orders[i], 0, 0)
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -351,7 +373,8 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(Level.from_mem_c(raw_levels[i]))
 
-        vec_levels_drop(raw_levels_vec)
+        # TODO(chris): Reimplement to avoid segfaults
+        # vec_levels_drop(raw_levels_vec)
 
         return levels
 
@@ -375,7 +398,8 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(Level.from_mem_c(raw_levels[i]))
 
-        vec_levels_drop(raw_levels_vec)
+        # TODO(chris): Reimplement to avoid segfaults
+        # vec_levels_drop(raw_levels_vec)
 
         return levels
 

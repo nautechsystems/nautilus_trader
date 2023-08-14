@@ -623,21 +623,25 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
-        Condition.true(order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED), "order", "order status was not either ``INITIALIZED`` or ``RELEASED``")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
+        Condition.true(
+            order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            "order",
+            "order status was not either ``INITIALIZED`` or ``RELEASED``",
+        )
 
         cdef Order primary = None
         cdef PositionId position_id = None
         cdef ClientId client_id = None
         cdef SubmitOrder command = None
 
-        if order.exec_spawn_id is not None:
+        if order.is_spawned_c():
             # Handle new spawned order
             primary = self.cache.order(order.exec_spawn_id)
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
-                    "Cannot submit order: cannot find primary order for {repr(order.exec_spawn_id)}."
+                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}."
                 )
                 return
 
@@ -646,7 +650,7 @@ cdef class ExecAlgorithm(Actor):
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
-                    f"Cannot submit order: order already exists for {repr(order.client_order_id)}.",
+                    f"Cannot submit order: order already exists for {order.client_order_id!r}.",
                 )
                 return
 
@@ -673,6 +677,7 @@ cdef class ExecAlgorithm(Actor):
 
         # Handle primary (original) order
         position_id = self.cache.position_id(order.client_order_id)
+        client_id = self.cache.client_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
         if cached_order.order_type != order.order_type:
             self.cache.add_order(order, position_id, client_id, override=True)
@@ -684,7 +689,7 @@ cdef class ExecAlgorithm(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
-            client_id=None,  # Not yet supported
+            client_id=client_id,
         )
 
         self._send_risk_command(command)
@@ -838,7 +843,7 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `order.status` is not ``INITIALIZED``.
+            If `order.status` is not ``INITIALIZED`` or ``RELEASED``.
         ValueError
             If `price` is not ``None`` and order does not have a `price`.
         ValueError
@@ -856,7 +861,11 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        Condition.true(
+            order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            "order",
+            "order status was not either ``INITIALIZED`` or ``RELEASED``",
+        )
 
         cdef bint updating = False  # Set validation flag (must become true)
 

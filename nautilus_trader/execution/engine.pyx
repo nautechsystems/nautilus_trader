@@ -656,7 +656,7 @@ cdef class ExecutionEngine(Component):
         cdef QuoteTick last_quote = self._cache.quote_tick(instrument_id)
         cdef TradeTick last_trade = self._cache.trade_tick(instrument_id)
         if last_quote is not None:
-            last_px = last_quote.ask if order_side == OrderSide.BUY else last_quote.bid
+            last_px = last_quote.ask_price if order_side == OrderSide.BUY else last_quote.bid_price
         else:
             if last_trade is not None:
                 last_px = last_trade.price
@@ -928,22 +928,71 @@ cdef class ExecutionEngine(Component):
                 self._log.debug(f"Assigned {repr(position_id)} to {fill}.", LogColor.MAGENTA)
             return
 
+        # TODO(cs): Optimize away the need to fetch order from cache
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
+
         if oms_type == OmsType.HEDGING:
-            if fill.position_id is not None:
-                # Already assigned
-                return
-            # Assign new position ID
-            position_id = self._pos_id_generator.generate(fill.strategy_id)
-            fill.position_id = position_id
-            if self.debug:
-                self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
+            position_id = self._determine_hedging_position_id(fill)
         elif oms_type == OmsType.NETTING:
             # Assign netted position ID
-            fill.position_id = PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
+            position_id = self._determine_netting_position_id(fill)
         else:
             raise ValueError(  # pragma: no cover (design-time error)
                 f"invalid `OmsType`, was {oms_type}",  # pragma: no cover (design-time error)
             )
+
+        fill.position_id = position_id
+
+        # Check execution algorithm position ID
+        if order.exec_algorithm_id is None or order.exec_spawn_id is None:
+            return
+
+        cdef Order primary = self._cache.order(order.exec_spawn_id)
+        assert primary is not None
+        if primary.position_id is None:
+            primary.position_id = position_id
+            self._cache.add_position_id(
+                position_id,
+                primary.instrument_id.venue,
+                primary.client_order_id,
+                primary.strategy_id,
+            )
+            self._log.debug(f"Assigned primary order {repr(position_id)}.", LogColor.MAGENTA)
+
+    cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill):
+        if fill.position_id is not None:
+            # Already assigned
+            return fill.position_id
+
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
+
+        cdef:
+            list exec_spawn_orders
+            Order spawned_order
+        if order.exec_spawn_id is not None:
+            exec_spawn_orders = self._cache.orders_for_exec_spawn(order.exec_spawn_id)
+            for spawned_order in exec_spawn_orders:
+                if spawned_order.position_id is not None:
+                    self._log.debug(f"Found spawned {repr(spawned_order.position_id)} for {fill}.", LogColor.MAGENTA)
+                    # Use position ID for execution spawn
+                    return order.position_id
+
+        # Assign new position ID
+        position_id = self._pos_id_generator.generate(fill.strategy_id)
+        if self.debug:
+            self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
+        return position_id
+
+    cpdef PositionId _determine_netting_position_id(self, OrderFilled fill):
+        return PositionId(f"{fill.instrument_id}-{fill.strategy_id}")
 
     cpdef void _apply_event_to_order(self, Order order, OrderEvent event):
         try:
@@ -999,8 +1048,6 @@ cdef class ExecutionEngine(Component):
             for client_order_id in order.linked_order_ids or []:
                 contingent_order = self._cache.order(client_order_id)
                 if contingent_order is not None and contingent_order.position_id is None:
-                    if contingent_order.is_reduce_only and contingent_order.quantity._mem.raw > position.quantity._mem.raw:
-                        return  # Cannot yet assign position ID as will reject `reduce_only` orders
                     contingent_order.position_id = position.id
                     self._cache.add_position_id(
                         order.position_id,

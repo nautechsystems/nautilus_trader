@@ -39,9 +39,9 @@ pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
     /// The top of book bid price.
-    pub bid: Price,
+    pub bid_price: Price,
     /// The top of book ask price.
-    pub ask: Price,
+    pub ask_price: Price,
     /// The top of book bid size.
     pub bid_size: Quantity,
     /// The top of book ask size.
@@ -56,18 +56,18 @@ impl QuoteTick {
     #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
-        bid: Price,
-        ask: Price,
+        bid_price: Price,
+        ask_price: Price,
         bid_size: Quantity,
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
         correctness::u8_equal(
-            bid.precision,
-            ask.precision,
-            "bid.precision",
-            "ask.precision",
+            bid_price.precision,
+            ask_price.precision,
+            "bid_price.precision",
+            "ask_price.precision",
         );
         correctness::u8_equal(
             bid_size.precision,
@@ -77,8 +77,8 @@ impl QuoteTick {
         );
         Self {
             instrument_id,
-            bid,
-            ask,
+            bid_price,
+            ask_price,
             bid_size,
             ask_size,
             ts_event,
@@ -86,6 +86,7 @@ impl QuoteTick {
         }
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -98,19 +99,7 @@ impl QuoteTick {
         metadata
     }
 
-    #[must_use]
-    pub fn extract_price(&self, price_type: PriceType) -> Price {
-        match price_type {
-            PriceType::Bid => self.bid,
-            PriceType::Ask => self.ask,
-            PriceType::Mid => Price::from_raw(
-                (self.bid.raw + self.ask.raw) / 2,
-                cmp::min(self.bid.precision + 1, FIXED_PRECISION),
-            ),
-            _ => panic!("Cannot extract with price type {price_type}"),
-        }
-    }
-
+    /// Create a new [`Bar`] extracted from the given [`PyAny`].
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
@@ -118,15 +107,15 @@ impl QuoteTick {
             .map_err(|e| PyValueError::new_err(format!("{}", e)))
             .unwrap();
 
-        let bid_py: &PyAny = obj.getattr("bid")?;
-        let bid_raw: i64 = bid_py.getattr("raw")?.extract()?;
-        let bid_prec: u8 = bid_py.getattr("precision")?.extract()?;
-        let bid = Price::from_raw(bid_raw, bid_prec);
+        let bid_price_py: &PyAny = obj.getattr("bid_price")?;
+        let bid_price_raw: i64 = bid_price_py.getattr("raw")?.extract()?;
+        let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
+        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
 
-        let ask_py: &PyAny = obj.getattr("ask")?;
-        let ask_raw: i64 = ask_py.getattr("raw")?.extract()?;
-        let ask_prec: u8 = ask_py.getattr("precision")?.extract()?;
-        let ask = Price::from_raw(ask_raw, ask_prec);
+        let ask_price_py: &PyAny = obj.getattr("ask_price")?;
+        let ask_price_raw: i64 = ask_price_py.getattr("raw")?.extract()?;
+        let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
+        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
 
         let bid_size_py: &PyAny = obj.getattr("bid_size")?;
         let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
@@ -143,13 +132,26 @@ impl QuoteTick {
 
         Ok(Self::new(
             instrument_id,
-            bid,
-            ask,
+            bid_price,
+            ask_price,
             bid_size,
             ask_size,
             ts_event,
             ts_init,
         ))
+    }
+
+    #[must_use]
+    pub fn extract_price(&self, price_type: PriceType) -> Price {
+        match price_type {
+            PriceType::Bid => self.bid_price,
+            PriceType::Ask => self.ask_price,
+            PriceType::Mid => Price::from_raw(
+                (self.bid_price.raw + self.ask_price.raw) / 2,
+                cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
+            ),
+            _ => panic!("Cannot extract with price type {price_type}"),
+        }
     }
 }
 
@@ -160,7 +162,12 @@ impl Display for QuoteTick {
         write!(
             f,
             "{},{},{},{},{},{}",
-            self.instrument_id, self.bid, self.ask, self.bid_size, self.ask_size, self.ts_event,
+            self.instrument_id,
+            self.bid_price,
+            self.ask_price,
+            self.bid_size,
+            self.ask_size,
+            self.ts_event,
         )
     }
 }
@@ -168,7 +175,7 @@ impl Display for QuoteTick {
 #[pymethods]
 impl QuoteTick {
     #[new]
-    fn new_py(
+    fn py_new(
         instrument_id: InstrumentId,
         bid_price: Price,
         ask_price: Price,
@@ -216,13 +223,13 @@ impl QuoteTick {
     }
 
     #[getter]
-    fn bid(&self) -> Price {
-        self.bid
+    fn bid_price(&self) -> Price {
+        self.bid_price
     }
 
     #[getter]
-    fn ask(&self) -> Price {
-        self.ask
+    fn ask_price(&self) -> Price {
+        self.ask_price
     }
 
     #[getter]
@@ -320,8 +327,8 @@ mod tests {
     fn create_stub_quote_tick() -> QuoteTick {
         QuoteTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            bid: Price::new(10000.0, 4),
-            ask: Price::new(10001.0, 4),
+            bid_price: Price::new(10000.0, 4),
+            ask_price: Price::new(10001.0, 4),
             bid_size: Quantity::new(1.0, 8),
             ask_size: Quantity::new(1.0, 8),
             ts_event: 1,
@@ -338,14 +345,11 @@ mod tests {
         );
     }
 
-    #[rstest(
-        input,
-        expected,
-        case(PriceType::Bid, 10_000_000_000_000),
-        case(PriceType::Ask, 10_001_000_000_000),
-        case(PriceType::Mid, 10_000_500_000_000)
-    )]
-    fn test_extract_price(input: PriceType, expected: i64) {
+    #[rstest]
+    #[case(PriceType::Bid, 10_000_000_000_000)]
+    #[case(PriceType::Ask, 10_001_000_000_000)]
+    #[case(PriceType::Mid, 10_000_500_000_000)]
+    fn test_extract_price(#[case] input: PriceType, #[case] expected: i64) {
         let tick = create_stub_quote_tick();
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
@@ -359,7 +363,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let dict_string = tick.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid': '10000.0000', 'ask': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 1, 'ts_init': 0}"#;
+            let expected_string = r#"{'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 1, 'ts_init': 0}"#;
             assert_eq!(dict_string, expected_string);
         });
     }

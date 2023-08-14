@@ -692,141 +692,117 @@ class NautilusKernel:
         """
         return self._catalog
 
-    async def start(self) -> None:  # noqa (too complex)
+    def start(self) -> None:
+        """
+        Start the Nautilus system kernel.
+        """
         self._log.info("STARTING...")
 
-        if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
-            self._cache.flush_db()
-
-        # Register executor
-        if self._environment in (Environment.LIVE, Environment.SANDBOX):
-            for actor in self.trader.actors():
-                actor.register_executor(self._loop, self._executor)
-            for strategy in self.trader.strategies():
-                strategy.register_executor(self._loop, self._executor)
-            for exec_algorithm in self.trader.exec_algorithms():
-                exec_algorithm.register_executor(self._loop, self._executor)
-
-        # Start system
-        self._data_engine.start()
-        self._risk_engine.start()
-        self._exec_engine.start()
-
-        # Connect all clients
-        self._data_engine.connect()
-        self._exec_engine.connect()
-
-        if self._loop is not None:
-            # Await engine connection and initialization
-            self._log.info(
-                f"Awaiting engine connections and initializations "
-                f"({self._config.timeout_connection}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            if not await self._await_engines_connected():
-                self._log.warning(
-                    f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
-                    f"\nStatus"
-                    f"\n------"
-                    f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
-                    f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}",
-                )
-                return
-
-            # Await execution state reconciliation
-            self._log.info(
-                f"Awaiting execution state reconciliation "
-                f"({self._config.timeout_reconciliation}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            if not await self._exec_engine.reconcile_state(
-                timeout_secs=self._config.timeout_reconciliation,
-            ):
-                self._log.error("Execution state could not be reconciled.")
-                return
-
-        if self._exec_engine.reconciliation:
-            self._log.info("State reconciled.", color=LogColor.GREEN)
-
+        self._start_engines()
+        self._connect_clients()
         self._emulator.start()
-
-        # Initialize portfolio
-        self._portfolio.initialize_orders()
-        self._portfolio.initialize_positions()
-
-        if self._loop is not None:
-            # Await portfolio initialization
-            self._log.info(
-                "Awaiting portfolio initialization "
-                f"({self._config.timeout_portfolio}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            if not await self._await_portfolio_initialized():
-                self._log.warning(
-                    f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
-                    f"\nStatus"
-                    f"\n------"
-                    f"\nPortfolio.initialized == {self._portfolio.initialized}",
-                )
-                return
-        self._log.info("Portfolio initialized.", color=LogColor.GREEN)
-
-        # Start trader and strategies
+        self._initialize_portfolio()
         self._trader.start()
 
-    async def _await_engines_connected(self) -> bool:
-        # - The data engine clients will be set connected when all
-        # instruments are received and updated with the data engine.
-        # - The execution engine clients will be set connected when all
-        # accounts are updated and the current order and position status is
-        # reconciled.
-        # Thus any delay here will be due to blocking network I/O.
-        seconds = self._config.timeout_connection
-        timeout: timedelta = self.clock.utc_now() + timedelta(seconds=seconds)
-        while True:
-            await asyncio.sleep(0)
-            if self.clock.utc_now() >= timeout:
-                return False
-            if not self._data_engine.check_connected():
-                continue
-            if not self._exec_engine.check_connected():
-                continue
-            break
+    async def start_async(self) -> None:
+        """
+        Start the Nautilus system kernel in an asynchronous context with an event loop.
 
-        return True  # Engines connected
+        Raises
+        ------
+        RuntimeError
+            If no event loop has been assigned to the kernel.
 
-    async def _await_portfolio_initialized(self) -> bool:
-        # - The portfolio will be set initialized when all margin and unrealized
-        # PnL calculations are completed (maybe waiting on first quotes).
-        # Thus any delay here will be due to blocking network I/O.
-        seconds = self._config.timeout_portfolio
-        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
-        while True:
-            await asyncio.sleep(0)
-            if self._clock.utc_now() >= timeout:
-                return False
-            if not self._portfolio.initialized:
-                continue
-            break
+        """
+        if self.loop is None:
+            raise RuntimeError("no event loop has been assigned to the kernel")
 
-        return True  # Portfolio initialized
+        self._log.info("STARTING...")
+
+        self._register_executor()
+        self._start_engines()
+        self._connect_clients()
+
+        if not await self._await_engines_connected():
+            return
+
+        if not await self._await_execution_reconciliation():
+            return
+
+        self._emulator.start()
+        self._initialize_portfolio()
+
+        if not await self._await_portfolio_initialization():
+            return
+
+        self._trader.start()
+
+    async def stop(self) -> None:
+        """
+        Stop the Nautilus system kernel.
+        """
+        self.log.info("STOPPING...")
+
+        if self._trader.is_running:
+            self._trader.stop()
+
+        if self.save_state:
+            self._trader.save()
+
+        self._disconnect_clients()
+
+        self._stop_engines()
+        self._cancel_timers()
+        self._flush_writer()
+
+        self._log.info("STOPPED.")
+
+    async def stop_async(self) -> None:
+        """
+        Stop the Nautilus system kernel asynchronously.
+
+        After a specified delay the internal `Trader` residual state will be checked.
+
+        If save strategy is configured, then strategy states will be saved.
+
+        Raises
+        ------
+        RuntimeError
+            If no event loop has been assigned to the kernel.
+
+        """
+        if self.loop is None:
+            raise RuntimeError("no event loop has been assigned to the kernel")
+
+        self.log.info("STOPPING...")
+
+        if self._trader.is_running:
+            self._trader.stop()
+            await self._await_trader_residuals()
+
+        if self.save_state:
+            self._trader.save()
+
+        self._disconnect_clients()
+
+        await self._await_engines_disconnected()
+
+        self._stop_engines()
+        self._cancel_timers()
+        self._flush_writer()
+
+        self._log.info("STOPPED.")
 
     def dispose(self) -> None:
         """
-        Dispose of the kernel releasing system resources.
+        Dispose of the Nautilus kernel, releasing system resources.
 
         Calling this method multiple times has the same effect as calling it once (it is
         idempotent). Once called, it cannot be reversed, and no other methods should be
         called on this instance.
 
         """
-        # Stop all engines
-        if self.data_engine.is_running:
-            self.data_engine.stop()
-        if self.risk_engine.is_running:
-            self.risk_engine.stop()
-        if self.exec_engine.is_running:
-            self.exec_engine.stop()
+        self._stop_engines()
 
         # Dispose all engines
         if not self.data_engine.is_disposed:
@@ -843,7 +819,17 @@ class NautilusKernel:
             self._writer.close()
 
     def cancel_all_tasks(self) -> None:
-        PyCondition.not_none(self.loop, "self.loop")
+        """
+        Cancel all tasks currently running for the Nautilus kernel.
+
+        Raises
+        ------
+        RuntimeError
+            If no event loop has been assigned to the kernel.
+
+        """
+        if self.loop is None:
+            raise RuntimeError("no event loop has been assigned to the kernel")
 
         to_cancel = asyncio.tasks.all_tasks(self.loop)
         if not to_cancel:
@@ -869,8 +855,182 @@ class NautilusKernel:
             if task.exception() is not None:
                 self.loop.call_exception_handler(
                     {
-                        "message": "unhandled exception during asyncio.run() shutdown",
+                        "message": "unhandled exception during `asyncio.run()` shutdown",
                         "exception": task.exception(),
                         "task": task,
                     },
                 )
+
+    def _register_executor(self) -> None:
+        for actor in self.trader.actors():
+            actor.register_executor(self._loop, self._executor)
+        for strategy in self.trader.strategies():
+            strategy.register_executor(self._loop, self._executor)
+        for exec_algorithm in self.trader.exec_algorithms():
+            exec_algorithm.register_executor(self._loop, self._executor)
+
+    def _start_engines(self) -> None:
+        if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
+            self._cache.flush_db()
+
+        self._data_engine.start()
+        self._risk_engine.start()
+        self._exec_engine.start()
+
+    def _stop_engines(self) -> None:
+        if self._data_engine.is_running:
+            self._data_engine.stop()
+        if self._risk_engine.is_running:
+            self._risk_engine.stop()
+        if self._exec_engine.is_running:
+            self._exec_engine.stop()
+        if self._emulator.is_running:
+            self._emulator.stop()
+
+    def _connect_clients(self) -> None:
+        self._data_engine.connect()
+        self._exec_engine.connect()
+
+    def _disconnect_clients(self) -> None:
+        self._data_engine.disconnect()
+        self._exec_engine.disconnect()
+
+    def _initialize_portfolio(self) -> None:
+        self._portfolio.initialize_orders()
+        self._portfolio.initialize_positions()
+
+    async def _await_engines_connected(self) -> bool:
+        self._log.info(
+            f"Awaiting engine connections and initializations "
+            f"({self._config.timeout_connection}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._check_engines_connected():
+            self._log.warning(
+                f"Timed out ({self._config.timeout_connection}s) waiting for engines to connect and initialize."
+                f"\nStatus"
+                f"\n------"
+                f"\nDataEngine.check_connected() == {self._data_engine.check_connected()}"
+                f"\nExecEngine.check_connected() == {self._exec_engine.check_connected()}",
+            )
+            return False
+
+        return True
+
+    async def _await_engines_disconnected(self) -> None:
+        self._log.info(
+            f"Awaiting engine disconnections "
+            f"({self._config.timeout_disconnection}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._check_engines_disconnected():
+            self._log.error(
+                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect."
+                f"\nStatus"
+                f"\n------"
+                f"\nDataEngine.check_disconnected() == {self._data_engine.check_disconnected()}"
+                f"\nExecEngine.check_disconnected() == {self._exec_engine.check_disconnected()}",
+            )
+
+    async def _await_execution_reconciliation(self) -> bool:
+        self._log.info(
+            f"Awaiting execution state reconciliation "
+            f"({self._config.timeout_reconciliation}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._exec_engine.reconcile_state(
+            timeout_secs=self._config.timeout_reconciliation,
+        ):
+            self._log.error("Execution state could not be reconciled.")
+            return False
+
+        self._log.info("Execution state reconciled.", color=LogColor.GREEN)
+        return True
+
+    async def _await_portfolio_initialization(self) -> bool:
+        self._log.info(
+            "Awaiting portfolio initialization " f"({self._config.timeout_portfolio}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        if not await self._check_portfolio_initialized():
+            self._log.warning(
+                f"Timed out ({self._config.timeout_portfolio}s) waiting for portfolio to initialize."
+                f"\nStatus"
+                f"\n------"
+                f"\nPortfolio.initialized == {self._portfolio.initialized}",
+            )
+            return False
+
+        self._log.info("Portfolio initialized.", color=LogColor.GREEN)
+        return True
+
+    async def _await_trader_residuals(self) -> None:
+        self._log.info(
+            f"Awaiting post stop ({self._config.timeout_post_stop}s timeout)...",
+            color=LogColor.BLUE,
+        )
+        await asyncio.sleep(self._config.timeout_post_stop)
+        self._trader.check_residuals()
+
+    async def _check_engines_connected(self) -> bool:
+        # - The data engine clients will be set connected when all
+        # instruments are received and updated with the data engine.
+        # - The execution engine clients will be set connected when all
+        # accounts are updated and the current order and position status is
+        # reconciled.
+        # Thus any delay here will be due to blocking network I/O.
+        seconds = self._config.timeout_connection
+        timeout: timedelta = self.clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self.clock.utc_now() >= timeout:
+                return False
+            if not self._data_engine.check_connected():
+                continue
+            if not self._exec_engine.check_connected():
+                continue
+            break
+
+        return True
+
+    async def _check_engines_disconnected(self) -> bool:
+        seconds = self._config.timeout_disconnection
+        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self._clock.utc_now() >= timeout:
+                return False
+            if not self._data_engine.check_disconnected():
+                continue
+            if not self._exec_engine.check_disconnected():
+                continue
+            break
+
+        return True
+
+    async def _check_portfolio_initialized(self) -> bool:
+        # - The portfolio will be set initialized when all margin and unrealized
+        # PnL calculations are completed (maybe waiting on first quotes).
+        # Thus any delay here will be due to blocking network I/O.
+        seconds = self._config.timeout_portfolio
+        timeout: timedelta = self._clock.utc_now() + timedelta(seconds=seconds)
+        while True:
+            await asyncio.sleep(0)
+            if self._clock.utc_now() >= timeout:
+                return False
+            if not self._portfolio.initialized:
+                continue
+            break
+
+        return True
+
+    def _cancel_timers(self) -> None:
+        timer_names = self._clock.timer_names
+        self._clock.cancel_timers()
+
+        for name in timer_names:
+            self._log.info(f"Canceled Timer(name={name}).")
+
+    def _flush_writer(self) -> None:
+        if self._writer is not None:
+            self._writer.flush()

@@ -2175,8 +2175,8 @@ class TestExecutionEngine:
         # Setup market
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80000"),
-            ask=Price.from_str("0.80010"),
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
             bid_size=Quantity.from_int(10_000_000),
             ask_size=Quantity.from_int(10_000_000),
             ts_event=0,
@@ -2299,8 +2299,8 @@ class TestExecutionEngine:
 
         quote_tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80000"),
-            ask=Price.from_str("0.80010"),
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
             bid_size=Quantity.from_int(10_000_000),
             ask_size=Quantity.from_int(10_000_000),
             ts_event=0,

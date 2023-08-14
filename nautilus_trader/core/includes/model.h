@@ -726,11 +726,11 @@ typedef struct QuoteTick_t {
     /**
      * The top of book bid price.
      */
-    struct Price_t bid;
+    struct Price_t bid_price;
     /**
      * The top of book ask price.
      */
-    struct Price_t ask;
+    struct Price_t ask_price;
     /**
      * The top of book bid size.
      */
@@ -795,7 +795,7 @@ typedef struct BarSpecification_t {
     /**
      * The step for binning samples for bar aggregation.
      */
-    uint64_t step;
+    uintptr_t step;
     /**
      * The type of bar aggregation.
      */
@@ -1062,7 +1062,7 @@ typedef struct Money_t {
 
 struct Data_t data_clone(const struct Data_t *data);
 
-struct BarSpecification_t bar_specification_new(uint64_t step,
+struct BarSpecification_t bar_specification_new(uintptr_t step,
                                                 uint8_t aggregation,
                                                 uint8_t price_type);
 
@@ -1456,6 +1456,9 @@ const char *trigger_type_to_cstr(enum TriggerType value);
 enum TriggerType trigger_type_from_cstr(const char *ptr);
 
 /**
+ * # Safety
+ *
+ * - Assumes valid C string pointers.
  * # Safety
  *
  * - Assumes `reason_ptr` is a valid C string pointer.

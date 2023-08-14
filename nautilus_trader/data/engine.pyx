@@ -1734,8 +1734,8 @@ cdef class DataEngine(Component):
             Price update_ask
         for instrument_id in components:
             if instrument_id == update.instrument_id:
-                update_bid = update.bid
-                update_ask = update.ask
+                update_bid = update.bid_price
+                update_ask = update.ask_price
                 inputs_bid.append(update_bid.as_f64_c())
                 inputs_ask.append(update_ask.as_f64_c())
                 continue
@@ -1746,20 +1746,20 @@ cdef class DataEngine(Component):
                     f"no quotes for {instrument_id} yet...",
                 )
                 return
-            update_bid = component_quote.bid
-            update_ask = component_quote.ask
+            update_bid = component_quote.bid_price
+            update_ask = component_quote.ask_price
             inputs_bid.append(update_bid.as_f64_c())
             inputs_ask.append(update_ask.as_f64_c())
 
-        cdef Price bid = synthetic.calculate(inputs_bid)
-        cdef Price ask = synthetic.calculate(inputs_ask)
+        cdef Price bid_price = synthetic.calculate(inputs_bid)
+        cdef Price ask_price = synthetic.calculate(inputs_ask)
         cdef Quantity size_one = Quantity(1, 0)  # Placeholder for now
 
         cdef InstrumentId synthetic_instrument_id = synthetic.id
         cdef QuoteTick synthetic_quote = QuoteTick(
             synthetic_instrument_id,
-            bid,
-            ask,
+            bid_price,
+            ask_price,
             size_one,
             size_one,
             update.ts_event,

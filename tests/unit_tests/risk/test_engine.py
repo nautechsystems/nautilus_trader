@@ -869,8 +869,8 @@ class TestRiskEngineWithCashAccount:
         # Initialize market
         quote = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.75000"),
-            ask=Price.from_str("0.75005"),
+            bid_price=Price.from_str("0.75000"),
+            ask_price=Price.from_str("0.75005"),
             bid_size=Quantity.from_int(5_000_000),
             ask_size=Quantity.from_int(5_000_000),
             ts_event=0,

@@ -164,8 +164,8 @@ class TestL2OrderBookExchange:
 
         quote = QuoteTick(
             instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("110.000"),
-            ask=Price.from_str("110.010"),
+            bid_price=Price.from_str("110.000"),
+            ask_price=Price.from_str("110.010"),
             bid_size=Quantity.from_int(1_500_000),
             ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
@@ -205,8 +205,8 @@ class TestL2OrderBookExchange:
 
         quote = QuoteTick(
             instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("110.000"),
-            ask=Price.from_str("110.010"),
+            bid_price=Price.from_str("110.000"),
+            ask_price=Price.from_str("110.010"),
             bid_size=Quantity.from_int(1_500_000),
             ask_size=Quantity.from_int(1_500_000),
             ts_event=0,
@@ -291,8 +291,8 @@ class TestL2OrderBookExchange:
         # Act
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=15.0,
-            ask=16.0,
+            bid_price=15.0,
+            ask_price=16.0,
             bid_size=1_000,
             ask_size=1_000,
         )

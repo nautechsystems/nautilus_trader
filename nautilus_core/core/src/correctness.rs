@@ -125,19 +125,23 @@ mod tests {
 
     use super::*;
 
-    #[rstest(s, case(" a"), case("a "), case("a a"), case(" a "), case("abc"))]
-    fn test_valid_string_with_valid_value(s: &str) {
+    #[rstest]
+    #[case(" a")]
+    #[case("a ")]
+    #[case("a a")]
+    #[case(" a ")]
+    #[case("abc")]
+    fn test_valid_string_with_valid_value(#[case] s: &str) {
         valid_string(s, "value");
     }
 
-    #[rstest(s,
-        case(""),  // <-- empty string
-        case(" "), // <-- whitespace-only
-        case("  "), // <-- whitespace-only string
-        case("🦀"), // <-- contains Non-ASCII char
-    )]
+    #[rstest]
+    #[case("")] // <-- empty string
+    #[case(" ")] // <-- whitespace-only
+    #[case("  ")] // <-- whitespace-only string
+    #[case("🦀")] // <-- contains Non-ASCII char
     #[should_panic]
-    fn test_valid_string_with_invalid_values(s: &str) {
+    fn test_valid_string_with_invalid_values(#[case] s: &str) {
         valid_string(s, "value");
     }
 

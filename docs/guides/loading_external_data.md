@@ -66,8 +66,8 @@ def parser(data, instrument_id):
     dt = pd.Timestamp(datetime.datetime.strptime(data['timestamp'].decode(), "%Y%m%d %H%M%S%f"), tz='UTC')
     yield QuoteTick(
         instrument_id=instrument_id,
-        bid=Price.from_str(data['bid'].decode()),
-        ask=Price.from_str(data['ask'].decode()),
+        bid_price=Price.from_str(data["bid_price"].decode()),
+        ask_price=Price.from_str(data["ask_price"].decode()),
         bid_size=Quantity.from_int(100_000),
         ask_size=Quantity.from_int(100_000),
         ts_event=dt_to_unix_nanos(dt),
@@ -158,7 +158,7 @@ process_files(
     glob_path=input_files,
     reader=CSVReader(
         block_parser=lambda x: parser(x, instrument_id=instrument.id), 
-        header=['timestamp', 'bid', 'ask', 'volume'],
+        header=["timestamp", "bid", "ask", "volume"],
         chunked=False, 
         as_dataframe=False,
     ),

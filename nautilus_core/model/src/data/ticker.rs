@@ -45,11 +45,7 @@ pub struct Ticker {
 
 impl Ticker {
     #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
+    pub fn new(instrument_id: InstrumentId, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
             instrument_id,
             ts_event,
@@ -63,16 +59,8 @@ impl Serializable for Ticker {}
 #[pymethods]
 impl Ticker {
     #[new]
-    fn new_py(
-        instrument_id: InstrumentId,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new(
-            instrument_id,
-            ts_event,
-            ts_init,
-        )
+    fn py_new(instrument_id: InstrumentId, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+        Self::new(instrument_id, ts_event, ts_init)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -115,7 +103,8 @@ impl Ticker {
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
         // Parse JSON into a Python dictionary
         let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
             .getattr("json")?
@@ -133,7 +122,8 @@ impl Ticker {
             .call_method("encode", (values,), None)?
             .extract()?;
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_bytes)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(instance)
     }
 
@@ -154,7 +144,7 @@ impl Ticker {
     }
 
     /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self,py: Python<'_>) -> Py<PyAny> {
+    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
         // Unwrapping is safe when serializing a valid object
         self.as_msgpack_bytes().unwrap().into_py(py)
     }

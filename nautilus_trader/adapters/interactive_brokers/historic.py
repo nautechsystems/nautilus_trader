@@ -341,9 +341,9 @@ def parse_historic_quote_ticks(
         ts_init = dt_to_unix_nanos(tick.time)
         quote_tick = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price(value=tick.priceBid, precision=instrument.price_precision),
+            bid_price=Price(value=tick.priceBid, precision=instrument.price_precision),
+            ask_price=Price(value=tick.priceAsk, precision=instrument.price_precision),
             bid_size=Quantity(value=tick.sizeBid, precision=instrument.size_precision),
-            ask=Price(value=tick.priceAsk, precision=instrument.price_precision),
             ask_size=Quantity(value=tick.sizeAsk, precision=instrument.size_precision),
             ts_init=ts_init,
             ts_event=ts_init,

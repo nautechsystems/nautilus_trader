@@ -235,8 +235,8 @@ class TestOrderEmulatorWithSingleOrders:
         # Arrange
         tick: QuoteTick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
             bid_size=10.0,
             ask_size=10.0,
         )
@@ -519,8 +519,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
         )
 
         # Act
@@ -563,8 +563,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
         )
 
         # Act
@@ -607,8 +607,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
         )
 
         # Act
@@ -651,8 +651,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         # Act
@@ -695,8 +695,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         # Act
@@ -739,8 +739,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -793,8 +793,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -811,8 +811,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5065.0,
-            ask=5065.0,
+            bid_price=5065.0,
+            ask_price=5065.0,
         )
         self.data_engine.process(tick)
 
@@ -852,8 +852,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
         self.data_engine.process(tick)
 
@@ -862,8 +862,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5055.0,
-            ask=5075.0,
+            bid_price=5055.0,
+            ask_price=5075.0,
         )
         self.data_engine.process(tick)
 
@@ -914,8 +914,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
         self.data_engine.process(tick)
 
@@ -972,8 +972,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -983,8 +983,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5065.0,
-            ask=5065.0,
+            bid_price=5065.0,
+            ask_price=5065.0,
         )
         self.data_engine.process(tick)
 
@@ -1026,8 +1026,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -1037,8 +1037,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5055.0,
-            ask=5075.0,
+            bid_price=5055.0,
+            ask_price=5075.0,
         )
 
         self.data_engine.process(tick)
@@ -1078,8 +1078,8 @@ class TestOrderEmulatorWithSingleOrders:
         # Arrange
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.emulator.create_matching_core(
@@ -1140,13 +1140,13 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick1 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_BINANCE,
-            bid=10_000.0,
-            ask=10_000.0,
+            bid_price=10_000.0,
+            ask_price=10_000.0,
         )
         tick2 = TestDataStubs.quote_tick(
             instrument=BTCUSDT_BINANCE,
-            bid=50_000.0,
-            ask=50_000.0,
+            bid_price=50_000.0,
+            ask_price=50_000.0,
         )
 
         # Act

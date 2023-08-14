@@ -196,14 +196,13 @@ unsafe impl Send for DataBackendSession {}
 impl DataBackendSession {
     #[new]
     #[pyo3(signature=(chunk_size=5000))]
-    #[must_use]
-    pub fn new_session(chunk_size: usize) -> Self {
+    fn new_session(chunk_size: usize) -> Self {
         // Initialize runtime here
         get_runtime();
         Self::new(chunk_size)
     }
 
-    pub fn add_file(
+    fn add_file(
         mut slf: PyRefMut<'_, Self>,
         table_name: &str,
         file_path: &str,
@@ -241,7 +240,7 @@ impl DataBackendSession {
         }
     }
 
-    pub fn add_file_with_query(
+    fn add_file_with_query(
         mut slf: PyRefMut<'_, Self>,
         table_name: &str,
         file_path: &str,
@@ -289,8 +288,7 @@ impl DataBackendSession {
         }
     }
 
-    #[must_use]
-    pub fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
+    fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
         let rt = get_runtime();
         let query_result = rt.block_on(slf.get_query_result());
         DataQueryResult::new(query_result)

@@ -45,8 +45,11 @@ format:
 	(cd nautilus_core && cargo +nightly fmt)
 
 .PHONY: pre-commit
-pre-commit: format
+pre-commit:
 	pre-commit run --all-files
+
+.PHONY: pre-flight
+pre-flight: format pre-commit cargo-test build-debug pytest
 
 .PHONY: ruff
 ruff:

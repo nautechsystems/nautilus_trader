@@ -106,6 +106,10 @@ cdef class OrderEmulator(Actor):
         self._subscribed_strategies: set[StrategyId] = set()
         self._monitored_positions: set[PositionId] = set()
 
+        # Counters
+        self.command_count: int = 0
+        self.event_count: int = 0
+
         # Register endpoints
         self._msgbus.register(endpoint="OrderEmulator.execute", handler=self.execute)
 
@@ -187,7 +191,20 @@ cdef class OrderEmulator(Actor):
             self._handle_submit_order(command)
 
     cpdef void on_event(self, Event event):
-        self._log.info(f"Received {event}.", LogColor.MAGENTA)
+        """
+        Handle the given `event`.
+
+        Parameters
+        ----------
+        event : Event
+            The received event to handle.
+
+        """
+        Condition.not_none(event, "event")
+
+        self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
+        self.event_count += 1
+
         if isinstance(event, OrderRejected):
             self._handle_order_rejected(event)
         elif isinstance(event, OrderCanceled):
@@ -208,6 +225,9 @@ cdef class OrderEmulator(Actor):
         self._commands_submit_order.clear()
         self._matching_cores.clear()
 
+        self.command_count = 0
+        self.event_count = 0
+
     cpdef void on_dispose(self):
         pass
 
@@ -226,6 +246,7 @@ cdef class OrderEmulator(Actor):
         Condition.not_none(command, "command")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+        self.command_count += 1
 
         if isinstance(command, SubmitOrder):
             self._handle_submit_order(command)
@@ -359,10 +380,21 @@ cdef class OrderEmulator(Actor):
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        self._send_exec_event(event)
+        order.apply(event)
+        self.cache.update_order(order)
+
+        self._send_risk_event(event)
 
         # Hold in matching core
         matching_core.add_order(order)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
+
+        self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
         self._check_monitoring(command.strategy_id, command.position_id)
@@ -642,6 +674,9 @@ cdef class OrderEmulator(Actor):
                     )
                     continue
 
+                if child_order.position_id is None:
+                    child_order.position_id = position_id
+
                 # Check if execution algorithm spawned order (only update based on primary)
                 if order.exec_spawn_id is None:
                     return
@@ -675,7 +710,9 @@ cdef class OrderEmulator(Actor):
             for client_order_id in order.linked_order_ids:
                 contingent_order = self.cache.order(client_order_id)
                 assert contingent_order
-                if contingent_order.client_order_id != order.client_order_id and not contingent_order.is_closed_c():
+                if contingent_order.is_closed_c():
+                    continue
+                if contingent_order.client_order_id != order.client_order_id:
                     self._cancel_order(matching_core, contingent_order)
         elif order.contingency_type == ContingencyType.OUO:
             self._handle_contingencies(order)
@@ -731,7 +768,6 @@ cdef class OrderEmulator(Actor):
             ts_event=ts_now,
             ts_init=ts_now,
         )
-
         order.apply(event)
         self.cache.update_order(order)
 
@@ -763,8 +799,6 @@ cdef class OrderEmulator(Actor):
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
             )
             return
-
-        self.log.info(f"Releasing {order}...")
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -810,7 +844,18 @@ cdef class OrderEmulator(Actor):
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        self._send_exec_event(event)
+        transformed.apply(event)
+        self.cache.update_order(transformed)
+
+        self._send_risk_event(event)
+
+        self.log.info(f"Releasing {transformed}...", LogColor.MAGENTA)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{transformed.strategy_id.to_str()}",
+            msg=event,
+        )
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
@@ -874,7 +919,18 @@ cdef class OrderEmulator(Actor):
             event_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
-        self._send_exec_event(event)
+        transformed.apply(event)
+        self.cache.update_order(transformed)
+
+        self._send_risk_event(event)
+
+        self.log.info(f"Releasing {transformed}...", LogColor.MAGENTA)
+
+        # Publish event
+        self._msgbus.publish_c(
+            topic=f"events.order.{transformed.strategy_id.to_str()}",
+            msg=event,
+        )
 
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
@@ -890,8 +946,8 @@ cdef class OrderEmulator(Actor):
             self._log.error(f"Cannot handle `QuoteTick`: no matching core for instrument {tick.instrument_id}.")
             return
 
-        matching_core.set_bid_raw(tick._mem.bid.raw)
-        matching_core.set_ask_raw(tick._mem.ask.raw)
+        matching_core.set_bid_raw(tick._mem.bid_price.raw)
+        matching_core.set_ask_raw(tick._mem.ask_price.raw)
 
         self._iterate_orders(matching_core)
 
@@ -939,9 +995,9 @@ cdef class OrderEmulator(Actor):
         cdef QuoteTick quote_tick = self.cache.quote_tick(matching_core.instrument_id)
         cdef TradeTick trade_tick = self.cache.trade_tick(matching_core.instrument_id)
         if bid is None and quote_tick is not None:
-            bid = quote_tick.bid
+            bid = quote_tick.bid_price
         if ask is None and quote_tick is not None:
-            ask = quote_tick.ask
+            ask = quote_tick.ask_price
         if last is None and trade_tick is not None:
             last = trade_tick.price
         # TODO(cs): ------------------------------------------------------------
@@ -981,6 +1037,7 @@ cdef class OrderEmulator(Actor):
             ts_init=ts_now,
         )
         order.apply(event)
+        self.cache.update_order(order)
 
         self._send_risk_event(event)
 

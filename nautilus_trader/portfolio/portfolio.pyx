@@ -1092,9 +1092,9 @@ cdef class Portfolio(PortfolioFacade):
         cdef QuoteTick quote_tick = self._cache.quote_tick(position.instrument_id)
         if quote_tick is not None:
             if position.side == PositionSide.LONG:
-                return quote_tick.bid
+                return quote_tick.bid_price
             elif position.side == PositionSide.SHORT:
-                return quote_tick.ask
+                return quote_tick.ask_price
             else:  # pragma: no cover (design-time error)
                 raise RuntimeError(
                     f"invalid `PositionSide`, was {position_side_to_str(position.side)}",

@@ -175,8 +175,8 @@ def test_parse_historic_quote_ticks():
         {
             "type": "QuoteTick",
             "instrument_id": "AAPL.NASDAQ",
-            "bid": "0.99",
-            "ask": "15.30",
+            "bid_price": "0.99",
+            "ask_price": "15.30",
             "bid_size": "1",
             "ask_size": "1",
             "ts_event": 1646176203000000000,

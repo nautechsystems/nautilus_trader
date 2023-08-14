@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
+import pickle
 
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import BookOrder
@@ -29,6 +29,23 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 AUDUSD = TestIdStubs.audusd_id()
 
 
+def test_book_order_pickle_round_trip():
+    # Arrange
+    order = BookOrder(
+        side=OrderSide.BUY,
+        price=Price.from_str("10.0"),
+        size=Quantity.from_str("5"),
+        order_id=1,
+    )
+
+    # Act
+    pickled = pickle.dumps(order)
+    unpickled = pickle.loads(pickled)  # noqa
+
+    # Assert
+    assert order == unpickled
+
+
 class TestOrderBookDelta:
     def test_fully_qualified_name(self):
         # Arrange, Act, Assert
@@ -37,7 +54,31 @@ class TestOrderBookDelta:
             == "nautilus_trader.model.data.book:OrderBookDelta"
         )
 
-    @pytest.mark.skip(reason="TBD")
+    def test_pickle_round_trip(self):
+        order = BookOrder(
+            side=OrderSide.BUY,
+            price=Price.from_str("10.0"),
+            size=Quantity.from_str("5"),
+            order_id=1,
+        )
+
+        delta = OrderBookDelta(
+            instrument_id=AUDUSD,
+            action=BookAction.ADD,
+            order=order,
+            flags=0,
+            sequence=123456789,
+            ts_event=0,
+            ts_init=1_000_000_000,
+        )
+
+        # Act
+        pickled = pickle.dumps(delta)
+        unpickled = pickle.loads(pickled)  # noqa
+
+        # Assert
+        assert delta == unpickled
+
     def test_hash_str_and_repr(self):
         # Arrange
         order = BookOrder(
@@ -61,11 +102,11 @@ class TestOrderBookDelta:
         assert isinstance(hash(delta), int)
         assert (
             str(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0}}), sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: Buy, price: 10.0, size: 5, order_id: 1 }}, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
         assert (
             repr(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0}}), sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: Buy, price: 10.0, size: 5, order_id: 1 }}, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
 
     def test_with_null_book_order(self):
@@ -84,11 +125,11 @@ class TestOrderBookDelta:
         assert isinstance(hash(delta), int)
         assert (
             str(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, ts_event=0, ts_init=1000000000, sequence=123456789, flags=32)"  # noqa
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
         assert (
             repr(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, ts_event=0, ts_init=1000000000, sequence=123456789, flags=32)"  # noqa
+            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
 
     def test_to_dict_with_order_returns_expected_dict(self):

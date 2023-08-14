@@ -390,8 +390,8 @@ class TestCache:
         # Arrange
         tick = TestDataStubs.quote_tick(
             instrument=AUDUSD_SIM,
-            bid=1.00001,
-            ask=1.00003,
+            bid_price=1.00001,
+            ask_price=1.00003,
         )
 
         self.cache.add_quote_tick(tick)
@@ -511,8 +511,8 @@ class TestCache:
 
         tick = QuoteTick(
             instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("110.80000"),
-            ask=Price.from_str("110.80010"),
+            bid_price=Price.from_str("110.80000"),
+            ask_price=Price.from_str("110.80010"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -540,8 +540,8 @@ class TestCache:
 
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80000"),
-            ask=Price.from_str("0.80010"),
+            bid_price=Price.from_str("0.80000"),
+            ask_price=Price.from_str("0.80010"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,

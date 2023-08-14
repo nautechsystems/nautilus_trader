@@ -182,8 +182,8 @@ class _TestPersistenceCore:
         self._load_data_into_catalog()
         quote = QuoteTick(
             instrument_id=TestIdStubs.audusd_id(),
-            bid=Price.from_str("0.80"),
-            ask=Price.from_str("0.81"),
+            bid_price=Price.from_str("0.80"),
+            ask_price=Price.from_str("0.81"),
             bid_size=Quantity.from_int(1_000),
             ask_size=Quantity.from_int(1_000),
             ts_event=0,
@@ -540,8 +540,8 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
         objs = [
             QuoteTick(
                 instrument_id=instrument.id,
-                bid=Price.from_str("4507.24000000"),
-                ask=Price.from_str("4507.25000000"),
+                bid_price=Price.from_str("4507.24000000"),
+                ask_price=Price.from_str("4507.25000000"),
                 bid_size=Quantity.from_str("2.35950000"),
                 ask_size=Quantity.from_str("2.84570000"),
                 ts_event=1,
@@ -549,8 +549,8 @@ class TestPersistenceCoreFile(_TestPersistenceCore):
             ),
             QuoteTick(
                 instrument_id=instrument.id,
-                bid=Price.from_str("4507.24000000"),
-                ask=Price.from_str("4507.25000000"),
+                bid_price=Price.from_str("4507.24000000"),
+                ask_price=Price.from_str("4507.25000000"),
                 bid_size=Quantity.from_str("2.35950000"),
                 ask_size=Quantity.from_str("2.84570000"),
                 ts_event=10,

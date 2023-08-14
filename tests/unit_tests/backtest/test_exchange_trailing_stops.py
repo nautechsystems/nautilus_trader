@@ -266,8 +266,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -338,8 +338,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -378,8 +378,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -399,16 +399,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.0,
-            ask=13.0,
+            bid_price=12.0,
+            ask_price=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = QuoteTick(
             instrument_id=USDJPY_SIM.id,
-            bid=Price.from_str("12.500"),
-            ask=Price.from_str("13.500"),
+            bid_price=Price.from_str("12.500"),
+            ask_price=Price.from_str("13.500"),
             bid_size=Quantity.from_int(1_000_000),
             ask_size=Quantity.from_int(1_000_000),
             ts_event=0,
@@ -425,8 +425,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -446,16 +446,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=15.0,
+            bid_price=14.0,
+            ask_price=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.5,
-            ask=14.5,
+            bid_price=13.5,
+            ask_price=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -518,8 +518,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -630,8 +630,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         quote = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(quote)
         self.data_engine.process(quote)
@@ -672,8 +672,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -695,16 +695,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.0,
-            ask=13.0,
+            bid_price=12.0,
+            ask_price=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.5,
-            ask=13.5,
+            bid_price=12.5,
+            ask_price=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -718,8 +718,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -741,16 +741,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=15.0,
+            bid_price=14.0,
+            ask_price=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.5,
-            ask=14.5,
+            bid_price=13.5,
+            ask_price=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -764,8 +764,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -787,16 +787,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.0,
-            ask=13.0,
+            bid_price=12.0,
+            ask_price=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.5,
-            ask=13.5,
+            bid_price=12.5,
+            ask_price=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -810,8 +810,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -833,16 +833,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=15.0,
+            bid_price=14.0,
+            ask_price=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.5,
-            ask=14.5,
+            bid_price=13.5,
+            ask_price=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -856,8 +856,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -891,16 +891,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.0,
-            ask=13.0,
+            bid_price=12.0,
+            ask_price=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.5,
-            ask=13.5,
+            bid_price=12.5,
+            ask_price=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -914,8 +914,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -949,16 +949,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=15.0,
+            bid_price=14.0,
+            ask_price=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.5,
-            ask=14.5,
+            bid_price=13.5,
+            ask_price=14.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -972,8 +972,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -995,16 +995,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.0,
-            ask=13.0,
+            bid_price=12.0,
+            ask_price=13.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=12.5,
-            ask=13.5,
+            bid_price=12.5,
+            ask_price=13.5,
         )
         self.exchange.process_quote_tick(tick)
 
@@ -1018,8 +1018,8 @@ class TestSimulatedExchange:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.0,
-            ask=14.0,
+            bid_price=13.0,
+            ask_price=14.0,
         )
         self.exchange.process_quote_tick(tick)
         self.data_engine.process(tick)
@@ -1041,16 +1041,16 @@ class TestSimulatedExchange:
 
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=14.0,
-            ask=15.0,
+            bid_price=14.0,
+            ask_price=15.0,
         )
         self.exchange.process_quote_tick(tick)
 
         # Act: market moves against trailing stop (should not update)
         tick = TestDataStubs.quote_tick(
             instrument=USDJPY_SIM,
-            bid=13.5,
-            ask=14.5,
+            bid_price=13.5,
+            ask_price=14.5,
         )
         self.exchange.process_quote_tick(tick)
 

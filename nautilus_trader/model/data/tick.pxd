@@ -48,12 +48,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     cdef QuoteTick from_raw_c(
         InstrumentId instrument_id,
-        int64_t raw_bid,
-        int64_t raw_ask,
+        int64_t bid_price_raw,
+        int64_t ask_price_raw,
         uint8_t bid_price_prec,
         uint8_t ask_price_prec,
-        uint64_t raw_bid_size,
-        uint64_t raw_ask_size,
+        uint64_t bid_size_raw,
+        uint64_t ask_size_raw,
         uint8_t bid_size_prec,
         uint8_t ask_size_prec,
         uint64_t ts_event,
@@ -87,9 +87,9 @@ cdef class TradeTick(Data):
     @staticmethod
     cdef TradeTick from_raw_c(
         InstrumentId instrument_id,
-        int64_t raw_price,
+        int64_t price_raw,
         uint8_t price_prec,
-        uint64_t raw_size,
+        uint64_t size_raw,
         uint8_t size_prec,
         AggressorSide aggressor_side,
         TradeId trade_id,
