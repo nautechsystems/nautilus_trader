@@ -1128,9 +1128,9 @@ cdef class OrderFactory:
         dict entry_exec_algorithm_params = None,
         dict tp_exec_algorithm_params = None,
         dict sl_exec_algorithm_params = None,
-        str entry_tags = None,
-        str tp_tags = None,
-        str sl_tags = None,
+        str entry_tags = "ENTRY",
+        str tp_tags = "TAKE_PROFIT",
+        str sl_tags = "STOP_LOSS",
     ):
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -1189,13 +1189,13 @@ cdef class OrderFactory:
             The execution algorithm parameters for the order.
         sl_exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
-        entry_tags : str, optional
+        entry_tags : str, default "ENTRY"
             The custom user tags for the entry order. These are optional and can
             contain any arbitrary delimiter if required.
-        tp_tags : str, optional
+        tp_tags : str, default "TAKE_PROFIT"
             The custom user tags for the take-profit order. These are optional and can
             contain any arbitrary delimiter if required.
-        sl_tags : str, optional
+        sl_tags : str, default "STOP_LOSS"
             The custom user tags for the stop-loss order. These are optional and can
             contain any arbitrary delimiter if required.
 
