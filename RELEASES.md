@@ -21,6 +21,7 @@ this change.
 ### Fixes
 - Fixed execution algorithm `position_id` assignment in `HEDGING` mode
 - Fixed `OrderMatchingEngine` processing of emulated orders
+- Fixed `Cache` emulated order indexing (were not being properly discarded from the set when closed)
 
 ---
 
