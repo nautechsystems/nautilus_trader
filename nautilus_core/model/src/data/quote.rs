@@ -345,14 +345,11 @@ mod tests {
         );
     }
 
-    #[rstest(
-        input,
-        expected,
-        case(PriceType::Bid, 10_000_000_000_000),
-        case(PriceType::Ask, 10_001_000_000_000),
-        case(PriceType::Mid, 10_000_500_000_000)
-    )]
-    fn test_extract_price(input: PriceType, expected: i64) {
+    #[rstest]
+    #[case(PriceType::Bid, 10_000_000_000_000)]
+    #[case(PriceType::Ask, 10_001_000_000_000)]
+    #[case(PriceType::Mid, 10_000_500_000_000)]
+    fn test_extract_price(#[case] input: PriceType, #[case] expected: i64) {
         let tick = create_stub_quote_tick();
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
