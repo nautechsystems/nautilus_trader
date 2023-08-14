@@ -564,7 +564,9 @@ class InteractiveBrokersClient(Component, EWrapper):
                     fields = comm.read_fields(msg)
                     self._log.debug(f"fields {fields}")
                 else:
-                    self._log.debug(f"Received empty buffer from socket (retries_remaining={connection_retries_remaining})")
+                    self._log.debug(
+                        f"Received empty buffer from socket (retries_remaining={connection_retries_remaining})",
+                    )
                     fields = []
 
             (server_version, conn_time) = fields
