@@ -27,13 +27,14 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
         strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
         venue::Venue, venue_order_id::VenueOrderId,
     },
+    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -347,6 +348,18 @@ impl Order for StopMarketOrder {
 
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
+    }
+
+    fn update(&mut self, event: OrderUpdated) {
+        if event.price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+
+        self.quantity = event.quantity;
+
+        if let Some(trigger_price) = event.trigger_price {
+            self.trigger_price = trigger_price;
+        }
     }
 }
 

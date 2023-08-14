@@ -27,7 +27,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
@@ -367,6 +367,18 @@ impl Order for TrailingStopLimitOrder {
 
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
+    }
+
+    fn update(&mut self, event: OrderUpdated) {
+        self.quantity = event.quantity;
+
+        if let Some(price) = event.price {
+            self.price = price;
+        }
+
+        if let Some(trigger_price) = event.trigger_price {
+            self.trigger_price = trigger_price;
+        }
     }
 }
 
