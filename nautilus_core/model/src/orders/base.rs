@@ -27,9 +27,10 @@ use crate::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
-        OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
-        OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEvent,
+        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -350,6 +351,7 @@ pub struct OrderCore {
     pub liquidity_side: Option<LiquiditySide>,
     pub is_reduce_only: bool,
     pub is_quote_quantity: bool,
+    pub emulation_trigger: Option<TriggerType>,
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -381,6 +383,7 @@ impl OrderCore {
         time_in_force: TimeInForce,
         reduce_only: bool,
         quote_quantity: bool,
+        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -414,6 +417,7 @@ impl OrderCore {
             liquidity_side: None,
             is_reduce_only: reduce_only,
             is_quote_quantity: quote_quantity,
+            emulation_trigger,
             contingency_type,
             order_list_id,
             linked_order_ids,
@@ -439,6 +443,8 @@ impl OrderCore {
 
         match &event {
             OrderEvent::OrderDenied(event) => self.denied(event),
+            OrderEvent::OrderEmulated(event) => self.emulated(event),
+            OrderEvent::OrderReleased(event) => self.released(event),
             OrderEvent::OrderSubmitted(event) => self.submitted(event),
             OrderEvent::OrderRejected(event) => self.rejected(event),
             OrderEvent::OrderAccepted(event) => self.accepted(event),
@@ -459,6 +465,14 @@ impl OrderCore {
 
     fn denied(&self, _event: &OrderDenied) {
         // Do nothing else
+    }
+
+    fn emulated(&self, _event: &OrderEmulated) {
+        // Do nothing else
+    }
+
+    fn released(&mut self, _event: &OrderReleased) {
+        self.emulation_trigger = None;
     }
 
     fn submitted(&mut self, event: &OrderSubmitted) {
