@@ -928,13 +928,6 @@ cdef class ExecutionEngine(Component):
                 self._log.debug(f"Assigned {repr(position_id)} to {fill}.", LogColor.MAGENTA)
             return
 
-        # TODO(cs): Optimize away the need to fetch order from cache
-        cdef Order order = self._cache.order(fill.client_order_id)
-        if order is None:
-            raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
-            )
-
         if oms_type == OmsType.HEDGING:
             position_id = self._determine_hedging_position_id(fill)
         elif oms_type == OmsType.NETTING:
@@ -946,6 +939,13 @@ cdef class ExecutionEngine(Component):
             )
 
         fill.position_id = position_id
+
+        # TODO(cs): Optimize away the need to fetch order from cache
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
 
         # Check execution algorithm position ID
         if order.exec_algorithm_id is None or order.exec_spawn_id is None:
@@ -965,6 +965,8 @@ cdef class ExecutionEngine(Component):
 
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill):
         if fill.position_id is not None:
+            if self.debug:
+                self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
             # Already assigned
             return fill.position_id
 
@@ -981,9 +983,10 @@ cdef class ExecutionEngine(Component):
             exec_spawn_orders = self._cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawned_order in exec_spawn_orders:
                 if spawned_order.position_id is not None:
-                    self._log.debug(f"Found spawned {repr(spawned_order.position_id)} for {fill}.", LogColor.MAGENTA)
+                    if self.debug:
+                        self._log.debug(f"Found spawned {spawned_order.position_id!r} for {fill}.", LogColor.MAGENTA)
                     # Use position ID for execution spawn
-                    return order.position_id
+                    return spawned_order.position_id
 
         # Assign new position ID
         position_id = self._pos_id_generator.generate(fill.strategy_id)
