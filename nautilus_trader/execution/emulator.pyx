@@ -739,7 +739,7 @@ cdef class OrderEmulator(Actor):
         cdef uint8_t precision = order.quantity._mem.precision
         cdef:
             list exec_spawn_orders
-            Order spawn_order
+            Order spawn_order = None
         if order.exec_spawn_id is not None:
             exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawn_order in exec_spawn_orders:
@@ -761,7 +761,7 @@ cdef class OrderEmulator(Actor):
 
             if leaves_qty._mem.raw == 0 and order.exec_spawn_id is not None:
                 self._cancel_order(matching_core, contingent_order)
-            elif order.is_closed_c() and order.exec_spawn_id is None:
+            elif order.is_closed_c() and (order.exec_spawn_id is None or order.exec_spawn_id == order.client_order_id):
                 self._cancel_order(matching_core, contingent_order)
             elif leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
                 self._update_order_quantity(contingent_order, leaves_qty)
