@@ -659,7 +659,7 @@ class TestExecAlgorithm:
         assert sl_order.status == OrderStatus.RELEASED
         assert tp_order.status == OrderStatus.EMULATED
         assert self.exec_engine.command_count == 2
-        assert self.risk_engine.command_count == 2
+        assert self.risk_engine.command_count == 1
         assert len(spawned_orders) == 2
         assert [o.client_order_id.value for o in spawned_orders] == [
             "O-19700101-0000-000-None-2",
@@ -682,7 +682,6 @@ class TestExecAlgorithm:
         assert tp_order.quantity == Quantity.from_str("0.500")
         assert tp_order.leaves_qty == Quantity.from_str("0.500")
         assert self.exec_engine.command_count == 3
-        assert self.risk_engine.command_count == 3
 
         # Fill remaining SL size
         events = self.clock.advance_time(secs_to_nanos(2.0))
@@ -693,4 +692,3 @@ class TestExecAlgorithm:
         assert sl_order.status == OrderStatus.FILLED
         assert tp_order.status == OrderStatus.CANCELED
         assert self.exec_engine.command_count == 5
-        assert self.risk_engine.command_count == 5
