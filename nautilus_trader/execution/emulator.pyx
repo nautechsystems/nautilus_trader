@@ -877,7 +877,7 @@ cdef class OrderEmulator(Actor):
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
-            self._send_risk_command(command)
+            self._send_exec_command(command)
 
     cpdef void _fill_limit_order(self, Order order):
         if order.order_type == OrderType.LIMIT:
@@ -952,7 +952,7 @@ cdef class OrderEmulator(Actor):
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
-            self._send_risk_command(command)
+            self._send_exec_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         if not self._log.is_bypassed:
