@@ -17,6 +17,7 @@ from typing import Optional
 
 from nautilus_trader.config.common import OrderEmulatorConfig
 
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.cache cimport Cache
@@ -729,9 +730,23 @@ cdef class OrderEmulator(Actor):
             if matching_core is not None:
                 matching_core.delete_order(order)
 
+        cdef Quantity quantity = order.quantity
+        cdef Quantity leaves_qty = order.leaves_qty
+
+        # Check total quantities of execution spawn sequence
+        cdef uint64_t raw_quantity = 0
+        cdef uint64_t raw_leaves_qty = 0
+        cdef uint8_t precision = order.quantity._mem.precision
+        cdef:
+            list exec_spawn_orders
+            Order spawn_order
         if order.exec_spawn_id is not None:
-            # Do not handle contingencies based on spawned execution algorithm orders
-            return
+            exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
+            for spawn_order in exec_spawn_orders:
+                raw_quantity += spawn_order.quantity._mem.raw
+                raw_leaves_qty += spawn_order.leaves_qty._mem.raw
+            quantity = Quantity.from_raw_c(raw_quantity, precision)
+            leaves_qty = Quantity.from_raw_c(raw_leaves_qty, precision)
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
@@ -744,12 +759,14 @@ cdef class OrderEmulator(Actor):
                 self._commands_submit_order.pop(order.client_order_id, None)
                 continue  # Already completed
 
-            if order.is_closed_c():
+            if leaves_qty._mem.raw == 0 and order.exec_spawn_id is not None:
                 self._cancel_order(matching_core, contingent_order)
-            elif order.quantity._mem.raw != contingent_order.quantity._mem.raw:
-                self._update_order_quantity(contingent_order, order.quantity)
-            elif order.leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
-                self._update_order_quantity(contingent_order, order.leaves_qty)
+            elif order.is_closed_c() and order.exec_spawn_id is None:
+                self._cancel_order(matching_core, contingent_order)
+            elif leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
+                self._update_order_quantity(contingent_order, leaves_qty)
+            elif quantity._mem.raw != contingent_order.quantity._mem.raw:
+                self._update_order_quantity(contingent_order, quantity)
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
         # Generate event
@@ -860,7 +877,7 @@ cdef class OrderEmulator(Actor):
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
-            self._send_exec_command(command)
+            self._send_risk_command(command)
 
     cpdef void _fill_limit_order(self, Order order):
         if order.order_type == OrderType.LIMIT:
@@ -935,7 +952,7 @@ cdef class OrderEmulator(Actor):
         if order.exec_algorithm_id is not None:
             self._send_algo_command(command)
         else:
-            self._send_exec_command(command)
+            self._send_risk_command(command)
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         if not self._log.is_bypassed:
