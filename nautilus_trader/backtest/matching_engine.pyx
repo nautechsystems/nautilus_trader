@@ -1695,14 +1695,14 @@ cdef class OrderMatchingEngine:
                 assert oco_order is not None, "OCO order not found"
                 if oco_order.is_closed_c():
                     continue
-                if oco_order.status == (OrderStatus.EMULATED, OrderStatus.RELEASED):
+                if oco_order.status in (OrderStatus.EMULATED, OrderStatus.RELEASED):
                     continue  # Order is not on the exchange yet
                 self.cancel_order(oco_order)
         elif order.contingency_type == ContingencyType.OUO:
             for client_order_id in order.linked_order_ids:
                 ouo_order = self.cache.order(client_order_id)
                 assert ouo_order is not None, "OUO order not found"
-                if ouo_order.status == (OrderStatus.EMULATED, OrderStatus.RELEASED):
+                if ouo_order.status in (OrderStatus.EMULATED, OrderStatus.RELEASED):
                     continue  # Order is not on the exchange yet
                 if order.is_closed_c() and ouo_order.is_open_c():
                     self.cancel_order(ouo_order)
@@ -1919,7 +1919,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
-            if ouo_order.status == (OrderStatus.EMULATED, OrderStatus.RELEASED):
+            if ouo_order.status in (OrderStatus.EMULATED, OrderStatus.RELEASED):
                 continue  # Order is not on the exchange yet
             if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
                 continue
@@ -1941,7 +1941,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
-            if contingent_order.status == (OrderStatus.EMULATED, OrderStatus.RELEASED):
+            if contingent_order.status in (OrderStatus.EMULATED, OrderStatus.RELEASED):
                 continue  # Order is not on the exchange yet
             if not contingent_order.is_closed_c():
                 self.cancel_order(contingent_order, cancel_contingencies=False)
