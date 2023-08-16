@@ -22,7 +22,10 @@ this change.
 ### Fixes
 - Fixed execution algorithm `position_id` assignment in `HEDGING` mode
 - Fixed `OrderMatchingEngine` processing of emulated orders
+- Fixed `OrderEmulator` processing of exec algorithm orders
+- Fixed `ExecutionEngine` processing of exec algorithm orders (exec spawn IDs)
 - Fixed `Cache` emulated order indexing (were not being properly discarded from the set when closed)
+- Fixed a connection issue with the IB client, thanks @dkharrat and @rsmb7z
 
 ---
 
