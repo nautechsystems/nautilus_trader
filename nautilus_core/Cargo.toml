@@ -21,7 +21,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
-anyhow = "1.0.72"
+anyhow = "1.0.74"
 chrono = "0.4.26"
 futures = "0.3.28"
 pyo3 = "0.19.2"
@@ -32,9 +32,9 @@ rmp-serde = "1.1.2"
 rust_decimal = "1.31.0"
 rust_decimal_macros = "1.31.0"
 serde = { version = "1.0.183", features = ["derive"] }
-serde_json = "1.0.104"
+serde_json = "1.0.105"
 strum = { version = "0.25.0", features = ["derive"] }
-thiserror = "1.0.44"
+thiserror = "1.0.46"
 tracing = "0.1.37"
 tokio = { version = "1.31.0", features = ["full"] }
 ustr = { git = "https://github.com/anderslanglands/ustr", features = ["serde"] }
