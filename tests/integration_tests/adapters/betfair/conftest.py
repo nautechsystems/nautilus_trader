@@ -27,15 +27,15 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 @pytest.fixture()
 def instrument():
-    return TestInstrumentProvider.betting_instrument(selection_handicap="0.0")
+    return betting_instrument(selection_handicap="0.0")
 
 
 @pytest.fixture()

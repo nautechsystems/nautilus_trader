@@ -60,11 +60,12 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument_handicap
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
@@ -179,7 +180,7 @@ async def test_get_account_funds(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_place_orders(betfair_client):
-    instrument = TestInstrumentProvider.betting_instrument()
+    instrument = betting_instrument()
     limit_order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
         order_side=OrderSide.BUY,
@@ -226,7 +227,7 @@ async def test_place_orders(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_place_orders_handicap(betfair_client):
-    instrument = TestInstrumentProvider.betting_instrument_handicap()
+    instrument = betting_instrument_handicap()
     limit_order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
         order_side=OrderSide.BUY,
@@ -273,7 +274,7 @@ async def test_place_orders_handicap(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_place_orders_market_on_close(betfair_client):
-    instrument = TestInstrumentProvider.betting_instrument()
+    instrument = betting_instrument()
     market_on_close_order = TestExecStubs.market_order(
         order_side=OrderSide.BUY,
         time_in_force=TimeInForce.AT_THE_OPEN,
@@ -326,7 +327,7 @@ async def test_place_orders_market_on_close(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_replace_orders_single(betfair_client):
-    instrument = TestInstrumentProvider.betting_instrument()
+    instrument = betting_instrument()
     update_order_command = TestCommandStubs.modify_order_command(
         instrument_id=instrument.id,
         client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
@@ -360,7 +361,7 @@ async def test_replace_orders_single(betfair_client):
 
 # @pytest.mark.asyncio()
 # async def test_replace_orders_multi():
-#     instrument = TestInstrumentProvider.betting_instrument()
+#     instrument = betting_instrument()
 #     update_order_command = TestCommandStubs.modify_order_command(
 #         instrument_id=instrument.id,
 #         price=betfair_float_to_price(2.0),
@@ -384,7 +385,7 @@ async def test_replace_orders_single(betfair_client):
 
 @pytest.mark.asyncio()
 async def test_cancel_orders(betfair_client):
-    instrument = TestInstrumentProvider.betting_instrument()
+    instrument = betting_instrument()
     cancel_command = TestCommandStubs.cancel_order_command(
         venue_order_id=VenueOrderId("228302937743"),
     )

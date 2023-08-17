@@ -55,11 +55,11 @@ from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
@@ -89,7 +89,7 @@ async def _setup_order_state(
                 venue_order_id = VenueOrderId(order_id)
                 client_order_id = ClientOrderId(order_id)
                 if not cache.instrument(instrument_id):
-                    instrument = TestInstrumentProvider.betting_instrument(
+                    instrument = betting_instrument(
                         market_id=oc.id,
                         selection_id=str(orc.id),
                         selection_handicap=str(orc.hc),

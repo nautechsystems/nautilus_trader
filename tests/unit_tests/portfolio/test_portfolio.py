@@ -25,7 +25,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
-from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import QuoteTick
@@ -63,7 +62,6 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestPortfolio:
@@ -108,7 +106,6 @@ class TestPortfolio:
         self.cache.add_instrument(BTCUSDT_BINANCE)
         self.cache.add_instrument(BTCUSD_BITMEX)
         self.cache.add_instrument(ETHUSD_BITMEX)
-        self.cache.add_instrument(BETTING_INSTRUMENT)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange, Act, Assert
@@ -446,16 +443,27 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
+        account_id = AccountId("BINANCE-01234")
         state = AccountState(
-            account_id=AccountId("BETFAIR-01234"),
+            account_id=account_id,
             account_type=AccountType.MARGIN,
-            base_currency=GBP,
+            base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
                 AccountBalance(
-                    total=Money(1000, GBP),
-                    free=Money(1000, GBP),
-                    locked=Money(0, GBP),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
+                ),
+                AccountBalance(
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
+                ),
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
                 ),
             ],
             margins=[],
@@ -465,13 +473,11 @@ class TestPortfolio:
             ts_init=0,
         )
 
-        AccountFactory.register_calculated_account("BETFAIR")
-
         self.portfolio.update_account(state)
 
         # Create a limit order
         order1 = self.order_factory.limit(
-            BETTING_INSTRUMENT.id,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_str("100"),
             Price.from_str("0.5"),
@@ -489,7 +495,7 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_init(BETFAIR)[BETTING_INSTRUMENT.id] == Money(200, GBP)
+        assert self.portfolio.margins_init(BINANCE)[BTCUSDT_BINANCE.id] == Money(0.1, USDT)
 
     def test_update_positions(self):
         # Arrange
