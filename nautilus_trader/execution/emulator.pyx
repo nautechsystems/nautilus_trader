@@ -656,56 +656,56 @@ cdef class OrderEmulator(Actor):
             Order spawned_order
             Order primary_order
             list exec_spawn_orders
-            uint64_t raw_filled_qty
-            Quantity filled_qty
+
+            Quantity parent_quantity
+            Quantity parent_leaves_qty
+            uint64_t raw_quantity = 0
+            uint64_t raw_filled_qty = 0
+            uint8_t precision = order.quantity._mem.precision
+            Order spawn_order = None
         if order.contingency_type == ContingencyType.OTO:
             assert order.linked_order_ids
             position_id = self.cache.position_id(order.client_order_id)
             client_id = self.cache.client_id(order.client_order_id)
-            for client_order_id in order.linked_order_ids:
-                child_order = self.cache.order(client_order_id)
-                assert child_order, f"Cannot find child order for {repr(client_order_id)}"
-                if child_order.is_closed_c() or child_order.status == OrderStatus.RELEASED:
-                    continue
-                if not child_order.client_order_id in self._commands_submit_order:
-                    self._create_new_submit_order(
-                        order=child_order,
-                        position_id=position_id,
-                        client_id=client_id,
-                    )
-                    continue
 
-                if child_order.position_id is None:
-                    child_order.position_id = position_id
+            parent_quantity = order.quantity
+            parent_filled_qty = order.filled_qty
 
-                # Check if execution algorithm spawned order (only update based on primary)
-                if order.exec_spawn_id is None:
-                    return
+            # Check total quantities of execution spawn sequence
+            if order.exec_spawn_id is not None:
+                # Spawn orders include the original primary order
+                exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
+                for spawn_order in exec_spawn_orders:
+                    raw_quantity += spawn_order.quantity._mem.raw
+                    raw_filled_qty += spawn_order.filled_qty._mem.raw
+                parent_quantity = Quantity.from_raw_c(raw_quantity, precision)
+                parent_filled_qty = Quantity.from_raw_c(raw_filled_qty, precision)
 
                 primary_order = self.cache.order(order.exec_spawn_id)
                 if primary_order is None:
                     self._log.error(f"Cannot find primary order {repr(order.exec_spawn_id)}.")
                     return
 
-                # Check if primary already pending cancel or completed (no need to update)
-                if primary_order.status == OrderStatus.PENDING_CANCEL or primary_order.is_closed_c():
-                    return
+            for client_order_id in order.linked_order_ids:
+                child_order = self.cache.order(client_order_id)
+                assert child_order, f"Cannot find child order for {repr(client_order_id)}"
+                if child_order.is_closed_c() or child_order.status == OrderStatus.RELEASED:
+                    continue
 
-                raw_filled_qty = 0
-                filled_qty = None
+                if child_order.position_id is None:
+                    child_order.position_id = position_id
 
-                # Check total size of execution spawn sequence
-                exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
-                for spawned_order in exec_spawn_orders:
-                    raw_filled_qty += spawned_order.filled_qty._mem.raw
-                raw_filled_qty += order.filled_qty._mem.raw
-                if raw_filled_qty != child_order.quantity._mem.raw:
-                    filled_qty = Quantity.from_raw_c(raw_filled_qty, order.filled_qty._mem.precision)
-                    self._log.info(
-                        f"Updating quantity for {child_order} to {filled_qty}.",
-                        LogColor.MAGENTA,
+                if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
+                    self._update_order_quantity(child_order, parent_filled_qty)
+                elif parent_quantity._mem.raw != child_order.quantity._mem.raw:
+                    self._update_order_quantity(child_order, parent_quantity)
+
+                if not child_order.client_order_id in self._commands_submit_order:
+                    self._create_new_submit_order(
+                        order=child_order,
+                        position_id=position_id,
+                        client_id=client_id,
                     )
-                    self._update_order_quantity(child_order, filled_qty)
         elif order.contingency_type == ContingencyType.OCO:
             # Cancel all OCO orders
             for client_order_id in order.linked_order_ids:
@@ -741,6 +741,7 @@ cdef class OrderEmulator(Actor):
             list exec_spawn_orders
             Order spawn_order = None
         if order.exec_spawn_id is not None:
+            # Spawn orders include the original primary order
             exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawn_order in exec_spawn_orders:
                 raw_quantity += spawn_order.quantity._mem.raw
@@ -769,6 +770,7 @@ cdef class OrderEmulator(Actor):
                 self._update_order_quantity(contingent_order, quantity)
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
+        self._log.debug(f"Update contingency order {order.client_order_id!r} to {new_quantity}.")
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
