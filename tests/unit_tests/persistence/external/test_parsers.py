@@ -36,6 +36,7 @@ from nautilus_trader.test_kit.stubs.data import TestInstrumentProvider
 from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 pytestmark = pytest.mark.skip(reason="WIP pending catalog refactor")
@@ -74,7 +75,7 @@ class TestPersistenceParsers:
                     yield obj.from_dict(values)
 
         provider = BetfairInstrumentProvider.from_instruments(
-            [TestInstrumentProvider.betting_instrument()],
+            [betting_instrument()],
         )
         block = BetfairDataProvider.badly_formatted_log()
         reader = ByteReader(block_parser=block_parser, instrument_provider=provider)

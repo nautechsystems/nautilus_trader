@@ -47,7 +47,6 @@ ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
 ES_FUTURE = TestInstrumentProvider.es_future()
 AAPL_OPTION = TestInstrumentProvider.aapl_option()
-NFL_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestInstrument:
@@ -449,48 +448,3 @@ class TestInstrument:
     def test_option_attributes(self):
         assert AAPL_OPTION.underlying == "AAPL"
         assert AAPL_OPTION.kind == option_kind_from_str("CALL")
-
-
-class TestBettingInstrument:
-    def setup(self):
-        self.instrument = TestInstrumentProvider.betting_instrument()
-
-    def test_notional_value(self):
-        notional = self.instrument.notional_value(
-            quantity=Quantity.from_int(100),
-            price=Price.from_str("0.5"),
-            use_quote_for_inverse=False,
-        ).as_decimal()
-        # We are long 100 at 0.5 probability, aka 2.0 in odds terms
-        assert notional == Decimal("200.0")
-
-    @pytest.mark.parametrize(
-        ("value", "n", "expected"),
-        [
-            (101, 0, "110"),
-        ],
-    )
-    def test_next_ask_price(self, value, n, expected):
-        result = self.instrument.next_ask_price(value, num_ticks=n)
-        expected = Price.from_str(expected)
-        assert result == expected
-
-    @pytest.mark.parametrize(
-        ("value", "n", "expected"),
-        [
-            (1.999, 0, "1.99"),
-        ],
-    )
-    def test_next_bid_price(self, value, n, expected):
-        result = self.instrument.next_bid_price(value, num_ticks=n)
-        expected = Price.from_str(expected)
-        assert result == expected
-
-    def test_min_max_price(self):
-        assert self.instrument.min_price == Price.from_str("1.01")
-        assert self.instrument.max_price == Price.from_str("1000")
-
-    def test_to_dict(self):
-        instrument = TestInstrumentProvider.betting_instrument()
-        data = instrument.to_dict(instrument)
-        assert data["venue_name"] == "BETFAIR"

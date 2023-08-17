@@ -31,8 +31,8 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.objects import Money
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 if __name__ == "__main__":
@@ -54,12 +54,12 @@ if __name__ == "__main__":
 
     # Add instruments
     instruments = [
-        TestInstrumentProvider.betting_instrument(
+        betting_instrument(
             market_id="1.166811431",
             selection_id="19248890",
             selection_handicap="0.0",
         ),
-        TestInstrumentProvider.betting_instrument(
+        betting_instrument(
             market_id="1.166811431",
             selection_id="38848248",
             selection_handicap="0.0",

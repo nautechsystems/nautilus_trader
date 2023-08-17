@@ -73,7 +73,6 @@ BINANCE = Venue("BINANCE")
 XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
-BETFAIR_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestDataEngine:
@@ -1160,7 +1159,7 @@ class TestDataEngine:
         # Arrange
         self.data_engine.register_client(self.betfair)
         self.betfair.start()
-        self.data_engine.process(BETFAIR_INSTRUMENT)  # <-- add necessary instrument for test
+        self.data_engine.process(ETHUSDT_BINANCE)  # <-- add necessary instrument for test
 
         subscribe = Subscribe(
             client_id=ClientId(BETFAIR.value),
@@ -1168,7 +1167,7 @@ class TestDataEngine:
             data_type=DataType(
                 OrderBookDelta,
                 metadata={
-                    "instrument_id": BETFAIR_INSTRUMENT.id,
+                    "instrument_id": ETHUSDT_BINANCE.id,
                     "book_type": 2,
                     "depth": 25,
                     "interval_ms": 1000,
@@ -1181,17 +1180,17 @@ class TestDataEngine:
         self.data_engine.execute(subscribe)
 
         deltas = OrderBookDeltas(
-            instrument_id=BETFAIR_INSTRUMENT.id,
-            deltas=[TestDataStubs.order_book_delta(instrument_id=BETFAIR_INSTRUMENT.id)],
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[TestDataStubs.order_book_delta(instrument_id=ETHUSDT_BINANCE.id)],
         )
 
         # Act
         self.data_engine.process(deltas)
 
         # Assert
-        cached_book = self.cache.order_book(BETFAIR_INSTRUMENT.id)
+        cached_book = self.cache.order_book(ETHUSDT_BINANCE.id)
         assert isinstance(cached_book, OrderBook)
-        assert cached_book.instrument_id == BETFAIR_INSTRUMENT.id
+        assert cached_book.instrument_id == ETHUSDT_BINANCE.id
         assert cached_book.best_bid_price() == 100
 
     def test_execute_subscribe_ticker(self):
