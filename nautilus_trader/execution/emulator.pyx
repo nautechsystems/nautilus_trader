@@ -766,8 +766,8 @@ cdef class OrderEmulator(Actor):
                 self._cancel_order(matching_core, contingent_order)
             elif leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
                 self._update_order_quantity(contingent_order, leaves_qty)
-            elif quantity._mem.raw != contingent_order.quantity._mem.raw:
-                self._update_order_quantity(contingent_order, quantity)
+            # elif quantity._mem.raw != contingent_order.quantity._mem.raw:
+            #     self._update_order_quantity(contingent_order, quantity)
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
         self._log.debug(f"Update contingency order {order.client_order_id!r} to {new_quantity}.")
