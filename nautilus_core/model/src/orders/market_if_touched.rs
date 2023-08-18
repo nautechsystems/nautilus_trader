@@ -21,18 +21,18 @@ use std::{
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore};
+use super::base::{Order, OrderCore, OrderError};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -43,7 +43,6 @@ pub struct MarketIfTouchedOrder {
     pub trigger_type: TriggerType,
     pub expire_time: Option<UnixNanos>,
     pub display_qty: Option<Quantity>,
-    pub emulation_trigger: Option<TriggerType>,
     pub trigger_instrument_id: Option<InstrumentId>,
     pub is_triggered: bool,
     pub ts_triggered: Option<UnixNanos>,
@@ -91,6 +90,7 @@ impl MarketIfTouchedOrder {
                 time_in_force,
                 reduce_only,
                 quote_quantity,
+                emulation_trigger,
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -106,7 +106,6 @@ impl MarketIfTouchedOrder {
             trigger_type,
             expire_time,
             display_qty,
-            emulation_trigger,
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
@@ -176,6 +175,14 @@ impl Order for MarketIfTouchedOrder {
 
     fn instrument_id(&self) -> InstrumentId {
         self.instrument_id
+    }
+
+    fn symbol(&self) -> Symbol {
+        self.instrument_id.symbol
+    }
+
+    fn venue(&self) -> Venue {
+        self.instrument_id.venue
     }
 
     fn client_order_id(&self) -> ClientOrderId {
@@ -341,6 +348,27 @@ impl Order for MarketIfTouchedOrder {
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
     }
+
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event)
+        };
+        self.core.apply(event)?;
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
+        if event.price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+
+        if let Some(trigger_price) = event.trigger_price {
+            self.trigger_price = trigger_price;
+        }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
+    }
 }
 
 impl From<OrderInitialized> for MarketIfTouchedOrder {
@@ -362,8 +390,8 @@ impl From<OrderInitialized> for MarketIfTouchedOrder {
                 .expect("Error initializing order: `trigger_type` was `None` for `MarketIfTouchedOrder`"),
             event.time_in_force,
             event.expire_time,
-            event.reduce_only != 0,    // Temporary hack
-            event.quote_quantity != 0, // Temporary hack
+            event.reduce_only,
+            event.quote_quantity,
             event.display_qty,
             event.emulation_trigger,
             event.trigger_instrument_id,

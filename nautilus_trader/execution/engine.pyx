@@ -649,7 +649,7 @@ cdef class ExecutionEngine(Component):
         cdef StrategyId strategy_id
         for strategy_id, count in counts.items():
             self._pos_id_generator.set_count(strategy_id, count)
-            self._log.info(f"Set PositionId count for {repr(strategy_id)} to {count}.")
+            self._log.info(f"Set PositionId count for {strategy_id!r} to {count}.")
 
     cpdef Price _last_px_for_conversion(self, InstrumentId instrument_id, OrderSide order_side):
         cdef Price last_px = None
@@ -844,14 +844,14 @@ cdef class ExecutionEngine(Component):
         cdef Order order = self._cache.order(event.client_order_id)
         if order is None:
             self._log.warning(
-                f"Order with {repr(event.client_order_id)} "
+                f"Order with {event.client_order_id!r} "
                 f"not found in the cache to apply {event}."
             )
 
             if event.venue_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"{repr(event.client_order_id)} not found in the cache "
+                    f"{event.client_order_id!r} not found in the cache "
                     f"with no `VenueOrderId`."
                 )
                 return  # Cannot process event further
@@ -861,7 +861,7 @@ cdef class ExecutionEngine(Component):
             if client_order_id is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"{event.client_order_id!r} and {event.venue_order_id!r} "
                     f"not found in the cache."
                 )
                 return  # Cannot process event further
@@ -871,7 +871,7 @@ cdef class ExecutionEngine(Component):
             if order is None:
                 self._log.error(
                     f"Cannot apply event to any order: "
-                    f"{repr(event.client_order_id)} and {repr(event.venue_order_id)} "
+                    f"{event.client_order_id!r} and {event.venue_order_id!r} "
                     f"not found in the cache."
                 )
                 return  # Cannot process event further
@@ -879,7 +879,7 @@ cdef class ExecutionEngine(Component):
             # Set the correct ClientOrderId for the event
             event.set_client_order_id(client_order_id)
             self._log.info(
-                f"Order with {repr(client_order_id)} was found in the cache.",
+                f"Order with {client_order_id!r} was found in the cache.",
                 color=LogColor.GREEN,
             )
 
@@ -911,29 +911,22 @@ cdef class ExecutionEngine(Component):
         cdef PositionId position_id = self._cache.position_id(fill.client_order_id)
         if self.debug:
             self._log.debug(
-                f"Determining position ID for {repr(fill.client_order_id)}, "
-                f"position_id={repr(position_id)}.",
+                f"Determining position ID for {fill.client_order_id!r}, "
+                f"position_id={position_id!r}.",
                 LogColor.MAGENTA,
             )
         if position_id is not None:
             if fill.position_id is not None and fill.position_id != position_id:
                 self._log.error(
                     "Incorrect position ID assigned to fill: "
-                    f"cached={repr(position_id)}, assigned={repr(fill.position_id)}. "
+                    f"cached={position_id!r}, assigned={fill.position_id!r}. "
                     "re-assigning from cache.",
                 )
             # Assign position ID to fill
             fill.position_id = position_id
             if self.debug:
-                self._log.debug(f"Assigned {repr(position_id)} to {fill}.", LogColor.MAGENTA)
+                self._log.debug(f"Assigned {position_id!r} to {fill}.", LogColor.MAGENTA)
             return
-
-        # TODO(cs): Optimize away the need to fetch order from cache
-        cdef Order order = self._cache.order(fill.client_order_id)
-        if order is None:
-            raise RuntimeError(
-                f"Order for {fill.client_order_id!r} not found to determine position ID.",
-            )
 
         if oms_type == OmsType.HEDGING:
             position_id = self._determine_hedging_position_id(fill)
@@ -946,6 +939,13 @@ cdef class ExecutionEngine(Component):
             )
 
         fill.position_id = position_id
+
+        # TODO(cs): Optimize away the need to fetch order from cache
+        cdef Order order = self._cache.order(fill.client_order_id)
+        if order is None:
+            raise RuntimeError(
+                f"Order for {fill.client_order_id!r} not found to determine position ID.",
+            )
 
         # Check execution algorithm position ID
         if order.exec_algorithm_id is None or order.exec_spawn_id is None:
@@ -961,10 +961,12 @@ cdef class ExecutionEngine(Component):
                 primary.client_order_id,
                 primary.strategy_id,
             )
-            self._log.debug(f"Assigned primary order {repr(position_id)}.", LogColor.MAGENTA)
+            self._log.debug(f"Assigned primary order {position_id!r}.", LogColor.MAGENTA)
 
     cpdef PositionId _determine_hedging_position_id(self, OrderFilled fill):
         if fill.position_id is not None:
+            if self.debug:
+                self._log.debug(f"Already had a position ID of: {fill.position_id!r}", LogColor.MAGENTA)
             # Already assigned
             return fill.position_id
 
@@ -981,14 +983,15 @@ cdef class ExecutionEngine(Component):
             exec_spawn_orders = self._cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawned_order in exec_spawn_orders:
                 if spawned_order.position_id is not None:
-                    self._log.debug(f"Found spawned {repr(spawned_order.position_id)} for {fill}.", LogColor.MAGENTA)
+                    if self.debug:
+                        self._log.debug(f"Found spawned {spawned_order.position_id!r} for {fill}.", LogColor.MAGENTA)
                     # Use position ID for execution spawn
-                    return order.position_id
+                    return spawned_order.position_id
 
         # Assign new position ID
         position_id = self._pos_id_generator.generate(fill.strategy_id)
         if self.debug:
-            self._log.debug(f"Generated {repr(position_id)} for {fill}.", LogColor.MAGENTA)
+            self._log.debug(f"Generated {position_id!r} for {fill}.", LogColor.MAGENTA)
         return position_id
 
     cpdef PositionId _determine_netting_position_id(self, OrderFilled fill):
@@ -1003,7 +1006,7 @@ cdef class ExecutionEngine(Component):
         except (ValueError, KeyError) as e:
             # ValueError: Protection against invalid IDs
             # KeyError: Protection against duplicate fills
-            self._log.exception(f"Error on applying {repr(event)} to {repr(order)}", e)
+            self._log.exception(f"Error on applying {event!r} to {order!r}", e)
             return
 
         self._cache.update_order(order)
@@ -1067,7 +1070,7 @@ cdef class ExecutionEngine(Component):
                 self._cache.update_position(position)
             except KeyError as e:
                 # Protected against duplicate OrderFilled
-                self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
+                self._log.exception(f"Error on applying {fill!r} to {position!r}", e)
                 return  # Not re-raising to avoid crashing engine
 
         cdef PositionOpened event = PositionOpened.create_c(
@@ -1089,7 +1092,7 @@ cdef class ExecutionEngine(Component):
             position.apply(fill)
         except KeyError as e:
             # Protected against duplicate OrderFilled
-            self._log.exception(f"Error on applying {repr(fill)} to {repr(position)}", e)
+            self._log.exception(f"Error on applying {fill!r} to {position!r}", e)
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)

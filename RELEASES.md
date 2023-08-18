@@ -12,6 +12,7 @@ this change.
 - Added `ActorExecutor` with `Actor` API for creating and running threaded tasks in live environments
 - Added `OrderEmulated` event and associated `OrderStatus.EMULATED` enum variant
 - Added `OrderReleased` event and associated `OrderStatus.RELEASED` enum variant
+- Added `BacktestVenueConfig.use_position_ids` option (default true to retain current behavior)
 - Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
@@ -21,6 +22,10 @@ this change.
 ### Fixes
 - Fixed execution algorithm `position_id` assignment in `HEDGING` mode
 - Fixed `OrderMatchingEngine` processing of emulated orders
+- Fixed `OrderEmulator` processing of exec algorithm orders
+- Fixed `ExecutionEngine` processing of exec algorithm orders (exec spawn IDs)
+- Fixed `Cache` emulated order indexing (were not being properly discarded from the set when closed)
+- Fixed a connection issue with the IB client, thanks @dkharrat and @rsmb7z
 
 ---
 

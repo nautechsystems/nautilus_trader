@@ -104,7 +104,7 @@ impl<'de> Deserialize<'de> for InstrumentId {
 #[pymethods]
 impl InstrumentId {
     #[getter]
-    pub fn value(&self) -> String {
+    fn value(&self) -> String {
         self.to_string()
     }
 }

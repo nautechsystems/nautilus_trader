@@ -27,13 +27,14 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
+    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -77,6 +78,7 @@ impl MarketOrder {
                 time_in_force,
                 reduce_only,
                 quote_quantity,
+                None, // Emulation trigger
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -148,6 +150,14 @@ impl Order for MarketOrder {
 
     fn instrument_id(&self) -> InstrumentId {
         self.instrument_id
+    }
+
+    fn symbol(&self) -> Symbol {
+        self.instrument_id.symbol
+    }
+
+    fn venue(&self) -> Venue {
+        self.instrument_id.venue
     }
 
     fn client_order_id(&self) -> ClientOrderId {
@@ -313,6 +323,26 @@ impl Order for MarketOrder {
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
     }
+
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event)
+        };
+        self.core.apply(event)?;
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
+        if event.price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+        if event.trigger_price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
+    }
 }
 
 impl From<OrderInitialized> for MarketOrder {
@@ -325,8 +355,8 @@ impl From<OrderInitialized> for MarketOrder {
             event.order_side,
             event.quantity,
             event.time_in_force,
-            event.reduce_only != 0,    // Temporary hack
-            event.quote_quantity != 0, // Temporary hack
+            event.reduce_only,
+            event.quote_quantity,
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,

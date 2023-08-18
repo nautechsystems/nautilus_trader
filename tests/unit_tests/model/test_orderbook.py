@@ -92,9 +92,8 @@ class TestOrderBook:
             },
         ]
         updates = [OrderBookDelta.from_dict(upd) for upd in raw_updates]
-        # Act
 
-        # Assert
+        # Act, Assert
         for update in updates[:2]:
             book.apply_delta(update)
             copy.deepcopy(book)

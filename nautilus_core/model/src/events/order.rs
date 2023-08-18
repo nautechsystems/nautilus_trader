@@ -34,7 +34,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum OrderEvent {
     OrderInitialized(Box<OrderInitialized>),
     OrderDenied(OrderDenied),
@@ -53,6 +53,77 @@ pub enum OrderEvent {
     OrderUpdated(OrderUpdated),
     OrderPartiallyFilled(OrderFilled),
     OrderFilled(OrderFilled),
+}
+
+impl OrderEvent {
+    #[must_use]
+    pub fn client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::OrderInitialized(e) => e.client_order_id,
+            Self::OrderDenied(e) => e.client_order_id,
+            Self::OrderEmulated(e) => e.client_order_id,
+            Self::OrderReleased(e) => e.client_order_id,
+            Self::OrderSubmitted(e) => e.client_order_id,
+            Self::OrderAccepted(e) => e.client_order_id,
+            Self::OrderRejected(e) => e.client_order_id,
+            Self::OrderCanceled(e) => e.client_order_id,
+            Self::OrderExpired(e) => e.client_order_id,
+            Self::OrderTriggered(e) => e.client_order_id,
+            Self::OrderPendingUpdate(e) => e.client_order_id,
+            Self::OrderPendingCancel(e) => e.client_order_id,
+            Self::OrderModifyRejected(e) => e.client_order_id,
+            Self::OrderCancelRejected(e) => e.client_order_id,
+            Self::OrderUpdated(e) => e.client_order_id,
+            Self::OrderPartiallyFilled(e) => e.client_order_id,
+            Self::OrderFilled(e) => e.client_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn strategy_id(&self) -> StrategyId {
+        match self {
+            Self::OrderInitialized(e) => e.strategy_id,
+            Self::OrderDenied(e) => e.strategy_id,
+            Self::OrderEmulated(e) => e.strategy_id,
+            Self::OrderReleased(e) => e.strategy_id,
+            Self::OrderSubmitted(e) => e.strategy_id,
+            Self::OrderAccepted(e) => e.strategy_id,
+            Self::OrderRejected(e) => e.strategy_id,
+            Self::OrderCanceled(e) => e.strategy_id,
+            Self::OrderExpired(e) => e.strategy_id,
+            Self::OrderTriggered(e) => e.strategy_id,
+            Self::OrderPendingUpdate(e) => e.strategy_id,
+            Self::OrderPendingCancel(e) => e.strategy_id,
+            Self::OrderModifyRejected(e) => e.strategy_id,
+            Self::OrderCancelRejected(e) => e.strategy_id,
+            Self::OrderUpdated(e) => e.strategy_id,
+            Self::OrderPartiallyFilled(e) => e.strategy_id,
+            Self::OrderFilled(e) => e.strategy_id,
+        }
+    }
+
+    #[must_use]
+    pub fn ts_event(&self) -> UnixNanos {
+        match self {
+            Self::OrderInitialized(e) => e.ts_event,
+            Self::OrderDenied(e) => e.ts_event,
+            Self::OrderEmulated(e) => e.ts_event,
+            Self::OrderReleased(e) => e.ts_event,
+            Self::OrderSubmitted(e) => e.ts_event,
+            Self::OrderAccepted(e) => e.ts_event,
+            Self::OrderRejected(e) => e.ts_event,
+            Self::OrderCanceled(e) => e.ts_event,
+            Self::OrderExpired(e) => e.ts_event,
+            Self::OrderTriggered(e) => e.ts_event,
+            Self::OrderPendingUpdate(e) => e.ts_event,
+            Self::OrderPendingCancel(e) => e.ts_event,
+            Self::OrderModifyRejected(e) => e.ts_event,
+            Self::OrderCancelRejected(e) => e.ts_event,
+            Self::OrderUpdated(e) => e.ts_event,
+            Self::OrderPartiallyFilled(e) => e.ts_event,
+            Self::OrderFilled(e) => e.ts_event,
+        }
+    }
 }
 
 #[repr(C)]
@@ -75,9 +146,9 @@ pub struct OrderInitialized {
     pub trailing_offset_type: Option<TrailingOffsetType>,
     pub time_in_force: TimeInForce,
     pub expire_time: Option<UnixNanos>,
-    pub post_only: u8,
-    pub reduce_only: u8,
-    pub quote_quantity: u8,
+    pub post_only: bool,
+    pub reduce_only: bool,
+    pub quote_quantity: bool,
     pub display_qty: Option<Quantity>,
     pub emulation_trigger: Option<TriggerType>,
     pub trigger_instrument_id: Option<InstrumentId>,
@@ -92,7 +163,7 @@ pub struct OrderInitialized {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 impl Default for OrderInitialized {

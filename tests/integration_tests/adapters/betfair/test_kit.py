@@ -36,6 +36,7 @@ from betfair_parser.spec.streaming.ocm import OrderChanges
 from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
+from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.historic import make_betfair_reader
@@ -768,3 +769,60 @@ class BetfairDataProvider:
     @staticmethod
     def badly_formatted_log():
         return open(RESOURCES_PATH / "badly_formatted.txt", "rb").read()
+
+
+def betting_instrument(
+    market_id: str = "1.179082386",
+    selection_id: str = "50214",
+    selection_handicap: Optional[str] = None,
+) -> BettingInstrument:
+    return BettingInstrument(
+        venue_name=BETFAIR_VENUE.value,
+        betting_type="ODDS",
+        competition_id="12282733",
+        competition_name="NFL",
+        event_country_code="GB",
+        event_id="29678534",
+        event_name="NFL",
+        event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+        event_type_id="6423",
+        event_type_name="American Football",
+        market_id=market_id,
+        market_name="AFC Conference Winner",
+        market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+        market_type="SPECIAL",
+        selection_handicap=selection_handicap,
+        selection_id=selection_id,
+        selection_name="Kansas City Chiefs",
+        currency="GBP",
+        tick_scheme_name=BETFAIR_TICK_SCHEME.name,
+        ts_event=0,
+        ts_init=0,
+    )
+
+
+def betting_instrument_handicap() -> BettingInstrument:
+    return BettingInstrument.from_dict(
+        {
+            "venue_name": "BETFAIR",
+            "event_type_id": "61420",
+            "event_type_name": "Australian Rules",
+            "competition_id": "11897406",
+            "competition_name": "AFL",
+            "event_id": "30777079",
+            "event_name": "GWS v Richmond",
+            "event_country_code": "AU",
+            "event_open_date": "2021-08-13T09:50:00+00:00",
+            "betting_type": "ASIAN_HANDICAP_DOUBLE_LINE",
+            "market_id": "1.186249896",
+            "market_name": "Handicap",
+            "market_start_time": "2021-08-13T09:50:00+00:00",
+            "market_type": "HANDICAP",
+            "selection_id": "5304641",
+            "selection_name": "GWS",
+            "selection_handicap": "-5.5",
+            "currency": "AUD",
+            "ts_event": 0,
+            "ts_init": 0,
+        },
+    )

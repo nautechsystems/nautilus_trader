@@ -101,8 +101,10 @@ cdef class SimulatedExchange:
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_position_ids : bool, default True
+        If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
-        If venue order and position IDs will be randomly generated UUID4s.
+        If all venue generated identifiers will be random UUID4's.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
 
@@ -144,6 +146,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
     ):
@@ -183,6 +186,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
+        self.use_position_ids = use_position_ids
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
         self.fill_model = fill_model
@@ -330,6 +334,7 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
+            use_position_ids=self.use_position_ids,
             use_random_ids=self.use_random_ids,
             use_reduce_only=self.use_reduce_only,
         )

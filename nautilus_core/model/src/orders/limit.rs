@@ -27,13 +27,14 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
+    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -43,7 +44,6 @@ pub struct LimitOrder {
     pub expire_time: Option<UnixNanos>,
     pub is_post_only: bool,
     pub display_qty: Option<Quantity>,
-    pub emulation_trigger: Option<TriggerType>,
     pub trigger_instrument_id: Option<InstrumentId>,
 }
 
@@ -89,6 +89,7 @@ impl LimitOrder {
                 time_in_force,
                 reduce_only,
                 quote_quantity,
+                emulation_trigger,
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -104,7 +105,6 @@ impl LimitOrder {
             expire_time,
             is_post_only: post_only,
             display_qty,
-            emulation_trigger,
             trigger_instrument_id,
         }
     }
@@ -172,6 +172,14 @@ impl Order for LimitOrder {
 
     fn instrument_id(&self) -> InstrumentId {
         self.instrument_id
+    }
+
+    fn symbol(&self) -> Symbol {
+        self.instrument_id.symbol
+    }
+
+    fn venue(&self) -> Venue {
+        self.instrument_id.venue
     }
 
     fn client_order_id(&self) -> ClientOrderId {
@@ -337,6 +345,27 @@ impl Order for LimitOrder {
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
     }
+
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event)
+        };
+        self.core.apply(event)?;
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
+        if event.trigger_price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+
+        if let Some(price) = event.price {
+            self.price = price;
+        }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
+    }
 }
 
 impl From<OrderInitialized> for LimitOrder {
@@ -353,9 +382,9 @@ impl From<OrderInitialized> for LimitOrder {
                 .expect("Error initializing order: `price` was `None` for `LimitOrder"),
             event.time_in_force,
             event.expire_time,
-            event.post_only != 0,      // Temporary hack
-            event.reduce_only != 0,    // Temporary hack
-            event.quote_quantity != 0, // Temporary hack
+            event.post_only,
+            event.reduce_only,
+            event.quote_quantity,
             event.display_qty,
             event.emulation_trigger,
             event.trigger_instrument_id,

@@ -33,17 +33,17 @@ from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 class TestBettingAccount:
     def setup(self):
         # Fixture Setup
         self.trader_id = TestIdStubs.trader_id()
-        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument = betting_instrument()
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=StrategyId("S-001"),

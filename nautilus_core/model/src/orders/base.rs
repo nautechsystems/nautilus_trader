@@ -16,6 +16,8 @@
 use std::collections::HashMap;
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
 use thiserror;
 use ustr::Ustr;
 
@@ -25,26 +27,45 @@ use crate::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderExpired,
-        OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
-        OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEvent,
+        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
-    types::{price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 #[derive(thiserror::Error, Debug)]
 pub enum OrderError {
     #[error("Invalid state transition")]
     InvalidStateTransition,
+    #[error("Invalid event for order type")]
+    InvalidOrderEvent,
     #[error("Unrecognized event")]
     UnrecognizedEvent,
+    #[error("No previous state")]
+    NoPreviousState,
 }
+
+const VALID_STOP_ORDER_TYPES: &[OrderType] = &[
+    OrderType::StopMarket,
+    OrderType::StopLimit,
+    OrderType::MarketIfTouched,
+    OrderType::LimitIfTouched,
+];
+
+const VALID_LIMIT_ORDER_TYPES: &[OrderType] = &[
+    OrderType::Limit,
+    OrderType::StopLimit,
+    OrderType::LimitIfTouched,
+    OrderType::MarketIfTouched,
+];
 
 impl OrderStatus {
     #[rustfmt::skip]
@@ -121,6 +142,8 @@ pub trait Order {
     fn trader_id(&self) -> TraderId;
     fn strategy_id(&self) -> StrategyId;
     fn instrument_id(&self) -> InstrumentId;
+    fn symbol(&self) -> Symbol;
+    fn venue(&self) -> Venue;
     fn client_order_id(&self) -> ClientOrderId;
     fn venue_order_id(&self) -> Option<VenueOrderId>;
     fn position_id(&self) -> Option<PositionId>;
@@ -160,8 +183,10 @@ pub trait Order {
     fn ts_init(&self) -> UnixNanos;
     fn ts_last(&self) -> UnixNanos;
 
-    fn events(&self) -> Vec<&OrderEvent>;
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError>;
+    fn update(&mut self, event: &OrderUpdated);
 
+    fn events(&self) -> Vec<&OrderEvent>;
     fn last_event(&self) -> &OrderEvent {
         // Safety: `Order` specification guarantees at least one event (`OrderInitialized`)
         self.events().last().unwrap()
@@ -195,6 +220,18 @@ pub trait Order {
         self.emulation_trigger().is_some()
     }
 
+    fn is_primary(&self) -> bool {
+        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
+        self.exec_algorithm_id().is_some()
+            && self.client_order_id() == self.exec_spawn_id().unwrap()
+    }
+
+    fn is_secondary(&self) -> bool {
+        // TODO: Guarantee `exec_spawn_id` is some if `exec_algorithm_id` is some
+        self.exec_algorithm_id().is_some()
+            && self.client_order_id() != self.exec_spawn_id().unwrap()
+    }
+
     fn is_contingency(&self) -> bool {
         self.contingency_type().is_some()
     }
@@ -220,6 +257,10 @@ pub trait Order {
                     | OrderStatus::PendingUpdate
                     | OrderStatus::PartiallyFilled
             )
+    }
+
+    fn is_canceled(&self) -> bool {
+        self.status() == OrderStatus::Canceled
     }
 
     fn is_closed(&self) -> bool {
@@ -268,9 +309,9 @@ where
             trigger_type: order.trigger_type(),
             time_in_force: order.time_in_force(),
             expire_time: order.expire_time(),
-            post_only: order.is_post_only() as u8,
-            reduce_only: order.is_reduce_only() as u8,
-            quote_quantity: order.is_quote_quantity() as u8,
+            post_only: order.is_post_only(),
+            reduce_only: order.is_reduce_only(),
+            quote_quantity: order.is_quote_quantity(),
             display_qty: order.display_qty(),
             limit_offset: order.limit_offset(),
             trailing_offset: order.trailing_offset(),
@@ -288,18 +329,18 @@ where
             event_id: order.init_id(),
             ts_event: order.ts_init(),
             ts_init: order.ts_init(),
-            reconciliation: false as u8,
+            reconciliation: false,
         }
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OrderCore {
     pub events: Vec<OrderEvent>,
+    pub commissions: HashMap<Currency, Money>,
     pub venue_order_ids: Vec<VenueOrderId>,
     pub trade_ids: Vec<TradeId>,
     pub previous_status: Option<OrderStatus>,
-    pub has_price: bool,
-    pub has_trigger_price: bool,
     pub status: OrderStatus,
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -316,6 +357,7 @@ pub struct OrderCore {
     pub liquidity_side: Option<LiquiditySide>,
     pub is_reduce_only: bool,
     pub is_quote_quantity: bool,
+    pub emulation_trigger: Option<TriggerType>,
     pub contingency_type: Option<ContingencyType>,
     pub order_list_id: Option<OrderListId>,
     pub linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -347,6 +389,7 @@ impl OrderCore {
         time_in_force: TimeInForce,
         reduce_only: bool,
         quote_quantity: bool,
+        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
@@ -360,11 +403,10 @@ impl OrderCore {
     ) -> Self {
         Self {
             events: Vec::new(),
+            commissions: HashMap::new(),
             venue_order_ids: Vec::new(),
             trade_ids: Vec::new(),
             previous_status: None,
-            has_price: true,          // TODO
-            has_trigger_price: false, // TODO
             status: OrderStatus::Initialized,
             trader_id,
             strategy_id,
@@ -381,6 +423,7 @@ impl OrderCore {
             liquidity_side: None,
             is_reduce_only: reduce_only,
             is_quote_quantity: quote_quantity,
+            emulation_trigger,
             contingency_type,
             order_list_id,
             linked_order_ids,
@@ -399,13 +442,18 @@ impl OrderCore {
         }
     }
 
-    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+    pub fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        assert_eq!(self.client_order_id, event.client_order_id());
+        assert_eq!(self.strategy_id, event.strategy_id());
+
         let new_status = self.status.transition(&event)?;
         self.previous_status = Some(self.status);
         self.status = new_status;
 
         match &event {
             OrderEvent::OrderDenied(event) => self.denied(event),
+            OrderEvent::OrderEmulated(event) => self.emulated(event),
+            OrderEvent::OrderReleased(event) => self.released(event),
             OrderEvent::OrderSubmitted(event) => self.submitted(event),
             OrderEvent::OrderRejected(event) => self.rejected(event),
             OrderEvent::OrderAccepted(event) => self.accepted(event),
@@ -420,12 +468,21 @@ impl OrderCore {
             _ => return Err(OrderError::UnrecognizedEvent),
         }
 
+        self.ts_last = event.ts_event();
         self.events.push(event);
         Ok(())
     }
 
     fn denied(&self, _event: &OrderDenied) {
         // Do nothing else
+    }
+
+    fn emulated(&self, _event: &OrderEmulated) {
+        // Do nothing else
+    }
+
+    fn released(&mut self, _event: &OrderReleased) {
+        self.emulation_trigger = None;
     }
 
     fn submitted(&mut self, event: &OrderSubmitted) {
@@ -449,11 +506,15 @@ impl OrderCore {
     }
 
     fn modify_rejected(&mut self, _event: &OrderModifyRejected) {
-        self.status = self.previous_status.unwrap();
+        self.status = self
+            .previous_status
+            .unwrap_or_else(|| panic!("{}", OrderError::NoPreviousState));
     }
 
     fn cancel_rejected(&mut self, _event: &OrderCancelRejected) {
-        self.status = self.previous_status.unwrap();
+        self.status = self
+            .previous_status
+            .unwrap_or_else(|| panic!("{}", OrderError::NoPreviousState));
     }
 
     fn triggered(&mut self, _event: &OrderTriggered) {}
@@ -463,37 +524,14 @@ impl OrderCore {
     fn expired(&mut self, _event: &OrderExpired) {}
 
     fn updated(&mut self, event: &OrderUpdated) {
-        match &event.venue_order_id {
-            Some(venue_order_id) => {
-                if self.venue_order_id.is_some()
-                    && venue_order_id != self.venue_order_id.as_ref().unwrap()
-                {
-                    self.venue_order_id = Some(*venue_order_id);
-                    self.venue_order_ids.push(*venue_order_id);
-                }
+        if let Some(venue_order_id) = &event.venue_order_id {
+            if self.venue_order_id.is_none()
+                || venue_order_id != self.venue_order_id.as_ref().unwrap()
+            {
+                self.venue_order_id = Some(*venue_order_id);
+                self.venue_order_ids.push(*venue_order_id);
             }
-            None => {}
         }
-
-        // TODO
-        // if let Some(price) = &event.price {
-        //     if self.price.is_some() {
-        //         self.price.replace(*price);
-        //     } else {
-        //         panic!("invalid update of `price` when None")
-        //     }
-        // }
-        //
-        // if let Some(trigger_price) = &event.trigger_price {
-        //     if self.trigger_price.is_some() {
-        //         self.trigger_price.replace(*trigger_price);
-        //     } else {
-        //         panic!("invalid update of `trigger_price` when None")
-        //     }
-        // }
-
-        self.quantity = event.quantity;
-        self.leaves_qty = self.quantity - self.filled_qty;
     }
 
     fn filled(&mut self, event: &OrderFilled) {
@@ -558,6 +596,14 @@ impl OrderCore {
         }
     }
 
+    fn signed_decimal_qty(&self) -> Decimal {
+        match self.side {
+            OrderSide::Buy => self.quantity.as_decimal(),
+            OrderSide::Sell => -self.quantity.as_decimal(),
+            _ => panic!("invalid order side"),
+        }
+    }
+
     fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
         if side == PositionSide::Flat {
             return false;
@@ -571,6 +617,14 @@ impl OrderCore {
             _ => true,
         }
     }
+
+    fn commission(&self, currency: &Currency) -> Option<Money> {
+        self.commissions.get(currency).copied()
+    }
+
+    fn commissions(&self) -> HashMap<Currency, Money> {
+        self.commissions.clone()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -579,6 +633,7 @@ impl OrderCore {
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
+    use rust_decimal_macros::dec;
 
     use super::*;
     use crate::{
@@ -587,50 +642,66 @@ mod tests {
         orders::market::MarketOrder,
     };
 
-    #[rstest(
-        order_side,
-        expected_side,
-        case(OrderSide::Buy, OrderSide::Sell),
-        case(OrderSide::Sell, OrderSide::Buy),
-        case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)
-    )]
-    fn test_order_opposite_side(order_side: OrderSide, expected_side: OrderSide) {
+    fn test_initialize_market_order() {
+        let order = MarketOrder::default();
+        assert_eq!(order.events().len(), 1);
+        assert_eq!(
+            stringify!(order.events().get(0)),
+            stringify!(OrderInitialized)
+        );
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, OrderSide::Sell)]
+    #[case(OrderSide::Sell, OrderSide::Buy)]
+    #[case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)]
+    fn test_order_opposite_side(#[case] order_side: OrderSide, #[case] expected_side: OrderSide) {
         let order = MarketOrder::default();
         let result = order.opposite_side(order_side);
         assert_eq!(result, expected_side)
     }
 
-    #[rstest(
-        position_side,
-        expected_side,
-        case(PositionSide::Long, OrderSide::Sell),
-        case(PositionSide::Short, OrderSide::Buy),
-        case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)
-    )]
-    fn test_closing_side(position_side: PositionSide, expected_side: OrderSide) {
+    #[rstest]
+    #[case(PositionSide::Long, OrderSide::Sell)]
+    #[case(PositionSide::Short, OrderSide::Buy)]
+    #[case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)]
+    fn test_closing_side(#[case] position_side: PositionSide, #[case] expected_side: OrderSide) {
         let order = MarketOrder::default();
         let result = order.closing_side(position_side);
         assert_eq!(result, expected_side)
     }
 
+    #[rstest]
+    #[case(OrderSide::Buy, dec!(10_000))]
+    #[case(OrderSide::Sell, dec!(-10_000))]
+    fn test_signed_decimal_qty(#[case] order_side: OrderSide, #[case] expected: Decimal) {
+        let order: MarketOrder = OrderInitializedBuilder::default()
+            .order_side(order_side)
+            .quantity(Quantity::new(10_000.0, 0))
+            .build()
+            .unwrap()
+            .into();
+
+        let result = order.signed_decimal_qty();
+        assert_eq!(result, expected)
+    }
+
     #[rustfmt::skip]
-    #[rstest(
-        order_side, order_qty, position_side, position_qty, expected,
-        case(OrderSide::Buy, Quantity::from(100), PositionSide::Long, Quantity::from(50), false),
-        case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(50), true),
-        case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(100), true),
-        case(OrderSide::Buy, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false),
-        case(OrderSide::Sell, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false),
-        case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(50), true),
-        case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(100), true),
-        case(OrderSide::Sell, Quantity::from(100), PositionSide::Short, Quantity::from(50), false),
-    )]
+    #[rstest]
+    #[case(OrderSide::Buy, Quantity::from(100), PositionSide::Long, Quantity::from(50), false)]
+    #[case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(50), true)]
+    #[case(OrderSide::Buy, Quantity::from(50), PositionSide::Short, Quantity::from(100), true)]
+    #[case(OrderSide::Buy, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false)]
+    #[case(OrderSide::Sell, Quantity::from(50), PositionSide::Flat, Quantity::from(0), false)]
+    #[case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(50), true)]
+    #[case(OrderSide::Sell, Quantity::from(50), PositionSide::Long, Quantity::from(100), true)]
+    #[case(OrderSide::Sell, Quantity::from(100), PositionSide::Short, Quantity::from(50), false)]
     fn test_would_reduce_only(
-        order_side: OrderSide,
-        order_qty: Quantity,
-        position_side: PositionSide,
-        position_qty: Quantity,
-        expected: bool,
+        #[case] order_side: OrderSide,
+        #[case] order_qty: Quantity,
+        #[case] position_side: PositionSide,
+        #[case] position_qty: Quantity,
+        #[case] expected: bool,
     ) {
         let order: MarketOrder = OrderInitializedBuilder::default()
             .order_side(order_side)
@@ -647,9 +718,8 @@ mod tests {
 
     #[test]
     fn test_order_state_transition_denied() {
-        let init = OrderInitializedBuilder::default().build().unwrap();
+        let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
         let denied = OrderDeniedBuilder::default().build().unwrap();
-        let mut order: MarketOrder = init.into();
         let event = OrderEvent::OrderDenied(denied);
 
         let _ = order.apply(event.clone());
