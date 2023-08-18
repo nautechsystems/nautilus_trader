@@ -85,6 +85,8 @@ cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.EMULATED, OrderStatus.RELEASED): OrderStatus.RELEASED,  # Emulated orders
     (OrderStatus.RELEASED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,  # Emulated orders
     (OrderStatus.RELEASED, OrderStatus.DENIED): OrderStatus.DENIED,  # Emulated orders
+    (OrderStatus.RELEASED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,  # Execution Algo
+    (OrderStatus.RELEASED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Execution Algo
     (OrderStatus.SUBMITTED, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,
     (OrderStatus.SUBMITTED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,

@@ -150,4 +150,5 @@ cdef class ExecAlgorithm(Actor):
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
+    cdef void _send_emulator_command(self, TradingCommand command)
     cdef void _send_risk_command(self, TradingCommand command)
