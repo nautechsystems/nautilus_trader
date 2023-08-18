@@ -629,7 +629,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
-            self._handle_contingencies(order)
+            self._handle_contingencies_update(order)
 
     cdef void _handle_order_filled(self, OrderFilled filled):
         cdef Order order = self.cache.order(filled.client_order_id)
@@ -748,8 +748,9 @@ cdef class OrderEmulator(Actor):
             exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawn_order in exec_spawn_orders:
                 raw_filled_qty += spawn_order.filled_qty._mem.raw
-                if spawn_order.is_open_c() or spawn_order.is_inflight_c() or \
-                    spawn_order.status in (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED):
+                if not spawn_order.is_closed_c():  # Try the simpler inverse logic
+                # if spawn_order.is_open_c() or spawn_order.is_inflight_c() or \
+                #     spawn_order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED):
                     raw_quantity += spawn_order.quantity._mem.raw
                     raw_leaves_qty += spawn_order.leaves_qty._mem.raw
                     is_spawn_active |= True
@@ -773,8 +774,6 @@ cdef class OrderEmulator(Actor):
                     self._cancel_order(matching_core, contingent_order)
                 elif raw_filled_qty > 0 and raw_filled_qty != contingent_order.quantity._mem.raw:
                     self._update_order_quantity(contingent_order, filled_qty)
-                # elif raw_quantity != contingent_order.quantity._mem.raw:
-                #     self._update_order_quantity(contingent_order, quantity)
             elif order.contingency_type == ContingencyType.OUO:
                 if raw_leaves_qty == 0 and order.exec_spawn_id is not None:
                     self._cancel_order(matching_core, contingent_order)
@@ -782,8 +781,43 @@ cdef class OrderEmulator(Actor):
                     self._cancel_order(matching_core, contingent_order)
                 elif raw_leaves_qty != contingent_order.leaves_qty._mem.raw:
                     self._update_order_quantity(contingent_order, leaves_qty)
-                # elif quantity._mem.raw != contingent_order.quantity._mem.raw:
-                #     self._update_order_quantity(contingent_order, quantity)
+
+    cdef void _handle_contingencies_update(self, Order order):
+        cdef Quantity quantity = order.quantity
+
+        # Check total quantitt of execution spawn sequence
+        cdef uint64_t raw_quantity = 0
+        cdef uint8_t precision = order.quantity._mem.precision
+        cdef:
+            list exec_spawn_orders
+            Order spawn_order = None
+        if order.exec_spawn_id is not None:
+            # Spawn orders include the original primary order
+            exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
+            for spawn_order in exec_spawn_orders:
+                if not spawn_order.is_closed_c():
+                # if spawn_order.is_open_c() or spawn_order.is_inflight_c() or \
+                #     spawn_order.status in (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED):
+                    raw_quantity += spawn_order.quantity._mem.raw
+            quantity = Quantity.from_raw_c(raw_quantity, precision)
+
+        cdef ClientOrderId client_order_id
+        cdef Order contingent_order
+        for client_order_id in order.linked_order_ids:
+            contingent_order = self.cache.order(client_order_id)
+            assert contingent_order
+            if client_order_id == order.client_order_id:
+                continue  # Already being handled
+            if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NO_TRIGGER:
+                self._commands_submit_order.pop(order.client_order_id, None)
+                continue  # Already completed
+
+            if order.contingency_type == ContingencyType.OTO:
+                if raw_quantity != contingent_order.quantity._mem.raw:
+                    self._update_order_quantity(contingent_order, quantity)
+            elif order.contingency_type == ContingencyType.OUO:
+                if quantity._mem.raw != contingent_order.quantity._mem.raw:
+                    self._update_order_quantity(contingent_order, quantity)
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
         self._log.debug(f"Update contingency order {order.client_order_id!r} to {new_quantity}.")
