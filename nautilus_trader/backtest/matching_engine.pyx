@@ -1812,6 +1812,10 @@ cdef class OrderMatchingEngine:
         self._generate_order_expired(order)
 
     cpdef void cancel_order(self, Order order, bint cancel_contingencies=True):
+        if order.status in (OrderStatus.RELEASED, OrderStatus.EMULATED):
+            self._log.error("Cannot cancel an EMULATED order from the matching engine.")
+            return
+
         if order.venue_order_id is None:
             order.venue_order_id = self._generate_venue_order_id()
 
