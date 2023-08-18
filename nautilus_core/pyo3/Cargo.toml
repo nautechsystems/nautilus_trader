@@ -11,6 +11,7 @@ name = "nautilus_pyo3"
 crate-type = ["cdylib"]
 
 [dependencies]
+nautilus-common = { path = "../common" }
 nautilus-indicators = { path = "../indicators" }
 nautilus-model = { path = "../model" }
 nautilus-persistence = { path = "../persistence" }

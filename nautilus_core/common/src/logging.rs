@@ -30,13 +30,12 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tracing::{debug, error, info, warn, Level};
+use tracing::Level;
 use tracing_appender::{
     non_blocking::WorkerGuard,
     rolling::{RollingFileAppender, Rotation},
 };
 use tracing_subscriber::{fmt::Layer, prelude::*, EnvFilter, Registry};
-use ustr::Ustr;
 
 use crate::enums::{LogColor, LogLevel};
 
@@ -720,6 +719,7 @@ mod tests {
 /// closes.
 #[pyclass]
 pub struct LogGuard {
+    #[allow(dead_code)]
     guards: Vec<WorkerGuard>,
 }
 
@@ -760,7 +760,9 @@ pub fn set_global_log_collector(
         let rolling_log = RollingFileAppender::new(Rotation::NEVER, dir_path, file_prefix);
         let (non_blocking, guard) = tracing_appender::non_blocking(rolling_log);
         guards.push(guard);
-        Layer::default().with_writer(non_blocking.with_max_level(file_level))
+        Layer::default()
+            .with_ansi(false) // turn off unicode colors when writing to file
+            .with_writer(non_blocking.with_max_level(file_level))
     });
 
     Registry::default()
@@ -771,35 +773,4 @@ pub fn set_global_log_collector(
         .init();
 
     LogGuard { guards }
-}
-
-#[pyclass]
-pub struct TempLogger {
-    component: Ustr,
-}
-
-#[pymethods]
-impl TempLogger {
-    #[new]
-    pub fn new(component: String) -> Self {
-        TempLogger {
-            component: Ustr::from(&component),
-        }
-    }
-
-    pub fn debug(slf: PyRef<'_, Self>, message: String) {
-        debug!(message, component = slf.component.as_str());
-    }
-
-    pub fn info(slf: PyRef<'_, Self>, message: String) {
-        info!(message, component = slf.component.as_str());
-    }
-
-    pub fn warn(slf: PyRef<'_, Self>, message: String) {
-        warn!(message, component = slf.component.as_str());
-    }
-
-    pub fn error(slf: PyRef<'_, Self>, message: String) {
-        error!(message, component = slf.component.as_str());
-    }
 }
