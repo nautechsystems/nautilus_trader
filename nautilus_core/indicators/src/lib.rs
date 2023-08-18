@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod ema;
+pub mod sma;
 
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::{prelude::*, types::PyModule, Python};
