@@ -952,7 +952,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if order.status not in (OrderStatus.INITIALIZED, OrderStatus.RELEASED) and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
@@ -979,7 +979,7 @@ cdef class ExecAlgorithm(Actor):
             client_id=client_id,
         )
 
-        if order.is_emulated_c():
+        if order.is_emulated_c() or order.status_c() == OrderStatus.RELEASED:
             self._send_emulator_command(command)
         else:
             self._send_risk_command(command)
@@ -1015,6 +1015,11 @@ cdef class ExecAlgorithm(Actor):
         )
 
 # -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_emulator_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

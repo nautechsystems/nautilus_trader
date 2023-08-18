@@ -747,11 +747,12 @@ cdef class OrderEmulator(Actor):
             # Spawn orders include the original primary order
             exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawn_order in exec_spawn_orders:
-                raw_quantity += spawn_order.quantity._mem.raw
                 raw_filled_qty += spawn_order.filled_qty._mem.raw
-                raw_leaves_qty += spawn_order.leaves_qty._mem.raw
-                if spawn_order.is_open_c() or spawn_order.status == OrderStatus.RELEASED:
-                    is_spawn_active = True
+                if spawn_order.is_open_c() or spawn_order.is_inflight_c() or \
+                    spawn_order.status in (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED):
+                    raw_quantity += spawn_order.quantity._mem.raw
+                    raw_leaves_qty += spawn_order.leaves_qty._mem.raw
+                    is_spawn_active |= True
             quantity = Quantity.from_raw_c(raw_quantity, precision)
             filled_qty = Quantity.from_raw_c(raw_filled_qty, precision)
             leaves_qty = Quantity.from_raw_c(raw_leaves_qty, precision)
@@ -772,8 +773,8 @@ cdef class OrderEmulator(Actor):
                     self._cancel_order(matching_core, contingent_order)
                 elif raw_filled_qty > 0 and raw_filled_qty != contingent_order.quantity._mem.raw:
                     self._update_order_quantity(contingent_order, filled_qty)
-                elif raw_quantity != contingent_order.quantity._mem.raw:
-                    self._update_order_quantity(contingent_order, quantity)
+                # elif raw_quantity != contingent_order.quantity._mem.raw:
+                #     self._update_order_quantity(contingent_order, quantity)
             elif order.contingency_type == ContingencyType.OUO:
                 if raw_leaves_qty == 0 and order.exec_spawn_id is not None:
                     self._cancel_order(matching_core, contingent_order)
