@@ -748,9 +748,7 @@ cdef class OrderEmulator(Actor):
             exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawn_order in exec_spawn_orders:
                 raw_filled_qty += spawn_order.filled_qty._mem.raw
-                if not spawn_order.is_closed_c():  # Try the simpler inverse logic
-                # if spawn_order.is_open_c() or spawn_order.is_inflight_c() or \
-                #     spawn_order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED):
+                if not spawn_order.is_closed_c():
                     raw_quantity += spawn_order.quantity._mem.raw
                     raw_leaves_qty += spawn_order.leaves_qty._mem.raw
                     is_spawn_active |= True
@@ -796,8 +794,6 @@ cdef class OrderEmulator(Actor):
             exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
             for spawn_order in exec_spawn_orders:
                 if not spawn_order.is_closed_c():
-                # if spawn_order.is_open_c() or spawn_order.is_inflight_c() or \
-                #     spawn_order.status in (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED):
                     raw_quantity += spawn_order.quantity._mem.raw
             quantity = Quantity.from_raw_c(raw_quantity, precision)
 
