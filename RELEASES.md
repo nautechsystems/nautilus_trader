@@ -13,6 +13,9 @@ this change.
 - Added `OrderEmulated` event and associated `OrderStatus.EMULATED` enum variant
 - Added `OrderReleased` event and associated `OrderStatus.RELEASED` enum variant
 - Added `BacktestVenueConfig.use_position_ids` option (default true to retain current behavior)
+- Added `Cache.exec_spawn_total_quantity(...)` convenience method
+- Added `Cache.exec_spawn_total_filled_qty(...)` convenience method
+- Added `Cache.exec_spawn_total_leaves_qty(...)` convenience method
 - Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
