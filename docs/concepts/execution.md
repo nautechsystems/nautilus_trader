@@ -278,7 +278,7 @@ cpdef list orders_for_exec_algorithm(
 As well as more specifically querying the orders for a certain execution series/spawn:
 
 ```python
-cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id):
+cpdef list orders_for_exec_spawn(self, ClientOrderId exec_spawn_id):
     """
     Return all orders for the given execution spawn ID (if found).
 
@@ -286,7 +286,7 @@ cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id):
 
     Parameters
     ----------
-    client_order_id : ClientOrderId
+    exec_spawn_id : ClientOrderId
         The execution algorithm spawning primary (original) client order ID.
 
     Returns

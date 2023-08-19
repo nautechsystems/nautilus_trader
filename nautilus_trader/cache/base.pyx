@@ -32,6 +32,7 @@ from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class CacheFacade:
@@ -155,7 +156,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+# -- SYNTHETIC QUERIES ----------------------------------------------------------------------------
 
     cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
@@ -279,14 +280,6 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None, OrderSide side = OrderSide.NO_ORDER_SIDE):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
-    cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id):
-        """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
-
     cpdef bint order_exists(self, ClientOrderId client_order_id):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -327,7 +320,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-# -- ORDER_LIST_QUERIES --------------------------------------------------------------------------------
+# -- ORDER_LIST_QUERIES ---------------------------------------------------------------------------
 
     cpdef OrderList order_list(self, OrderListId order_list_id):
         """Abstract method (implement in subclass)."""
@@ -338,6 +331,28 @@ cdef class CacheFacade:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint order_list_exists(self, OrderListId order_list_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+# -- EXEC ALGORITHM QUERIES -----------------------------------------------------------------------
+
+    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None, OrderSide side = OrderSide.NO_ORDER_SIDE):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef list orders_for_exec_spawn(self, ClientOrderId exec_spawn_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef Quantity exec_spawn_total_quantity(self, ClientOrderId exec_spawn_id, bint active_only=False):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef Quantity exec_spawn_total_filled_qty(self, ClientOrderId exec_spawn_id, bint active_only=False):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef Quantity exec_spawn_total_leaves_qty(self, ClientOrderId exec_spawn_id, bint active_only=False):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

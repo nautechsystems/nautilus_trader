@@ -727,27 +727,18 @@ cdef class OrderEmulator(Actor):
             if matching_core is not None:
                 matching_core.delete_order(order)
 
-        cdef Quantity filled_qty = order.filled_qty
-        cdef Quantity leaves_qty = order.leaves_qty
-
-        # Check total quantities of execution spawn sequence
-        cdef uint64_t raw_filled_qty = 0
-        cdef uint64_t raw_leaves_qty = 0
-        cdef uint8_t precision = order.quantity._mem.precision
         cdef:
-            list exec_spawn_orders
-            Order spawn_order = None
+            Quantity filled_qty
+            Quantity leaves_qty
             bint is_spawn_active = False
         if order.exec_spawn_id is not None:
-            # Spawn orders include the original primary order
-            exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
-            for spawn_order in exec_spawn_orders:
-                raw_filled_qty += spawn_order.filled_qty._mem.raw
-                if not spawn_order.is_closed_c():
-                    raw_leaves_qty += spawn_order.leaves_qty._mem.raw
-                    is_spawn_active |= True
-            filled_qty = Quantity.from_raw_c(raw_filled_qty, precision)
-            leaves_qty = Quantity.from_raw_c(raw_leaves_qty, precision)
+            # Determine total quantities of execution spawn sequence
+            filled_qty = self.cache.exec_spawn_total_filled_qty(order.exec_spawn_id)
+            leaves_qty = self.cache.exec_spawn_total_leaves_qty(order.exec_spawn_id, active_only=True)
+            is_spawn_active = leaves_qty._mem.raw > 0
+        else:
+            filled_qty = order.filled_qty
+            leaves_qty = order.leaves_qty
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
@@ -774,21 +765,16 @@ cdef class OrderEmulator(Actor):
                     self._update_order_quantity(contingent_order, leaves_qty)
 
     cdef void _handle_contingencies_update(self, Order order):
-        cdef Quantity quantity = order.quantity
-
-        # Check total quantity of execution spawn sequence
-        cdef uint64_t raw_quantity = 0
-        cdef uint8_t precision = order.quantity._mem.precision
         cdef:
-            list exec_spawn_orders
-            Order spawn_order = None
+            Quantity quantity
         if order.exec_spawn_id is not None:
-            # Spawn orders include the original primary order
-            exec_spawn_orders = self.cache.orders_for_exec_spawn(order.exec_spawn_id)
-            for spawn_order in exec_spawn_orders:
-                if not spawn_order.is_closed_c():
-                    raw_quantity += spawn_order.quantity._mem.raw
-            quantity = Quantity.from_raw_c(raw_quantity, precision)
+            # Determine total quantity of execution spawn sequence
+            quantity = self.cache.exec_spawn_total_quantity(order.exec_spawn_id, active_only=True)
+        else:
+            quantity = order.quantity
+
+        if quantity._mem.raw == 0:
+            return
 
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
@@ -802,10 +788,10 @@ cdef class OrderEmulator(Actor):
                 continue  # Already completed
 
             if order.contingency_type == ContingencyType.OTO:
-                if quantity._mem.raw > 0 and quantity._mem.raw != contingent_order.quantity._mem.raw:
+                if quantity._mem.raw != contingent_order.quantity._mem.raw:
                     self._update_order_quantity(contingent_order, quantity)
             elif order.contingency_type == ContingencyType.OUO:
-                if quantity._mem.raw > 0 and quantity._mem.raw != contingent_order.quantity._mem.raw:
+                if quantity._mem.raw != contingent_order.quantity._mem.raw:
                     self._update_order_quantity(contingent_order, quantity)
 
     cdef void _update_order_quantity(self, Order order, Quantity new_quantity):
