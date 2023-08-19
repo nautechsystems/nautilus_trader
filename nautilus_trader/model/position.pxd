@@ -124,6 +124,7 @@ cdef class Position:
     cpdef Money total_pnl(self, Price last)
     cpdef list commissions(self)
 
+    cdef void _check_duplicate_trade_id(self, OrderFilled fill)
     cdef void _handle_buy_order_fill(self, OrderFilled fill)
     cdef void _handle_sell_order_fill(self, OrderFilled fill)
     cdef double _calculate_avg_px(self, double avg_px, double qty, double last_px, double last_qty)
