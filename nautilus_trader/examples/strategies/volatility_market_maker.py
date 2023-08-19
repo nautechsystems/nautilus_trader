@@ -269,7 +269,7 @@ class VolatilityMarketMaker(Strategy):
 
         # Maintain buy orders
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # price: Decimal = last.bid - (self.atr.value * self.atr_multiple)
+            # price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
             # self.modify_order(
             #     order=self.buy_order,
             #     price=self.instrument.make_price(price),
@@ -279,7 +279,7 @@ class VolatilityMarketMaker(Strategy):
 
         # Maintain sell orders
         if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # price = last.ask + (self.atr.value * self.atr_multiple)
+            # price = last.ask_price + (self.atr.value * self.atr_multiple)
             # self.modify_order(
             #     order=self.sell_order,
             #     price=self.instrument.make_price(price),
