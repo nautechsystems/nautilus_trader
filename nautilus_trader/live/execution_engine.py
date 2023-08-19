@@ -539,7 +539,7 @@ class LiveExecutionEngine(ExecutionEngine):
             # Check for duplicate trade IDs
             for trade_report in trades:
                 if trade_report.trade_id in reconciled_trades:
-                    self._log.error(
+                    self._log.warning(
                         f"Duplicate {trade_report.trade_id!r} detected: {trade_report}.",
                     )
                 reconciled_trades.add(trade_report.trade_id)

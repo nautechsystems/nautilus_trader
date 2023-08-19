@@ -636,11 +636,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
             # Check event integrity
             if event in position._events:
                 raise RuntimeError(f"Corrupt cache with duplicate event for position {event}")
-            if event.trade_id in position._trade_ids:
-                raise RuntimeError(
-                    f"Duplicate {event.trade_id!r}, "
-                    f"existing {position.id!r} trade_ids={position._trade_ids}",
-                )
 
             position.apply(event)
 
