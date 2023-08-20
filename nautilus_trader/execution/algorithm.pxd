@@ -21,6 +21,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
@@ -50,6 +51,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class ExecAlgorithm(Actor):
+    cdef OrderManager _manager
     cdef dict _exec_spawn_ids
     cdef set _subscribed_strategies
 

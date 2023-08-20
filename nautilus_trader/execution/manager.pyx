@@ -71,9 +71,9 @@ cdef class OrderManager:
         The cache for the order manager.
     component_name : str
         The component name for the order manager.
-    submit_order_handler : Callable[[SubmitOrder], None]
+    submit_order_handler : Callable[[SubmitOrder], None], optional
         The handler to call when submitting orders.
-    cancel_order_handler : Callable[[Order], None]
+    cancel_order_handler : Callable[[Order], None], optional
         The handler to call when canceling orders.
 
     Raises
@@ -91,12 +91,12 @@ cdef class OrderManager:
         MessageBus msgbus,
         Cache cache not None,
         str component_name not None,
-        submit_order_handler: Callable[[SubmitOrder], None],
-        cancel_order_handler: Callable[[Order], None],
+        submit_order_handler: Optional[Callable[[SubmitOrder], None]] = None,
+        cancel_order_handler: Optional[Callable[[Order], None]] = None,
     ):
         Condition.valid_string(component_name, "component_name")
-        Condition.callable(submit_order_handler, "submit_order_handler")
-        Condition.callable(cancel_order_handler, "cancel_order_handler")
+        Condition.callable_or_none(submit_order_handler, "submit_order_handler")
+        Condition.callable_or_none(cancel_order_handler, "cancel_order_handler")
 
         self._clock = clock
         self._log = LoggerAdapter(component_name=component_name, logger=logger)
@@ -172,7 +172,9 @@ cdef class OrderManager:
         self._log.debug(f"Cancelling order {order}.")
 
         self._submit_order_commands.pop(order.client_order_id, None)
-        self._cancel_order_handler(order)
+
+        if self._cancel_order_handler is not None:
+            self._cancel_order_handler(order)
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
@@ -341,6 +343,9 @@ cdef class OrderManager:
                 elif parent_quantity._mem.raw != child_order.quantity._mem.raw:
                     self.update_order_quantity(child_order, parent_quantity)
 
+                if self._submit_order_handler is None:
+                    return
+
                 if not child_order.client_order_id in self._submit_order_commands:
                     self.create_new_submit_order(
                         order=child_order,
@@ -362,6 +367,8 @@ cdef class OrderManager:
     cpdef void handle_contingencies(self, Order order):
         Condition.not_none(order, "order")
         Condition.not_empty(order.linked_order_ids, "order.linked_order_ids")
+
+        self._log.debug(f"Handling contingencies for {order.client_order_id!r}", LogColor.MAGENTA)
 
         cdef:
             Quantity filled_qty
@@ -403,6 +410,8 @@ cdef class OrderManager:
     cpdef void handle_contingencies_update(self, Order order):
         Condition.not_none(order, "order")
 
+        self._log.debug(f"Handling contingencies update for {order.client_order_id!r}", LogColor.MAGENTA)
+
         cdef:
             Quantity quantity
         if order.exec_spawn_id is not None:
@@ -433,6 +442,7 @@ cdef class OrderManager:
 
     cpdef void update_order_quantity(self, Order order, Quantity new_quantity):
         self._log.debug(f"Update contingency order {order.client_order_id!r} to {new_quantity}.")
+
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         cdef OrderUpdated event = OrderUpdated(
