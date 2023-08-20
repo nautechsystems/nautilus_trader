@@ -1923,9 +1923,6 @@ dependencies = [
  "serde_json",
  "strum 0.25.0",
  "tempfile",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
  "ustr",
 ]
 
@@ -2025,12 +2022,14 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.8.0"
 dependencies = [
- "nautilus-common",
  "nautilus-indicators",
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence",
  "pyo3",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
 ]
 
 [[package]]

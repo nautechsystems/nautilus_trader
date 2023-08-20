@@ -22,14 +22,3 @@ pub mod msgbus;
 pub mod testing;
 pub mod timer;
 pub mod timer_api;
-
-use logging::{set_global_log_collector, LogGuard};
-use pyo3::prelude::*;
-
-/// Loaded as nautilus_pyo3.common
-#[pymodule]
-pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<LogGuard>()?;
-    m.add_function(wrap_pyfunction!(set_global_log_collector, m)?)?;
-    Ok(())
-}
