@@ -322,12 +322,11 @@ cdef class OrderEmulator(Actor):
 
         Raises
         ------
-        RuntimeError
+        KeyError
             If a matching core for the given `instrument_id` already exists.
 
         """
-        if instrument_id in self._matching_cores:
-            raise RuntimeError(f"A matching core already exists for {instrument_id}.")
+        Condition.not_in(instrument_id, self._matching_cores, "instrument_id", "self._matching_cores")
 
         matching_core = MatchingCore(
             instrument_id=instrument_id,
@@ -500,7 +499,7 @@ cdef class OrderEmulator(Actor):
         elif order.side == OrderSide.SELL:
             matching_core.sort_ask_orders()
         else:
-            raise RuntimeError("invalid `OrderSide`")
+            raise RuntimeError("invalid `OrderSide`")  # pragma: no cover (design-time error)
 
     cdef void _handle_cancel_order(self, CancelOrder command):
         cdef Order order = self.cache.order(command.client_order_id)
@@ -633,7 +632,7 @@ cdef class OrderEmulator(Actor):
         elif order.side == OrderSide.SELL:
             released_price = matching_core.bid
         else:
-            raise RuntimeError("invalid `OrderSide`")
+            raise RuntimeError("invalid `OrderSide`")  # pragma: no cover (design-time error)
 
         # Generate event
         cdef OrderReleased event = OrderReleased(
@@ -708,7 +707,7 @@ cdef class OrderEmulator(Actor):
         elif order.side == OrderSide.SELL:
             released_price = matching_core.bid
         else:
-            raise RuntimeError("invalid `OrderSide`")
+            raise RuntimeError("invalid `OrderSide`")  # pragma: no cover (design-time error)
 
         # Generate event
         cdef OrderReleased event = OrderReleased(
@@ -812,7 +811,7 @@ cdef class OrderEmulator(Actor):
                 ask=ask,
                 last=last,
             )
-        except RuntimeError as e:
+        except RuntimeError as e:  # pragma: no cover (design-time error)
             self._log.warning(f"Cannot calculate trailing stop order: {e}")
             return
 
