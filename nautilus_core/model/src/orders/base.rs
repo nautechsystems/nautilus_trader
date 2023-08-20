@@ -473,6 +473,7 @@ impl OrderCore {
             OrderEvent::OrderTriggered(event) => self.triggered(event),
             OrderEvent::OrderCanceled(event) => self.canceled(event),
             OrderEvent::OrderExpired(event) => self.expired(event),
+            OrderEvent::OrderFilled(event) => self.filled(event),
             _ => return Err(OrderError::UnrecognizedEvent),
         }
 
@@ -548,13 +549,13 @@ impl OrderCore {
         self.trade_ids.push(event.trade_id);
         self.last_trade_id = Some(event.trade_id);
         self.liquidity_side = Some(event.liquidity_side);
-        self.filled_qty += &event.last_qty;
-        self.leaves_qty -= &event.last_qty;
+        self.filled_qty += event.last_qty;
+        self.leaves_qty -= event.last_qty;
         self.ts_last = event.ts_event;
-        self.set_avg_px(&event.last_qty, &event.last_px);
+        self.set_avg_px(event.last_qty, event.last_px);
     }
 
-    fn set_avg_px(&mut self, last_qty: &Quantity, last_px: &Price) {
+    fn set_avg_px(&mut self, last_qty: Quantity, last_px: Price) {
         if self.avg_px.is_none() {
             self.avg_px = Some(last_px.as_f64());
         }
@@ -640,7 +641,10 @@ mod tests {
     use super::*;
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide},
-        events::order::{OrderDeniedBuilder, OrderEvent, OrderInitializedBuilder},
+        events::order::{
+            OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderFilledBuilder,
+            OrderInitializedBuilder, OrderSubmittedBuilder,
+        },
         orders::market::MarketOrder,
     };
 
@@ -724,7 +728,7 @@ mod tests {
         let denied = OrderDeniedBuilder::default().build().unwrap();
         let event = OrderEvent::OrderDenied(denied);
 
-        let _ = order.apply(event.clone());
+        order.apply(event.clone()).unwrap();
 
         assert_eq!(order.status, OrderStatus::Denied);
         assert!(order.is_closed());
@@ -733,37 +737,24 @@ mod tests {
         assert_eq!(order.last_event(), &event);
     }
 
-    // #[test]
-    // fn test_buy_order_life_cycle_to_filled() {
-    //     let init = OrderInitializedBuilder::default().build().unwrap();
-    //     let submitted = OrderSubmittedBuilder::default().build().unwrap();
-    //     let accepted = OrderAcceptedBuilder::default().build().unwrap();
-    //
-    //     // TODO: We should derive defaults for the below
-    //     let filled = OrderFilledBuilder::default()
-    //         .trader_id(TraderId::default())
-    //         .strategy_id(StrategyId::default())
-    //         .instrument_id(InstrumentId::default())
-    //         .account_id(AccountId::default())
-    //         .client_order_id(ClientOrderId::default())
-    //         .venue_order_id(VenueOrderId::default())
-    //         .position_id(None)
-    //         .order_side(OrderSide::Buy)
-    //         .order_type(OrderType::Market)
-    //         .trade_id(TradeId::new("001"))
-    //         .event_id(UUID4::default())
-    //         .ts_event(UnixNanos::default())
-    //         .ts_init(UnixNanos::default())
-    //         .reconciliation(false)
-    //         .build()
-    //         .unwrap();
-    //
-    //     let client_order_id = init.client_order_id;
-    //     let mut order: MarketOrder = init.into();
-    //     let _ = order.apply(OrderEvent::OrderSubmitted(submitted));
-    //     let _ = order.apply(OrderEvent::OrderAccepted(accepted));
-    //     let _ = order.apply(OrderEvent::OrderFilled(filled));
-    //
-    //     assert_eq!(order.client_order_id, client_order_id);
-    // }
+    #[test]
+    fn test_order_life_cycle_to_filled() {
+        let init = OrderInitializedBuilder::default().build().unwrap();
+        let submitted = OrderSubmittedBuilder::default().build().unwrap();
+        let accepted = OrderAcceptedBuilder::default().build().unwrap();
+        let filled = OrderFilledBuilder::default().build().unwrap();
+
+        let mut order: MarketOrder = init.clone().into();
+        order.apply(OrderEvent::OrderSubmitted(submitted)).unwrap();
+        order.apply(OrderEvent::OrderAccepted(accepted)).unwrap();
+        order.apply(OrderEvent::OrderFilled(filled)).unwrap();
+
+        assert_eq!(order.client_order_id, init.client_order_id);
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("100000"));
+        assert_eq!(order.leaves_qty(), Quantity::from("0"));
+        assert_eq!(order.avg_px(), None);
+        assert!(!order.is_open());
+        assert!(order.is_closed());
+    }
 }

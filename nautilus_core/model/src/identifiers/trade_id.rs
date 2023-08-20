@@ -41,6 +41,14 @@ impl TradeId {
     }
 }
 
+impl Default for TradeId {
+    fn default() -> Self {
+        Self {
+            value: Ustr::from("1"),
+        }
+    }
+}
+
 impl Debug for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)
