@@ -41,6 +41,14 @@ impl PositionId {
     }
 }
 
+impl Default for PositionId {
+    fn default() -> Self {
+        Self {
+            value: Ustr::from("P-001"),
+        }
+    }
+}
+
 impl Debug for PositionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.value)

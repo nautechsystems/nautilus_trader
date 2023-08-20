@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::{
+    currencies::USD,
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
@@ -313,7 +314,7 @@ pub struct OrderCanceled {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
@@ -330,7 +331,7 @@ pub struct OrderExpired {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
@@ -347,7 +348,7 @@ pub struct OrderTriggered {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
@@ -364,7 +365,7 @@ pub struct OrderPendingUpdate {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
@@ -381,7 +382,7 @@ pub struct OrderPendingCancel {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
@@ -399,7 +400,7 @@ pub struct OrderModifyRejected {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
@@ -437,11 +438,12 @@ pub struct OrderUpdated {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
 }
 
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
+#[builder(default)]
 #[serde(tag = "type")]
 pub struct OrderFilled {
     pub trader_id: TraderId,
@@ -457,10 +459,36 @@ pub struct OrderFilled {
     pub last_qty: Quantity,
     pub last_px: Price,
     pub currency: Currency,
-    pub commission: Money,
+    pub commission: Option<Money>,
     pub liquidity_side: LiquiditySide,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: u8,
+    pub reconciliation: bool,
+}
+
+impl Default for OrderFilled {
+    fn default() -> Self {
+        Self {
+            trader_id: TraderId::default(),
+            strategy_id: StrategyId::default(),
+            instrument_id: InstrumentId::default(),
+            client_order_id: ClientOrderId::default(),
+            venue_order_id: VenueOrderId::default(),
+            account_id: AccountId::default(),
+            trade_id: TradeId::default(),
+            position_id: None,
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Market,
+            last_qty: Quantity::new(100_000.0, 0),
+            last_px: Price::new(1.0, 5),
+            currency: *USD,
+            commission: None,
+            liquidity_side: LiquiditySide::Taker,
+            event_id: Default::default(),
+            ts_event: Default::default(),
+            ts_init: Default::default(),
+            reconciliation: Default::default(),
+        }
+    }
 }

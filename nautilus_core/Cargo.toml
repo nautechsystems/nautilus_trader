@@ -9,7 +9,7 @@ members = [
     "network",
     "network/tokio-tungstenite",
     "persistence",
-    "pyo3"
+    "pyo3",
 ]
 
 [workspace.package]
