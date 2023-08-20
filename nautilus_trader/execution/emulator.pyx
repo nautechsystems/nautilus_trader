@@ -250,11 +250,7 @@ cdef class OrderEmulator(Actor):
 
         cdef Order order = self.cache.order(event.client_order_id)
         if order is None:
-            self._log.error(
-                f"Cannot handle `{type(event).__name__}`: "
-                f"order for {repr(event.client_order_id)} not found.",
-            )
-            return
+            return  # Order not in cache yet
 
         cdef MatchingCore matching_core = None
         if order.is_closed_c():
