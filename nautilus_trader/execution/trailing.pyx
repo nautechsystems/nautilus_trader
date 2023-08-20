@@ -42,7 +42,7 @@ cdef class TrailingStopCalculator:
     ):
         Condition.not_none(price_increment, "price_increment")
         if order.order_type not in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
-            raise TypeError(f"invalid `OrderType` for calculation, was {order.type_string_c()}")
+            raise TypeError(f"invalid `OrderType` for calculation, was {order.type_string_c()}")  # pragma: no cover (design-time error)
 
         cdef int64_t trailing_offset_raw = int(order.trailing_offset * int(FIXED_SCALAR))
         cdef int64_t limit_offset_raw = 0
@@ -65,7 +65,7 @@ cdef class TrailingStopCalculator:
             or order.trigger_type == TriggerType.MARK_PRICE
         ):
             if last is None:
-                raise RuntimeError(
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no LAST price for {order.instrument_id} "
                     f"(add trade ticks or use bars)",
@@ -112,13 +112,13 @@ cdef class TrailingStopCalculator:
                         new_price = temp_price
         elif order.trigger_type == TriggerType.BID_ASK:
             if bid is None:
-                raise RuntimeError(
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no BID price for {order.instrument_id} "
                     f"(add quote ticks or use bars)",
                 )
             if ask is None:
-                raise RuntimeError(
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no ASK price for {order.instrument_id} "
                     f"(add quote ticks or use bars)",
@@ -170,19 +170,19 @@ cdef class TrailingStopCalculator:
                         new_price = temp_price
         elif order.trigger_type == TriggerType.LAST_OR_BID_ASK:
             if last is None:
-                raise RuntimeError(
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no LAST price for {order.instrument_id} "
                     f"(add trade ticks or use bars)",
                 )
             if bid is None:
-                raise RuntimeError(
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no BID price for {order.instrument_id} "
                     f"(add quote ticks or use bars)",
                 )
             if ask is None:
-                raise RuntimeError(
+                raise RuntimeError(  # pragma: no cover (design-time error)
                     f"cannot process trailing stop, "
                     f"no ASK price for {order.instrument_id} "
                     f"(add quote ticks or use bars)",
@@ -277,7 +277,7 @@ cdef class TrailingStopCalculator:
                     if price is None or price._mem.raw < temp_price._mem.raw:
                         new_price = temp_price
         else:
-            raise RuntimeError(
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"cannot process trailing stop, "
                 f"`TriggerType.{trigger_type_to_str(order.trigger_type)}` "
                 f"not currently supported",
@@ -302,7 +302,7 @@ cdef class TrailingStopCalculator:
         elif trailing_offset_type == TrailingOffsetType.TICKS:
             offset *= price_increment.as_f64_c()
         else:
-            raise RuntimeError(
+            raise RuntimeError(  # pragma: no cover (design-time error)
                 f"cannot process trailing stop, "
                 f"`TrailingOffsetType` {trailing_offset_type_to_str(trailing_offset_type)} "
                 f"not currently supported",
