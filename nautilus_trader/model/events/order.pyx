@@ -267,6 +267,8 @@ cdef class OrderInitialized(OrderEvent):
     ------
     ValueError
         If `order_side` is ``NO_ORDER_SIDE``.
+    ValueError
+        If `exec_algorithm_id` is not ``None``, and `exec_spawn_id` is ``None``.
     """
 
     def __init__(
@@ -298,6 +300,8 @@ cdef class OrderInitialized(OrderEvent):
         bint reconciliation=False,
     ):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NONE")
+        if exec_algorithm_id is not None:
+            Condition.not_none(exec_spawn_id, "exec_spawn_id")
 
         self._trader_id = trader_id
         self._strategy_id = strategy_id

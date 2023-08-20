@@ -353,8 +353,10 @@ mod tests {
         assert_eq!(display, expected);
     }
 
-    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
-    fn test_from_quote_tick(side: OrderSide) {
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_from_quote_tick(#[case] side: OrderSide) {
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),
@@ -394,8 +396,10 @@ mod tests {
         );
     }
 
-    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
-    fn test_from_trade_tick(side: OrderSide) {
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_from_trade_tick(#[case] side: OrderSide) {
         let tick = TradeTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),

@@ -88,13 +88,13 @@ from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
 
 
@@ -103,7 +103,7 @@ from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_reque
 
 class TestBetfairParsingStreaming:
     def setup(self):
-        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument = betting_instrument()
         self.tick_scheme = BETFAIR_TICK_SCHEME
 
     def test_market_definition_to_instrument_status_updates(self):
@@ -262,9 +262,7 @@ class TestBetfairParsingStreaming:
             ):
                 instrument_id = update.instrument_id
                 if instrument_id not in books:
-                    instrument = TestInstrumentProvider.betting_instrument(
-                        *instrument_id.value.split("-", maxsplit=2),
-                    )
+                    instrument = betting_instrument(*instrument_id.value.split("-", maxsplit=2))
                     books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
@@ -278,7 +276,7 @@ class TestBetfairParsing:
         self.loop = asyncio.new_event_loop()
         self.clock = LiveClock()
         self.logger = Logger(clock=self.clock, bypass=True)
-        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument = betting_instrument()
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()

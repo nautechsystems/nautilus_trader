@@ -72,19 +72,20 @@ VALID_LIMIT_ORDER_TYPES = (
 # OrderStatus being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.DENIED): OrderStatus.DENIED,
+    (OrderStatus.INITIALIZED, OrderStatus.EMULATED): OrderStatus.EMULATED,  # Emulated orders
+    (OrderStatus.INITIALIZED, OrderStatus.RELEASED): OrderStatus.RELEASED,  # Emulated orders
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
     (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # External orders
     (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # External orders
     (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # External orders
     (OrderStatus.INITIALIZED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # External orders
     (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # External orders
-    (OrderStatus.INITIALIZED, OrderStatus.EMULATED): OrderStatus.EMULATED,  # Emulated orders
-    (OrderStatus.INITIALIZED, OrderStatus.RELEASED): OrderStatus.RELEASED,  # Emulated orders
     (OrderStatus.EMULATED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Emulated orders
     (OrderStatus.EMULATED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # Emulated orders
     (OrderStatus.EMULATED, OrderStatus.RELEASED): OrderStatus.RELEASED,  # Emulated orders
-    (OrderStatus.RELEASED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,  # Emulated orders
     (OrderStatus.RELEASED, OrderStatus.DENIED): OrderStatus.DENIED,  # Emulated orders
+    (OrderStatus.RELEASED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,  # Emulated orders
+    (OrderStatus.RELEASED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Execution Algo
     (OrderStatus.SUBMITTED, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,
     (OrderStatus.SUBMITTED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
@@ -353,10 +354,10 @@ cdef class Order:
         return self._fsm.state == OrderStatus.EMULATED
 
     cdef bint is_primary_c(self):
-        return self.exec_algorithm_id is not None and self.exec_spawn_id is None
+        return self.exec_algorithm_id is not None and self.exec_spawn_id == self.client_order_id
 
     cdef bint is_spawned_c(self):
-        return self.exec_spawn_id is not None
+        return self.exec_algorithm_id is not None and self.exec_spawn_id != self.client_order_id
 
     cdef bint is_contingency_c(self):
         return self.contingency_type != ContingencyType.NO_CONTINGENCY

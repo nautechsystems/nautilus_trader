@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections import deque
 from decimal import Decimal
 from heapq import heappush
 from typing import Optional
@@ -30,7 +31,6 @@ from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -101,8 +101,10 @@ cdef class SimulatedExchange:
         If stop orders are rejected on submission if in the market.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_position_ids : bool, default True
+        If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
-        If venue order and position IDs will be randomly generated UUID4s.
+        If all venue generated identifiers will be random UUID4's.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
 
@@ -144,6 +146,7 @@ cdef class SimulatedExchange:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
     ):
@@ -183,6 +186,7 @@ cdef class SimulatedExchange:
         self.bar_execution = bar_execution
         self.reject_stop_orders = reject_stop_orders
         self.support_gtd_orders = support_gtd_orders
+        self.use_position_ids = use_position_ids
         self.use_random_ids = use_random_ids
         self.use_reduce_only = use_reduce_only
         self.fill_model = fill_model
@@ -210,7 +214,7 @@ cdef class SimulatedExchange:
         for instrument in instruments:
             self.add_instrument(instrument)
 
-        self._message_queue = Queue()
+        self._message_queue = deque()
         self._inflight_queue: list[tuple[(uint64_t, uint64_t), TradingCommand]] = []
         self._inflight_counter: dict[uint64_t, int] = {}
 
@@ -330,6 +334,7 @@ cdef class SimulatedExchange:
             bar_execution=self.bar_execution,
             reject_stop_orders=self.reject_stop_orders,
             support_gtd_orders=self.support_gtd_orders,
+            use_position_ids=self.use_position_ids,
             use_random_ids=self.use_random_ids,
             use_reduce_only=self.use_reduce_only,
         )
@@ -606,7 +611,7 @@ cdef class SimulatedExchange:
         Condition.not_none(command, "command")
 
         if self.latency_model is None:
-            self._message_queue.put_nowait(command)
+            self._message_queue.appendleft(command)
         else:
             heappush(self._inflight_queue, self.generate_inflight_command(command))
 
@@ -777,7 +782,7 @@ cdef class SimulatedExchange:
             ts = self._inflight_queue[0][0][0]
             if ts <= ts_now:
                 # Place message on queue to be processed
-                self._message_queue.put_nowait(self._inflight_queue.pop(0)[1])
+                self._message_queue.appendleft(self._inflight_queue.pop(0)[1])
                 self._inflight_counter.pop(ts, None)
             else:
                 break
@@ -786,8 +791,8 @@ cdef class SimulatedExchange:
             TradingCommand command
             Order order
             list orders
-        while self._message_queue.count > 0:
-            command = self._message_queue.get_nowait()
+        while self._message_queue:
+            command = self._message_queue.pop()
             if isinstance(command, SubmitOrder):
                 self._matching_engines[command.instrument_id].process_order(command.order, self.exec_client.account_id)
             elif isinstance(command, SubmitOrderList):
@@ -821,7 +826,7 @@ cdef class SimulatedExchange:
         for matching_engine in self._matching_engines.values():
             matching_engine.reset()
 
-        self._message_queue = Queue()
+        self._message_queue = deque()
         self._inflight_queue.clear()
         self._inflight_counter.clear()
 

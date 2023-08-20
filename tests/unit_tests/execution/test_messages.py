@@ -108,11 +108,11 @@ class TestCommands:
         assert SubmitOrder.from_dict(SubmitOrder.to_dict(command)) == command
         assert (
             str(command)
-            == "SubmitOrder(order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={'max_percentage': 100.0, 'start': 0, 'end': 1}, tags=None), position_id=P-001)"  # noqa
+            == "SubmitOrder(order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={'max_percentage': 100.0, 'start': 0, 'end': 1}, exec_spawn_id=O-19700101-0000-000-001-1, tags=None), position_id=P-001)"  # noqa
         )
         assert (
             repr(command)
-            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-0000-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={{'max_percentage': 100.0, 'start': 0, 'end': 1}}, tags=None), position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
+            == f"SubmitOrder(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-19700101-0000-000-001-1, order=LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=VWAP, exec_algorithm_params={{'max_percentage': 100.0, 'start': 0, 'end': 1}}, exec_spawn_id=O-19700101-0000-000-001-1, tags=None), position_id=P-001, command_id={uuid}, ts_init=0)"  # noqa
         )
 
     def test_submit_bracket_order_command_to_from_dict_and_str_repr(self):
@@ -125,6 +125,9 @@ class TestCommands:
             quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
+            entry_tags="ENTRY",
+            tp_tags="TAKE_PROFIT",
+            sl_tags="STOP_LOSS",
         )
 
         command = SubmitOrderList(
@@ -158,6 +161,9 @@ class TestCommands:
             quantity=Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("1.00000"),
             tp_price=Price.from_str("1.00100"),
+            entry_tags="ENTRY",
+            tp_tags="TAKE_PROFIT",
+            sl_tags="STOP_LOSS",
         )
 
         command = SubmitOrderList(

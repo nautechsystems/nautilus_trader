@@ -21,7 +21,6 @@ import time
 from datetime import timedelta
 
 from nautilus_trader.cache.base import CacheFacade
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -273,151 +272,6 @@ class TradingNode:
         except RuntimeError as e:
             self.kernel.log.exception("Error on run", e)
 
-    def stop(self) -> None:
-        """
-        Stop the trading node gracefully.
-
-        After a specified delay the internal `Trader` residual state will be checked.
-
-        If save strategy is configured, then strategy states will be saved.
-
-        """
-        try:
-            if self.kernel.loop.is_running():
-                self.kernel.loop.create_task(self.stop_async())
-            else:
-                self.kernel.loop.run_until_complete(self.stop_async())
-        except RuntimeError as e:
-            self.kernel.log.exception("Error on stop", e)
-
-    def dispose(self) -> None:  # noqa: C901
-        """
-        Dispose of the trading node.
-
-        Gracefully shuts down the executor and event loop.
-
-        """
-        try:
-            timeout = self.kernel.clock.utc_now() + timedelta(
-                seconds=self._config.timeout_disconnection,
-            )
-            while self._is_running:
-                time.sleep(0.1)
-                if self.kernel.clock.utc_now() >= timeout:
-                    self.kernel.log.warning(
-                        f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop."
-                        f"\nStatus"
-                        f"\n------"
-                        f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
-                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
-                    )
-                    break
-
-            self.kernel.log.info("DISPOSING...")
-
-            self.kernel.log.debug(str(self.kernel.data_engine.get_cmd_queue_task()))
-            self.kernel.log.debug(str(self.kernel.data_engine.get_req_queue_task()))
-            self.kernel.log.debug(str(self.kernel.data_engine.get_res_queue_task()))
-            self.kernel.log.debug(str(self.kernel.data_engine.get_data_queue_task()))
-            self.kernel.log.debug(str(self.kernel.exec_engine.get_cmd_queue_task()))
-            self.kernel.log.debug(str(self.kernel.exec_engine.get_evt_queue_task()))
-            self.kernel.log.debug(str(self.kernel.risk_engine.get_cmd_queue_task()))
-            self.kernel.log.debug(str(self.kernel.risk_engine.get_evt_queue_task()))
-
-            if self.kernel.trader.is_running:
-                self.kernel.trader.stop()
-            if self.kernel.data_engine.is_running:
-                self.kernel.data_engine.stop()
-            if self.kernel.risk_engine.is_running:
-                self.kernel.risk_engine.stop()
-            if self.kernel.exec_engine.is_running:
-                self.kernel.exec_engine.stop()
-            if self.kernel.emulator.is_running:
-                self.kernel.emulator.stop()
-
-            self.kernel.trader.dispose()
-            self.kernel.data_engine.dispose()
-            self.kernel.risk_engine.dispose()
-            self.kernel.exec_engine.dispose()
-            self.kernel.emulator.dispose()
-
-            # Cleanup writer
-            if self.kernel.writer is not None:
-                self.kernel.writer.close()
-
-            if self.kernel.executor:
-                self.kernel.log.info("Shutting down executor...")
-                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
-
-            self.kernel.log.info("Stopping event loop...")
-            self.kernel.cancel_all_tasks()
-            self.kernel.loop.stop()
-        except (asyncio.CancelledError, RuntimeError) as e:
-            self.kernel.log.exception("Error on dispose", e)
-        finally:
-            if self.kernel.loop.is_running():
-                self.kernel.log.warning("Cannot close a running event loop.")
-            else:
-                self.kernel.log.info("Closing event loop...")
-                self.kernel.loop.close()
-
-            # Check and log if event loop is running
-            if self.kernel.loop.is_running():
-                self.kernel.log.warning(f"loop.is_running={self.kernel.loop.is_running()}")
-            else:
-                self.kernel.log.info(f"loop.is_running={self.kernel.loop.is_running()}")
-
-            # Check and log if event loop is closed
-            if not self.kernel.loop.is_closed():
-                self.kernel.log.warning(f"loop.is_closed={self.kernel.loop.is_closed()}")
-            else:
-                self.kernel.log.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
-
-            self.kernel.log.info("DISPOSED.")
-
-    def _loop_sig_handler(self, sig: signal.Signals) -> None:
-        self.kernel.log.warning(f"Received {sig!s}, shutting down...")
-        self.stop()
-
-    async def maintain_heartbeat(self, interval: float) -> None:
-        """
-        Maintain heartbeats at the given `interval` while the node is running.
-
-        Parameters
-        ----------
-        interval : float
-            The interval (seconds) between heartbeats.
-
-        """
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                self.cache.heartbeat(self.kernel.clock.utc_now())
-        except asyncio.CancelledError:
-            pass
-
-    async def snapshot_open_positions(self, interval: float) -> None:
-        """
-        Snapshot the state of all open positions at the configured interval.
-
-        Parameters
-        ----------
-        interval : float
-            The interval (seconds) between open position state snapshotting.
-
-        """
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                open_positions = self.kernel.cache.positions_open()
-                for position in open_positions:
-                    self.cache.snapshot_position_state(
-                        position=position,
-                        ts_snapshot=self.kernel.clock.timestamp_ns(),
-                    )
-        except asyncio.CancelledError:
-            pass
-
     async def run_async(self) -> None:
         """
         Start and run the trading node asynchronously.
@@ -462,7 +316,63 @@ class TradingNode:
         except asyncio.CancelledError as e:
             self.kernel.log.error(str(e))
 
-    async def stop_async(self) -> None:  # noqa (too complex)
+    async def maintain_heartbeat(self, interval: float) -> None:
+        """
+        Maintain heartbeats at the given `interval` while the node is running.
+
+        Parameters
+        ----------
+        interval : float
+            The interval (seconds) between heartbeats.
+
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                self.cache.heartbeat(self.kernel.clock.utc_now())
+        except asyncio.CancelledError:
+            pass
+
+    async def snapshot_open_positions(self, interval: float) -> None:
+        """
+        Snapshot the state of all open positions at the configured interval.
+
+        Parameters
+        ----------
+        interval : float
+            The interval (seconds) between open position state snapshotting.
+
+        """
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                open_positions = self.kernel.cache.positions_open()
+                for position in open_positions:
+                    self.cache.snapshot_position_state(
+                        position=position,
+                        ts_snapshot=self.kernel.clock.timestamp_ns(),
+                    )
+        except asyncio.CancelledError:
+            pass
+
+    def stop(self) -> None:
+        """
+        Stop the trading node gracefully.
+
+        After a specified delay the internal `Trader` residual state will be checked.
+
+        If save strategy is configured, then strategy states will be saved.
+
+        """
+        try:
+            if self.kernel.loop.is_running():
+                self.kernel.loop.create_task(self.stop_async())
+            else:
+                self.kernel.loop.run_until_complete(self.stop_async())
+        except RuntimeError as e:
+            self.kernel.log.exception("Error on stop", e)
+
+    async def stop_async(self) -> None:
         """
         Stop the trading node gracefully, asynchronously.
 
@@ -483,70 +393,76 @@ class TradingNode:
             self._task_position_snapshots.cancel()
             self._task_position_snapshots = None
 
-        if self.kernel.trader.is_running:
-            self.kernel.trader.stop()
-            self.kernel.log.info(
-                f"Awaiting post stop ({self._config.timeout_post_stop}s timeout)...",
-                color=LogColor.BLUE,
-            )
-            await asyncio.sleep(self._config.timeout_post_stop)
-            self.kernel.trader.check_residuals()
+        await self.kernel.stop_async()
 
-        if self.kernel.save_state:
-            self.kernel.trader.save()
-
-        # Disconnect all clients
-        self.kernel.data_engine.disconnect()
-        self.kernel.exec_engine.disconnect()
-
-        self.kernel.log.info(
-            f"Awaiting engine disconnections "
-            f"({self._config.timeout_disconnection}s timeout)...",
-            color=LogColor.BLUE,
-        )
-        if not await self._await_engines_disconnected():
-            self.kernel.log.error(
-                f"Timed out ({self._config.timeout_disconnection}s) waiting for engines to disconnect."
-                f"\nStatus"
-                f"\n------"
-                f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
-                f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
-            )
-
-        if self.kernel.data_engine.is_running:
-            self.kernel.data_engine.stop()
-        if self.kernel.risk_engine.is_running:
-            self.kernel.risk_engine.stop()
-        if self.kernel.exec_engine.is_running:
-            self.kernel.exec_engine.stop()
-        if self.kernel.emulator.is_running:
-            self.kernel.emulator.stop()
-
-        # Clean up remaining timers
-        timer_names = self.kernel.clock.timer_names
-        self.kernel.clock.cancel_timers()
-
-        for name in timer_names:
-            self.kernel.log.info(f"Canceled Timer(name={name}).")
-
-        # Flush writer
-        if self.kernel.writer is not None:
-            self.kernel.writer.flush()
-
-        self.kernel.log.info("STOPPED.")
         self._is_running = False
 
-    async def _await_engines_disconnected(self) -> bool:
-        seconds = self._config.timeout_disconnection
-        timeout: timedelta = self.kernel.clock.utc_now() + timedelta(seconds=seconds)
-        while True:
-            await asyncio.sleep(0)
-            if self.kernel.clock.utc_now() >= timeout:
-                return False
-            if not self.kernel.data_engine.check_disconnected():
-                continue
-            if not self.kernel.exec_engine.check_disconnected():
-                continue
-            break
+    def dispose(self) -> None:
+        """
+        Dispose of the trading node.
 
-        return True  # Engines disconnected
+        Gracefully shuts down the executor and event loop.
+
+        """
+        try:
+            timeout = self.kernel.clock.utc_now() + timedelta(
+                seconds=self._config.timeout_disconnection,
+            )
+            while self._is_running:
+                time.sleep(0.1)
+                if self.kernel.clock.utc_now() >= timeout:
+                    self.kernel.log.warning(
+                        f"Timed out ({self._config.timeout_disconnection}s) waiting for node to stop."
+                        f"\nStatus"
+                        f"\n------"
+                        f"\nDataEngine.check_disconnected() == {self.kernel.data_engine.check_disconnected()}"
+                        f"\nExecEngine.check_disconnected() == {self.kernel.exec_engine.check_disconnected()}",
+                    )
+                    break
+
+            self.kernel.log.info("DISPOSING...")
+
+            self.kernel.log.debug(str(self.kernel.data_engine.get_cmd_queue_task()))
+            self.kernel.log.debug(str(self.kernel.data_engine.get_req_queue_task()))
+            self.kernel.log.debug(str(self.kernel.data_engine.get_res_queue_task()))
+            self.kernel.log.debug(str(self.kernel.data_engine.get_data_queue_task()))
+            self.kernel.log.debug(str(self.kernel.exec_engine.get_cmd_queue_task()))
+            self.kernel.log.debug(str(self.kernel.exec_engine.get_evt_queue_task()))
+            self.kernel.log.debug(str(self.kernel.risk_engine.get_cmd_queue_task()))
+            self.kernel.log.debug(str(self.kernel.risk_engine.get_evt_queue_task()))
+
+            self.kernel.dispose()
+
+            if self.kernel.executor:
+                self.kernel.log.info("Shutting down executor...")
+                self.kernel.executor.shutdown(wait=True, cancel_futures=True)
+
+            self.kernel.log.info("Stopping event loop...")
+            self.kernel.cancel_all_tasks()
+            self.kernel.loop.stop()
+        except (asyncio.CancelledError, RuntimeError) as e:
+            self.kernel.log.exception("Error on dispose", e)
+        finally:
+            if self.kernel.loop.is_running():
+                self.kernel.log.warning("Cannot close a running event loop.")
+            else:
+                self.kernel.log.info("Closing event loop...")
+                self.kernel.loop.close()
+
+            # Check and log if event loop is running
+            if self.kernel.loop.is_running():
+                self.kernel.log.warning(f"loop.is_running={self.kernel.loop.is_running()}")
+            else:
+                self.kernel.log.info(f"loop.is_running={self.kernel.loop.is_running()}")
+
+            # Check and log if event loop is closed
+            if not self.kernel.loop.is_closed():
+                self.kernel.log.warning(f"loop.is_closed={self.kernel.loop.is_closed()}")
+            else:
+                self.kernel.log.info(f"loop.is_closed={self.kernel.loop.is_closed()}")
+
+            self.kernel.log.info("DISPOSED.")
+
+    def _loop_sig_handler(self, sig: signal.Signals) -> None:
+        self.kernel.log.warning(f"Received {sig!s}, shutting down...")
+        self.stop()

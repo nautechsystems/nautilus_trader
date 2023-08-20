@@ -90,6 +90,9 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
+cdef tuple ORDER_STATUS_UPSTREAM = (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED)
+
+
 cdef class OrderMatchingEngine:
     """
     Provides an order matching engine for a single market.
@@ -121,8 +124,10 @@ cdef class OrderMatchingEngine:
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    use_position_ids : bool, default True
+        If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
-        If venue order and position IDs will be randomly generated UUID4s.
+        If all venue generated identifiers will be random UUID4's.
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders will be honored.
     auction_match_algo : Callable[[Ladder, Ladder], Tuple[List, List], optional
@@ -143,6 +148,7 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
         # auction_match_algo = default_auction_match
@@ -165,6 +171,7 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
+        self._use_position_ids = use_position_ids
         self._use_random_ids = use_random_ids
         self._use_reduce_only = use_reduce_only
         # self._auction_match_algo = auction_match_algo
@@ -1664,9 +1671,11 @@ cdef class OrderMatchingEngine:
         if order.contingency_type == ContingencyType.OTO:
             for client_order_id in order.linked_order_ids:
                 child_order = self.cache.order(client_order_id)
-                if child_order.status == OrderStatus.EMULATED:
-                    continue  # Order is not on the exchange yet
                 assert child_order is not None, "OTO child order not found"
+                if child_order.is_closed_c():
+                    continue
+                if child_order.status_c() in ORDER_STATUS_UPSTREAM:
+                    continue  # Order is not on the exchange yet
                 if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
                         position_id=order.position_id,
@@ -1678,7 +1687,7 @@ cdef class OrderMatchingEngine:
                         f"Indexed {repr(order.position_id)} "
                         f"for {repr(child_order.client_order_id)}",
                     )
-                if not child_order.is_open_c() or (child_order.status == OrderStatus.PENDING_UPDATE and child_order._previous_status == OrderStatus.SUBMITTED):
+                if not child_order.is_open_c() or (child_order.status_c() == OrderStatus.PENDING_UPDATE and child_order._previous_status == OrderStatus.SUBMITTED):
                     self.process_order(
                         order=child_order,
                         account_id=order.account_id or self._account_ids[order.trader_id],
@@ -1687,14 +1696,16 @@ cdef class OrderMatchingEngine:
             for client_order_id in order.linked_order_ids:
                 oco_order = self.cache.order(client_order_id)
                 assert oco_order is not None, "OCO order not found"
-                if oco_order.status == OrderStatus.EMULATED:
+                if oco_order.is_closed_c():
+                    continue
+                if oco_order.status_c() in ORDER_STATUS_UPSTREAM:
                     continue  # Order is not on the exchange yet
                 self.cancel_order(oco_order)
         elif order.contingency_type == ContingencyType.OUO:
             for client_order_id in order.linked_order_ids:
                 ouo_order = self.cache.order(client_order_id)
                 assert ouo_order is not None, "OUO order not found"
-                if ouo_order.status == OrderStatus.EMULATED:
+                if ouo_order.status_c() in ORDER_STATUS_UPSTREAM:
                     continue  # Order is not on the exchange yet
                 if order.is_closed_c() and ouo_order.is_open_c():
                     self.cancel_order(ouo_order)
@@ -1752,6 +1763,9 @@ cdef class OrderMatchingEngine:
             return None
 
     cdef PositionId _generate_venue_position_id(self):
+        if not self._use_position_ids:
+            return None
+
         self._position_count += 1
         if self._use_random_ids:
             return PositionId(str(uuid.uuid4()))
@@ -1801,6 +1815,12 @@ cdef class OrderMatchingEngine:
         self._generate_order_expired(order)
 
     cpdef void cancel_order(self, Order order, bint cancel_contingencies=True):
+        if order.status_c() in ORDER_STATUS_UPSTREAM:
+            self._log.error(
+                f"Cannot cancel an order with {order.status_string_c()} from the matching engine.",
+            )
+            return
+
         if order.venue_order_id is None:
             order.venue_order_id = self._generate_venue_order_id()
 
@@ -1908,7 +1928,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
-            if ouo_order.status == OrderStatus.EMULATED:
+            if ouo_order.status_c() in ORDER_STATUS_UPSTREAM:
                 continue  # Order is not on the exchange yet
             if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
                 continue
@@ -1930,7 +1950,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
-            if contingent_order.status == OrderStatus.EMULATED:
+            if contingent_order.status_c() in ORDER_STATUS_UPSTREAM:
                 continue  # Order is not on the exchange yet
             if not contingent_order.is_closed_c():
                 self.cancel_order(contingent_order, cancel_contingencies=False)

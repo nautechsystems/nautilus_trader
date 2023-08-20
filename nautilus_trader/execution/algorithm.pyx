@@ -635,13 +635,13 @@ cdef class ExecAlgorithm(Actor):
         cdef ClientId client_id = None
         cdef SubmitOrder command = None
 
-        if order.exec_spawn_id is not None:
+        if order.is_spawned_c():
             # Handle new spawned order
             primary = self.cache.order(order.exec_spawn_id)
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
-                    "Cannot submit order: cannot find primary order for {repr(order.exec_spawn_id)}."
+                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}."
                 )
                 return
 
@@ -650,7 +650,7 @@ cdef class ExecAlgorithm(Actor):
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
-                    f"Cannot submit order: order already exists for {repr(order.client_order_id)}.",
+                    f"Cannot submit order: order already exists for {order.client_order_id!r}.",
                 )
                 return
 
@@ -952,7 +952,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if order.status not in (OrderStatus.INITIALIZED, OrderStatus.RELEASED) and not order.is_emulated_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
@@ -979,7 +979,7 @@ cdef class ExecAlgorithm(Actor):
             client_id=client_id,
         )
 
-        if order.is_emulated_c():
+        if order.is_emulated_c() or order.status_c() == OrderStatus.RELEASED:
             self._send_emulator_command(command)
         else:
             self._send_risk_command(command)
@@ -1015,6 +1015,11 @@ cdef class ExecAlgorithm(Actor):
         )
 
 # -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_emulator_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
@@ -86,7 +87,7 @@ cdef class CacheFacade:
     cpdef list instrument_ids(self, Venue venue=*)
     cpdef list instruments(self, Venue venue=*)
 
-# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+# -- SYNTHETIC QUERIES ----------------------------------------------------------------------------
 
     cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id)
     cpdef list synthetic_ids(self)
@@ -126,8 +127,6 @@ cdef class CacheFacade:
     cpdef list orders_emulated(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef list orders_inflight(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef list orders_for_position(self, PositionId position_id)
-    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
-    cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id)
     cpdef bint order_exists(self, ClientOrderId client_order_id)
     cpdef bint is_order_open(self, ClientOrderId client_order_id)
     cpdef bint is_order_closed(self, ClientOrderId client_order_id)
@@ -139,11 +138,19 @@ cdef class CacheFacade:
     cpdef int orders_inflight_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef int orders_total_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
 
-# -- ORDER LIST QUERIES --------------------------------------------------------------------------------
+# -- ORDER LIST QUERIES ---------------------------------------------------------------------------
 
     cpdef OrderList order_list(self, OrderListId order_list_id)
     cpdef list order_lists(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*)
     cpdef bint order_list_exists(self, OrderListId order_list_id)
+
+# -- EXEC ALGORITHM QUERIES -----------------------------------------------------------------------
+
+    cpdef list orders_for_exec_algorithm(self, ExecAlgorithmId exec_algorithm_id, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
+    cpdef list orders_for_exec_spawn(self, ClientOrderId exec_spawn_id)
+    cpdef Quantity exec_spawn_total_quantity(self, ClientOrderId exec_spawn_id, bint active_only=*)
+    cpdef Quantity exec_spawn_total_filled_qty(self, ClientOrderId exec_spawn_id, bint active_only=*)
+    cpdef Quantity exec_spawn_total_leaves_qty(self, ClientOrderId exec_spawn_id, bint active_only=*)
 
 # -- POSITION QUERIES -----------------------------------------------------------------------------
 

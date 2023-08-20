@@ -17,14 +17,14 @@ from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 class TestBetfairPersistence:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs = self.catalog.fs
-        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument = betting_instrument()
 
     def test_bsp_delta_serialize(self):
         # Arrange

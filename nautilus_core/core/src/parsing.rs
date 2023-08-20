@@ -260,37 +260,31 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    #[rstest(
-        s,
-        expected,
-        case("", 0),
-        case("0", 0),
-        case("1.0", 1),
-        case("1.00", 2),
-        case("1.23456789", 8),
-        case("123456.789101112", 9),
-        case("0.000000001", 9),
-        case("1e-1", 1),
-        case("1e-2", 2),
-        case("1e-3", 3),
-        case("1e8", 0)
-    )]
-    fn test_precision_from_str(s: &str, expected: u8) {
+    #[rstest]
+    #[case("", 0)]
+    #[case("0", 0)]
+    #[case("1.0", 1)]
+    #[case("1.00", 2)]
+    #[case("1.23456789", 8)]
+    #[case("123456.789101112", 9)]
+    #[case("0.000000001", 9)]
+    #[case("1e-1", 1)]
+    #[case("1e-2", 2)]
+    #[case("1e-3", 3)]
+    #[case("1e8", 0)]
+    fn test_precision_from_str(#[case] s: &str, #[case] expected: u8) {
         let result = precision_from_str(s);
         assert_eq!(result, expected);
     }
 
-    #[rstest(
-        input,
-        expected,
-        case("1e8", 0),
-        case("123", 0),
-        case("123.45", 2),
-        case("123.456789", 6),
-        case("1.23456789e-2", 2),
-        case("1.23456789e-12", 12)
-    )]
-    fn test_precision_from_cstr(input: &str, expected: u8) {
+    #[rstest]
+    #[case("1e8", 0)]
+    #[case("123", 0)]
+    #[case("123.45", 2)]
+    #[case("123.456789", 6)]
+    #[case("1.23456789e-2", 2)]
+    #[case("1.23456789e-12", 12)]
+    fn test_precision_from_cstr(#[case] input: &str, #[case] expected: u8) {
         let c_str = CString::new(input).unwrap();
         assert_eq!(unsafe { precision_from_cstr(c_str.as_ptr()) }, expected);
     }

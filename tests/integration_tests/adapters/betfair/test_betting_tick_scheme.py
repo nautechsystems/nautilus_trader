@@ -17,82 +17,70 @@ import pytest
 
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.tick_scheme.base import get_tick_scheme
-from nautilus_trader.model.tick_scheme.base import round_down
-from nautilus_trader.model.tick_scheme.base import round_up
 from nautilus_trader.model.tick_scheme.implementations.fixed import FixedTickScheme
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickScheme
 
 
-AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-JPYUSD = TestInstrumentProvider.default_fx_ccy("JPY/USD")
-
-
-class TestFixedTickScheme:
+class TestBettingTickScheme:
     def setup(self) -> None:
-        self.tick_scheme = get_tick_scheme("FOREX_3DECIMAL")
-        assert self.tick_scheme.price_precision
-
-    @pytest.mark.parametrize(
-        ("value", "precision", "expected"),
-        [
-            (0.727775, 4, "0.7277"),
-            (0.72777, 4, "0.7277"),
-            (0.727741111, 4, "0.7277"),
-            (0.799999, 2, "0.79"),
-        ],
-    )
-    def test_round_down(self, value, precision, expected):
-        base = 1 * 10**-precision
-        assert round_down(value, base=base) == Price.from_str(expected).as_double()
-
-    @pytest.mark.parametrize(
-        ("value", "precision", "expected"),
-        [
-            (0.72775, 4, "0.7278"),
-            (0.7277, 4, "0.7278"),
-            (0.727741111, 4, "0.7278"),
-            (0.799999, 2, "0.80"),
-        ],
-    )
-    def test_round_up(self, value, precision, expected):
-        base = 1 * 10**-precision
-        assert round_up(value, base) == Price.from_str(expected).as_double()
+        self.tick_scheme: TieredTickScheme = get_tick_scheme("BETFAIR")
 
     def test_attrs(self):
-        assert self.tick_scheme.price_precision == 3
-        assert self.tick_scheme.min_price == Price.from_str("0.001")
-        assert self.tick_scheme.max_price == Price.from_str("999.999")
-        assert self.tick_scheme.increment == Price.from_str("0.001")
+        assert self.tick_scheme.min_price == Price.from_str("1.01")
+        assert self.tick_scheme.max_price == Price.from_str("1000")
 
-    @pytest.mark.parametrize(
-        ("value", "expected"),
-        [
-            (0.727, "0.728"),
-            (0.99999, "1.0000"),
-            (0.72775, "0.728"),
-            (10000, None),
-            (0.0005, "0.001"),
-            (0.7271, "0.728"),
-        ],
-    )
-    def test_next_ask_price(self, value, expected):
-        result = self.tick_scheme.next_ask_price(value)
-        expected = expected if expected is None else Price.from_str(expected)
+    def test_build_ticks(self):
+        result = self.tick_scheme.ticks[:5].tolist()
+        expected = [
+            Price.from_str("1.01"),
+            Price.from_str("1.02"),
+            Price.from_str("1.03"),
+            Price.from_str("1.04"),
+            Price.from_str("1.05"),
+        ]
         assert result == expected
 
     @pytest.mark.parametrize(
         ("value", "expected"),
         [
-            (0.7271, "0.727"),
-            (0.001, "0.001"),
-            (0.72750, "0.727"),
-            (0.00001, None),
-            (0.7271, "0.727"),
+            (1.01, 0),
+            (1.10, 9),
+            (2.0, 99),
+            (3.5, 159),
         ],
     )
-    def test_next_bid_price(self, value, expected):
-        result = self.tick_scheme.next_bid_price(value)
-        expected = expected if expected is None else Price.from_str(expected)
+    def test_find_tick_idx(self, value, expected):
+        result = self.tick_scheme.find_tick_index(value)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "n", "expected"),
+        [
+            (1.499, 0, "1.50"),
+            (2.000, 0, "2.0"),
+            (2.011, 0, "2.02"),
+            (2.021, 0, "2.04"),
+            (2.027, 2, "2.08"),
+        ],
+    )
+    def test_next_ask_price(self, value, n, expected):
+        result = self.tick_scheme.next_ask_price(value, n=n)
+        expected = Price.from_str(expected)
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("value", "n", "expected"),
+        [
+            (1.499, 0, "1.49"),
+            (2.000, 0, "2.0"),
+            (2.011, 0, "2.00"),
+            (2.021, 0, "2.02"),
+            (2.027, 2, "1.99"),
+        ],
+    )
+    def test_next_bid_price(self, value, n, expected):
+        result = self.tick_scheme.next_bid_price(value=value, n=n)
+        expected = Price.from_str(expected)
         assert result == expected
 
 

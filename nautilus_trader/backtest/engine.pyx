@@ -360,6 +360,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
+        use_position_ids: bool = True,
         use_random_ids: bool = False,
         use_reduce_only: bool = True,
     ) -> None:
@@ -401,8 +402,10 @@ cdef class BacktestEngine:
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
+        use_position_ids : bool, default True
+            If venue position IDs will be generated on order fills.
         use_random_ids : bool, default False
-            If venue order and position IDs will be randomly generated UUID4s.
+            If all venue generated identifiers will be random UUID4's.
         use_reduce_only : bool, default True
             If the `reduce_only` execution instruction on orders will be honored.
 
@@ -450,7 +453,9 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
+            use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
+            use_reduce_only=use_reduce_only,
         )
 
         self._venues[venue] = exchange

@@ -22,7 +22,6 @@ from collections import deque
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.queue cimport Queue
 from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport secs_to_nanos
@@ -96,7 +95,7 @@ cdef class Throttler:
         self._clock = clock
         self._log = LoggerAdapter(component_name=f"Throttler-{name}", logger=logger)
         self._interval_ns = secs_to_nanos(interval.total_seconds())
-        self._buffer = Queue()
+        self._buffer = deque()
         self._timer_name = f"{name}-DEQUE"
         self._timestamps = deque(maxlen=limit)
         self._output_send = output_send
@@ -122,7 +121,7 @@ cdef class Throttler:
         int
 
         """
-        return self._buffer.qsize()
+        return len(self._buffer)
 
     cpdef double used(self):
         """
@@ -184,7 +183,7 @@ cdef class Throttler:
     cdef void _limit_msg(self, msg):
         if self._output_drop is None:
             # Buffer
-            self._buffer.put_nowait(msg)
+            self._buffer.appendleft(msg)
             timer_target = self._process
             self._log.warning(f"Buffering {msg}.")
         else:
@@ -206,12 +205,12 @@ cdef class Throttler:
 
     cpdef void _process(self, TimeEvent event):
         # Send next msg on buffer
-        msg = self._buffer.get_nowait()
+        msg = self._buffer.pop()
         self._send_msg(msg)
 
         # Send remaining messages if within rate
         cdef int64_t delta_next
-        while not self._buffer.empty():
+        while self._buffer:
             delta_next = self._delta_next()
             if delta_next <= 0:
                 self._send_msg(msg)

@@ -47,6 +47,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders.list import OrderList
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -539,10 +540,12 @@ class TestExecAlgorithm:
         sl_order = bracket.orders[1]
         tp_order = bracket.orders[2]
 
+        exec_spawn_id = original_entry_order.client_order_id
+
         # Act
         self.strategy.submit_order_list(bracket, manage_gtd_expiry=True)
 
-        # Trigger order from emulator
+        # Trigger ENTRY order release
         self.data_engine.process(tick2)
 
         events: list[TimeEventHandler] = self.clock.advance_time(secs_to_nanos(3.0))
@@ -552,7 +555,7 @@ class TestExecAlgorithm:
         transformed_entry_order = self.cache.order(original_entry_order.client_order_id)
 
         # Assert
-        spawned_orders = self.cache.orders_for_exec_spawn(original_entry_order.client_order_id)
+        spawned_orders = self.cache.orders_for_exec_spawn(exec_spawn_id)
         assert transformed_entry_order.status == OrderStatus.SUBMITTED
         assert sl_order.status == OrderStatus.INITIALIZED
         assert tp_order.status == OrderStatus.INITIALIZED
@@ -572,3 +575,315 @@ class TestExecAlgorithm:
         assert transformed_entry_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.004)
         assert sl_order.quantity == quantity
         assert tp_order.quantity == quantity
+        assert self.cache.exec_spawn_total_quantity(exec_spawn_id) == Quantity.from_str("1.000")
+        assert self.cache.exec_spawn_total_filled_qty(exec_spawn_id) == Quantity.from_str("0.000")
+        assert self.cache.exec_spawn_total_leaves_qty(exec_spawn_id) == Quantity.from_str("1.000")
+
+    def test_exec_algorithm_on_emulated_bracket_with_exec_algo_entry(self) -> None:
+        """
+        Test that the OTO contingent orders update as the primary order is filled.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
+        tick1: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5005.0,
+            ask_price=5005.0,
+            bid_size=10.000,
+            ask_size=10.000,
+        )
+
+        tick2: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5000.0,
+            ask_price=5000.0,
+            bid_size=10.000,
+            ask_size=10.000,
+        )
+
+        self.data_engine.process(tick1)
+        self.exchange.process_quote_tick(tick1)
+
+        quantity = ETHUSDT_PERP_BINANCE.make_qty(1)
+        bracket: OrderList = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=quantity,
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + timedelta(seconds=30),
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4090.00),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5010.00),
+            emulation_trigger=TriggerType.BID_ASK,
+            entry_order_type=OrderType.MARKET_IF_TOUCHED,
+            entry_exec_algorithm_id=exec_algorithm.id,
+            entry_exec_algorithm_params={"horizon_secs": 2, "interval_secs": 0.5},
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        exec_spawn_id = entry_order.client_order_id
+
+        # Act
+        self.strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+
+        # Trigger ENTRY order release
+        self.data_engine.process(tick2)
+        self.exchange.process(0)
+
+        # Assert
+        spawned_orders = self.cache.orders_for_exec_spawn(exec_spawn_id)
+        transformed_entry_order = self.cache.order(entry_order.client_order_id)
+        assert transformed_entry_order.status == OrderStatus.RELEASED
+        assert sl_order.status == OrderStatus.EMULATED
+        assert tp_order.status == OrderStatus.EMULATED
+        assert self.exec_engine.command_count == 1
+        assert self.risk_engine.command_count == 1
+        assert len(spawned_orders) == 2
+        assert [o.client_order_id.value for o in spawned_orders] == [
+            "O-19700101-0000-000-None-1",
+            "O-19700101-0000-000-None-1-E1",
+        ]
+        # Assert final scheduled order quantity
+        assert sl_order.quantity == Quantity.from_str("0.250")
+        assert tp_order.quantity == Quantity.from_str("0.250")
+        assert self.cache.exec_spawn_total_quantity(exec_spawn_id) == Quantity.from_str("1.000")
+        assert self.cache.exec_spawn_total_filled_qty(exec_spawn_id) == Quantity.from_str("0.250")
+        assert self.cache.exec_spawn_total_leaves_qty(exec_spawn_id) == Quantity.from_str("0.750")
+
+        # Fill more SL size
+        events: list[TimeEventHandler] = self.clock.advance_time(secs_to_nanos(0.5))
+        for event in events:
+            event.handle()
+        self.exchange.process(0)
+
+        assert sl_order.quantity == Quantity.from_str("0.500")
+        assert tp_order.quantity == Quantity.from_str("0.500")
+        assert self.cache.exec_spawn_total_quantity(exec_spawn_id) == Quantity.from_str("1.000")
+        assert self.cache.exec_spawn_total_filled_qty(exec_spawn_id) == Quantity.from_str("0.500")
+        assert self.cache.exec_spawn_total_leaves_qty(exec_spawn_id) == Quantity.from_str("0.500")
+        assert self.exec_engine.command_count == 2
+
+        # Fill remaining SL size
+        events = self.clock.advance_time(secs_to_nanos(2.0))
+        for event in events:
+            event.handle()
+        self.exchange.process(0)
+
+        assert sl_order.status == OrderStatus.EMULATED
+        assert tp_order.status == OrderStatus.EMULATED
+        assert sl_order.quantity == Quantity.from_str("1.000")
+        assert tp_order.quantity == Quantity.from_str("1.000")
+        assert self.cache.exec_spawn_total_quantity(exec_spawn_id) == Quantity.from_str("1.000")
+        assert self.cache.exec_spawn_total_filled_qty(exec_spawn_id) == Quantity.from_str("1.000")
+        assert self.cache.exec_spawn_total_leaves_qty(exec_spawn_id) == Quantity.from_str("0.000")
+        assert self.exec_engine.command_count == 4
+
+    def test_exec_algorithm_on_emulated_bracket_with_partially_multi_filled_sl(self) -> None:
+        """
+        Test that the TP order in an OUO contingent relationship with the SL should have
+        its size reduced to the total size of the execution spawns leaves quantity.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
+        tick1: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5005.0,
+            ask_price=5005.0,
+            bid_size=10.000,
+            ask_size=10.000,
+        )
+
+        tick2: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5000.0,
+            ask_price=5000.0,
+            bid_size=10.000,
+            ask_size=10.000,
+        )
+
+        self.data_engine.process(tick1)
+        self.exchange.process_quote_tick(tick1)
+
+        quantity = ETHUSDT_PERP_BINANCE.make_qty(1)
+        bracket: OrderList = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=quantity,
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + timedelta(seconds=30),
+            entry_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5000.00),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4090.00),
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5010.00),
+            emulation_trigger=TriggerType.BID_ASK,
+            entry_order_type=OrderType.MARKET_IF_TOUCHED,
+            sl_exec_algorithm_id=exec_algorithm.id,
+            tp_exec_algorithm_id=exec_algorithm.id,
+            sl_exec_algorithm_params={"horizon_secs": 2, "interval_secs": 0.5},
+            tp_exec_algorithm_params={"horizon_secs": 2, "interval_secs": 0.5},
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        # Act
+        self.strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+
+        # Trigger ENTRY order release
+        self.data_engine.process(tick2)
+        self.exchange.process(0)
+
+        tick3: QuoteTick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=4090.0,
+            ask_price=4090.0,
+            bid_size=10.000,
+            ask_size=10.000,
+        )
+
+        # Trigger SL order release
+        self.data_engine.process(tick3)
+        self.exchange.process(0)
+
+        # Assert
+        spawned_orders = self.cache.orders_for_exec_spawn(sl_order.exec_spawn_id)
+        transformed_entry_order = self.cache.order(entry_order.client_order_id)
+        sl_order = self.cache.order(sl_order.client_order_id)
+        assert transformed_entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.RELEASED
+        assert tp_order.status == OrderStatus.EMULATED
+        assert self.exec_engine.command_count == 2
+        assert self.risk_engine.command_count == 1
+        assert len(spawned_orders) == 2
+        assert [o.client_order_id.value for o in spawned_orders] == [
+            "O-19700101-0000-000-None-2",
+            "O-19700101-0000-000-None-2-E1",
+        ]
+        # Assert final scheduled order quantity
+        assert sl_order.quantity == Quantity.from_str("0.750")
+        assert sl_order.leaves_qty == Quantity.from_str("0.750")
+        assert tp_order.quantity == Quantity.from_str("0.750")
+        assert tp_order.leaves_qty == Quantity.from_str("0.750")
+        assert self.cache.exec_spawn_total_quantity(sl_order.exec_spawn_id) == Quantity.from_str(
+            "1.000",
+        )
+        assert self.cache.exec_spawn_total_filled_qty(sl_order.exec_spawn_id) == Quantity.from_str(
+            "0.250",
+        )
+        assert self.cache.exec_spawn_total_leaves_qty(sl_order.exec_spawn_id) == Quantity.from_str(
+            "0.750",
+        )
+        assert self.cache.exec_spawn_total_quantity(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.750",
+        )
+        assert self.cache.exec_spawn_total_filled_qty(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.000",
+        )
+        assert self.cache.exec_spawn_total_leaves_qty(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.750",
+        )
+
+        # Fill more SL size
+        events: list[TimeEventHandler] = self.clock.advance_time(secs_to_nanos(0.5))
+        for event in events:
+            event.handle()
+        self.exchange.process(0)
+
+        assert sl_order.quantity == Quantity.from_str("0.500")
+        assert sl_order.leaves_qty == Quantity.from_str("0.500")
+        assert tp_order.quantity == Quantity.from_str("0.500")
+        assert tp_order.leaves_qty == Quantity.from_str("0.500")
+        assert self.cache.exec_spawn_total_quantity(sl_order.exec_spawn_id) == Quantity.from_str(
+            "1.000",
+        )
+        assert self.cache.exec_spawn_total_filled_qty(sl_order.exec_spawn_id) == Quantity.from_str(
+            "0.500",
+        )
+        assert self.cache.exec_spawn_total_leaves_qty(sl_order.exec_spawn_id) == Quantity.from_str(
+            "0.500",
+        )
+        assert self.cache.exec_spawn_total_quantity(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.500",
+        )
+        assert self.cache.exec_spawn_total_filled_qty(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.000",
+        )
+        assert self.cache.exec_spawn_total_leaves_qty(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.500",
+        )
+        assert self.exec_engine.command_count == 3
+
+        # Fill remaining SL size
+        events = self.clock.advance_time(secs_to_nanos(2.0))
+        for event in events:
+            event.handle()
+        self.exchange.process(0)
+
+        assert sl_order.status == OrderStatus.FILLED
+        assert tp_order.status == OrderStatus.CANCELED
+        assert self.cache.exec_spawn_total_quantity(sl_order.exec_spawn_id) == Quantity.from_str(
+            "1.000",
+        )
+        assert self.cache.exec_spawn_total_filled_qty(sl_order.exec_spawn_id) == Quantity.from_str(
+            "1.000",
+        )
+        assert self.cache.exec_spawn_total_leaves_qty(sl_order.exec_spawn_id) == Quantity.from_str(
+            "0.000",
+        )
+        assert self.cache.exec_spawn_total_quantity(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.250",
+        )
+        assert self.cache.exec_spawn_total_filled_qty(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.000",
+        )
+        assert self.cache.exec_spawn_total_leaves_qty(tp_order.exec_spawn_id) == Quantity.from_str(
+            "0.250",
+        )
+        assert self.cache.exec_spawn_total_quantity(
+            sl_order.exec_spawn_id,
+            active_only=True,
+        ) == Quantity.from_str("0.000")
+        assert self.cache.exec_spawn_total_filled_qty(
+            sl_order.exec_spawn_id,
+            active_only=True,
+        ) == Quantity.from_str("0.000")
+        assert self.cache.exec_spawn_total_leaves_qty(
+            sl_order.exec_spawn_id,
+            active_only=True,
+        ) == Quantity.from_str("0.000")
+        assert self.cache.exec_spawn_total_quantity(
+            tp_order.exec_spawn_id,
+            active_only=True,
+        ) == Quantity.from_str("0.000")
+        assert self.cache.exec_spawn_total_filled_qty(
+            tp_order.exec_spawn_id,
+            active_only=True,
+        ) == Quantity.from_str("0.000")
+        assert self.cache.exec_spawn_total_leaves_qty(
+            tp_order.exec_spawn_id,
+            active_only=True,
+        ) == Quantity.from_str("0.000")
+        assert self.exec_engine.command_count == 5

@@ -256,6 +256,105 @@ class TestPosition:
             "commissions": "['0.00 USD']",
         }
 
+    @pytest.mark.parametrize(
+        ("side1", "side2", "last_px1", "last_px2", "last_qty1", "last_qty2"),
+        [
+            [
+                OrderSide.BUY,
+                OrderSide.SELL,  # <--- Different side
+                Price.from_str("1.00001"),
+                Price.from_str("1.00001"),
+                Quantity.from_str("1"),
+                Quantity.from_str("1"),
+            ],
+            [
+                OrderSide.BUY,
+                OrderSide.SELL,  # <--- Different side
+                Price.from_str("1.00001"),
+                Price.from_str("1.00001"),
+                Quantity.from_str("1"),
+                Quantity.from_str("1"),
+            ],
+            [
+                OrderSide.BUY,
+                OrderSide.SELL,  # <--- Different side
+                Price.from_str("1.00001"),
+                Price.from_str("1.00001"),
+                Quantity.from_str("1"),
+                Quantity.from_str("1"),
+            ],
+        ],
+    )
+    def test_position_filled_with_duplicate_trade_id_different_trade(
+        self,
+        side1: OrderSide,
+        side2: OrderSide,
+        last_px1: Price,
+        last_px2: Price,
+        last_qty1: Quantity,
+        last_qty2: Quantity,
+    ) -> None:
+        # Arrange
+        order1 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            side1,
+            Quantity.from_int(4),
+        )
+        order2 = self.order_factory.market(
+            AUDUSD_SIM.id,
+            side2,
+            Quantity.from_int(4),
+        )
+
+        trade_id = TradeId("1")
+
+        fill1 = TestEventStubs.order_filled(
+            order1,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            last_px=last_px1,
+            last_qty=last_qty1,
+            trade_id=trade_id,
+            position_id=PositionId("1"),
+        )
+
+        fill2 = TestEventStubs.order_filled(
+            order2,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            last_px=last_px2,
+            last_qty=last_qty2,
+            trade_id=trade_id,
+            position_id=PositionId("1"),
+        )
+
+        # Act
+        position = Position(instrument=AUDUSD_SIM, fill=fill1)
+        position.apply(fill2)
+
+    def test_position_filled_with_duplicate_trade_id_and_same_trade(self) -> None:
+        # Arrange
+        order = self.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(4),
+        )
+
+        fill = TestEventStubs.order_filled(
+            order,
+            instrument=AUDUSD_SIM,
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.000"),
+            trade_id=TradeId("1"),
+            position_id=PositionId("1"),
+        )
+
+        position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+        # Act
+        with pytest.raises(ValueError):
+            position.apply(fill)
+
     def test_position_filled_with_buy_order(self) -> None:
         # Arrange
         order = self.order_factory.market(
