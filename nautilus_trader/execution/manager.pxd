@@ -33,6 +33,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
+from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -43,14 +44,24 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderManager:
-    cdef readonly Clock _clock
-    cdef readonly LoggerAdapter _log
-    cdef readonly MessageBus _msgbus
-    cdef readonly Cache _cache
+    cdef Clock _clock
+    cdef LoggerAdapter _log
+    cdef MessageBus _msgbus
+    cdef Cache _cache
+
+    cdef dict _submit_order_commands
+    cdef object _submit_order_handler
+    cdef object _cancel_order_handler
+
+    cpdef dict get_submit_order_commands(self)
+    cpdef void cache_submit_order_command(self, SubmitOrder command)
+    cpdef SubmitOrder pop_submit_order_command(self, ClientOrderId client_order_id)
+    cpdef void reset(self)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void cancel_order(self, Order order)
+    cpdef void create_new_submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
