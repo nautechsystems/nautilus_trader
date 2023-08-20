@@ -23,13 +23,11 @@ use std::{
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use super::order::{BookOrder, NULL_ORDER};
 use crate::{
     enums::{BookAction, FromU8, OrderSide},
     identifiers::instrument_id::InstrumentId,
-    python::value_to_pydict,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -247,31 +245,29 @@ impl OrderBookDelta {
 
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON values
-        let json_value =
-            serde_json::to_value(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
+        // Serialize object to JSON bytes
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
         // Parse JSON into a Python dictionary
-        if let Value::Object(_) = &json_value {
-            value_to_pydict(py, &json_value)
-        } else {
-            Err(PyValueError::new_err("Expected JSON object"))
-        }
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
-    // /// Return a new object from the given dictionary representation.
-    // #[staticmethod]
-    // pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-    //     // Serialize to JSON bytes
-    //     let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-    //         .getattr("json")?
-    //         .call_method("encode", (values,), None)?
-    //         .extract()?;
-    //     // Deserialize to object
-    //     let instance = serde_json::from_slice(&json_bytes)
-    //         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    //     Ok(instance)
-    // }
+    /// Return a new object from the given dictionary representation.
+    #[staticmethod]
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
+            .extract()?;
+
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_str.into_bytes())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(instance)
+    }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
@@ -380,31 +376,31 @@ mod tests {
         );
     }
 
-    // #[test]
-    // fn test_as_dict() {
-    //     pyo3::prepare_freethreaded_python();
-    //
-    //     let delta = create_stub_delta();
-    //
-    //     Python::with_gil(|py| {
-    //         let dict_string = delta.as_dict(py).unwrap().to_string();
-    //         let expected_string = r#"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.NASDAQ', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}"#;
-    //         assert_eq!(dict_string, expected_string);
-    //     });
-    // }
+    #[test]
+    fn test_as_dict() {
+        pyo3::prepare_freethreaded_python();
 
-    // #[test]
-    // fn test_from_dict() {
-    //     pyo3::prepare_freethreaded_python();
-    //
-    //     let delta = create_stub_delta();
-    //
-    //     Python::with_gil(|py| {
-    //         let dict = delta.as_dict(py).unwrap();
-    //         let parsed = OrderBookDelta::from_dict(py, dict).unwrap();
-    //         assert_eq!(parsed, delta);
-    //     });
-    // }
+        let delta = create_stub_delta();
+
+        Python::with_gil(|py| {
+            let dict_string = delta.as_dict(py).unwrap().to_string();
+            let expected_string = r#"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.NASDAQ', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}"#;
+            assert_eq!(dict_string, expected_string);
+        });
+    }
+
+    #[test]
+    fn test_from_dict() {
+        pyo3::prepare_freethreaded_python();
+
+        let delta = create_stub_delta();
+
+        Python::with_gil(|py| {
+            let dict = delta.as_dict(py).unwrap();
+            let parsed = OrderBookDelta::from_dict(py, dict).unwrap();
+            assert_eq!(parsed, delta);
+        });
+    }
 
     #[test]
     fn test_from_pyobject() {

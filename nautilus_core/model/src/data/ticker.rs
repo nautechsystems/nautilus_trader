@@ -102,32 +102,29 @@ impl Ticker {
 
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON values
-        let json_value =
-            serde_json::to_value(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
+        // Serialize object to JSON bytes
+        let json_str =
+            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
         // Parse JSON into a Python dictionary
-        if let Value::Object(_) = &json_value {
-            value_to_pydict(py, &json_value)
-        } else {
-            Err(PyValueError::new_err("Expected JSON object"))
-        }
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
-    // /// Return a new object from the given dictionary representation.
-    // #[staticmethod]
-    // pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-    //     // Serialize object to JSON values
-    //     let json_value =
-    //         serde_json::to_value(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
-    //
-    //     // Parse JSON into a Python dictionary
-    //     if let Value::Object(_) = &json_value {
-    //         value_to_pydict(py, &json_value)
-    //     } else {
-    //         Err(PyValueError::new_err("Expected JSON object"))
-    //     }
-    // }
+    /// Return a new object from the given dictionary representation.
+    #[staticmethod]
+    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
+            .extract()?;
+
+        // Deserialize to object
+        let instance = serde_json::from_slice(&json_str.into_bytes())
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        Ok(instance)
+    }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
