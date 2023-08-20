@@ -209,13 +209,12 @@ cdef class ExecAlgorithm(Actor):
         return ClientOrderId(f"{primary.client_order_id.to_str()}-E{spawn_sequence}")
 
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
-        cdef uint8_t size_precision = primary.quantity._mem.precision
-        cdef uint64_t new_raw = primary.quantity._mem.raw - spawn_qty._mem.raw
-        if new_raw <= 0:
-            self._log.error("Cannot reduce primary order to non-positive quantity.")
-            return
+        Condition.true(primary.quantity >= spawn_qty, "Spawn order quantity was greater than or equal to primary order")
 
-        cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
+        cdef Quantity new_qty = Quantity.from_raw_c(
+            primary.quantity._mem.raw - spawn_qty._mem.raw,
+            primary.quantity._mem.precision,
+        )
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
@@ -282,7 +281,7 @@ cdef class ExecAlgorithm(Actor):
     cdef void _handle_submit_order(self, SubmitOrder command):
         try:
             self.on_order(command.order)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             self.log.exception(f"Error on handling {repr(command.order)}", e)
             raise
 
@@ -293,13 +292,13 @@ cdef class ExecAlgorithm(Actor):
                 Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
         try:
             self.on_order_list(command.order_list)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             self.log.exception(f"Error on handling {repr(command.order_list)}", e)
             raise
 
     cdef void _handle_cancel_order(self, CancelOrder command):
         cdef Order order = self.cache.order(command.client_order_id)
-        if order is None:
+        if order is None:  # pragma: no cover (design-time error)
             self._log.error(
                 f"Cannot cancel order: {repr(command.client_order_id)} not found.",
             )
@@ -310,7 +309,7 @@ cdef class ExecAlgorithm(Actor):
 
         try:
             order.apply(event)
-        except InvalidStateTrigger as e:
+        except InvalidStateTrigger as e:  # pragma: no cover
             self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
             return
 
@@ -351,7 +350,7 @@ cdef class ExecAlgorithm(Actor):
 
         try:
             self.on_order_event(event)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             self.log.exception(f"Error on handling {repr(event)}", e)
             raise
 
@@ -849,7 +848,7 @@ cdef class ExecAlgorithm(Actor):
             try:
                 order.apply(event)
                 self.cache.update_order(order)
-            except InvalidStateTrigger as e:
+            except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
 
@@ -1016,7 +1015,7 @@ cdef class ExecAlgorithm(Actor):
             try:
                 order.apply(event)
                 self.cache.update_order(order)
-            except InvalidStateTrigger as e:
+            except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
 
