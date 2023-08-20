@@ -371,9 +371,16 @@ impl Order for TrailingStopLimitOrder {
 
     fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
         if let OrderEvent::OrderUpdated(ref event) = event {
-            self.update(event)
+            self.update(event);
         };
+        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+
         self.core.apply(event)?;
+
+        if is_order_filled {
+            self.core.set_slippage(self.price)
+        };
+
         Ok(())
     }
 
