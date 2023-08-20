@@ -200,7 +200,7 @@ cdef class OrderEmulator(Actor):
             PositionId position_id
             ClientId client_id
         for order in emulated_orders:
-            if order.status != OrderStatus.INITIALIZED:
+            if order.status != OrderStatus.EMULATED:
                 continue  # No longer emulated
 
             position_id = self.cache.position_id(order.client_order_id)
