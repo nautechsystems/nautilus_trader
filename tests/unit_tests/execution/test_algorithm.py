@@ -16,6 +16,8 @@
 from datetime import timedelta
 from decimal import Decimal
 
+import pytest
+
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -27,6 +29,7 @@ from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config.common import ImportableExecAlgorithmConfig
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
@@ -184,6 +187,73 @@ class TestExecAlgorithm:
         self.exec_engine.start()
         self.emulator.start()
         self.strategy.start()
+
+    def test_exec_algorithm_reset(self) -> None:
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+        exec_algorithm.stop()
+
+        # Act, Assert
+        exec_algorithm.reset()
+
+    def test_exec_algorithm_to_importable_config(self) -> None:
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+
+        # Act
+        config = exec_algorithm.to_importable_config()
+
+        # Assert
+        assert isinstance(config, ImportableExecAlgorithmConfig)
+        assert config.dict() == {
+            "exec_algorithm_path": "nautilus_trader.examples.algorithms.twap:TWAPExecAlgorithm",
+            "config_path": "nautilus_trader.examples.algorithms.twap:TWAPExecAlgorithmConfig",
+            "config": {"exec_algorithm_id": "TWAP"},
+        }
+
+    def test_exec_algorithm_spawn_market_order_with_quantity_too_high(self) -> None:
+        """
+        Test that an exception is raised when more than the primary quantity attempts to
+        be spawned.
+        """
+        # Arrange
+        exec_algorithm = TWAPExecAlgorithm()
+        exec_algorithm.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        exec_algorithm.start()
+
+        primary_order = self.strategy.order_factory.market(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("1")),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params={"horizon_secs": 2, "interval_secs": 1},
+        )
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            exec_algorithm.spawn_market(
+                primary=primary_order,
+                quantity=ETHUSDT_PERP_BINANCE.make_qty(Decimal("2")),  # <-- Greater than primary
+                time_in_force=TimeInForce.FOK,
+                reduce_only=True,
+                tags="EXIT",
+            )
 
     def test_exec_algorithm_spawn_market_order(self) -> None:
         """
