@@ -122,10 +122,11 @@ cdef class OrderEmulator(Actor):
             msgbus=msgbus,
             cache=cache,
             component_name=type(self).__name__,
+            submit_order_handler=self._handle_submit_order,
+            cancel_order_handler=self._cancel_order,
         )
 
         self._matching_cores: dict[InstrumentId, MatchingCore]  = {}
-        self._commands_submit_order: dict[ClientOrderId, SubmitOrder] = {}
 
         self._subscribed_quotes: set[InstrumentId] = set()
         self._subscribed_trades: set[InstrumentId] = set()
@@ -172,7 +173,7 @@ cdef class OrderEmulator(Actor):
         dict[ClientOrderId, SubmitOrder]
 
         """
-        return self._commands_submit_order.copy()
+        return self._manager.get_submit_order_commands()
 
     def get_matching_core(self, InstrumentId instrument_id) -> Optional[MatchingCore]:
         """
@@ -232,17 +233,17 @@ cdef class OrderEmulator(Actor):
         self.event_count += 1
 
         if isinstance(event, OrderRejected):
-            self._handle_order_rejected(event)
+            self._manager.handle_order_rejected(event)
         elif isinstance(event, OrderCanceled):
-            self._handle_order_canceled(event)
+            self._manager.handle_order_canceled(event)
         elif isinstance(event, OrderExpired):
-            self._handle_order_expired(event)
+            self._manager.handle_order_expired(event)
         elif isinstance(event, OrderUpdated):
-            self._handle_order_updated(event)
+            self._manager.handle_order_updated(event)
         elif isinstance(event, OrderFilled):
-            self._handle_order_filled(event)
+            self._manager.handle_order_filled(event)
         elif isinstance(event, PositionEvent):
-            self._handle_position_event(event)
+            self._manager.handle_position_event(event)
 
         if not isinstance(event, OrderEvent):
             return
@@ -265,7 +266,7 @@ cdef class OrderEmulator(Actor):
         pass
 
     cpdef void on_reset(self):
-        self._commands_submit_order.clear()
+        self._manager.reset()
         self._matching_cores.clear()
 
         self.command_count = 0
@@ -349,12 +350,12 @@ cdef class OrderEmulator(Actor):
         cdef Order order = command.order
         cdef TriggerType emulation_trigger = command.order.emulation_trigger
         Condition.not_equal(emulation_trigger, TriggerType.NO_TRIGGER, "command.order.emulation_trigger", "TriggerType.NO_TRIGGER")
-        Condition.not_in(command.order.client_order_id, self._commands_submit_order, "command.order.client_order_id", "self._commands_submit_order")
+        Condition.not_in(command.order.client_order_id, self._manager.get_submit_order_commands(), "command.order.client_order_id", "self._commands_submit_order")
 
         if emulation_trigger not in SUPPORTED_TRIGGERS:
             self._log.error(
                 f"Cannot emulate order: `TriggerType` {trigger_type_to_str(emulation_trigger)} not supported.")
-            self._cancel_order(matching_core=None, order=order)
+            self._manager.cancel_order(order=order)
             return
 
         self._check_monitoring(command.strategy_id, command.position_id)
@@ -368,7 +369,7 @@ cdef class OrderEmulator(Actor):
                     self._log.error(
                         f"Cannot emulate order: no synthetic instrument {trigger_instrument_id} for trigger.",
                     )
-                    self._cancel_order(matching_core=None, order=order)
+                    self._manager.cancel_order(order=order)
                     return
                 matching_core = self.create_matching_core(synthetic.id, synthetic.price_increment)
             else:
@@ -377,7 +378,7 @@ cdef class OrderEmulator(Actor):
                     self._log.error(
                         f"Cannot emulate order: no instrument {trigger_instrument_id} for trigger.",
                     )
-                    self._cancel_order(matching_core=None, order=order)
+                    self._manager.cancel_order(order=order)
                     return
                 matching_core = self.create_matching_core(instrument.id, instrument.price_increment)
 
@@ -388,11 +389,11 @@ cdef class OrderEmulator(Actor):
                 self.log.error(
                     "Cannot handle trailing stop order with no `trigger_price` and no market updates.",
                 )
-                self._cancel_order(None, order)
+                self._manager.cancel_order(order)
                 return
 
         # Cache command
-        self._commands_submit_order[order.client_order_id] = command
+        self._manager.cache_submit_order_command(command)
 
         # Check if immediately marketable (initial match)
         matching_core.match_order(order, initial=True)
@@ -411,7 +412,7 @@ cdef class OrderEmulator(Actor):
                 f"invalid `TriggerType`, was {emulation_trigger}",  # pragma: no cover (design-time error)
             )
 
-        if order.client_order_id not in self._commands_submit_order:
+        if order.client_order_id not in self._manager.get_submit_order_commands():
             return  # Already released
 
         # Generate event
@@ -449,7 +450,7 @@ cdef class OrderEmulator(Actor):
                 assert parent_order, f"Parent order for {repr(order.client_order_id)} not found"
                 if parent_order.contingency_type == ContingencyType.OTO:
                     continue  # Process contingency order later once triggered
-            self._create_new_submit_order(
+            self._manager.create_new_submit_order(
                 order=order,
                 position_id=command.position_id,
                 client_id=command.client_id,
@@ -525,7 +526,7 @@ cdef class OrderEmulator(Actor):
             # Order not held in the emulator
             self._manager.send_exec_command(command)
         else:
-            self._cancel_order(matching_core, order)
+            self._manager.cancel_order(order)
 
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command):
         cdef MatchingCore matching_core = self._matching_cores.get(command.instrument_id)
@@ -547,9 +548,9 @@ cdef class OrderEmulator(Actor):
 
         cdef Order order
         for order in orders:
-            self._cancel_order(matching_core, order)
+            self._manager.cancel_order(order)
 
-    cdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id):
+    cpdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id):
         if strategy_id not in self._subscribed_strategies:
             # Subscribe to all strategy events
             self._msgbus.subscribe(topic=f"events.order.{strategy_id.to_str()}", handler=self.on_event)
@@ -560,35 +561,7 @@ cdef class OrderEmulator(Actor):
         if position_id is not None and position_id not in self._monitored_positions:
             self._monitored_positions.add(position_id)
 
-    cdef void _create_new_submit_order(
-        self,
-        Order order,
-        PositionId position_id,
-        ClientId client_id,
-    ):
-        cdef SubmitOrder submit = SubmitOrder(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            order=order,
-            position_id=position_id,
-            client_id=client_id,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            # Cache command
-            self._commands_submit_order[order.client_order_id] = submit
-
-            if order.exec_algorithm_id is not None:
-                self._manager.send_algo_command(submit)
-            else:
-                self._manager.send_risk_command(submit)
-        else:
-            # Emulate
-            self._handle_submit_order(submit)
-
-    cdef void _cancel_order(self, MatchingCore matching_core, Order order):
+    cpdef void _cancel_order(self, Order order):
         if order is None:
             self._log.error(
                 f"Cannot cancel order: order for {repr(order.client_order_id)} not found.",
@@ -601,102 +574,9 @@ cdef class OrderEmulator(Actor):
         order.emulation_trigger = TriggerType.NO_TRIGGER
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
-        if matching_core is None:
-            matching_core = self._matching_cores.get(trigger_instrument_id)
+        cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is not None:
             matching_core.delete_order(order)
-
-        self._commands_submit_order.pop(order.client_order_id, None)
-
-        self._manager.cancel_order(order)
-
-# -- EVENT HANDLERS -------------------------------------------------------------------------------
-
-    cdef void _handle_position_event(self, PositionEvent event):
-        pass  # TBC
-
-    cdef void _handle_order_rejected(self, OrderRejected rejected):
-        self._manager.handle_order_rejected(rejected)
-
-    cdef void _handle_order_canceled(self, OrderCanceled canceled):
-        self._manager.handle_order_canceled(canceled)
-
-    cdef void _handle_order_expired(self, OrderExpired expired):
-        self._manager.handle_order_expired(expired)
-
-    cdef void _handle_order_updated(self, OrderUpdated updated):
-        self._manager.handle_order_updated(updated)
-
-    cdef void _handle_order_filled(self, OrderFilled filled):
-        cdef Order order = self.cache.order(filled.client_order_id)
-        if order is None:
-            self._log.error(
-                "Cannot handle `OrderFilled`: "
-                f"order for {repr(filled.client_order_id)} not found. {filled}",
-            )
-            return
-
-        cdef MatchingCore matching_core = None
-        if order.is_closed_c():
-            matching_core = self._matching_cores.get(order.instrument_id)
-            if matching_core is not None:
-                matching_core.delete_order(order)
-
-        cdef:
-            PositionId position_id
-            ClientId client_id
-            ClientOrderId client_order_id
-            SubmitOrderList submit_order_list
-            Order child_order
-            Order primary_order
-            Order spawn_order
-            Quantity parent_quantity
-            Quantity parent_filled_qty
-        if order.contingency_type == ContingencyType.OTO:
-            assert order.linked_order_ids
-            position_id = self.cache.position_id(order.client_order_id)
-            client_id = self.cache.client_id(order.client_order_id)
-
-            if order.exec_spawn_id is not None:
-                # Determine total quantities of execution spawn sequence
-                parent_quantity = self.cache.exec_spawn_total_quantity(order.exec_spawn_id)
-                parent_filled_qty = self.cache.exec_spawn_total_filled_qty(order.exec_spawn_id)
-            else:
-                parent_quantity = order.quantity
-                parent_filled_qty = order.filled_qty
-
-            for client_order_id in order.linked_order_ids:
-                child_order = self.cache.order(client_order_id)
-                assert child_order, f"Cannot find child order for {repr(client_order_id)}"
-                if child_order.is_closed_c() or child_order.status == OrderStatus.RELEASED:
-                    continue
-
-                if child_order.position_id is None:
-                    child_order.position_id = position_id
-
-                if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
-                    self._manager.update_order_quantity(child_order, parent_filled_qty)
-                elif parent_quantity._mem.raw != child_order.quantity._mem.raw:
-                    self._manager.update_order_quantity(child_order, parent_quantity)
-
-                if not child_order.client_order_id in self._commands_submit_order:
-                    # TODO: This still needs to be untangled
-                    self._create_new_submit_order(
-                        order=child_order,
-                        position_id=position_id,
-                        client_id=client_id,
-                    )
-        elif order.contingency_type == ContingencyType.OCO:
-            # Cancel all OCO orders
-            for client_order_id in order.linked_order_ids:
-                contingent_order = self.cache.order(client_order_id)
-                assert contingent_order
-                if contingent_order.is_closed_c():
-                    continue
-                if contingent_order.client_order_id != order.client_order_id:
-                    self._cancel_order(matching_core, contingent_order)
-        elif order.contingency_type == ContingencyType.OUO:
-            self._manager.handle_contingencies(order)
 
 # -------------------------------------------------------------------------------------------------
 
@@ -718,7 +598,7 @@ cdef class OrderEmulator(Actor):
 
     cpdef void _fill_market_order(self, Order order):
         # Fetch command
-        cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
+        cdef SubmitOrder command = self._manager.pop_submit_order_command(order.client_order_id)
         if command is None:
             self._log.debug(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
@@ -793,7 +673,7 @@ cdef class OrderEmulator(Actor):
             return
 
         # Fetch command
-        cdef SubmitOrder command = self._commands_submit_order.pop(order.client_order_id, None)
+        cdef SubmitOrder command = self._manager.pop_submit_order_command(order.client_order_id)
         if command is None:
             self._log.debug(
                 f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",

@@ -71,7 +71,17 @@ cdef class OrderManager:
         The cache for the order manager.
     component_name : str
         The component name for the order manager.
+    submit_order_handler : Callable[[SubmitOrder], None]
+        The handler to call when submitting orders.
+    cancel_order_handler : Callable[[Order], None]
+        The handler to call when canceling orders.
 
+    Raises
+    ------
+    TypeError
+        If `submit_order_handler` is not of type `Callable`.
+    TypeError
+        If `cancel_order_handler` is not of type `Callable`.
     """
 
     def __init__(
@@ -81,18 +91,88 @@ cdef class OrderManager:
         MessageBus msgbus,
         Cache cache not None,
         str component_name not None,
+        submit_order_handler: Callable[[SubmitOrder], None],
+        cancel_order_handler: Callable[[Order], None],
     ):
         Condition.valid_string(component_name, "component_name")
+        Condition.callable(submit_order_handler, "submit_order_handler")
+        Condition.callable(cancel_order_handler, "cancel_order_handler")
 
         self._clock = clock
         self._log = LoggerAdapter(component_name=component_name, logger=logger)
         self._msgbus = msgbus
         self._cache = cache
 
+        self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
+        self._submit_order_handler: Callable[[SubmitOrder], None] = submit_order_handler
+        self._cancel_order_handler: Callable[[Order], None] = cancel_order_handler
+
+    cpdef dict get_submit_order_commands(self):
+        """
+        Return the managers cached submit order commands.
+
+        Returns
+        -------
+        dict[ClientOrderId, SubmitOrder]
+
+        """
+        return self._submit_order_commands.copy()
+
+    cpdef void cache_submit_order_command(self, SubmitOrder command):
+        """
+        Cache the given submit order `command` with the manager.
+
+        Parameters
+        ----------
+        command : SubmitOrder
+            The submit order command to cache.
+
+        """
+        Condition.not_none(command, "command")
+
+        self._submit_order_commands[command.order.client_order_id] = command
+
+    cpdef SubmitOrder pop_submit_order_command(self, ClientOrderId client_order_id):
+        """
+        Pop the submit order command for the given `client_order_id` out of the managers
+        cache (if found).
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID for the command to pop.
+
+        Returns
+        -------
+        SubmitOrder or ``None``
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return self._submit_order_commands.pop(client_order_id, None)
+
+    cpdef void reset(self):
+        """
+        Reset the manager, clearing all stateful values.
+        """
+        self._submit_order_commands.clear()
+
     cpdef void cancel_order(self, Order order):
+        """
+        Cancel the given `order` with the manager.
+
+        Parameters
+        ----------
+        order : Order
+            The order to cancel.
+
+        """
         Condition.not_none(order, "order")
 
         self._log.debug(f"Cancelling order {order}.")
+
+        self._submit_order_commands.pop(order.client_order_id, None)
+        self._cancel_order_handler(order)
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
@@ -108,6 +188,48 @@ cdef class OrderManager:
             ts_init=ts_now,
         )
         self.send_exec_event(event)
+
+    cpdef void create_new_submit_order(
+        self,
+        Order order,
+        PositionId position_id = None,
+        ClientId client_id = None,
+    ):
+        """
+        Create a new submit order command for the given `order`.
+
+        Parameters
+        ----------
+        order : Order
+            The order for the command.
+        position_id : PositionId, optional
+            The position ID for the command.
+        client_id : ClientId, optional
+            The client ID for the command.
+
+        """
+        Condition.not_none(order, "order")
+
+        cdef SubmitOrder submit = SubmitOrder(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            order=order,
+            position_id=position_id,
+            client_id=client_id,
+            command_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        if order.emulation_trigger == TriggerType.NO_TRIGGER:
+            # Cache command
+            self.cache_submit_order_command(submit)
+
+            if order.exec_algorithm_id is not None:
+                self.send_algo_command(submit)
+            else:
+                self.send_risk_command(submit)
+        else:
+            self._submit_order_handler(submit)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -171,7 +293,6 @@ cdef class OrderManager:
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self.handle_contingencies_update(order)
 
-
     cpdef void handle_order_filled(self, OrderFilled filled):
         Condition.not_none(filled, "filled")
 
@@ -219,6 +340,13 @@ cdef class OrderManager:
                     self.update_order_quantity(child_order, parent_filled_qty)
                 elif parent_quantity._mem.raw != child_order.quantity._mem.raw:
                     self.update_order_quantity(child_order, parent_quantity)
+
+                if not child_order.client_order_id in self._submit_order_commands:
+                    self.create_new_submit_order(
+                        order=child_order,
+                        position_id=position_id,
+                        client_id=client_id,
+                    )
         elif order.contingency_type == ContingencyType.OCO:
             # Cancel all OCO orders
             for client_order_id in order.linked_order_ids:
@@ -256,6 +384,7 @@ cdef class OrderManager:
             if client_order_id == order.client_order_id:
                 continue  # Already being handled
             if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NO_TRIGGER:
+                self._submit_order_commands.pop(order.client_order_id, None)
                 continue  # Already completed
 
             if order.contingency_type == ContingencyType.OTO:
@@ -293,7 +422,6 @@ cdef class OrderManager:
             if client_order_id == order.client_order_id:
                 continue  # Already being handled
             if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NO_TRIGGER:
-                self._commands_submit_order.pop(order.client_order_id, None)
                 continue  # Already completed
 
             if order.contingency_type == ContingencyType.OTO:
