@@ -200,7 +200,7 @@ cdef class OrderEmulator(Actor):
             PositionId position_id
             ClientId client_id
         for order in emulated_orders:
-            if order.status != OrderStatus.EMULATED:
+            if order.status_c() not in (OrderStatus.INITIALIZED, OrderStatus.EMULATED):
                 continue  # No longer emulated
 
             position_id = self.cache.position_id(order.client_order_id)
@@ -410,28 +410,30 @@ cdef class OrderEmulator(Actor):
         if order.client_order_id not in self._manager.get_submit_order_commands():
             return  # Already released
 
-        # Generate event
-        cdef OrderEmulated event = OrderEmulated(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            event_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-        order.apply(event)
-        self.cache.update_order(order)
-
-        self._manager.send_risk_event(event)
-
         # Hold in matching core
         matching_core.add_order(order)
 
-        # Publish event
-        self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}",
-            msg=event,
-        )
+        cdef OrderEmulated event
+        if order.status_c() == OrderStatus.INITIALIZED:
+            # Generate event
+            event = OrderEmulated(
+                trader_id=order.trader_id,
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                event_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            order.apply(event)
+            self.cache.update_order(order)
+
+            self._manager.send_risk_event(event)
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
 
         self.log.info(f"Emulating {command.order}.", LogColor.MAGENTA)
 

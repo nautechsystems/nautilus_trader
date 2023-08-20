@@ -378,6 +378,30 @@ class TestOrderEmulatorWithSingleOrders:
         assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
 
+    def test_emulator_restart_reactivates_emulated_orders(self) -> None:
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            emulation_trigger=TriggerType.LAST_TRADE,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.emulator.stop()
+        self.emulator.reset()
+        self.emulator.start()
+
+        # Assert
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        assert matching_core is not None
+        assert order in matching_core.get_orders()
+        assert len(self.emulator.get_submit_order_commands()) == 1
+        assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
+
     def test_cancel_all_with_emulated_order_cancels_order(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
