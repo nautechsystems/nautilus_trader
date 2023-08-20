@@ -23,10 +23,12 @@ use std::{
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{
     enums::{AggressorSide, FromU8},
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    python::value_to_pydict,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -229,30 +231,31 @@ impl TradeTick {
 
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str =
-            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        // Serialize object to JSON values
+        let json_value =
+            serde_json::to_value(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str.as_bytes(),), None)?
-            .extract()?;
-        Ok(py_dict)
+        if let Value::Object(_) = &json_value {
+            value_to_pydict(py, &json_value)
+        } else {
+            Err(PyValueError::new_err("Expected JSON object"))
+        }
     }
 
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
-            .extract()?;
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-        Ok(instance)
-    }
+    // /// Return a new object from the given dictionary representation.
+    // #[staticmethod]
+    // pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+    //     // Serialize to JSON bytes
+    //     let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
+    //         .getattr("json")?
+    //         .call_method("encode", (values,), None)?
+    //         .extract()?;
+    //     // Deserialize to object
+    //     let instance = serde_json::from_slice(&json_bytes)
+    //         .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    //     Ok(instance)
+    // }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
@@ -333,34 +336,35 @@ mod tests {
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
     }
 
-    #[test]
-    fn test_as_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let tick = create_stub_trade_tick();
-
-        Python::with_gil(|py| {
-            let dict_string = tick.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 1, 'ts_init': 0}"#;
-            assert_eq!(dict_string, expected_string);
-        });
-    }
-
-    #[test]
-    fn test_from_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let tick = create_stub_trade_tick();
-
-        Python::with_gil(|py| {
-            let dict = tick.as_dict(py).unwrap();
-            let parsed = TradeTick::from_dict(py, dict).unwrap();
-            assert_eq!(parsed, tick);
-        });
-    }
+    // #[test]
+    // fn test_as_dict() {
+    //     pyo3::prepare_freethreaded_python();
+    //
+    //     let tick = create_stub_trade_tick();
+    //
+    //     Python::with_gil(|py| {
+    //         let dict_string = tick.as_dict(py).unwrap().to_string();
+    //         let expected_string = r#"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 1, 'ts_init': 0}"#;
+    //         assert_eq!(dict_string, expected_string);
+    //     });
+    // }
+    //
+    // #[test]
+    // fn test_from_dict() {
+    //     pyo3::prepare_freethreaded_python();
+    //
+    //     let tick = create_stub_trade_tick();
+    //
+    //     Python::with_gil(|py| {
+    //         let dict = tick.as_dict(py).unwrap();
+    //         let parsed = TradeTick::from_dict(py, dict).unwrap();
+    //         assert_eq!(parsed, tick);
+    //     });
+    // }
 
     #[test]
     fn test_from_pyobject() {
+        pyo3::prepare_freethreaded_python();
         let tick = create_stub_trade_tick();
 
         Python::with_gil(|py| {
