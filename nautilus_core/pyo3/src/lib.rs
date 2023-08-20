@@ -76,12 +76,18 @@ pub fn set_global_log_collector(
             .with_writer(non_blocking.with_max_level(file_level))
     });
 
-    Registry::default()
+    if let Err(err) = Registry::default()
         .with(stderr_sub_builder)
         .with(stdout_sub_builder)
         .with(file_sub_builder)
         .with(EnvFilter::from_default_env())
-        .init();
+        .try_init()
+    {
+        println!(
+            "Failed to set global default dispatcher because of error: {}",
+            err
+        );
+    };
 
     LogGuard { guards }
 }
