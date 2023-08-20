@@ -29,6 +29,7 @@ from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
@@ -75,8 +76,9 @@ cdef class ExecAlgorithm(Actor):
 # -- COMMANDS -------------------------------------------------------------------------------------
 
     cpdef void execute(self, TradingCommand command)
-    cdef _handle_submit_order(self, SubmitOrder command)
-    cdef _handle_submit_order_list(self, SubmitOrderList command)
+    cdef void _handle_submit_order(self, SubmitOrder command)
+    cdef void _handle_submit_order_list(self, SubmitOrderList command)
+    cdef void _handle_cancel_order(self, CancelOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -147,6 +149,7 @@ cdef class ExecAlgorithm(Actor):
 
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
+    cdef OrderCanceled _generate_order_canceled(self, Order order)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

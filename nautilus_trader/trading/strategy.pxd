@@ -129,10 +129,8 @@ cdef class Strategy(Actor):
     cdef OrderDenied _generate_order_denied(self, Order order, str reason)
     cdef OrderPendingUpdate _generate_order_pending_update(self, Order order)
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
-    cdef OrderCanceled _generate_order_canceled(self, Order order)
     cdef void _deny_order(self, Order order, str reason)
     cdef void _deny_order_list(self, OrderList order_list, str reason)
-    cdef void _cancel_algo_order(self, Order order)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
