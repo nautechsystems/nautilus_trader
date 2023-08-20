@@ -561,6 +561,36 @@ class ExecAlgorithmFactory:
         return exec_algorithm_cls(config=config_cls(**config.config))
 
 
+class TracingConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for standard output and file logging for rust tracing statements for a
+    ``NautilusKernel`` instance.
+
+    Parameters
+    ----------
+    stdout_level : Optional[str], default None
+        The minimum log level to write to stdout. Possible options are "debug",
+        "info", "warn", "error". Setting it None means no logs are written to
+        stdout.
+    stderr_level : Optional[str], default None
+        The minimum log level to write to stderr. Possible options are "debug",
+        "info", "warn", "error". Setting it None means no logs are written to
+        stderr.
+    file_config : Optional[Tuple[str, str, str]], default None
+        The minimum log level to write to log file. Possible options are "debug",
+        "info", "warn", "error". Setting it None means no logs are written to
+        log file.
+
+        The second str is the prefix name of the log file and the third str is
+        the name of the directory.
+
+    """
+
+    stdout_level: Optional[str] = None
+    stderr_level: Optional[str] = None
+    file_level: Optional[tuple[str, str, str]] = None
+
+
 class LoggingConfig(NautilusConfig, frozen=True):
     """
     Configuration for standard output and file logging for a ``NautilusKernel``
@@ -663,6 +693,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: Optional[LoggingConfig] = None
+    tracing: Optional[TracingConfig] = None
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0
