@@ -209,6 +209,8 @@ impl Iterator for TestTimer {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::*;
+
     use super::{TestTimer, TimeEvent};
 
     #[test]
@@ -222,7 +224,7 @@ mod tests {
         assert!(timer.next().is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_within_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 5, 0, None);
@@ -234,7 +236,7 @@ mod tests {
         assert!(!timer.is_expired)
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_up_to_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, None);
@@ -242,7 +244,7 @@ mod tests {
         assert!(!timer.is_expired);
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_up_to_next_time_ns_with_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(2));
@@ -250,7 +252,7 @@ mod tests {
         assert!(timer.is_expired);
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_beyond_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));
@@ -258,7 +260,7 @@ mod tests {
         assert!(timer.is_expired);
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_beyond_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));

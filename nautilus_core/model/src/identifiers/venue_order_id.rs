@@ -93,9 +93,11 @@ pub extern "C" fn venue_order_id_hash(id: &VenueOrderId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::VenueOrderId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = VenueOrderId::from("001");
         assert_eq!(id.to_string(), "001");

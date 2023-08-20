@@ -435,6 +435,7 @@ mod tests {
 
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
+    use rstest::*;
     use tempfile::tempdir;
 
     use super::*;
@@ -455,7 +456,7 @@ mod tests {
         )
     }
 
-    #[test]
+    #[rstest]
     fn log_message_serialization() {
         let log_message = LogEvent {
             timestamp: 1_000_000_000,
@@ -474,7 +475,7 @@ mod tests {
         assert_eq!(deserialized_value["message"], "This is a log message");
     }
 
-    #[test]
+    #[rstest]
     fn test_new_logger() {
         let logger = create_logger();
 
@@ -484,7 +485,7 @@ mod tests {
         assert!(!logger.is_bypassed);
     }
 
-    #[test]
+    #[rstest]
     fn test_logger_debug() {
         let mut logger = create_logger();
 
@@ -496,7 +497,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logger_info() {
         let mut logger = create_logger();
 
@@ -508,7 +509,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logger_error() {
         let mut logger = create_logger();
 
@@ -520,7 +521,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logger_critical() {
         let mut logger = create_logger();
 
@@ -532,7 +533,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logging_to_file() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
@@ -594,7 +595,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_log_component_level_filtering() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
@@ -651,7 +652,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logging_to_file_in_json_format() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 

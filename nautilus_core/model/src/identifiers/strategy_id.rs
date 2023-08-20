@@ -96,9 +96,11 @@ pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::StrategyId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = StrategyId::from("EMACross-001");
         assert_eq!(id.to_string(), "EMACross-001");

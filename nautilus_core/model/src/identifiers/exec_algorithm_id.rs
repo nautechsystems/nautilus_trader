@@ -85,9 +85,11 @@ pub extern "C" fn exec_algorithm_id_hash(id: &ExecAlgorithmId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::ExecAlgorithmId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = ExecAlgorithmId::new("001").unwrap();
         assert_eq!(id.to_string(), "001");

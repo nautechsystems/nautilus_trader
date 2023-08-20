@@ -280,8 +280,11 @@ impl TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_core::serialization::Serializable;
     use pyo3::{IntoPy, Python};
+    use rstest::rstest;
 
     use crate::{
         data::trade::TradeTick,
@@ -302,7 +305,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_to_string() {
         let tick = create_stub_trade_tick();
         assert_eq!(
@@ -311,7 +314,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_deserialize_raw_string() {
         let raw_string = r#"{
             "type": "TradeTick",
@@ -329,7 +332,7 @@ mod tests {
         assert_eq!(tick.aggressor_side, AggressorSide::Buyer);
     }
 
-    #[test]
+    #[rstest]
     fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -342,7 +345,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_from_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -355,7 +358,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_from_pyobject() {
         pyo3::prepare_freethreaded_python();
         let tick = create_stub_trade_tick();
@@ -367,7 +370,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_json_serialization() {
         let tick = create_stub_trade_tick();
         let serialized = tick.as_json_bytes().unwrap();
@@ -375,7 +378,7 @@ mod tests {
         assert_eq!(deserialized, tick);
     }
 
-    #[test]
+    #[rstest]
     fn test_msgpack_serialization() {
         let tick = create_stub_trade_tick();
         let serialized = tick.as_msgpack_bytes().unwrap();

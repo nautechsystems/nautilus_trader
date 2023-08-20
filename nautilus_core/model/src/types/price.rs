@@ -349,46 +349,47 @@ mod tests {
     use std::str::FromStr;
 
     use float_cmp::approx_eq;
+    use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
         let _ = Price::new(1.0, 10).unwrap();
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
         let _ = Price::from_raw(1, 10);
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_max() {
         // Precision out of range for fixed
         let _ = Price::max(10);
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_min() {
         // Precision out of range for fixed
         let _ = Price::min(10);
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
         let _ = Price::zero(10);
     }
 
-    #[test]
+    #[rstest]
     fn test_new() {
         let price = Price::new(0.00812, 8).unwrap();
         assert_eq!(price, price);
@@ -401,42 +402,42 @@ mod tests {
         assert!(approx_eq!(f64, price.as_f64(), 0.00812, epsilon = 0.000001));
     }
 
-    #[test]
+    #[rstest]
     fn test_with_maximum_value() {
         let price = Price::new(PRICE_MAX, 9).unwrap();
         assert_eq!(price.raw, 9_223_372_036_000_000_000);
         assert_eq!(price.to_string(), "9223372036.000000000");
     }
 
-    #[test]
+    #[rstest]
     fn test_with_minimum_positive_value() {
         let price = Price::new(0.000_000_001, 9).unwrap();
         assert_eq!(price.raw, 1);
         assert_eq!(price.to_string(), "0.000000001");
     }
 
-    #[test]
+    #[rstest]
     fn test_with_minimum_value() {
         let price = Price::new(PRICE_MIN, 9).unwrap();
         assert_eq!(price.raw, -9_223_372_036_000_000_000);
         assert_eq!(price.to_string(), "-9223372036.000000000");
     }
 
-    #[test]
+    #[rstest]
     fn test_max() {
         let price = Price::max(9);
         assert_eq!(price.raw, 9_223_372_036_000_000_000);
         assert_eq!(price.to_string(), "9223372036.000000000");
     }
 
-    #[test]
+    #[rstest]
     fn test_min() {
         let price = Price::min(9);
         assert_eq!(price.raw, -9_223_372_036_000_000_000);
         assert_eq!(price.to_string(), "-9223372036.000000000");
     }
 
-    #[test]
+    #[rstest]
     fn test_zero() {
         let price = Price::zero(0);
         assert_eq!(price.raw, 0);
@@ -444,7 +445,7 @@ mod tests {
         assert!(price.is_zero());
     }
 
-    #[test]
+    #[rstest]
     fn test_is_zero() {
         let price = Price::new(0.0, 8).unwrap();
         assert_eq!(price, price);
@@ -455,14 +456,14 @@ mod tests {
         assert!(price.is_zero());
     }
 
-    #[test]
+    #[rstest]
     fn test_precision() {
         let price = Price::new(1.001, 2).unwrap();
         assert_eq!(price.raw, 1_000_000_000);
         assert_eq!(price.to_string(), "1.00");
     }
 
-    #[test]
+    #[rstest]
     fn test_new_from_str() {
         let price = Price::from_str("0.00812000").unwrap();
         assert_eq!(price, price);
@@ -472,7 +473,7 @@ mod tests {
         assert_eq!(price.to_string(), "0.00812000");
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str_valid_input() {
         let input = "10.5";
         let expected_price = Price::new(10.5, precision_from_str(input)).unwrap();
@@ -480,14 +481,14 @@ mod tests {
         assert_eq!(result, expected_price);
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str_invalid_input() {
         let input = "invalid";
         let result = Price::from_str(input);
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_equality() {
         assert_eq!(Price::from("1.0"), Price::from("1.0"));
         assert_eq!(Price::from("1.0"), Price::from("1.0"));
@@ -502,7 +503,7 @@ mod tests {
         assert!(Price::from("0.9") <= Price::from("1.0"));
     }
 
-    #[test]
+    #[rstest]
     fn test_add() {
         let price1 = Price::new(1.000, 3).unwrap();
         let price2 = Price::new(1.011, 3).unwrap();
@@ -510,7 +511,7 @@ mod tests {
         assert_eq!(price3.raw, 2_011_000_000)
     }
 
-    #[test]
+    #[rstest]
     fn test_sub() {
         let price1 = Price::new(1.011, 3).unwrap();
         let price2 = Price::new(1.000, 3).unwrap();
@@ -518,21 +519,21 @@ mod tests {
         assert_eq!(price3.raw, 11_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_add_assign() {
         let mut price = Price::new(1.000, 3).unwrap();
         price += Price::new(1.011, 3).unwrap();
         assert_eq!(price.raw, 2_011_000_000)
     }
 
-    #[test]
+    #[rstest]
     fn test_sub_assign() {
         let mut price = Price::new(1.000, 3).unwrap();
         price -= Price::new(0.011, 3).unwrap();
         assert_eq!(price.raw, 989_000_000)
     }
 
-    #[test]
+    #[rstest]
     fn test_mul() {
         let price1 = Price::new(1.000, 3).unwrap();
         let price2 = Price::new(1.011, 3).unwrap();
@@ -540,7 +541,7 @@ mod tests {
         assert!(approx_eq!(f64, result, 1.011, epsilon = 0.000001));
     }
 
-    #[test]
+    #[rstest]
     fn test_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";

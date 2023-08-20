@@ -111,9 +111,11 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::Venue;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let venue = Venue::from("BINANCE");
         assert_eq!(venue.to_string(), "BINANCE");

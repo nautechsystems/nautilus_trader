@@ -93,9 +93,11 @@ pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::TradeId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let trade_id = TradeId::from("1234567890");
         assert_eq!(trade_id.to_string(), "1234567890");

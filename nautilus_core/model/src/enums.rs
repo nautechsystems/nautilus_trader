@@ -1511,16 +1511,18 @@ pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerTy
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_name() {
         assert_eq!(OrderSide::NoOrderSide.name(), "NO_ORDER_SIDE");
         assert_eq!(OrderSide::Buy.name(), "BUY");
         assert_eq!(OrderSide::Sell.name(), "SELL");
     }
 
-    #[test]
+    #[rstest]
     fn test_value() {
         assert_eq!(OrderSide::NoOrderSide.value(), 0);
         assert_eq!(OrderSide::Buy.value(), 1);

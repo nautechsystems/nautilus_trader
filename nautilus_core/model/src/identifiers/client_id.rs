@@ -85,16 +85,18 @@ pub extern "C" fn client_id_hash(id: &ClientId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = ClientId::from("BINANCE");
         assert_eq!(id.to_string(), "BINANCE");
         assert_eq!(format!("{id}"), "BINANCE");
     }
 
-    #[test]
+    #[rstest]
     fn test_client_id_to_cstr_c() {
         let id = ClientId::from("BINANCE");
         let c_string = id.value.as_char_ptr();
@@ -102,7 +104,7 @@ mod tests {
         assert_eq!(rust_string, "BINANCE");
     }
 
-    #[test]
+    #[rstest]
     fn test_client_id_hash_c() {
         let id1 = ClientId::from("BINANCE");
         let id2 = ClientId::from("BINANCE");

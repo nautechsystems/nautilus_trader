@@ -85,9 +85,11 @@ pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::ComponentId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = ComponentId::new("RiskEngine").unwrap();
         assert_eq!(id.to_string(), "RiskEngine");

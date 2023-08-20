@@ -96,23 +96,25 @@ pub extern "C" fn account_id_hash(id: &AccountId) -> u64 {
 mod tests {
     use std::ffi::CString;
 
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_account_id_new_invalid_string() {
         let s = "";
         let result = AccountId::new(s);
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_account_id_new_missing_hyphen() {
         let s = "123456789";
         let result = AccountId::new(s);
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_account_id_fmt() {
         let s = "IB-U123456789";
         let account_id = AccountId::new(s).unwrap();
@@ -120,13 +122,13 @@ mod tests {
         assert_eq!(formatted, s);
     }
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = AccountId::from("IB-1234567890");
         assert_eq!(id.to_string(), "IB-1234567890");
     }
 
-    #[test]
+    #[rstest]
     fn test_account_id_round_trip() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
@@ -137,7 +139,7 @@ mod tests {
         assert_eq!(account_id, account_id_2);
     }
 
-    #[test]
+    #[rstest]
     fn test_account_id_to_cstr_and_back() {
         let s = "IB-U123456789";
         let c_string = CString::new(s).unwrap();
@@ -148,7 +150,7 @@ mod tests {
         assert_eq!(c_str.to_str().unwrap(), s);
     }
 
-    #[test]
+    #[rstest]
     fn test_account_id_hash_c() {
         let s1 = "IB-U123456789";
         let c_string1 = CString::new(s1).unwrap();

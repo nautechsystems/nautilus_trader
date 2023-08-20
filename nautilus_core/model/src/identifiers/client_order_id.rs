@@ -114,6 +114,7 @@ pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
     use ustr::Ustr;
 
     use super::ClientOrderId;
@@ -121,14 +122,14 @@ mod tests {
         optional_ustr_to_vec_client_order_ids, optional_vec_client_order_ids_to_ustr,
     };
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = ClientOrderId::from("O-20200814-102234-001-001-1");
         assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
         assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_ustr_to_vec_client_order_ids() {
         // Test with None
         assert_eq!(optional_ustr_to_vec_client_order_ids(None), None);
@@ -141,7 +142,7 @@ mod tests {
         assert_eq!(client_order_ids[2].value.to_string(), "id3");
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_vec_client_order_ids_to_ustr() {
         // Test with None
         assert_eq!(optional_vec_client_order_ids_to_ustr(None), None);

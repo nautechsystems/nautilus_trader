@@ -93,9 +93,11 @@ pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::Symbol;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let symbol = Symbol::from("ETH-PERP");
         assert_eq!(symbol.to_string(), "ETH-PERP");

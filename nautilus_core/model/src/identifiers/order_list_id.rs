@@ -85,9 +85,11 @@ pub extern "C" fn order_list_id_hash(id: &OrderListId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::OrderListId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = OrderListId::from("001");
         assert_eq!(id.to_string(), "001");

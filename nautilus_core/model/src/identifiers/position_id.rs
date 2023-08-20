@@ -92,9 +92,11 @@ pub extern "C" fn position_id_hash(id: &PositionId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::PositionId;
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = PositionId::from("P-123456789");
         assert_eq!(id.to_string(), "P-123456789");

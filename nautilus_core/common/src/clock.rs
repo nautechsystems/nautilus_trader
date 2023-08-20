@@ -469,10 +469,11 @@ impl Clock for LiveClock {
 #[cfg(test)]
 mod tests {
     use pyo3::types::PyList;
+    use rstest::*;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_monotonic_clock_increasing() {
         let mut clock = MonotonicClock::new();
         let secs1 = clock.unix_timestamp_secs();
@@ -492,7 +493,7 @@ mod tests {
         assert!(nanos2 >= nanos1);
     }
 
-    #[test]
+    #[rstest]
     fn test_monotonic_clock_beyond_unix_epoch() {
         let mut clock = MonotonicClock::new();
 
@@ -502,7 +503,7 @@ mod tests {
         assert!(clock.unix_timestamp_nanos() > 1_650_000_000_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_set_timer_ns_py() {
         pyo3::prepare_freethreaded_python();
 
@@ -519,7 +520,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_cancel_timer() {
         pyo3::prepare_freethreaded_python();
 
@@ -537,7 +538,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_cancel_timers() {
         pyo3::prepare_freethreaded_python();
 
@@ -555,7 +556,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_within_stop_time_py() {
         pyo3::prepare_freethreaded_python();
 
@@ -573,7 +574,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_time_to_stop_time_with_set_time_true() {
         pyo3::prepare_freethreaded_python();
 
@@ -592,7 +593,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_time_to_stop_time_with_set_time_false() {
         pyo3::prepare_freethreaded_python();
 
