@@ -72,19 +72,20 @@ impl OrderStatus {
     pub fn transition(&mut self, event: &OrderEvent) -> Result<OrderStatus, OrderError> {
         let new_state = match (self, event) {
             (OrderStatus::Initialized, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,
+            (OrderStatus::Initialized, OrderEvent::OrderEmulated(_)) => OrderStatus::Emulated,  // Emulated orders
+            (OrderStatus::Initialized, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
             (OrderStatus::Initialized, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,
             (OrderStatus::Initialized, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,  // External orders
             (OrderStatus::Initialized, OrderEvent::OrderAccepted(_)) => OrderStatus::Accepted,  // External orders
             (OrderStatus::Initialized, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // External orders
             (OrderStatus::Initialized, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // External orders
             (OrderStatus::Initialized, OrderEvent::OrderTriggered(_)) => OrderStatus::Triggered, // External orders
-            (OrderStatus::Initialized, OrderEvent::OrderEmulated(_)) => OrderStatus::Emulated,  // Emulated orders
-            (OrderStatus::Initialized, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
             (OrderStatus::Emulated, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Emulated orders
             (OrderStatus::Emulated, OrderEvent::OrderExpired(_)) => OrderStatus::Expired,  // Emulated orders
             (OrderStatus::Emulated, OrderEvent::OrderReleased(_)) => OrderStatus::Released,  // Emulated orders
             (OrderStatus::Released, OrderEvent::OrderSubmitted(_)) => OrderStatus::Submitted,  // Emulated orders
             (OrderStatus::Released, OrderEvent::OrderDenied(_)) => OrderStatus::Denied,  // Emulated orders
+            (OrderStatus::Released, OrderEvent::OrderCanceled(_)) => OrderStatus::Canceled,  // Execution algo
             (OrderStatus::Submitted, OrderEvent::OrderPendingUpdate(_)) => OrderStatus::PendingUpdate,
             (OrderStatus::Submitted, OrderEvent::OrderPendingCancel(_)) => OrderStatus::PendingCancel,
             (OrderStatus::Submitted, OrderEvent::OrderRejected(_)) => OrderStatus::Rejected,
@@ -217,7 +218,14 @@ pub trait Order {
     }
 
     fn is_emulated(&self) -> bool {
-        self.emulation_trigger().is_some()
+        self.status() == OrderStatus::Emulated
+    }
+
+    fn is_active_local(&self) -> bool {
+        matches!(
+            self.status(),
+            OrderStatus::Initialized | OrderStatus::Emulated | OrderStatus::Released
+        )
     }
 
     fn is_primary(&self) -> bool {
@@ -544,7 +552,6 @@ impl OrderCore {
         self.leaves_qty -= &event.last_qty;
         self.ts_last = event.ts_event;
         self.set_avg_px(&event.last_qty, &event.last_px);
-        // self.set_slippage(); // TODO
     }
 
     fn set_avg_px(&mut self, last_qty: &Quantity, last_px: &Price) {
@@ -563,21 +570,16 @@ impl OrderCore {
         self.avg_px = Some(avg_px);
     }
 
-    // TODO
-    // fn set_slippage(&mut self) {
-    //     if self.has_price {
-    //         self.slippage = self.avg_px.and_then(|avg_px| {
-    //             self.price
-    //                 .as_ref()
-    //                 .map(|price| fixed_i64_to_f64(price.raw))
-    //                 .and_then(|price| match self.side() {
-    //                     OrderSide::Buy if avg_px > price => Some(avg_px - price),
-    //                     OrderSide::Sell if avg_px < price => Some(price - avg_px),
-    //                     _ => None,
-    //                 })
-    //         })
-    //     }
-    // }
+    pub fn set_slippage(&mut self, price: Price) {
+        self.slippage = self.avg_px.and_then(|avg_px| {
+            let current_price = price.as_f64();
+            match self.side {
+                OrderSide::Buy if avg_px > current_price => Some(avg_px - current_price),
+                OrderSide::Sell if avg_px < current_price => Some(current_price - avg_px),
+                _ => None,
+            }
+        })
+    }
 
     fn opposite_side(&self, side: OrderSide) -> OrderSide {
         match side {
