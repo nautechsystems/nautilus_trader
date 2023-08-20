@@ -36,6 +36,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
@@ -46,9 +47,13 @@ from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
+from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -173,6 +178,16 @@ cdef class ExecAlgorithm(Actor):
 
         self.portfolio = portfolio
 
+        self._manager = OrderManager(
+            clock=clock,
+            logger=logger,
+            msgbus=msgbus,
+            cache=cache,
+            component_name=type(self).__name__,
+            # submit_order_handler=self._handle_submit_order,
+            # cancel_order_handler=self._cancel_order,
+        )
+
         # Register endpoints
         self._msgbus.register(endpoint=f"{self.id}.execute", handler=self.execute)
 
@@ -241,7 +256,7 @@ cdef class ExecAlgorithm(Actor):
 
         """
         Condition.not_none(command, "command")
-        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
+        # Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
@@ -318,6 +333,21 @@ cdef class ExecAlgorithm(Actor):
 
         if self._fsm.state != ComponentState.RUNNING:
             return
+
+        # TODO: Logic is WIP
+        # if self._manager is not None and not order.is_emulated_c():
+        #     if isinstance(event, OrderRejected):
+        #         self._manager.handle_order_rejected(event)
+        #     elif isinstance(event, OrderCanceled):
+        #         self._manager.handle_order_canceled(event)
+        #     elif isinstance(event, OrderExpired):
+        #         self._manager.handle_order_expired(event)
+        #     elif isinstance(event, OrderUpdated):
+        #         self._manager.handle_order_updated(event)
+        #     elif isinstance(event, OrderFilled):
+        #         self._manager.handle_order_filled(event)
+        #     elif isinstance(event, PositionEvent):
+        #         self._manager.handle_position_event(event)
 
         try:
             self.on_order_event(event)
