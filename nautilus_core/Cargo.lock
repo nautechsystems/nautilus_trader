@@ -1918,6 +1918,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "rstest",
  "tempfile",
 ]
 
@@ -1930,6 +1931,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "rstest",
  "serde",
  "serde_json",
  "strum 0.25.0",
@@ -1962,6 +1964,7 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "rstest",
 ]
 
 [[package]]
@@ -2003,6 +2006,7 @@ dependencies = [
  "nautilus-core",
  "pyo3",
  "pyo3-asyncio",
+ "rstest",
  "serde_json",
  "tokio",
  "tokio-tungstenite",
@@ -2026,6 +2030,7 @@ dependencies = [
  "pyo3",
  "pyo3-asyncio",
  "rand",
+ "rstest",
  "thiserror",
  "tokio",
 ]
