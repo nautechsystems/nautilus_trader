@@ -197,7 +197,7 @@ class TestOrderEmulatorWithSingleOrders:
         )
 
         # Act, Assert
-        with pytest.raises(RuntimeError):
+        with pytest.raises(KeyError):
             self.emulator.create_matching_core(
                 ETHUSDT_PERP_BINANCE.id,
                 ETHUSDT_PERP_BINANCE.price_increment,

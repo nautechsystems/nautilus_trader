@@ -244,7 +244,7 @@ cdef class OrderManager:
 
         cdef Order order = self._cache.order(rejected.client_order_id)
         if order is None:
-            self._log.error(
+            self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderRejected`: "
                 f"order for {repr(rejected.client_order_id)} not found. {rejected}",
                 )
@@ -258,7 +258,7 @@ cdef class OrderManager:
 
         cdef Order order = self._cache.order(canceled.client_order_id)
         if order is None:
-            self._log.error(
+            self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderCanceled`: "
                 f"order for {repr(canceled.client_order_id)} not found. {canceled}",
                 )
@@ -272,7 +272,7 @@ cdef class OrderManager:
 
         cdef Order order = self._cache.order(expired.client_order_id)
         if order is None:
-            self._log.error(
+            self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderExpired`: "
                 f"order for {repr(expired.client_order_id)} not found. {expired}",
                 )
@@ -286,7 +286,7 @@ cdef class OrderManager:
 
         cdef Order order = self._cache.order(updated.client_order_id)
         if order is None:
-            self._log.error(
+            self._log.error(  # pragma: no cover (design-time error)
                 "Cannot handle `OrderUpdated`: "
                 f"order for {repr(updated.client_order_id)} not found. {updated}",
                 )
@@ -299,7 +299,7 @@ cdef class OrderManager:
         Condition.not_none(filled, "filled")
 
         cdef Order order = self._cache.order(filled.client_order_id)
-        if order is None:
+        if order is None:  # pragma: no cover (design-time error)
             self._log.error(
                 "Cannot handle `OrderFilled`: "
                 f"order for {repr(filled.client_order_id)} not found. {filled}",
@@ -429,9 +429,9 @@ cdef class OrderManager:
             contingent_order = self._cache.order(client_order_id)
             assert contingent_order
             if client_order_id == order.client_order_id:
-                continue  # Already being handled
+                continue  # Already being handled  # pragma: no cover
             if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NO_TRIGGER:
-                continue  # Already completed
+                continue  # Already completed  # pragma: no cover
 
             if order.contingency_type == ContingencyType.OTO:
                 if quantity._mem.raw != contingent_order.quantity._mem.raw:
@@ -470,40 +470,40 @@ cdef class OrderManager:
         Condition.not_none(command, "command")
 
         if not self._log.is_bypassed:
-            self._log.info(f"{CMD}{SENT} {command}.")
+            self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cpdef void send_algo_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
         if not self._log.is_bypassed:
-            self._log.info(f"{CMD}{SENT} {command}.")
+            self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint=f"{command.exec_algorithm_id}.execute", msg=command)
 
     cpdef void send_risk_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
         if not self._log.is_bypassed:
-            self._log.info(f"{CMD}{SENT} {command}.")
+            self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
 
     cpdef void send_exec_command(self, TradingCommand command):
         Condition.not_none(command, "command")
 
         if not self._log.is_bypassed:
-            self._log.info(f"{CMD}{SENT} {command}.")
+            self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
 
     cpdef void send_risk_event(self, OrderEvent event):
         Condition.not_none(event, "event")
 
         if not self._log.is_bypassed:
-            self._log.info(f"{EVT}{SENT} {event}.")
+            self._log.info(f"{EVT}{SENT} {event}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="RiskEngine.process", msg=event)
 
     cpdef void send_exec_event(self, OrderEvent event):
         Condition.not_none(event, "event")
 
         if not self._log.is_bypassed:
-            self._log.info(f"{EVT}{SENT} {event}.")
+            self._log.info(f"{EVT}{SENT} {event}.")  # pragma: no cover (no logging in tests)
         self._msgbus.send(endpoint="ExecEngine.process", msg=event)
