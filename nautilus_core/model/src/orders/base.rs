@@ -753,7 +753,7 @@ mod tests {
         assert_eq!(order.status(), OrderStatus::Filled);
         assert_eq!(order.filled_qty(), Quantity::from("100000"));
         assert_eq!(order.leaves_qty(), Quantity::from("0"));
-        assert_eq!(order.avg_px(), None);
+        assert_eq!(order.avg_px(), Some(1.0));
         assert!(!order.is_open());
         assert!(order.is_closed());
     }
