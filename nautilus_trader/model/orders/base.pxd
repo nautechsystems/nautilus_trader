@@ -50,8 +50,9 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-cdef tuple VALID_STOP_ORDER_TYPES
-cdef tuple VALID_LIMIT_ORDER_TYPES
+cdef set VALID_STOP_ORDER_TYPES
+cdef set VALID_LIMIT_ORDER_TYPES
+cdef set LOCAL_ACTIVE_ORDER_STATUS
 
 
 cdef class Order:
@@ -156,6 +157,7 @@ cdef class Order:
     cdef bint is_passive_c(self)
     cdef bint is_aggressive_c(self)
     cdef bint is_emulated_c(self)
+    cdef bint is_active_local_c(self)
     cdef bint is_primary_c(self)
     cdef bint is_spawned_c(self)
     cdef bint is_contingency_c(self)

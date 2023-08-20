@@ -222,6 +222,8 @@ class TestExecAlgorithm:
 
         # Assert
         assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        assert primary_order.is_active_local
+        assert spawned_order.is_active_local
         assert spawned_order.client_order_id.value == primary_order.client_order_id.value + "-E1"
         assert spawned_order.order_type == OrderType.MARKET
         assert spawned_order.quantity == spawned_qty
@@ -268,6 +270,8 @@ class TestExecAlgorithm:
 
         # Assert
         assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        assert primary_order.is_active_local
+        assert spawned_order.is_active_local
         assert spawned_order.client_order_id.value == primary_order.client_order_id.value + "-E1"
         assert spawned_order.order_type == OrderType.LIMIT
         assert spawned_order.quantity == spawned_qty
@@ -318,6 +322,8 @@ class TestExecAlgorithm:
 
         # Assert
         assert primary_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(Decimal("0.5"))
+        assert primary_order.is_active_local
+        assert spawned_order.is_active_local
         assert spawned_order.client_order_id.value == primary_order.client_order_id.value + "-E1"
         assert spawned_order.order_type == OrderType.MARKET_TO_LIMIT
         assert spawned_order.quantity == spawned_qty
@@ -444,6 +450,7 @@ class TestExecAlgorithm:
 
         # Assert
         assert primary_order.status == OrderStatus.CANCELED
+        assert not primary_order.is_active_local
 
     def test_exec_algorithm_on_order(self) -> None:
         # Arrange
@@ -649,6 +656,8 @@ class TestExecAlgorithm:
         assert transformed_entry_order.status == OrderStatus.RELEASED
         assert sl_order.status == OrderStatus.EMULATED
         assert tp_order.status == OrderStatus.EMULATED
+        assert sl_order.is_active_local
+        assert tp_order.is_active_local
         assert self.exec_engine.command_count == 1
         assert self.risk_engine.command_count == 1
         assert len(spawned_orders) == 2

@@ -44,6 +44,7 @@ from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
@@ -251,6 +252,8 @@ cdef class ExecAlgorithm(Actor):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitOrderList):
             self._handle_submit_order_list(command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -261,14 +264,14 @@ cdef class ExecAlgorithm(Actor):
         self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self._handle_order_event)
         self._subscribed_strategies.add(command.strategy_id)
 
-    cdef _handle_submit_order(self, SubmitOrder command):
+    cdef void _handle_submit_order(self, SubmitOrder command):
         try:
             self.on_order(command.order)
         except Exception as e:
             self.log.exception(f"Error on handling {repr(command.order)}", e)
             raise
 
-    cdef _handle_submit_order_list(self, SubmitOrderList command):
+    cdef void _handle_submit_order_list(self, SubmitOrderList command):
         cdef Order order
         for order in command.order_list.orders:
             if order.exec_algorithm_id is not None:
@@ -278,6 +281,31 @@ cdef class ExecAlgorithm(Actor):
         except Exception as e:
             self.log.exception(f"Error on handling {repr(command.order_list)}", e)
             raise
+
+    cdef void _handle_cancel_order(self, CancelOrder command):
+        cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(
+                f"Cannot cancel order: {repr(command.client_order_id)} not found.",
+            )
+            return
+
+        # Generate event
+        cdef OrderCanceled event = self._generate_order_canceled(order)
+
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as e:
+            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            return
+
+        self.cache.update_order(order)
+
+        # Publish canceled event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -952,7 +980,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if order.status not in (OrderStatus.INITIALIZED, OrderStatus.RELEASED) and not order.is_emulated_c():
+        if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
@@ -1003,6 +1031,20 @@ cdef class ExecAlgorithm(Actor):
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order):
         cdef uint64_t ts_now = self._clock.timestamp_ns()
         return OrderPendingCancel(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+
+    cdef OrderCanceled _generate_order_canceled(self, Order order):
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        return OrderCanceled(
             trader_id=order.trader_id,
             strategy_id=order.strategy_id,
             instrument_id=order.instrument_id,
