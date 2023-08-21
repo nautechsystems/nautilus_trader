@@ -301,7 +301,7 @@ class NautilusKernel:
             cache=self._cache,
             clock=self._clock,
             logger=self._logger,
-            config=None,  # No configuration for now
+            config=config.emulator,
         )
 
         ########################################################################

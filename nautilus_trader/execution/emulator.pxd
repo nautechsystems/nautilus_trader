@@ -48,6 +48,8 @@ cdef class OrderEmulator(Actor):
     cdef set _subscribed_strategies
     cdef set _monitored_positions
 
+    cdef readonly bint debug
+    """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
     cdef readonly int command_count
     """The total count of commands received by the emulator.\n\n:returns: `int`"""
     cdef readonly int event_count

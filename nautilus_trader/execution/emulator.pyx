@@ -107,6 +107,9 @@ cdef class OrderEmulator(Actor):
         Logger logger not None,
         config: Optional[OrderEmulatorConfig] = None,
     ):
+        if config is None:
+            config = OrderEmulatorConfig()
+        Condition.type(config, OrderEmulatorConfig, "config")
         super().__init__()
 
         self.register_base(
@@ -124,6 +127,7 @@ cdef class OrderEmulator(Actor):
             component_name=type(self).__name__,
             submit_order_handler=self._handle_submit_order,
             cancel_order_handler=self._cancel_order,
+            debug=config.debug,
         )
 
         self._matching_cores: dict[InstrumentId, MatchingCore]  = {}
@@ -132,6 +136,9 @@ cdef class OrderEmulator(Actor):
         self._subscribed_trades: set[InstrumentId] = set()
         self._subscribed_strategies: set[StrategyId] = set()
         self._monitored_positions: set[PositionId] = set()
+
+        # Settings
+        self.debug: bool = config.debug
 
         # Counters
         self.command_count: int = 0
@@ -229,7 +236,8 @@ cdef class OrderEmulator(Actor):
         """
         Condition.not_none(event, "event")
 
-        self._log.debug(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
+        if self.debug:
+            self._log.info(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
 
         if isinstance(event, OrderRejected):
@@ -285,7 +293,8 @@ cdef class OrderEmulator(Actor):
         """
         Condition.not_none(command, "command")
 
-        self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
+        if self.debug:
+            self._log.info(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
         self.command_count += 1
 
         if isinstance(command, SubmitOrder):
@@ -337,7 +346,9 @@ cdef class OrderEmulator(Actor):
         )
 
         self._matching_cores[instrument_id] = matching_core
-        self._log.debug(f"Created matching core for {instrument_id}.")
+
+        if self.debug:
+            self._log.info(f"Created matching core for {instrument_id}.", LogColor.MAGENTA)
 
         return matching_core
 
@@ -565,7 +576,8 @@ cdef class OrderEmulator(Actor):
             )
             return
 
-        self._log.debug(f"Cancelling order {order}.")
+        if self.debug:
+            self._log.info(f"Cancelling order {order.client_order_id!r}.", LogColor.MAGENTA)
 
         # Remove emulation trigger
         order.emulation_trigger = TriggerType.NO_TRIGGER
@@ -597,10 +609,7 @@ cdef class OrderEmulator(Actor):
         # Fetch command
         cdef SubmitOrder command = self._manager.pop_submit_order_command(order.client_order_id)
         if command is None:
-            self._log.debug(
-                f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
-            )
-            return
+            raise RuntimeError("invalid operation `_fill_market_order` with no command")  # pragma: no cover (design-time error)
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
@@ -672,10 +681,7 @@ cdef class OrderEmulator(Actor):
         # Fetch command
         cdef SubmitOrder command = self._manager.pop_submit_order_command(order.client_order_id)
         if command is None:
-            self._log.debug(
-                f"`SubmitOrder` command for {repr(order.client_order_id)} not found.",
-            )
-            return
+            return  # Order already released
 
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
