@@ -288,7 +288,15 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``OrderEmulator`` instances.
+
+    Parameters
+    ----------
+    debug : bool, default False
+        If debug mode is active (will provide extra debug logging).
+
     """
+
+    debug: bool = False
 
 
 class StreamingConfig(NautilusConfig, frozen=True):
@@ -619,6 +627,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
+    emulator : OrderEmulatorConfig, optional
+        The order emulator configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
     catalog : DataCatalogConfig, optional
@@ -654,6 +664,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
+    emulator: Optional[OrderEmulatorConfig] = None
     streaming: Optional[StreamingConfig] = None
     catalog: Optional[DataCatalogConfig] = None
     actors: list[ImportableActorConfig] = []
