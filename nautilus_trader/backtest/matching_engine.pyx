@@ -90,9 +90,6 @@ from nautilus_trader.model.position cimport Position
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef tuple ORDER_STATUS_UPSTREAM = (OrderStatus.INITIALIZED, OrderStatus.EMULATED, OrderStatus.RELEASED)
-
-
 cdef class OrderMatchingEngine:
     """
     Provides an order matching engine for a single market.
@@ -1674,7 +1671,7 @@ cdef class OrderMatchingEngine:
                 assert child_order is not None, "OTO child order not found"
                 if child_order.is_closed_c():
                     continue
-                if child_order.status_c() in ORDER_STATUS_UPSTREAM:
+                if child_order.is_active_local_c():
                     continue  # Order is not on the exchange yet
                 if child_order.position_id is None and order.position_id is not None:
                     self.cache.add_position_id(
@@ -1698,14 +1695,14 @@ cdef class OrderMatchingEngine:
                 assert oco_order is not None, "OCO order not found"
                 if oco_order.is_closed_c():
                     continue
-                if oco_order.status_c() in ORDER_STATUS_UPSTREAM:
+                if oco_order.is_active_local_c():
                     continue  # Order is not on the exchange yet
                 self.cancel_order(oco_order)
         elif order.contingency_type == ContingencyType.OUO:
             for client_order_id in order.linked_order_ids:
                 ouo_order = self.cache.order(client_order_id)
                 assert ouo_order is not None, "OUO order not found"
-                if ouo_order.status_c() in ORDER_STATUS_UPSTREAM:
+                if ouo_order.is_active_local_c():
                     continue  # Order is not on the exchange yet
                 if order.is_closed_c() and ouo_order.is_open_c():
                     self.cancel_order(ouo_order)
@@ -1815,7 +1812,7 @@ cdef class OrderMatchingEngine:
         self._generate_order_expired(order)
 
     cpdef void cancel_order(self, Order order, bint cancel_contingencies=True):
-        if order.status_c() in ORDER_STATUS_UPSTREAM:
+        if order.is_active_local_c():
             self._log.error(
                 f"Cannot cancel an order with {order.status_string_c()} from the matching engine.",
             )
@@ -1928,7 +1925,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             ouo_order = self.cache.order(client_order_id)
             assert ouo_order is not None, "OUO order not found"
-            if ouo_order.status_c() in ORDER_STATUS_UPSTREAM:
+            if ouo_order.is_active_local_c():
                 continue  # Order is not on the exchange yet
             if ouo_order.order_type == OrderType.MARKET or ouo_order.is_closed_c():
                 continue
@@ -1950,7 +1947,7 @@ cdef class OrderMatchingEngine:
         for client_order_id in order.linked_order_ids:
             contingent_order = self.cache.order(client_order_id)
             assert contingent_order is not None, "Contingency order not found"
-            if contingent_order.status_c() in ORDER_STATUS_UPSTREAM:
+            if contingent_order.is_active_local_c():
                 continue  # Order is not on the exchange yet
             if not contingent_order.is_closed_c():
                 self.cancel_order(contingent_order, cancel_contingencies=False)
