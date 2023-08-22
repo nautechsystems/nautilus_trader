@@ -26,8 +26,6 @@ from datetime import timedelta
 from typing import Callable
 
 import msgspec
-from nautilus_pyo3 import LogGuard
-from nautilus_pyo3 import set_global_log_collector
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
@@ -57,6 +55,8 @@ from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import TracingConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
+from nautilus_trader.core.nautilus_pyo3 import LogGuard
+from nautilus_trader.core.nautilus_pyo3 import set_global_log_collector
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
