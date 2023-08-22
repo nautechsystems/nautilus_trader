@@ -98,7 +98,7 @@ pub extern "C" fn level_exposure(level: &Level_API) -> f64 {
 #[no_mangle]
 pub extern "C" fn vec_levels_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
-    let data: Vec<Level> = unsafe { Vec::from_raw_parts(ptr as *mut Level, len, cap) };
+    let data: Vec<Level_API> = unsafe { Vec::from_raw_parts(ptr as *mut Level_API, len, cap) };
     drop(data); // Memory freed here
 }
 

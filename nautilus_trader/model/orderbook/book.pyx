@@ -373,8 +373,7 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(Level.from_mem_c(raw_levels[i]))
 
-        # TODO(chris): Reimplement to avoid segfaults
-        # vec_levels_drop(raw_levels_vec)
+        vec_levels_drop(raw_levels_vec)
 
         return levels
 
