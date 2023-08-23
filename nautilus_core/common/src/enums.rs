@@ -17,13 +17,29 @@ use std::{ffi::c_char, fmt::Debug, str::FromStr};
 
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString, FromRepr};
+use strum::{Display, EnumIter, EnumString, FromRepr};
 
 /// The state of a component within the system.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum ComponentState {
     /// When a component is instantiated, but not yet ready to fulfill its specification.
     PreInitialized = 0,
@@ -57,9 +73,25 @@ pub enum ComponentState {
 
 /// A trigger condition for a component within the system.
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
+)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum ComponentTrigger {
     /// A trigger for the component to initialize.
     Initialize = 1,
@@ -100,16 +132,19 @@ pub enum ComponentTrigger {
     Clone,
     Debug,
     Hash,
-    PartialOrd,
     PartialEq,
     Eq,
+    PartialOrd,
+    Ord,
     FromRepr,
+    EnumIter,
     EnumString,
     Serialize,
     Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum LogLevel {
     /// The **DBG** debug log level.
     #[strum(serialize = "DBG", serialize = "DEBUG")]
@@ -150,10 +185,24 @@ impl std::fmt::Display for LogLevel {
 /// The log color for log messages.
 #[repr(C)]
 #[derive(
-    Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display, Serialize, Deserialize,
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    FromRepr,
+    EnumIter,
+    EnumString,
+    Serialize,
+    Deserialize,
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum LogColor {
     /// The default/normal log color.
     #[strum(serialize = "")]
@@ -184,6 +233,7 @@ pub enum LogColor {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(non_camel_case_types)]
 pub enum LogFormat {
     /// Header log format. This ANSI escape code is used for magenta text color,
     /// often used for headers or titles in the log output.
