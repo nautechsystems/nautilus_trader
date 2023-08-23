@@ -16,6 +16,9 @@ nautilus-model = { path = "../model" }
 nautilus-persistence = { path = "../persistence" }
 nautilus-network = { path = "../network" }
 pyo3.workspace = true
+tracing-appender = "0.2.2"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing.workspace = true
 
 [features]
 extension-module = [
