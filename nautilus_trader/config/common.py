@@ -571,24 +571,23 @@ class ExecAlgorithmFactory:
 
 class TracingConfig(NautilusConfig, frozen=True):
     """
-    Configuration for standard output and file logging for rust tracing statements for a
+    Configuration for standard output and file logging for Rust tracing statements for a
     ``NautilusKernel`` instance.
 
     Parameters
     ----------
-    stdout_level : Optional[str], default None
+    stdout_level : str, optional
         The minimum log level to write to stdout. Possible options are "debug",
         "info", "warn", "error". Setting it None means no logs are written to
         stdout.
-    stderr_level : Optional[str], default None
+    stderr_level : str, optional
         The minimum log level to write to stderr. Possible options are "debug",
         "info", "warn", "error". Setting it None means no logs are written to
         stderr.
-    file_config : Optional[Tuple[str, str, str]], default None
+    file_config : tuple[str, str, str], optional
         The minimum log level to write to log file. Possible options are "debug",
         "info", "warn", "error". Setting it None means no logs are written to
-        log file.
-
+        the log file.
         The second str is the prefix name of the log file and the third str is
         the name of the directory.
 
