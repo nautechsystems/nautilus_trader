@@ -1167,6 +1167,12 @@ cdef class OrderMatchingEngine:
                 self._core.set_last_raw(self._target_last)
                 self._has_targets = False
 
+        # Reset any targets after iteration
+        self._target_bid = 0
+        self._target_ask = 0
+        self._target_last = 0
+        self._has_targets = False
+
     cpdef list determine_limit_price_and_volume(self, Order order):
         """
         Return the projected fills for the given *limit* order filling passively
