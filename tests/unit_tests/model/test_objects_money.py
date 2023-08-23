@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
 import pickle
 from decimal import Decimal
 
@@ -30,6 +31,11 @@ from nautilus_trader.model.objects import Money
 
 
 class TestMoney:
+    def test_instantiate_with_nan_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Money(math.nan, currency=USD)
+
     def test_instantiate_with_none_currency_raises_type_error(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
