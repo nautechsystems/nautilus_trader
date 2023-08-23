@@ -58,7 +58,6 @@ pub struct LogEvent {
     timestamp: UnixNanos,
     /// The log level for the event.
     level: LogLevel,
-    #[serde(skip_serializing)]
     /// The color for the log message content.
     color: LogColor,
     /// The Nautilus system component the log event originated from.
@@ -699,7 +698,7 @@ mod tests {
 
         assert_eq!(
         log_contents,
-        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
     }
 }
