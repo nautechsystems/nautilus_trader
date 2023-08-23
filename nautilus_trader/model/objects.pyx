@@ -26,6 +26,7 @@ from cpython.object cimport Py_GT
 from cpython.object cimport Py_LE
 from cpython.object cimport Py_LT
 from cpython.object cimport PyObject_RichCompareBool
+from libc.math cimport isnan
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -104,6 +105,10 @@ cdef class Quantity:
 
     def __init__(self, double value, uint8_t precision):
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        if isnan(value):
+            raise ValueError(
+                f"invalid `value`, was {value:_}",
+            )
         if value > QUANTITY_MAX:
             raise ValueError(
                 f"invalid `value` greater than `QUANTITY_MAX` {QUANTITY_MAX:_}, was {value:_}",
@@ -508,6 +513,10 @@ cdef class Price:
 
     def __init__(self, double value, uint8_t precision):
         Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        if isnan(value):
+            raise ValueError(
+                f"invalid `value`, was {value:_}",
+            )
         if value > PRICE_MAX:
             raise ValueError(
                 f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
@@ -852,6 +861,10 @@ cdef class Money:
     def __init__(self, value, Currency currency not None):
         cdef double value_f64 = 0.0 if value is None else float(value)
 
+        if isnan(value_f64):
+            raise ValueError(
+                f"invalid `value`, was {value:_}",
+            )
         if value_f64 > MONEY_MAX:
             raise ValueError(
                 f"invalid `value` greater than `MONEY_MAX` {MONEY_MAX:_}, was {value:_}",
