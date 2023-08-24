@@ -656,7 +656,7 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(order, "order")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
         Condition.true(
-            order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
             "order",
             "order status was not either ``INITIALIZED`` or ``RELEASED``",
         )
@@ -816,7 +816,7 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
@@ -893,7 +893,7 @@ cdef class ExecAlgorithm(Actor):
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
         Condition.true(
-            order.status in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
             "order",
             "order status was not either ``INITIALIZED`` or ``RELEASED``",
         )
