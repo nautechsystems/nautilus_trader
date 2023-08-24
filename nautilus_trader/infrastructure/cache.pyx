@@ -579,7 +579,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 if event.order_type == OrderType.MARKET:
                     order = MarketOrder.transform(order, event.ts_init)
                 elif event.order_type == OrderType.LIMIT:
-                    order = LimitOrder.transform(order, event.ts_init)
+                    order = LimitOrder.transform(order, event.ts_init, event.price)
                 else:
                     raise RuntimeError(  # pragma: no cover (design-time error)
                         f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
