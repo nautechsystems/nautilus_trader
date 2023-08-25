@@ -32,7 +32,7 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.6.1",
+    "poetry-core>=1.7.0",
     "numpy>=1.25.2",
     "Cython==3.0.0",
 ]
@@ -83,7 +83,6 @@ types-pytz = "^2023.3"
 types-redis = "^4.6"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
-urllib3 = "==1.26.16"  # Temp pin for poetry compatibility
 
 [tool.poetry.group.test]
 optional = true

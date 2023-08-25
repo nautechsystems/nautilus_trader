@@ -47,7 +47,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Test pip installation
         run: pip install .
@@ -77,7 +77,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Set poetry caching
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -141,7 +141,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Set poety output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -222,7 +222,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Set poetry output (Linux, macOS)
         if: (runner.os == 'Linux') || (runner.os == 'macOS')
