@@ -1,6 +1,6 @@
 # NautilusTrader 1.177.0 Beta
 
-Released on TBD (UTC)
+Released on 26th August 2023 (UTC).
 
 This release includes a large breaking change to quote tick bid and ask price property and 
 parameter naming. This was done in the interest of maintaining our generally explicit naming 
