@@ -54,6 +54,7 @@ from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Money
+from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -579,7 +580,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 if event.order_type == OrderType.MARKET:
                     order = MarketOrder.transform(order, event.ts_init)
                 elif event.order_type == OrderType.LIMIT:
-                    order = LimitOrder.transform(order, event.ts_init, event.price)
+                    price = Price.from_str_c(event.options["price"])
+                    order = LimitOrder.transform(order, event.ts_init, price)
                 else:
                     raise RuntimeError(  # pragma: no cover (design-time error)
                         f"Cannot transform order to {order_type_to_str(event.order_type)}",  # pragma: no cover (design-time error)
