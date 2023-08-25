@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
 import pickle
 from decimal import Decimal
 
@@ -22,10 +23,18 @@ from nautilus_trader.model.objects import Quantity
 
 
 class TestQuantity:
+    def test_instantiate_with_nan_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Quantity(math.nan, precision=0)
+
     def test_instantiate_with_none_value_raises_type_error(self):
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             Quantity(None)
+
+        with pytest.raises(TypeError):
+            Quantity(None, precision=0)
 
     def test_instantiate_with_negative_precision_raises_overflow_error(self):
         # Arrange, Act, Assert
@@ -51,6 +60,7 @@ class TestQuantity:
         result = Quantity(1.12300, precision=5)
 
         # Assert
+        assert result.raw == 1_123_000_000
         assert str(result) == "1.12300"
 
     def test_instantiate_base_decimal_from_decimal(self):
@@ -65,6 +75,7 @@ class TestQuantity:
         result = Quantity.from_str("1.23")
 
         # Assert
+        assert result.raw == 1_230_000_000
         assert str(result) == "1.23"
 
     @pytest.mark.parametrize(

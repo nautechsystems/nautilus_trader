@@ -259,7 +259,7 @@ impl WebSocketClient {
             Python::with_gil(|py| match handler.call0(py) {
                 Ok(_) => debug!("Called post_connection handler"),
                 Err(err) => error!("post_connection handler failed because: {}", err),
-            })
+            });
         }
 
         Ok(Self {
@@ -319,9 +319,9 @@ impl WebSocketClient {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => debug!("Called post_reconnection handler"),
                                     Err(err) => {
-                                        error!("post_reconnection handler failed because: {}", err)
+                                        error!("post_reconnection handler failed because: {}", err);
                                     }
-                                })
+                                });
                             }
                         }
                         Err(err) => {
@@ -336,9 +336,9 @@ impl WebSocketClient {
                             Python::with_gil(|py| match handler.call0(py) {
                                 Ok(_) => debug!("Called post_reconnection handler"),
                                 Err(err) => {
-                                    error!("post_reconnection handler failed because: {}", err)
+                                    error!("post_reconnection handler failed because: {}", err);
                                 }
-                            })
+                            });
                         }
                         break;
                     }
@@ -381,6 +381,20 @@ impl WebSocketClient {
                     "Unable to make websocket connection because of error: {}",
                     err
                 ))
+            })
+        })
+    }
+
+    /// Send text data to the connection.
+    ///
+    /// # Safety
+    /// - Throws an Exception if it is not able to send data
+    fn send_text<'py>(slf: PyRef<'_, Self>, data: String, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let writer = slf.writer.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard.send(Message::Text(data)).await.map_err(|err| {
+                PyException::new_err(format!("Unable to send data because of error: {}", err))
             })
         })
     }
@@ -510,11 +524,11 @@ mod tests {
 class Counter:
     def __init__(self):
         self.count = 0
-        
+
     def handler(self, bytes):
         if bytes.decode() == 'ping':
             self.count = self.count + 1
-        
+
     def get_count(self):
         return self.count
 

@@ -751,9 +751,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             trade = self._cache.trade_tick(order.instrument_id)
             if quote:
                 if order.side == OrderSide.BUY:
-                    activation_price = quote.ask
+                    activation_price = quote.ask_price
                 elif order.side == OrderSide.SELL:
-                    activation_price = quote.bid
+                    activation_price = quote.bid_price
             elif trade:
                 activation_price = trade.price
             else:
@@ -917,13 +917,17 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 orig_client_order_id=client_order_id.value if client_order_id else None,
             )
         except BinanceError as e:
-            self._log.exception(
-                f"Cannot cancel order "
-                f"{client_order_id!r}, "
-                f"{venue_order_id!r}: "
-                f"{e.message}",
-                e,
-            )
+            error_code = BinanceErrorCode(e.message["code"])
+            if error_code == BinanceErrorCode.CANCEL_REJECTED:
+                self._log.warning(f"Cancel rejected: {e.message}.")
+            else:
+                self._log.exception(
+                    f"Cannot cancel order "
+                    f"{client_order_id!r}, "
+                    f"{venue_order_id!r}: "
+                    f"{e.message}",
+                    e,
+                )
 
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 

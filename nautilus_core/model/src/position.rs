@@ -148,14 +148,14 @@ impl Position {
         self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions
-        let commission_currency = fill.commission.currency;
-        let commission_clone = fill.commission;
-
-        if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
-            *existing_commission += commission_clone;
-        } else {
-            self.commissions
-                .insert(commission_currency, fill.commission);
+        if let Some(commission_value) = fill.commission {
+            let commission_currency = commission_value.currency;
+            if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
+                *existing_commission += commission_value;
+            } else {
+                self.commissions
+                    .insert(commission_currency, commission_value);
+            }
         }
 
         // Calculate avg prices, points, return, PnL

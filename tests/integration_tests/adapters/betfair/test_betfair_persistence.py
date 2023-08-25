@@ -23,8 +23,8 @@ from nautilus_trader.persistence.external.core import RawFile
 from nautilus_trader.persistence.external.core import process_raw_file
 from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from tests import TEST_DATA_DIR
+from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
 @pytest.mark.skip(reason="Reimplementing")
@@ -32,7 +32,7 @@ class TestBetfairPersistence:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory")
         self.fs = self.catalog.fs
-        self.instrument = TestInstrumentProvider.betting_instrument()
+        self.instrument = betting_instrument()
 
     def test_bsp_delta_serialize(self):
         # Arrange

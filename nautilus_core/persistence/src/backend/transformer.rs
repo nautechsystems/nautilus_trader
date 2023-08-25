@@ -15,14 +15,12 @@
 
 use std::io::Cursor;
 
-use datafusion::arrow::{
-    datatypes::SchemaRef, ipc::writer::StreamWriter, record_batch::RecordBatch,
-};
+use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
-    exceptions::{PyKeyError, PyRuntimeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
-    types::{PyBytes, PyDict},
+    types::{IntoPyDict, PyBytes, PyDict, PyType},
 };
 
 use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
@@ -33,60 +31,54 @@ const ERROR_EMPTY_DATA: &str = "`data` was empty";
 pub struct DataTransformer {}
 
 impl DataTransformer {
-    /// Transforms the given `data_dicts` into a vector of [`OrderBookDelta`] objects.
-    fn pydicts_to_order_book_deltas(
+    /// Transforms the given Python objects `data` into a vector of [`OrderBookDelta`] objects.
+    fn pyobjects_to_order_book_deltas(
         py: Python<'_>,
-        data_dicts: Vec<Py<PyDict>>,
+        data: Vec<PyObject>,
     ) -> PyResult<Vec<OrderBookDelta>> {
-        let deltas: Vec<OrderBookDelta> = data_dicts
+        let deltas: Vec<OrderBookDelta> = data
             .into_iter()
-            .map(|dict| OrderBookDelta::from_dict(py, dict))
+            .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
 
         Ok(deltas)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`QuoteTick`] objects.
-    fn pydicts_to_quote_ticks(
-        py: Python<'_>,
-        data_dicts: Vec<Py<PyDict>>,
-    ) -> PyResult<Vec<QuoteTick>> {
-        let ticks: Vec<QuoteTick> = data_dicts
+    /// Transforms the given Python objects `data` into a vector of [`QuoteTick`] objects.
+    fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
+        let ticks: Vec<QuoteTick> = data
             .into_iter()
-            .map(|dict| QuoteTick::from_dict(py, dict))
+            .map(|obj| QuoteTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
 
         Ok(ticks)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`TradeTick`] objects.
-    fn pydicts_to_trade_ticks(
-        py: Python<'_>,
-        data_dicts: Vec<Py<PyDict>>,
-    ) -> PyResult<Vec<TradeTick>> {
-        let ticks: Vec<TradeTick> = data_dicts
+    /// Transforms the given Python objects `data` into a vector of [`TradeTick`] objects.
+    fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
+        let ticks: Vec<TradeTick> = data
             .into_iter()
-            .map(|dict| TradeTick::from_dict(py, dict))
+            .map(|obj| TradeTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
 
         Ok(ticks)
     }
 
-    /// Transforms the given `data_dicts` into a vector of [`Bar`] objects.
-    fn pydicts_to_bars(py: Python<'_>, data_dicts: Vec<Py<PyDict>>) -> PyResult<Vec<Bar>> {
-        let bars: Vec<Bar> = data_dicts
+    /// Transforms the given Python objects `data` into a vector of [`Bar`] objects.
+    fn pyobjects_to_bars(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<Bar>> {
+        let bars: Vec<Bar> = data
             .into_iter()
-            .map(|dict| Bar::from_dict(py, dict))
+            .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<Bar>>>()?;
 
         Ok(bars)
     }
 
-    /// Transforms the given `batches` into Python `bytes`.
+    /// Transforms the given record `batches` into Python `bytes`.
     fn record_batches_to_pybytes(
         py: Python<'_>,
         batches: Vec<RecordBatch>,
-        schema: SchemaRef,
+        schema: Schema,
     ) -> PyResult<Py<PyBytes>> {
         // Create a cursor to write to a byte array in memory
         let mut cursor = Cursor::new(Vec::new());
@@ -113,6 +105,24 @@ impl DataTransformer {
 
 #[pymethods]
 impl DataTransformer {
+    #[staticmethod]
+    pub fn get_schema_map(py: Python<'_>, cls: &PyType) -> PyResult<Py<PyDict>> {
+        let cls_str: &str = cls.getattr("__name__")?.extract()?;
+        let result_map = match cls_str {
+            stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
+            stringify!(QuoteTick) => QuoteTick::get_schema_map(),
+            stringify!(TradeTick) => TradeTick::get_schema_map(),
+            stringify!(Bar) => Bar::get_schema_map(),
+            _ => {
+                return Err(PyTypeError::new_err(format!(
+                    "Arrow schema for `{cls_str}` is not currently implemented in Rust."
+                )));
+            }
+        };
+
+        Ok(result_map.into_py_dict(py).into())
+    }
+
     /// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed
     /// to `pa.ipc.open_stream` to create a `RecordBatchReader`.
     #[staticmethod]
@@ -124,38 +134,29 @@ impl DataTransformer {
             return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
         }
 
-        // Iterate over all objects calling the legacy 'to_dict' method
-        let mut data_dicts: Vec<Py<PyDict>> = vec![];
-        for obj in data {
-            let dict: Py<PyDict> = obj
-                .call_method1(py, "to_dict", (obj.clone(),))?
-                .extract(py)?;
-            data_dicts.push(dict);
-        }
-
-        let data_type: String = data_dicts
+        let data_type: String = data
             .first()
             .unwrap() // Safety: already checked that `data` not empty above
             .as_ref(py)
-            .get_item("type")
-            .ok_or_else(|| PyKeyError::new_err("'type' key not found in dict."))?
+            .getattr("__class__")?
+            .getattr("__name__")?
             .extract()?;
 
         match data_type.as_str() {
             stringify!(OrderBookDelta) => {
-                let deltas = Self::pydicts_to_order_book_deltas(py, data_dicts)?;
+                let deltas = Self::pyobjects_to_order_book_deltas(py, data)?;
                 Self::pyo3_order_book_deltas_to_batches_bytes(py, deltas)
             }
             stringify!(QuoteTick) => {
-                let ticks = Self::pydicts_to_quote_ticks(py, data_dicts)?;
+                let ticks = Self::pyobjects_to_quote_ticks(py, data)?;
                 Self::pyo3_quote_ticks_to_batches_bytes(py, ticks)
             }
             stringify!(TradeTick) => {
-                let ticks = Self::pydicts_to_trade_ticks(py, data_dicts)?;
+                let ticks = Self::pyobjects_to_trade_ticks(py, data)?;
                 Self::pyo3_trade_ticks_to_batches_bytes(py, ticks)
             }
             stringify!(Bar) => {
-                let bars = Self::pydicts_to_bars(py, data_dicts)?;
+                let bars = Self::pyobjects_to_bars(py, data)?;
                 Self::pyo3_bars_to_batches_bytes(py, bars)
             }
             _ => Err(PyValueError::new_err(format!(
@@ -187,7 +188,7 @@ impl DataTransformer {
             .map(|delta| OrderBookDelta::encode_batch(&metadata, &[delta]))
             .collect();
 
-        let schema = OrderBookDelta::get_schema(metadata);
+        let schema = OrderBookDelta::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -204,7 +205,7 @@ impl DataTransformer {
         let first = data.first().unwrap();
         let metadata = QuoteTick::get_metadata(
             &first.instrument_id,
-            first.bid.precision,
+            first.bid_price.precision,
             first.bid_size.precision,
         );
 
@@ -214,7 +215,7 @@ impl DataTransformer {
             .map(|quote| QuoteTick::encode_batch(&metadata, &[quote]))
             .collect();
 
-        let schema = QuoteTick::get_schema(metadata);
+        let schema = QuoteTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -241,7 +242,7 @@ impl DataTransformer {
             .map(|trade| TradeTick::encode_batch(&metadata, &[trade]))
             .collect();
 
-        let schema = TradeTick::get_schema(metadata);
+        let schema = TradeTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 
@@ -265,7 +266,7 @@ impl DataTransformer {
             .map(|bar| Bar::encode_batch(&metadata, &[bar]))
             .collect();
 
-        let schema = TradeTick::get_schema(metadata);
+        let schema = TradeTick::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 }

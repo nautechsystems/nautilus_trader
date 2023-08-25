@@ -26,7 +26,7 @@ cdef class Condition:
     Provides checking of function or method conditions.
 
     A condition is a predicate which must be true just prior to the execution of
-    some section of code - for correct behaviour as per the design specification.
+    some section of code - for correct behavior as per the design specification.
 
     If a check fails, then an Exception is thrown with a descriptive message.
     """

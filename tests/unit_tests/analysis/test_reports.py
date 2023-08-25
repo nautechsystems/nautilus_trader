@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
+
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.analysis.reporter import ReportProvider
 from nautilus_trader.common.clock import TestClock
@@ -251,5 +253,5 @@ class TestReportProvider:
         assert report.iloc[0]["avg_px_open"] == "1.0001"
         assert report.iloc[0]["avg_px_close"] == "1.0001"
         assert report.iloc[0]["ts_opened"] == UNIX_EPOCH
-        assert report.iloc[0]["ts_closed"] == UNIX_EPOCH
+        assert pd.isna(report.iloc[0]["ts_closed"])
         assert report.iloc[0]["realized_return"] == "0.0"

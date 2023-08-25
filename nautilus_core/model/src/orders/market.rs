@@ -19,19 +19,22 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
+    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -57,9 +60,9 @@ impl MarketOrder {
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
@@ -73,10 +76,9 @@ impl MarketOrder {
                 OrderType::Market,
                 quantity,
                 time_in_force,
-                false,
                 reduce_only,
                 quote_quantity,
-                None,
+                None, // Emulation trigger
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -150,6 +152,14 @@ impl Order for MarketOrder {
         self.instrument_id
     }
 
+    fn symbol(&self) -> Symbol {
+        self.instrument_id.symbol
+    }
+
+    fn venue(&self) -> Venue {
+        self.instrument_id.venue
+    }
+
     fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -186,6 +196,10 @@ impl Order for MarketOrder {
         self.time_in_force
     }
 
+    fn expire_time(&self) -> Option<UnixNanos> {
+        None
+    }
+
     fn price(&self) -> Option<Price> {
         None
     }
@@ -203,7 +217,7 @@ impl Order for MarketOrder {
     }
 
     fn is_post_only(&self) -> bool {
-        self.is_post_only
+        false
     }
 
     fn is_reduce_only(&self) -> bool {
@@ -214,8 +228,28 @@ impl Order for MarketOrder {
         self.is_quote_quantity
     }
 
+    fn display_qty(&self) -> Option<Quantity> {
+        None
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        None
+    }
+
     fn emulation_trigger(&self) -> Option<TriggerType> {
-        self.emulation_trigger
+        None
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        None
     }
 
     fn contingency_type(&self) -> Option<ContingencyType> {
@@ -238,7 +272,7 @@ impl Order for MarketOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
+    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
         self.exec_algorithm_params.clone()
     }
 
@@ -246,8 +280,8 @@ impl Order for MarketOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<String> {
-        self.tags.clone()
+    fn tags(&self) -> Option<Ustr> {
+        self.tags
     }
 
     fn filled_qty(&self) -> Quantity {
@@ -289,6 +323,28 @@ impl Order for MarketOrder {
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
     }
+
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event);
+        };
+
+        self.core.apply(event)?;
+
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
+        if event.price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+        if event.trigger_price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
+    }
 }
 
 impl From<OrderInitialized> for MarketOrder {
@@ -314,44 +370,5 @@ impl From<OrderInitialized> for MarketOrder {
             event.event_id,
             event.ts_event,
         )
-    }
-}
-
-impl From<&MarketOrder> for OrderInitialized {
-    fn from(order: &MarketOrder) -> Self {
-        Self {
-            trader_id: order.trader_id,
-            strategy_id: order.strategy_id,
-            instrument_id: order.instrument_id,
-            client_order_id: order.client_order_id,
-            order_side: order.side,
-            order_type: order.order_type,
-            quantity: order.quantity,
-            price: None,
-            trigger_price: None,
-            trigger_type: None,
-            time_in_force: order.time_in_force,
-            expire_time: None,
-            post_only: order.is_post_only,
-            reduce_only: order.is_reduce_only,
-            quote_quantity: order.is_quote_quantity,
-            display_qty: None,
-            limit_offset: None,
-            trailing_offset: None,
-            trailing_offset_type: None,
-            emulation_trigger: order.emulation_trigger,
-            contingency_type: order.contingency_type,
-            order_list_id: order.order_list_id,
-            linked_order_ids: order.linked_order_ids.clone(),
-            parent_order_id: order.parent_order_id,
-            exec_algorithm_id: order.exec_algorithm_id,
-            exec_algorithm_params: order.exec_algorithm_params.clone(),
-            exec_spawn_id: order.exec_spawn_id,
-            tags: order.tags.clone(),
-            event_id: order.init_id,
-            ts_event: order.ts_init,
-            ts_init: order.ts_init,
-            reconciliation: false,
-        }
     }
 }

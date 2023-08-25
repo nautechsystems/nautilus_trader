@@ -298,6 +298,8 @@ class TestOrders:
         assert not order.is_open
         assert not order.is_closed
         assert not order.is_inflight
+        assert not order.is_emulated
+        assert order.is_active_local
         assert order.is_buy
         assert order.is_aggressive
         assert not order.is_sell
@@ -335,6 +337,8 @@ class TestOrders:
         assert not order.is_closed
         assert not order.is_inflight
         assert not order.is_buy
+        assert not order.is_emulated
+        assert order.is_active_local
         assert order.is_sell
         assert order.ts_last == 0
         assert isinstance(order.init_event, OrderInitialized)
@@ -436,16 +440,18 @@ class TestOrders:
         assert not order.is_open
         assert not order.is_aggressive
         assert not order.is_closed
+        assert not order.is_emulated
+        assert order.is_active_local
         assert order.is_primary
         assert not order.is_spawned
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=TWAP, tags=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=TWAP, exec_spawn_id=O-19700101-0000-000-001-1, tags=None)"  # noqa
         )
         assert (
             repr(order)
-            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=TWAP, tags=None)"  # noqa
+            == "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, venue_order_id=None, position_id=None, exec_algorithm_id=TWAP, exec_spawn_id=O-19700101-0000-000-001-1, tags=None)"  # noqa
         )
 
     def test_limit_order_to_dict(self):
@@ -497,7 +503,7 @@ class TestOrders:
             "parent_order_id": None,
             "exec_algorithm_id": "VWAP",
             "exec_algorithm_params": b'{"period":60}',
-            "exec_spawn_id": None,
+            "exec_spawn_id": "O-19700101-0000-000-001-1",
             "tags": None,
             "ts_init": 0,
             "ts_last": 0,
@@ -1503,6 +1509,9 @@ class TestOrders:
             Quantity.from_int(100_000),
             sl_trigger_price=Price.from_str("0.99990"),
             tp_price=Price.from_str("1.00010"),
+            entry_tags="ENTRY",
+            tp_tags="TAKE_PROFIT",
+            sl_tags="STOP_LOSS",
         )
 
         # Assert

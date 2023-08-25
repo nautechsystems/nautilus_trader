@@ -1,3 +1,39 @@
+# NautilusTrader 1.177.0 Beta
+
+Released on 26th August 2023 (UTC).
+
+This release includes a large breaking change to quote tick bid and ask price property and 
+parameter naming. This was done in the interest of maintaining our generally explicit naming 
+standards, and has caused confusion for some users in the past. Data using 'bid' and 'ask' columns should
+still work with the legacy data wranglers, as columns are renamed under the hood to accommodate
+this change.
+
+### Enhancements
+- Added `ActorExecutor` with `Actor` API for creating and running threaded tasks in live environments
+- Added `OrderEmulated` event and associated `OrderStatus.EMULATED` enum variant
+- Added `OrderReleased` event and associated `OrderStatus.RELEASED` enum variant
+- Added `BacktestVenueConfig.use_position_ids` option (default true to retain current behavior)
+- Added `Cache.exec_spawn_total_quantity(...)` convenience method
+- Added `Cache.exec_spawn_total_filled_qty(...)` convenience method
+- Added `Cache.exec_spawn_total_leaves_qty(...)` convenience method
+- Added `WebSocketClient.send_text`, thanks @twitu
+- Implemented string interning for `TimeEvent`
+
+### Breaking Changes
+- Renamed `QuoteTick.bid` to `bid_price` including all associated parameters (for explicit naming standards)
+- Renamed `QuoteTick.ask` to `ask_price` including all associated parameters (for explicit naming standards)
+
+### Fixes
+- Fixed execution algorithm `position_id` assignment in `HEDGING` mode
+- Fixed `OrderMatchingEngine` processing of emulated orders
+- Fixed `OrderEmulator` processing of exec algorithm orders
+- Fixed `ExecutionEngine` processing of exec algorithm orders (exec spawn IDs)
+- Fixed `Cache` emulated order indexing (were not being properly discarded from the set when closed)
+- Fixed `RedisCacheDatabase` loading of transformed `LIMIT` orders
+- Fixed a connection issue with the IB client, thanks @dkharrat and @rsmb7z
+
+---
+
 # NautilusTrader 1.176.0 Beta
 
 Released on 31st July 2023 (UTC).
@@ -16,7 +52,7 @@ Released on 31st July 2023 (UTC).
 - Added `BinanceExecClientConfig.use_reduce_only` option (default true to retain current behavior)
 - Added `BinanceExecClientConfig.use_position_ids` option (default true to retain current behavior)
 - Added `BinanceExecClientConfig.treat_expired_as_canceled` option (default false to retain current behavior)
-- Added `BacktestVenueConfig.use_reduct_only` option (default true to retain current behaviour)
+- Added `BacktestVenueConfig.use_reduce_only` option (default true to retain current behavior)
 - Added `MessageBus.is_pending_request(...)` method
 - Added `Level` API for core `OrderBook` (exposes the bid and ask levels for the order book)
 - Added `Actor.is_pending_request(...)` convenience method
@@ -53,7 +89,7 @@ Released on 31st July 2023 (UTC).
 - Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
 - Fixed Binance order parsing of invalid orders in execution reports #1157, thanks for reporting @graceyangfan
-- Fixed `BinanceOrderType` members to include undocumented `INSURANCE_FUND`, thanks for reporting @Tzumx
+- Extended `BinanceOrderType` enum members to include undocumented `INSURANCE_FUND`, thanks for reporting @Tzumx
 - Extended `BinanceSpotPermissions` enum members #1161, thanks for reporting @davidblom603
 
 ---
@@ -74,7 +110,7 @@ We recommend you do not upgrade to this version if you're using the Betfair adap
 - Added core Rust `SocketClient` based on `tokio` `TcpStream`, thanks @twitu
 - Added `quote_quantity` parameter to determine if order quantity is denominated in quote currency
 - Added `trigger_instrument_id` parameter to trigger emulated orders from alternative instrument prices
-- Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behaviour)
+- Added `use_random_ids` to `add_venue(...)` method, controls whether venue order, position and trade IDs will be random UUID4s (no change to current behavior)
 - Added `ExecEngineConfig.filter_unclaimed_external_orders` options, if unclaimed order events with an `EXTERNAL` strategy ID should be filtered/dropped
 - Changed `BinanceHttpClient` to use new core HTTP client
 - Defined public API for data, can now import directly from `nautilus_trader.model.data` (denest namespace)
@@ -442,7 +478,7 @@ Released on 12th December 2022 (UTC).
 
 ### Fixes
 - Fixed `OrderBook` sorting for bid side, thanks @gaugau3000
-- Fixed `MARKET_TO_LIMIT` order initial fill behaviour
+- Fixed `MARKET_TO_LIMIT` order initial fill behavior
 - Fixed `BollingerBands` indicator mid-band calculations, thanks zhp (Discord)
 
 ---
@@ -640,10 +676,10 @@ Released on September 14th 2022 (UTC).
 - De-cythonized live data and execution client base classes for usability
 
 ### Fixes
-- Fixed limit order `IOC` and `FOK` behaviour, thanks @limx0 for identifying
+- Fixed limit order `IOC` and `FOK` behavior, thanks @limx0 for identifying
 - Fixed FTX `CryptoFuture` instrument parsing, thanks @limx0
 - Fixed missing imports in data catalog example notebook, thanks @gaugau3000
-- Fixed order update behaviour, affected orders:
+- Fixed order update behavior, affected orders:
   - `LIMIT_IF_TOUCHED`
   - `MARKET_IF_TOUCHED`
   - `MARKET_TO_LIMIT`
@@ -808,7 +844,7 @@ None
 
 ### Enhancements
 - Improved error handling for invalid state triggers
-- Improved component state transition behaviour and logging
+- Improved component state transition behavior and logging
 - Improved `TradingNode` disposal flow
 - Implemented core monotonic clock
 - Implemented logging in Rust
@@ -882,7 +918,7 @@ Released on 10th May 2022 (UTC).
 - The `bypass_logging` config option will also now bypass the `BacktestEngine` logger
 
 ### Fixes
-- Fixed behaviour of `IOC` and `FOK` time in force instructions
+- Fixed behavior of `IOC` and `FOK` time in force instructions
 - Fixed Binance bar resolution parsing
 
 ---
@@ -2159,7 +2195,7 @@ symbol string, a primary `Venue`, `AssetClass` and `AssetType` properties.
 
 This is a patch release which applies various fixes and refactorings.
 
-The behaviour of the `StopLimitOrder` continued to be fixed and refined.
+The behavior of the `StopLimitOrder` continued to be fixed and refined.
 `SimulatedExchange` was refactored further to reduce complexity.
 
 ### Breaking Changes
@@ -2170,7 +2206,7 @@ None
 
 ### Fixes
 - `TRIGGERED` states in order FSM
-- `StopLimitOrder` triggering behaviour
+- `StopLimitOrder` triggering behavior
 - `OrderFactory.stop_limit` missing `post_only` and `hidden`
 - `Order` and `StopLimitOrder` `__repr__` string (duplicate id)
 
@@ -2181,10 +2217,10 @@ None
 ## Release Notes
 
 The main thrust of this release is to refine some subtleties relating to order
-matching and amendment behaviour for improved realism. This involved a fairly substantial refactoring
+matching and amendment behavior for improved realism. This involved a fairly substantial refactoring
 of `SimulatedExchange` to manage its complexity, and support extending the order types.
 
-The `post_only` flag for LIMIT orders now results in the expected behaviour regarding
+The `post_only` flag for LIMIT orders now results in the expected behavior regarding
 when a marketable limit order will become a liquidity `TAKER` during order placement
 and amendment.
 
@@ -2198,7 +2234,7 @@ None
 - Add `risk` subpackage to group risk components
 
 ### Fixes
-- `StopLimitOrder` triggering behaviour
+- `StopLimitOrder` triggering behavior
 - All flake8 warnings
 
 ---

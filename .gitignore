@@ -7,6 +7,7 @@
 *.obj
 *.lib
 *.log
+*.patch
 *.prof
 *.rdb
 *.xml
@@ -35,6 +36,7 @@ dist/
 env/
 log/
 logs/
+secrets/
 *temp/
 *target/
 venv*/
@@ -50,5 +52,6 @@ examples/backtest/notebooks/catalog
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 tests/test_data/catalog/
+bench_data/
 
 !tests/integration_tests/adapters/betfair/responses/*.log

@@ -12,28 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-cdef class Queue:
-    cdef object _queue
-
-    cdef readonly int maxsize
-    """The maximum capacity of the queue before blocking.\n\n:returns: `int`"""
-    cdef readonly int count
-    """The current count of items on the queue.\n\n:returns: `int`"""
-
-    cpdef int qsize(self)
-    cpdef bint empty(self)
-    cpdef bint full(self)
-    cpdef void put_nowait(self, item)
-    cpdef object get_nowait(self)
-    cpdef object peek_back(self)
-    cpdef object peek_front(self)
-    cpdef object peek_index(self, int index)
-    cpdef list to_list(self)
-
-    cdef int _qsize(self)
-    cdef bint _empty(self)
-    cdef bint _full(self)
-    cdef void _put_nowait(self, item)
-    cdef object _get_nowait(self)

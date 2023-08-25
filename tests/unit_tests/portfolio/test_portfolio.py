@@ -25,7 +25,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
-from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import QuoteTick
@@ -63,7 +62,6 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestPortfolio:
@@ -108,7 +106,6 @@ class TestPortfolio:
         self.cache.add_instrument(BTCUSDT_BINANCE)
         self.cache.add_instrument(BTCUSD_BITMEX)
         self.cache.add_instrument(ETHUSD_BITMEX)
-        self.cache.add_instrument(BETTING_INSTRUMENT)
 
     def test_account_when_no_account_returns_none(self):
         # Arrange, Act, Assert
@@ -427,8 +424,8 @@ class TestPortfolio:
         # Update the last quote
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("25001.00"),
-            ask=Price.from_str("25002.00"),
+            bid_price=Price.from_str("25001.00"),
+            ask_price=Price.from_str("25002.00"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -446,16 +443,27 @@ class TestPortfolio:
         # Arrange
         AccountFactory.register_calculated_account("BINANCE")
 
+        account_id = AccountId("BINANCE-01234")
         state = AccountState(
-            account_id=AccountId("BETFAIR-01234"),
+            account_id=account_id,
             account_type=AccountType.MARGIN,
-            base_currency=GBP,
+            base_currency=None,  # Multi-currency account
             reported=True,
             balances=[
                 AccountBalance(
-                    total=Money(1000, GBP),
-                    free=Money(1000, GBP),
-                    locked=Money(0, GBP),
+                    Money(10.00000000, BTC),
+                    Money(0.00000000, BTC),
+                    Money(10.00000000, BTC),
+                ),
+                AccountBalance(
+                    Money(20.00000000, ETH),
+                    Money(0.00000000, ETH),
+                    Money(20.00000000, ETH),
+                ),
+                AccountBalance(
+                    Money(100000.00000000, USDT),
+                    Money(0.00000000, USDT),
+                    Money(100000.00000000, USDT),
                 ),
             ],
             margins=[],
@@ -465,13 +473,11 @@ class TestPortfolio:
             ts_init=0,
         )
 
-        AccountFactory.register_calculated_account("BETFAIR")
-
         self.portfolio.update_account(state)
 
         # Create a limit order
         order1 = self.order_factory.limit(
-            BETTING_INSTRUMENT.id,
+            BTCUSDT_BINANCE.id,
             OrderSide.BUY,
             Quantity.from_str("100"),
             Price.from_str("0.5"),
@@ -489,7 +495,7 @@ class TestPortfolio:
         self.portfolio.initialize_orders()
 
         # Assert
-        assert self.portfolio.margins_init(BETFAIR)[BETTING_INSTRUMENT.id] == Money(200, GBP)
+        assert self.portfolio.margins_init(BINANCE)[BTCUSDT_BINANCE.id] == Money(0.1, USDT)
 
     def test_update_positions(self):
         # Arrange
@@ -585,8 +591,8 @@ class TestPortfolio:
         # Update the last quote
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("25001.00"),
-            ask=Price.from_str("25002.00"),
+            bid_price=Price.from_str("25001.00"),
+            ask_price=Price.from_str("25002.00"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -655,8 +661,8 @@ class TestPortfolio:
 
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("10510.00"),
-            ask=Price.from_str("10511.00"),
+            bid_price=Price.from_str("10510.00"),
+            ask_price=Price.from_str("10511.00"),
             bid_size=Quantity.from_str("1.000000"),
             ask_size=Quantity.from_str("1.000000"),
             ts_event=0,
@@ -739,8 +745,8 @@ class TestPortfolio:
 
         last = QuoteTick(
             instrument_id=BTCUSDT_BINANCE.id,
-            bid=Price.from_str("15510.15"),
-            ask=Price.from_str("15510.25"),
+            bid_price=Price.from_str("15510.15"),
+            ask_price=Price.from_str("15510.25"),
             bid_size=Quantity.from_str("12.62"),
             ask_size=Quantity.from_str("3.10"),
             ts_event=0,
@@ -803,8 +809,8 @@ class TestPortfolio:
 
         last_ethusd = QuoteTick(
             instrument_id=ETHUSD_BITMEX.id,
-            bid=Price.from_str("376.05"),
-            ask=Price.from_str("377.10"),
+            bid_price=Price.from_str("376.05"),
+            ask_price=Price.from_str("377.10"),
             bid_size=Quantity.from_str("16"),
             ask_size=Quantity.from_str("25"),
             ts_event=0,
@@ -813,8 +819,8 @@ class TestPortfolio:
 
         last_btcusd = QuoteTick(
             instrument_id=BTCUSD_BITMEX.id,
-            bid=Price.from_str("10500.05"),
-            ask=Price.from_str("10501.51"),
+            bid_price=Price.from_str("10500.05"),
+            ask_price=Price.from_str("10501.51"),
             bid_size=Quantity.from_str("2.54"),
             ask_size=Quantity.from_str("0.91"),
             ts_event=0,
@@ -956,8 +962,8 @@ class TestPortfolio:
 
         last_ethusd = QuoteTick(
             instrument_id=ETHUSD_BITMEX.id,
-            bid=Price.from_str("376.05"),
-            ask=Price.from_str("377.10"),
+            bid_price=Price.from_str("376.05"),
+            ask_price=Price.from_str("377.10"),
             bid_size=Quantity.from_str("16"),
             ask_size=Quantity.from_str("25"),
             ts_event=0,
@@ -966,8 +972,8 @@ class TestPortfolio:
 
         last_xbtusd = QuoteTick(
             instrument_id=BTCUSD_BITMEX.id,
-            bid=Price.from_str("50000.00"),
-            ask=Price.from_str("50000.00"),
+            bid_price=Price.from_str("50000.00"),
+            ask_price=Price.from_str("50000.00"),
             bid_size=Quantity.from_str("1"),
             ask_size=Quantity.from_str("1"),
             ts_event=0,
@@ -1017,8 +1023,8 @@ class TestPortfolio:
 
         last_audusd = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80501"),
-            ask=Price.from_str("0.80505"),
+            bid_price=Price.from_str("0.80501"),
+            ask_price=Price.from_str("0.80505"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1027,8 +1033,8 @@ class TestPortfolio:
 
         last_gbpusd = QuoteTick(
             instrument_id=GBPUSD_SIM.id,
-            bid=Price.from_str("1.30315"),
-            ask=Price.from_str("1.30317"),
+            bid_price=Price.from_str("1.30315"),
+            ask_price=Price.from_str("1.30317"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1133,8 +1139,8 @@ class TestPortfolio:
 
         last_audusd = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80501"),
-            ask=Price.from_str("0.80505"),
+            bid_price=Price.from_str("0.80501"),
+            ask_price=Price.from_str("0.80505"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1365,8 +1371,8 @@ class TestPortfolio:
 
         last_audusd = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
-            bid=Price.from_str("0.80501"),
-            ask=Price.from_str("0.80505"),
+            bid_price=Price.from_str("0.80501"),
+            ask_price=Price.from_str("0.80505"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,
@@ -1375,8 +1381,8 @@ class TestPortfolio:
 
         last_gbpusd = QuoteTick(
             instrument_id=GBPUSD_SIM.id,
-            bid=Price.from_str("1.30315"),
-            ask=Price.from_str("1.30317"),
+            bid_price=Price.from_str("1.30315"),
+            ask_price=Price.from_str("1.30317"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
             ts_event=0,

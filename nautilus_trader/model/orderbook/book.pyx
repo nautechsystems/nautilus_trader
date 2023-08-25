@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
 from operator import itemgetter
 
 import pandas as pd
@@ -110,6 +111,27 @@ cdef class OrderBook(Data):
             f"count: {self.count}\n"
             f"{self.pprint()}"
         )
+
+    def __getstate__(self):
+        cdef list orders = [o for level in self.bids() + self.asks() for o in level.orders()]
+        return (
+            self.instrument_id.value,
+            self.book_type.value,
+            pickle.dumps(orders),
+        )
+
+    def __setstate__(self, state):
+        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
+        self._mem = orderbook_new(
+            instrument_id._mem,
+            state[1],
+        )
+
+        cdef list orders = pickle.loads(state[2])
+
+        cdef int64_t i
+        for i in range(len(orders)):
+            self.add(orders[i], 0, 0)
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -524,12 +546,12 @@ cdef class OrderBook(Data):
         )
 
         cdef CVec raw_fills_vec = orderbook_simulate_fills(&self._mem, submit_order)
-        cdef tuple[Price_t, Quantity_t]* raw_fills = <tuple[Price_t, Quantity_t]*>raw_fills_vec.ptr
+        cdef (Price_t, Quantity_t)* raw_fills = <(Price_t, Quantity_t)*>raw_fills_vec.ptr
         cdef list fills = []
 
         cdef:
             uint64_t i
-            tuple[Price_t, Quantity_t] raw_fill
+            (Price_t, Quantity_t) raw_fill
             Price fill_price
             Quantity fill_size
         for i in range(raw_fills_vec.len):

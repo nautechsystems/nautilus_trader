@@ -76,7 +76,6 @@ cdef class AccountState(Event):
         uint64_t ts_init,
     ):
         Condition.not_empty(balances, "balances")
-        super().__init__(event_id, ts_event, ts_init)
 
         self.account_id = account_id
         self.account_type = account_type
@@ -85,6 +84,16 @@ cdef class AccountState(Event):
         self.margins = margins
         self.is_reported = reported
         self.info = info
+
+        self._event_id = event_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+    def __eq__(self, Event other) -> bool:
+        return self._event_id == other.id
+
+    def __hash__(self) -> int:
+        return hash(self._event_id)
 
     def __repr__(self) -> str:
         return (
@@ -95,8 +104,45 @@ cdef class AccountState(Event):
             f"is_reported={self.is_reported}, "
             f"balances=[{', '.join([str(b) for b in self.balances])}], "
             f"margins=[{', '.join([str(m) for m in self.margins])}], "
-            f"event_id={self.id.to_str()})"
+            f"event_id={self._event_id.to_str()})"
         )
+
+    @property
+    def id(self) -> UUID4:
+        """
+        The event message identifier.
+
+        Returns
+        -------
+        UUID4
+
+        """
+        return self._event_id
+
+    @property
+    def ts_event(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the event occurred.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_event
+
+    @property
+    def ts_init(self) -> int:
+        """
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+
+        Returns
+        -------
+        int
+
+        """
+        return self._ts_init
+
 
     @staticmethod
     cdef AccountState from_dict_c(dict values):
@@ -127,9 +173,9 @@ cdef class AccountState(Event):
             "margins": msgspec.json.encode([m.to_dict() for m in obj.margins]),
             "reported": obj.is_reported,
             "info": msgspec.json.encode(obj.info),
-            "event_id": obj.id.to_str(),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
+            "event_id": obj._event_id.to_str(),
+            "ts_event": obj._ts_event,
+            "ts_init": obj._ts_init,
         }
 
     @staticmethod

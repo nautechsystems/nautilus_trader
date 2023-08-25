@@ -72,8 +72,8 @@ class TestDataStubs:
     @staticmethod
     def quote_tick(
         instrument: Optional[Instrument] = None,
-        bid: float = 1.0,
-        ask: float = 1.0,
+        bid_price: float = 1.0,
+        ask_price: float = 1.0,
         bid_size: float = 100_000.0,
         ask_size: float = 100_000.0,
         ts_event: int = 0,
@@ -82,8 +82,8 @@ class TestDataStubs:
         inst: Instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
         return QuoteTick(
             instrument_id=inst.id,
-            bid=inst.make_price(bid),
-            ask=inst.make_price(ask),
+            bid_price=inst.make_price(bid_price),
+            ask_price=inst.make_price(ask_price),
             bid_size=inst.make_qty(bid_size),
             ask_size=inst.make_qty(ask_size),
             ts_event=ts_event,

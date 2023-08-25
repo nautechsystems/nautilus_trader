@@ -63,6 +63,7 @@ from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
+from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
@@ -82,6 +83,7 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.orders.base cimport LOCAL_ACTIVE_ORDER_STATUS
 from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
@@ -472,7 +474,7 @@ cdef class Strategy(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        Condition.equal(order.status_c(), OrderStatus.INITIALIZED, "order", "order_status")
 
         # Publish initialized event
         self._msgbus.publish_c(
@@ -501,7 +503,7 @@ cdef class Strategy(Actor):
             self._set_gtd_expiry(order)
 
         # Route order
-        if order.is_emulated_c():
+        if order.emulation_trigger != TriggerType.NO_TRIGGER:
             self._send_emulator_command(command)
         elif order.exec_algorithm_id is not None:
             self._send_algo_command(command, order.exec_algorithm_id)
@@ -555,7 +557,7 @@ cdef class Strategy(Actor):
 
         cdef Order order
         for order in order_list.orders:
-            Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+            Condition.equal(order.status_c(), OrderStatus.INITIALIZED, "order", "order_status")
             # Publish initialized event
             self._msgbus.publish_c(
                 topic=f"events.order.{order.strategy_id.to_str()}",
@@ -700,7 +702,7 @@ cdef class Strategy(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
@@ -762,8 +764,10 @@ cdef class Strategy(Actor):
             )
             return  # Cannot send command
 
+        cdef OrderStatus order_status = order.status_c()
+
         cdef OrderPendingCancel event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if order_status not in LOCAL_ACTIVE_ORDER_STATUS:
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
@@ -790,11 +794,10 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if order.exec_algorithm_id is not None:
-            self._send_algo_command(command, order.exec_algorithm_id)
-
         if order.is_emulated_c():
             self._send_emulator_command(command)
+        elif order.exec_algorithm_id is not None and order.is_active_local_c():
+            self._send_algo_command(command, order.exec_algorithm_id)
         else:
             self._send_risk_command(command)
 
@@ -863,7 +866,7 @@ cdef class Strategy(Actor):
             OrderPendingCancel event
             Order order
         for order in open_orders + emulated_orders:
-            if order.is_emulated_c():
+            if order.status_c() == OrderStatus.INITIALIZED or order.is_emulated_c():
                 continue
             event = self._generate_order_pending_cancel(order)
             try:
@@ -892,7 +895,7 @@ cdef class Strategy(Actor):
             exec_algorithm_orders = self.cache.orders_for_exec_algorithm(exec_algorithm_id)
             for order in exec_algorithm_orders:
                 if order.strategy_id == self.id and not order.is_closed_c():
-                    self._cancel_algo_order(order)
+                    self.cancel_order(order)
 
         self._send_risk_command(command)
         self._send_emulator_command(command)
@@ -1401,20 +1404,6 @@ cdef class Strategy(Actor):
             ts_init=ts_now,
         )
 
-    cdef OrderCanceled _generate_order_canceled(self, Order order):
-        cdef uint64_t ts_now = self._clock.timestamp_ns()
-        return OrderCanceled(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            account_id=order.account_id,
-            event_id=UUID4(),
-            ts_event=ts_now,
-            ts_init=ts_now,
-        )
-
     cdef void _deny_order(self, Order order, str reason):
         self._log.error(f"Order denied: {reason}.")
 
@@ -1444,27 +1433,11 @@ cdef class Strategy(Actor):
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
 
-    cdef void _cancel_algo_order(self, Order order):
-        # Generate event
-        cdef OrderCanceled event = self._generate_order_canceled(order)
-
-        try:
-            order.apply(event)
-        except InvalidStateTrigger as e:
-            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
-            return
-
-        self.cache.update_order(order)
-
-        # Publish denied event
-        self._msgbus.publish_c(
-            topic=f"events.order.{order.strategy_id.to_str()}",
-            msg=event,
-        )
-
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cdef void _send_emulator_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id):

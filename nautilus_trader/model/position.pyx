@@ -433,7 +433,7 @@ cdef class Position:
 
         """
         Condition.not_none(fill, "fill")
-        Condition.not_in(fill.trade_id, self._trade_ids, "fill.trade_id", "_trade_ids")
+        self._check_duplicate_trade_id(fill)
 
         if self.side == PositionSide.FLAT:
             # Reset position
@@ -618,6 +618,20 @@ cdef class Position:
 
         """
         return list(self._commissions.values())
+
+    cdef void _check_duplicate_trade_id(self, OrderFilled fill):
+        # Check all previous fills for matching trade ID and composite key
+        cdef:
+            OrderFilled p_fill
+        for p_fill in self._events:
+            if fill.trade_id != p_fill.trade_id:
+                continue
+            if (
+                fill.order_side == p_fill.order_side
+                and fill.last_px == p_fill.last_px
+                and fill.last_qty == p_fill.last_qty
+            ):
+                raise ValueError(f"Duplicate {fill.trade_id!r} in events {fill} {p_fill}")
 
     cdef void _handle_buy_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill

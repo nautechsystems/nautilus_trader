@@ -133,8 +133,8 @@ class TestSimpleMovingAverage:
         sma_for_ticks3 = SimpleMovingAverage(10, PriceType.BID)
 
         tick = TestDataStubs.quote_tick(
-            bid=1.00001,
-            ask=1.00003,
+            bid_price=1.00001,
+            ask_price=1.00003,
         )
 
         # Act

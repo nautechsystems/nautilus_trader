@@ -259,11 +259,12 @@ cdef class OrderFactory:
             If `time_in_force` is ``GTD``.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return MarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             time_in_force=time_in_force,
@@ -277,6 +278,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -349,11 +351,12 @@ cdef class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return LimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -373,6 +376,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -444,11 +448,12 @@ cdef class OrderFactory:
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return StopMarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             trigger_price=trigger_price,
@@ -467,6 +472,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -549,11 +555,12 @@ cdef class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return StopLimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -575,6 +582,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -633,11 +641,12 @@ cdef class OrderFactory:
             If `time_in_force` is ``AT_THE_OPEN`` or ``AT_THE_CLOSE``.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return MarketToLimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             reduce_only=reduce_only,
@@ -652,6 +661,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -723,11 +733,12 @@ cdef class OrderFactory:
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return MarketIfTouchedOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             trigger_price=trigger_price,
@@ -746,6 +757,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -828,11 +840,12 @@ cdef class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return LimitIfTouchedOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -854,6 +867,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -932,11 +946,12 @@ cdef class OrderFactory:
             If `time_in_force` is ``GTD`` and `expire_time` <= UNIX epoch.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return TrailingStopMarketOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             trigger_price=trigger_price,
@@ -957,6 +972,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -1052,11 +1068,12 @@ cdef class OrderFactory:
             If `display_qty` is negative (< 0) or greater than `quantity`.
 
         """
+        cdef ClientOrderId client_order_id = self._order_id_generator.generate()
         return TrailingStopLimitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy_id,
             instrument_id=instrument_id,
-            client_order_id=self._order_id_generator.generate(),
+            client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
             price=price,
@@ -1081,6 +1098,7 @@ cdef class OrderFactory:
             parent_order_id=None,
             exec_algorithm_id=exec_algorithm_id,
             exec_algorithm_params=exec_algorithm_params,
+            exec_spawn_id=client_order_id if exec_algorithm_id is not None else None,
             tags=tags,
         )
 
@@ -1110,6 +1128,9 @@ cdef class OrderFactory:
         dict entry_exec_algorithm_params = None,
         dict tp_exec_algorithm_params = None,
         dict sl_exec_algorithm_params = None,
+        str entry_tags = "ENTRY",
+        str tp_tags = "TAKE_PROFIT",
+        str sl_tags = "STOP_LOSS",
     ):
         """
         Create a bracket order with optional entry of take-profit order types.
@@ -1168,6 +1189,15 @@ cdef class OrderFactory:
             The execution algorithm parameters for the order.
         sl_exec_algorithm_params : dict[str, Any], optional
             The execution algorithm parameters for the order.
+        entry_tags : str, default "ENTRY"
+            The custom user tags for the entry order. These are optional and can
+            contain any arbitrary delimiter if required.
+        tp_tags : str, default "TAKE_PROFIT"
+            The custom user tags for the take-profit order. These are optional and can
+            contain any arbitrary delimiter if required.
+        sl_tags : str, default "STOP_LOSS"
+            The custom user tags for the stop-loss order. These are optional and can
+            contain any arbitrary delimiter if required.
 
         Returns
         -------
@@ -1200,7 +1230,8 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
+                tags=entry_tags,
             )
         elif entry_order_type == OrderType.LIMIT:
             entry_order = LimitOrder(
@@ -1225,7 +1256,8 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
+                tags=entry_tags,
             )
         elif entry_order_type == OrderType.MARKET_IF_TOUCHED:
             entry_order = MarketIfTouchedOrder(
@@ -1250,7 +1282,8 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
+                tags=entry_tags,
             )
         elif entry_order_type == OrderType.LIMIT_IF_TOUCHED:
             entry_order = LimitIfTouchedOrder(
@@ -1277,7 +1310,8 @@ cdef class OrderFactory:
                 parent_order_id=None,
                 exec_algorithm_id=entry_exec_algorithm_id,
                 exec_algorithm_params=entry_exec_algorithm_params,
-                tags="ENTRY",
+                exec_spawn_id=entry_client_order_id if entry_exec_algorithm_id is not None else None,
+                tags=entry_tags,
             )
         else:
             raise ValueError(f"invalid `entry_order_type`, was {order_type_to_str(entry_order_type)}")
@@ -1309,7 +1343,8 @@ cdef class OrderFactory:
                 parent_order_id=entry_client_order_id,
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
-                tags="TAKE_PROFIT",
+                exec_spawn_id=tp_client_order_id if tp_exec_algorithm_id is not None else None,
+                tags=tp_tags,
             )
         elif tp_order_type == OrderType.LIMIT_IF_TOUCHED:
             tp_order = LimitIfTouchedOrder(
@@ -1337,7 +1372,8 @@ cdef class OrderFactory:
                 parent_order_id=entry_client_order_id,
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
-                tags="TAKE_PROFIT",
+                exec_spawn_id=tp_client_order_id if tp_exec_algorithm_id is not None else None,
+                tags=tp_tags,
             )
         elif tp_order_type == OrderType.MARKET_IF_TOUCHED:
             tp_order = MarketIfTouchedOrder(
@@ -1362,7 +1398,8 @@ cdef class OrderFactory:
                 parent_order_id=entry_client_order_id,
                 exec_algorithm_id=tp_exec_algorithm_id,
                 exec_algorithm_params=tp_exec_algorithm_params,
-                tags="TAKE_PROFIT",
+                exec_spawn_id=tp_client_order_id if tp_exec_algorithm_id is not None else None,
+                tags=tp_tags,
             )
         else:
             raise ValueError(f"invalid `tp_order_type`, was {order_type_to_str(entry_order_type)}")
@@ -1392,7 +1429,8 @@ cdef class OrderFactory:
             parent_order_id=entry_client_order_id,
             exec_algorithm_id=sl_exec_algorithm_id,
             exec_algorithm_params=sl_exec_algorithm_params,
-            tags="STOP_LOSS",
+            exec_spawn_id=sl_client_order_id if sl_exec_algorithm_id is not None else None,
+            tags=sl_tags,
         )
 
         return OrderList(

@@ -40,6 +40,7 @@ from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
 from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderEmulated
 from nautilus_trader.model.events import OrderExpired
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import OrderInitialized
@@ -47,6 +48,7 @@ from nautilus_trader.model.events import OrderModifyRejected
 from nautilus_trader.model.events import OrderPendingCancel
 from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
@@ -830,6 +832,43 @@ class TestMsgPackSerializer:
             AUDUSD_SIM.id,
             ClientOrderId("O-123456"),
             "Exceeds MAX_NOTIONAL_PER_ORDER",
+            UUID4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_order_emulated_events(self):
+        # Arrange
+        event = OrderEmulated(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            UUID4(),
+            0,
+        )
+
+        # Act
+        serialized = self.serializer.serialize(event)
+        deserialized = self.serializer.deserialize(serialized)
+
+        # Assert
+        assert deserialized == event
+
+    def test_serialize_and_deserialize_order_released_events(self):
+        # Arrange
+        event = OrderReleased(
+            self.trader_id,
+            self.strategy_id,
+            AUDUSD_SIM.id,
+            ClientOrderId("O-123456"),
+            Price.from_str("1.00000"),
             UUID4(),
             0,
         )

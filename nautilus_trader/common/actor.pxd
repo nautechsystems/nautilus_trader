@@ -50,6 +50,7 @@ from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class Actor(Component):
+    cdef object _executor
     cdef set _warning_events
     cdef dict _signal_classes
     cdef dict _pending_requests
@@ -100,6 +101,7 @@ cdef class Actor(Component):
         Logger logger,
     )
 
+    cpdef void register_executor(self, loop, executor)
     cpdef void register_warning_event(self, type event)
     cpdef void deregister_warning_event(self, type event)
 
@@ -109,6 +111,15 @@ cdef class Actor(Component):
     cpdef void load(self, dict state)
     cpdef void add_synthetic(self, SyntheticInstrument synthetic)
     cpdef void update_synthetic(self, SyntheticInstrument synthetic)
+    cpdef queue_for_executor(self, func, tuple args=*, dict kwargs=*)
+    cpdef run_in_executor(self, func, tuple args=*, dict kwargs=*)
+    cpdef list queued_task_ids(self)
+    cpdef list active_task_ids(self)
+    cpdef bint has_queued_tasks(self)
+    cpdef bint has_active_tasks(self)
+    cpdef bint has_any_tasks(self)
+    cpdef void cancel_task(self, task_id)
+    cpdef void cancel_all_tasks(self)
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 

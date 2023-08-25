@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import enum
-from collections import namedtuple
+from typing import Any, NamedTuple
 
 import requests
 from lxml.html import fromstring
@@ -121,10 +121,15 @@ class Exchange(enum.Enum):
     WSE = "wse"
 
 
-class Product(namedtuple("Product", "ib_symbol, description, native_symbol, currency")):
+class Product(NamedTuple):
     """
     Interactive Brokers Web Product.
     """
+
+    ib_symbol: Any  # TODO: More specific type
+    description: Any  # TODO: More specific type
+    native_symbol: Any  # TODO: More specific type
+    currency: Any  # TODO: More specific type
 
 
 def _parse_products(table):

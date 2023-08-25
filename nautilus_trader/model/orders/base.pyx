@@ -37,6 +37,7 @@ from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -45,6 +46,7 @@ from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
@@ -53,38 +55,51 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 
 
-VALID_STOP_ORDER_TYPES = (
+VALID_STOP_ORDER_TYPES = {
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
     OrderType.MARKET_IF_TOUCHED,
     OrderType.LIMIT_IF_TOUCHED,
-)
+}
 
-VALID_LIMIT_ORDER_TYPES = (
+VALID_LIMIT_ORDER_TYPES = {
     OrderType.LIMIT,
     OrderType.STOP_LIMIT,
     OrderType.LIMIT_IF_TOUCHED,
     OrderType.MARKET_TO_LIMIT,
-)
+}
+
+LOCAL_ACTIVE_ORDER_STATUS =  {
+    OrderStatus.INITIALIZED,
+    OrderStatus.EMULATED,
+    OrderStatus.RELEASED,
+}
 
 # OrderStatus being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
     (OrderStatus.INITIALIZED, OrderStatus.DENIED): OrderStatus.DENIED,
+    (OrderStatus.INITIALIZED, OrderStatus.EMULATED): OrderStatus.EMULATED,  # Emulated orders
+    (OrderStatus.INITIALIZED, OrderStatus.RELEASED): OrderStatus.RELEASED,  # Emulated orders
     (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,
-    (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # Covers external orders
-    (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers external orders
-    (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers emulated and external orders
-    (OrderStatus.INITIALIZED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # Covers emulated and external orders
-    (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated and external orders
+    (OrderStatus.INITIALIZED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # External orders
+    (OrderStatus.INITIALIZED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,  # External orders
+    (OrderStatus.INITIALIZED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # External orders
+    (OrderStatus.INITIALIZED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # External orders
+    (OrderStatus.INITIALIZED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # External orders
+    (OrderStatus.EMULATED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Emulated orders
+    (OrderStatus.EMULATED, OrderStatus.EXPIRED): OrderStatus.EXPIRED,  # Emulated orders
+    (OrderStatus.EMULATED, OrderStatus.RELEASED): OrderStatus.RELEASED,  # Emulated orders
+    (OrderStatus.RELEASED, OrderStatus.DENIED): OrderStatus.DENIED,  # Emulated orders
+    (OrderStatus.RELEASED, OrderStatus.SUBMITTED): OrderStatus.SUBMITTED,  # Emulated orders
+    (OrderStatus.RELEASED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Execution Algo
     (OrderStatus.SUBMITTED, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,
     (OrderStatus.SUBMITTED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.SUBMITTED, OrderStatus.REJECTED): OrderStatus.REJECTED,
-    (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # Covers FOK and IOC cases
+    (OrderStatus.SUBMITTED, OrderStatus.CANCELED): OrderStatus.CANCELED,  # FOK and IOC cases
     (OrderStatus.SUBMITTED, OrderStatus.ACCEPTED): OrderStatus.ACCEPTED,
-    (OrderStatus.SUBMITTED, OrderStatus.TRIGGERED): OrderStatus.TRIGGERED,  # Covers emulated StopLimit order
     (OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
     (OrderStatus.SUBMITTED, OrderStatus.FILLED): OrderStatus.FILLED,
-    (OrderStatus.ACCEPTED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # Covers StopLimit order
+    (OrderStatus.ACCEPTED, OrderStatus.REJECTED): OrderStatus.REJECTED,  # StopLimit order
     (OrderStatus.ACCEPTED, OrderStatus.PENDING_UPDATE): OrderStatus.PENDING_UPDATE,
     (OrderStatus.ACCEPTED, OrderStatus.PENDING_CANCEL): OrderStatus.PENDING_CANCEL,
     (OrderStatus.ACCEPTED, OrderStatus.CANCELED): OrderStatus.CANCELED,
@@ -342,13 +357,16 @@ cdef class Order:
         return self.order_type == OrderType.MARKET
 
     cdef bint is_emulated_c(self):
-        return self.emulation_trigger != TriggerType.NO_TRIGGER
+        return self._fsm.state == OrderStatus.EMULATED
+
+    cdef bint is_active_local_c(self):
+        return self._fsm.state in LOCAL_ACTIVE_ORDER_STATUS
 
     cdef bint is_primary_c(self):
-        return self.exec_algorithm_id is not None and self.exec_spawn_id is None
+        return self.exec_algorithm_id is not None and self.exec_spawn_id == self.client_order_id
 
     cdef bint is_spawned_c(self):
-        return self.exec_spawn_id is not None
+        return self.exec_algorithm_id is not None and self.exec_spawn_id != self.client_order_id
 
     cdef bint is_contingency_c(self):
         return self.contingency_type != ContingencyType.NO_CONTINGENCY
@@ -383,8 +401,6 @@ cdef class Order:
         )
 
     cdef bint is_inflight_c(self):
-        if self.emulation_trigger != TriggerType.NO_TRIGGER:
-            return False
         return (
             self._fsm.state == OrderStatus.SUBMITTED
             or self._fsm.state == OrderStatus.PENDING_CANCEL
@@ -588,6 +604,23 @@ cdef class Order:
 
         """
         return self.is_emulated_c()
+
+    @property
+    def is_active_local(self):
+        """
+        Return whether the order is active and held in the local system.
+
+        An order is considered active local when its status is any of;
+        - ``INITIALIZED``
+        - ``EMULATED``
+        - ``RELEASED``
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_active_local_c()
 
     @property
     def is_primary(self):
@@ -919,6 +952,13 @@ cdef class Order:
         elif isinstance(event, OrderDenied):
             self._fsm.trigger(OrderStatus.DENIED)
             self._denied(event)
+        elif isinstance(event, OrderEmulated):
+            self._fsm.trigger(OrderStatus.EMULATED)
+            # self._emulated(event)
+        elif isinstance(event, OrderReleased):
+            self._fsm.trigger(OrderStatus.RELEASED)
+            self.emulation_trigger = TriggerType.NO_TRIGGER
+            # self._released(event)
         elif isinstance(event, OrderSubmitted):
             self._fsm.trigger(OrderStatus.SUBMITTED)
             self._submitted(event)

@@ -91,14 +91,17 @@ impl BookOrder {
     #[must_use]
     pub fn from_quote_tick(tick: &QuoteTick, side: OrderSide) -> Self {
         match side {
-            OrderSide::Buy => {
-                Self::new(OrderSide::Buy, tick.bid, tick.bid_size, tick.bid.raw as u64)
-            }
+            OrderSide::Buy => Self::new(
+                OrderSide::Buy,
+                tick.bid_price,
+                tick.bid_size,
+                tick.bid_price.raw as u64,
+            ),
             OrderSide::Sell => Self::new(
                 OrderSide::Sell,
-                tick.ask,
+                tick.ask_price,
                 tick.ask_size,
-                tick.ask.raw as u64,
+                tick.ask_price.raw as u64,
             ),
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
@@ -210,9 +213,8 @@ impl BookOrder {
         let json_str =
             serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str,), None)?
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
     }
@@ -220,13 +222,13 @@ impl BookOrder {
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
             .extract()?;
+
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
+        let instance = serde_json::from_slice(&json_str.into_bytes())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(instance)
     }
@@ -350,8 +352,10 @@ mod tests {
         assert_eq!(display, expected);
     }
 
-    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
-    fn test_from_quote_tick(side: OrderSide) {
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_from_quote_tick(#[case] side: OrderSide) {
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),
@@ -368,8 +372,8 @@ mod tests {
         assert_eq!(
             book_order.price,
             match side {
-                OrderSide::Buy => tick.bid,
-                OrderSide::Sell => tick.ask,
+                OrderSide::Buy => tick.bid_price,
+                OrderSide::Sell => tick.ask_price,
                 _ => panic!("Invalid test"),
             }
         );
@@ -384,15 +388,17 @@ mod tests {
         assert_eq!(
             book_order.order_id,
             match side {
-                OrderSide::Buy => tick.bid.raw as u64,
-                OrderSide::Sell => tick.ask.raw as u64,
+                OrderSide::Buy => tick.bid_price.raw as u64,
+                OrderSide::Sell => tick.ask_price.raw as u64,
                 _ => panic!("Invalid test"),
             }
         );
     }
 
-    #[rstest(side, case(OrderSide::Buy), case(OrderSide::Sell))]
-    fn test_from_trade_tick(side: OrderSide) {
+    #[rstest]
+    #[case(OrderSide::Buy)]
+    #[case(OrderSide::Sell)]
+    fn test_from_trade_tick(#[case] side: OrderSide) {
         let tick = TradeTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),

@@ -19,19 +19,22 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
-    events::order::{OrderEvent, OrderInitialized},
+    events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
+        venue::Venue, venue_order_id::VenueOrderId,
     },
+    orders::base::OrderError,
     types::{price::Price, quantity::Quantity},
 };
 
@@ -39,6 +42,7 @@ pub struct MarketToLimitOrder {
     core: OrderCore,
     pub price: Option<Price>,
     pub expire_time: Option<UnixNanos>,
+    pub is_post_only: bool,
     pub display_qty: Option<Quantity>,
 }
 
@@ -58,15 +62,14 @@ impl MarketToLimitOrder {
         reduce_only: bool,
         quote_quantity: bool,
         display_qty: Option<Quantity>,
-        emulation_trigger: Option<TriggerType>,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
         parent_order_id: Option<ClientOrderId>,
         exec_algorithm_id: Option<ExecAlgorithmId>,
-        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
-        tags: Option<String>,
+        tags: Option<Ustr>,
         init_id: UUID4,
         ts_init: UnixNanos,
     ) -> Self {
@@ -80,10 +83,9 @@ impl MarketToLimitOrder {
                 OrderType::MarketToLimit,
                 quantity,
                 time_in_force,
-                post_only,
                 reduce_only,
                 quote_quantity,
-                emulation_trigger,
+                None, // Emulation trigger
                 contingency_type,
                 order_list_id,
                 linked_order_ids,
@@ -97,6 +99,7 @@ impl MarketToLimitOrder {
             ),
             price: None, // Price will be determined on fill
             expire_time,
+            is_post_only: post_only,
             display_qty,
         }
     }
@@ -117,7 +120,6 @@ impl Default for MarketToLimitOrder {
             false,
             false,
             false,
-            None,
             None,
             None,
             None,
@@ -164,6 +166,14 @@ impl Order for MarketToLimitOrder {
         self.instrument_id
     }
 
+    fn symbol(&self) -> Symbol {
+        self.instrument_id.symbol
+    }
+
+    fn venue(&self) -> Venue {
+        self.instrument_id.venue
+    }
+
     fn client_order_id(&self) -> ClientOrderId {
         self.client_order_id
     }
@@ -200,6 +210,10 @@ impl Order for MarketToLimitOrder {
         self.time_in_force
     }
 
+    fn expire_time(&self) -> Option<UnixNanos> {
+        self.expire_time
+    }
+
     fn price(&self) -> Option<Price> {
         self.price
     }
@@ -228,8 +242,28 @@ impl Order for MarketToLimitOrder {
         self.is_quote_quantity
     }
 
+    fn display_qty(&self) -> Option<Quantity> {
+        self.display_qty
+    }
+
+    fn limit_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset(&self) -> Option<Price> {
+        None
+    }
+
+    fn trailing_offset_type(&self) -> Option<TrailingOffsetType> {
+        None
+    }
+
     fn emulation_trigger(&self) -> Option<TriggerType> {
-        self.emulation_trigger
+        None
+    }
+
+    fn trigger_instrument_id(&self) -> Option<InstrumentId> {
+        None
     }
 
     fn contingency_type(&self) -> Option<ContingencyType> {
@@ -252,7 +286,7 @@ impl Order for MarketToLimitOrder {
         self.exec_algorithm_id
     }
 
-    fn exec_algorithm_params(&self) -> Option<HashMap<String, String>> {
+    fn exec_algorithm_params(&self) -> Option<HashMap<Ustr, Ustr>> {
         self.exec_algorithm_params.clone()
     }
 
@@ -260,8 +294,8 @@ impl Order for MarketToLimitOrder {
         self.exec_spawn_id
     }
 
-    fn tags(&self) -> Option<String> {
-        self.tags.clone()
+    fn tags(&self) -> Option<Ustr> {
+        self.tags
     }
 
     fn filled_qty(&self) -> Quantity {
@@ -303,6 +337,34 @@ impl Order for MarketToLimitOrder {
     fn trade_ids(&self) -> Vec<&TradeId> {
         self.trade_ids.iter().collect()
     }
+
+    fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
+        if let OrderEvent::OrderUpdated(ref event) = event {
+            self.update(event);
+        };
+        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+
+        self.core.apply(event)?;
+
+        if is_order_filled && self.price.is_some() {
+            self.core.set_slippage(self.price.unwrap())
+        };
+
+        Ok(())
+    }
+
+    fn update(&mut self, event: &OrderUpdated) {
+        if event.trigger_price.is_some() {
+            panic!("{}", OrderError::InvalidOrderEvent);
+        }
+
+        if let Some(price) = event.price {
+            self.price = Some(price);
+        }
+
+        self.quantity = event.quantity;
+        self.leaves_qty = self.quantity - self.filled_qty;
+    }
 }
 
 impl From<OrderInitialized> for MarketToLimitOrder {
@@ -320,7 +382,6 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.reduce_only,
             event.quote_quantity,
             event.display_qty,
-            event.emulation_trigger,
             event.contingency_type,
             event.order_list_id,
             event.linked_order_ids,
@@ -332,44 +393,5 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.event_id,
             event.ts_event,
         )
-    }
-}
-
-impl From<&MarketToLimitOrder> for OrderInitialized {
-    fn from(order: &MarketToLimitOrder) -> Self {
-        Self {
-            trader_id: order.trader_id,
-            strategy_id: order.strategy_id,
-            instrument_id: order.instrument_id,
-            client_order_id: order.client_order_id,
-            order_side: order.side,
-            order_type: order.order_type,
-            quantity: order.quantity,
-            price: None,
-            trigger_price: None,
-            trigger_type: None,
-            time_in_force: order.time_in_force,
-            expire_time: order.expire_time,
-            post_only: order.is_post_only,
-            reduce_only: order.is_reduce_only,
-            quote_quantity: order.is_quote_quantity,
-            display_qty: order.display_qty,
-            limit_offset: None,
-            trailing_offset: None,
-            trailing_offset_type: None,
-            emulation_trigger: order.emulation_trigger,
-            contingency_type: order.contingency_type,
-            order_list_id: order.order_list_id,
-            linked_order_ids: order.linked_order_ids.clone(),
-            parent_order_id: order.parent_order_id,
-            exec_algorithm_id: order.exec_algorithm_id,
-            exec_algorithm_params: order.exec_algorithm_params.clone(),
-            exec_spawn_id: order.exec_spawn_id,
-            tags: order.tags.clone(),
-            event_id: order.init_id,
-            ts_event: order.ts_init,
-            ts_init: order.ts_init,
-            reconciliation: false,
-        }
     }
 }

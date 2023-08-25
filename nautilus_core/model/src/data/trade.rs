@@ -17,6 +17,7 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
@@ -24,7 +25,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDi
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::AggressorSide,
+    enums::{AggressorSide, FromU8},
     identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     types::{price::Price, quantity::Quantity},
 };
@@ -73,6 +74,7 @@ impl TradeTick {
         }
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -83,6 +85,48 @@ impl TradeTick {
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());
         metadata
+    }
+
+    /// Create a new [`TradeTick`] extracted from the given [`PyAny`].
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str)
+            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .unwrap();
+
+        let price_py: &PyAny = obj.getattr("price")?;
+        let price_raw: i64 = price_py.getattr("raw")?.extract()?;
+        let price_prec: u8 = price_py.getattr("precision")?.extract()?;
+        let price = Price::from_raw(price_raw, price_prec);
+
+        let size_py: &PyAny = obj.getattr("size")?;
+        let size_raw: u64 = size_py.getattr("raw")?.extract()?;
+        let size_prec: u8 = size_py.getattr("precision")?.extract()?;
+        let size = Quantity::from_raw(size_raw, size_prec);
+
+        let aggressor_side_obj: &PyAny = obj.getattr("aggressor_side")?.extract()?;
+        let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
+        let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
+
+        let trade_id_obj: &PyAny = obj.getattr("trade_id")?.extract()?;
+        let trade_id_str = trade_id_obj.getattr("value")?.extract()?;
+        let trade_id = TradeId::from_str(trade_id_str)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+            .unwrap();
+
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        Ok(Self::new(
+            instrument_id,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
+            ts_event,
+            ts_init,
+        ))
     }
 }
 
@@ -189,9 +233,8 @@ impl TradeTick {
         let json_str =
             serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str.as_bytes(),), None)?
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
     }
@@ -199,13 +242,13 @@ impl TradeTick {
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
             .extract()?;
+
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
+        let instance = serde_json::from_slice(&json_str.into_bytes())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(instance)
     }
@@ -241,7 +284,7 @@ mod tests {
     use std::str::FromStr;
 
     use nautilus_core::serialization::Serializable;
-    use pyo3::Python;
+    use pyo3::{IntoPy, Python};
 
     use crate::{
         data::trade::TradeTick,
@@ -312,6 +355,18 @@ mod tests {
             let dict = tick.as_dict(py).unwrap();
             let parsed = TradeTick::from_dict(py, dict).unwrap();
             assert_eq!(parsed, tick);
+        });
+    }
+
+    #[test]
+    fn test_from_pyobject() {
+        pyo3::prepare_freethreaded_python();
+        let tick = create_stub_trade_tick();
+
+        Python::with_gil(|py| {
+            let tick_pyobject = tick.into_py(py);
+            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_tick, tick);
         });
     }
 

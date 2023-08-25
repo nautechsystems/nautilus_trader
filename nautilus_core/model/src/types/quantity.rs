@@ -23,9 +23,10 @@ use std::{
 
 use nautilus_core::{correctness, parsing::precision_from_str};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::fixed::FIXED_SCALAR;
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
@@ -74,17 +75,24 @@ impl Quantity {
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
+
+    #[must_use]
+    pub fn as_decimal(&self) -> Decimal {
+        // Scale down the raw value to match the precision
+        let rescaled_raw = self.raw / u64::pow(10, (FIXED_PRECISION - self.precision) as u32);
+        Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
 }
 
 impl From<Quantity> for f64 {
-    fn from(value: Quantity) -> Self {
-        value.as_f64()
+    fn from(qty: Quantity) -> Self {
+        qty.as_f64()
     }
 }
 
 impl From<&Quantity> for f64 {
-    fn from(value: &Quantity) -> Self {
-        value.as_f64()
+    fn from(qty: &Quantity) -> Self {
+        qty.as_f64()
     }
 }
 
@@ -190,6 +198,13 @@ impl Mul for Quantity {
     }
 }
 
+impl Mul<f64> for Quantity {
+    type Output = f64;
+    fn mul(self, rhs: f64) -> Self::Output {
+        self.as_f64() * rhs
+    }
+}
+
 impl From<Quantity> for u64 {
     fn from(value: Quantity) -> Self {
         value.raw
@@ -252,6 +267,29 @@ impl<'de> Deserialize<'de> for Quantity {
     }
 }
 
+#[pymethods]
+impl Quantity {
+    #[getter]
+    fn raw(&self) -> u64 {
+        self.raw
+    }
+
+    #[getter]
+    fn precision(&self) -> u8 {
+        self.precision
+    }
+
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
+        self.as_f64()
+    }
+
+    // #[pyo3(name = "as_decimal")]
+    // fn py_as_decimal(&self, py: Python<'py>) -> Decimal {
+    //     self.as_decimal().into_py(py)
+    // }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -297,6 +335,9 @@ pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
 mod tests {
     use std::str::FromStr;
 
+    use float_cmp::approx_eq;
+    use rust_decimal_macros::dec;
+
     use super::*;
 
     #[test]
@@ -309,6 +350,8 @@ mod tests {
         assert_eq!(qty.to_string(), "0.00812000");
         assert!(!qty.is_zero());
         assert!(qty.is_positive());
+        assert_eq!(qty.as_decimal(), dec!(0.00812000));
+        assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000001));
     }
 
     #[test]
@@ -430,14 +473,6 @@ mod tests {
         let quantity2 = Quantity::new(2.0, 1);
         let quantity3 = quantity1 * quantity2;
         assert_eq!(quantity3.raw, 4_000_000_000);
-    }
-
-    #[test]
-    fn test_mul_assign() {
-        let mut q = Quantity::from_raw(100, 0);
-        q *= 2u64;
-
-        assert_eq!(q.raw, 200);
     }
 
     #[test]

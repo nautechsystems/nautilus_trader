@@ -11,7 +11,7 @@ repos:
       - id: end-of-file-fixer
         types_or: [python, cython, rust]
       - id: trailing-whitespace
-        types_or: [python, cython]
+        types_or: [rust, cython, python]
       - id: debug-statements
       - id: detect-private-key
       - id: check-builtin-literals
@@ -60,7 +60,7 @@ repos:
   #  Python/Cython formatting and linting
   ##############################################################################
   - repo: https://github.com/asottile/add-trailing-comma
-    rev: v3.0.0
+    rev: v3.0.1
     hooks:
       - id: add-trailing-comma
         name: add-trailing-comma
@@ -76,7 +76,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.0.280
+    rev: v0.0.285
     hooks:
       - id: ruff
         args: ["--fix"]
@@ -105,7 +105,7 @@ repos:
         ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.4.1
+    rev: v1.5.1
     hooks:
       - id: mypy
         args: [

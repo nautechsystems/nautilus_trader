@@ -398,8 +398,8 @@ class _TestPersistenceCatalog:
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         tick = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price(10, 1),
-            ask=Price(11, 1),
+            bid_price=Price(10, 1),
+            ask_price=Price(11, 1),
             bid_size=Quantity(10, 1),
             ask_size=Quantity(10, 1),
             ts_init=0,
@@ -438,8 +438,8 @@ class _TestPersistenceCatalog:
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         tick = QuoteTick(
             instrument_id=instrument.id,
-            bid=Price(10, 1),
-            ask=Price(11, 1),
+            bid_price=Price(10, 1),
+            ask_price=Price(11, 1),
             bid_size=Quantity(10, 1),
             ask_size=Quantity(10, 1),
             ts_init=0,
@@ -652,8 +652,8 @@ class _TestPersistenceCatalog:
 
         quote_tick = QuoteTick(
             instrument_id=instrument.id,
-            ask=Price.from_str("2.0"),
-            bid=Price.from_str("2.1"),
+            bid_price=Price.from_str("2.1"),
+            ask_price=Price.from_str("2.0"),
             bid_size=Quantity.from_int(10),
             ask_size=Quantity.from_int(10),
             ts_event=0,

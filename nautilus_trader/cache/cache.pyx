@@ -23,6 +23,7 @@ from typing import Optional
 from nautilus_trader.config import CacheConfig
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
@@ -63,6 +64,7 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.trading.strategy cimport Strategy
@@ -794,14 +796,9 @@ cdef class Cache(CacheFacade):
 
             # 8: Build _index_exec_spawn_orders -> {ClientOrderId, {ClientOrderId}}
             if order.exec_algorithm_id is not None:
-                if order.exec_spawn_id is None:
-                    if order.client_order_id not in self._index_exec_spawn_orders:
-                        self._index_exec_spawn_orders[order.client_order_id] = set()
-                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
-                else:
-                    if order.exec_spawn_id not in self._index_exec_spawn_orders:
-                        self._index_exec_spawn_orders[order.exec_spawn_id] = set()
-                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
+                if order.exec_spawn_id not in self._index_exec_spawn_orders:
+                    self._index_exec_spawn_orders[order.exec_spawn_id] = set()
+                self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
             # 9: Build _index_orders -> {ClientOrderId}
             self._index_orders.add(client_order_id)
@@ -907,9 +904,9 @@ cdef class Cache(CacheFacade):
         if position.side == PositionSide.FLAT:
             return Money(0.0, position.settlement_currency)
         elif position.side == PositionSide.LONG:
-            last = quote.ask
+            last = quote.ask_price
         else:
-            last = quote.bid
+            last = quote.bid_price
 
         return position.unrealized_pnl(last)
 
@@ -1486,20 +1483,11 @@ cdef class Cache(CacheFacade):
                 exec_algorithm_orders.add(order.client_order_id)
 
             # Set exec_spawn_id index
-            if order.exec_spawn_id is None:
-                # Primary order
-                exec_spawn_orders = self._index_exec_spawn_orders.get(order.client_order_id)
-                if not exec_spawn_orders:
-                    self._index_exec_spawn_orders[order.client_order_id] = {order.client_order_id}
-                else:
-                    self._index_exec_spawn_orders[order.client_order_id].add(order.client_order_id)
+            exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
+            if not exec_spawn_orders:
+                self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
             else:
-                # Secondary order
-                exec_spawn_orders = self._index_exec_spawn_orders.get(order.exec_spawn_id)
-                if not exec_spawn_orders:
-                    self._index_exec_spawn_orders[order.exec_spawn_id] = {order.client_order_id}
-                else:
-                    self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
+                self._index_exec_spawn_orders[order.exec_spawn_id].add(order.client_order_id)
 
         # Update emulation
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
@@ -1668,6 +1656,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
@@ -1698,7 +1687,7 @@ cdef class Cache(CacheFacade):
 
         self._log.debug(f"Snapshot {repr(copied_position)}.")
 
-    cpdef void snapshot_position_state(self, Position position):
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot):
         """
         Snapshot the state dictionary for the given `position`.
 
@@ -1708,6 +1697,8 @@ cdef class Cache(CacheFacade):
         ----------
         position : Position
             The position to snapshot the state for.
+        ts_snapshot : uint64_t
+            The UNIX timestamp (nanoseconds) when the snapshot was taken.
 
         """
         Condition.not_none(position, "position")
@@ -1720,6 +1711,7 @@ cdef class Cache(CacheFacade):
 
         self._database.snapshot_position_state(
             position,
+            ts_snapshot,
             self._calculate_unrealized_pnl(position),
         )
 
@@ -1792,7 +1784,7 @@ cdef class Cache(CacheFacade):
             self._index_orders_closed.add(order.client_order_id)
 
         # Update emulation
-        if order.emulation_trigger == TriggerType.NO_TRIGGER:
+        if order.is_closed_c() or order.emulation_trigger == TriggerType.NO_TRIGGER:
             self._index_orders_emulated.discard(order.client_order_id)
         else:
             self._index_orders_emulated.add(order.client_order_id)
@@ -1832,6 +1824,7 @@ cdef class Cache(CacheFacade):
         if self.snapshot_positions:
             self._database.snapshot_position_state(
                 position,
+                position.ts_last,
                 self._calculate_unrealized_pnl(position),
             )
 
@@ -2442,8 +2435,8 @@ cdef class Cache(CacheFacade):
         cdef:
             InstrumentId instrument_id
             str base_quote
-            Price bid
-            Price ask
+            Price bid_price
+            Price ask_price
             Bar bid_bar
             Bar ask_bar
         for instrument_id, base_quote in self._xrate_symbols.items():
@@ -2452,19 +2445,19 @@ cdef class Cache(CacheFacade):
 
             ticks = self._quote_ticks.get(instrument_id)
             if ticks:
-                bid = ticks[0].bid
-                ask = ticks[0].ask
+                bid_price = ticks[0].bid_price
+                ask_price = ticks[0].ask_price
             else:
                 # No quotes for instrument_id
                 bid_bar = self._bars_bid.get(instrument_id)
                 ask_bar = self._bars_ask.get(instrument_id)
                 if bid_bar is None or ask_bar is None:
                     continue # No prices for instrument_id
-                bid = bid_bar.close
-                ask = ask_bar.close
+                bid_price = bid_bar.close
+                ask_price = ask_bar.close
 
-            bid_quotes[base_quote] = bid.as_f64_c()
-            ask_quotes[base_quote] = ask.as_f64_c()
+            bid_quotes[base_quote] = bid_price.as_f64_c()
+            ask_quotes[base_quote] = ask_price.as_f64_c()
 
         return bid_quotes, ask_quotes
 
@@ -2520,7 +2513,7 @@ cdef class Cache(CacheFacade):
         """
         return [x for x in self._instruments.values() if venue is None or venue == x.id.venue]
 
-# -- SYNTHETIC QUERIES ---------------------------------------------------------------------------
+# -- SYNTHETIC QUERIES ----------------------------------------------------------------------------
 
     cpdef SyntheticInstrument synthetic(self, InstrumentId instrument_id):
         """
@@ -3254,66 +3247,6 @@ cdef class Cache(CacheFacade):
 
         return [self._orders[client_order_id] for client_order_id in client_order_ids]
 
-    cpdef list orders_for_exec_algorithm(
-        self,
-        ExecAlgorithmId exec_algorithm_id,
-        Venue venue = None,
-        InstrumentId instrument_id = None,
-        StrategyId strategy_id = None,
-        OrderSide side = OrderSide.NO_ORDER_SIDE,
-    ):
-        """
-        Return all execution algorithm orders for the given query filters.
-
-        Parameters
-        ----------
-        exec_algorithm_id : ExecAlgorithmId
-            The execution algorithm ID.
-        venue : Venue, optional
-            The venue ID query filter.
-        instrument_id : InstrumentId, optional
-            The instrument ID query filter.
-        strategy_id : StrategyId, optional
-            The strategy ID query filter.
-        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
-            The order side query filter.
-
-        Returns
-        -------
-        list[Order]
-
-        """
-        Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
-
-        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
-
-        cdef set exec_algorithm_order_ids = self._index_exec_algorithm_orders.get(exec_algorithm_id)
-
-        if query is not None and exec_algorithm_order_ids is not None:
-            exec_algorithm_order_ids = query.intersection(exec_algorithm_order_ids)
-
-        return self._get_orders_for_ids(exec_algorithm_order_ids, side)
-
-    cpdef list orders_for_exec_spawn(self, ClientOrderId client_order_id):
-        """
-        Return all orders for the given execution spawn ID (if found).
-
-        Will also include the primary (original) order.
-
-        Parameters
-        ----------
-        client_order_id : ClientOrderId
-            The execution algorithm spawning primary (original) client order ID.
-
-        Returns
-        -------
-        list[Order]
-
-        """
-        Condition.not_none(client_order_id, "client_order_id")
-
-        return self._get_orders_for_ids(self._index_exec_spawn_orders.get(client_order_id), OrderSide.NO_ORDER_SIDE)
-
     cpdef bint order_exists(self, ClientOrderId client_order_id):
         """
         Return a value indicating whether an order with the given ID exists.
@@ -3544,7 +3477,7 @@ cdef class Cache(CacheFacade):
         """
         return len(self.orders(venue, instrument_id, strategy_id, side))
 
-# -- ORDER LIST QUERIES --------------------------------------------------------------------------------
+# -- ORDER LIST QUERIES ---------------------------------------------------------------------------
 
     cpdef OrderList order_list(self, OrderListId order_list_id):
         """
@@ -3606,6 +3539,188 @@ cdef class Cache(CacheFacade):
         Condition.not_none(order_list_id, "order_list_id")
 
         return order_list_id in self._order_lists
+
+# -- EXEC ALGORITHM QUERIES -----------------------------------------------------------------------
+
+    cpdef list orders_for_exec_algorithm(
+        self,
+        ExecAlgorithmId exec_algorithm_id,
+        Venue venue = None,
+        InstrumentId instrument_id = None,
+        StrategyId strategy_id = None,
+        OrderSide side = OrderSide.NO_ORDER_SIDE,
+    ):
+        """
+        Return all execution algorithm orders for the given query filters.
+
+        Parameters
+        ----------
+        exec_algorithm_id : ExecAlgorithmId
+            The execution algorithm ID.
+        venue : Venue, optional
+            The venue ID query filter.
+        instrument_id : InstrumentId, optional
+            The instrument ID query filter.
+        strategy_id : StrategyId, optional
+            The strategy ID query filter.
+        side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
+            The order side query filter.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
+
+        cdef set query = self._build_order_query_filter_set(venue, instrument_id, strategy_id)
+
+        cdef set exec_algorithm_order_ids = self._index_exec_algorithm_orders.get(exec_algorithm_id)
+
+        if query is not None and exec_algorithm_order_ids is not None:
+            exec_algorithm_order_ids = query.intersection(exec_algorithm_order_ids)
+
+        return self._get_orders_for_ids(exec_algorithm_order_ids, side)
+
+    cpdef list orders_for_exec_spawn(self, ClientOrderId exec_spawn_id):
+        """
+        Return all orders for the given execution spawn ID (if found).
+
+        Will also include the primary (original) order.
+
+        Parameters
+        ----------
+        exec_spawn_id : ClientOrderId
+            The execution algorithm spawning primary (original) client order ID.
+
+        Returns
+        -------
+        list[Order]
+
+        """
+        Condition.not_none(exec_spawn_id, "exec_spawn_id")
+
+        return self._get_orders_for_ids(self._index_exec_spawn_orders.get(exec_spawn_id), OrderSide.NO_ORDER_SIDE)
+
+    cpdef Quantity exec_spawn_total_quantity(self, ClientOrderId exec_spawn_id, bint active_only=False):
+        """
+        Return the total quantity for the given execution spawn ID (if found).
+
+        If no execution spawn ID matches then returns ``None``.
+
+        Parameters
+        ----------
+        exec_spawn_id : ClientOrderId
+            The execution algorithm spawning primary (original) client order ID.
+        active_only : bool, default False
+            The flag to filter for active execution spawn orders only.
+
+        Returns
+        -------
+        Quantity or ``None``
+
+        Notes
+        -----
+        An "active" order is defined as one which is *not closed*.
+
+        """
+        Condition.not_none(exec_spawn_id, "exec_spawn_id")
+
+        cdef list exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id)
+
+        if not exec_spawn_orders:
+            return None
+
+        cdef:
+            Order spawn_order
+            uint8_t precision = 0
+            uint64_t raw_total_quantity = 0
+        for spawn_order in exec_spawn_orders:
+            precision = spawn_order.quantity._mem.precision
+            if not active_only or not spawn_order.is_closed_c():
+                raw_total_quantity += spawn_order.quantity._mem.raw
+
+        return Quantity.from_raw_c(raw_total_quantity, precision)
+
+    cpdef Quantity exec_spawn_total_filled_qty(self, ClientOrderId exec_spawn_id, bint active_only=False):
+        """
+        Return the total filled quantity for the given execution spawn ID (if found).
+
+        If no execution spawn ID matches then returns ``None``.
+
+        Parameters
+        ----------
+        exec_spawn_id : ClientOrderId
+            The execution algorithm spawning primary (original) client order ID.
+        active_only : bool, default False
+            The flag to filter for active execution spawn orders only.
+
+        Returns
+        -------
+        Quantity or ``None``
+
+        Notes
+        -----
+        An "active" order is defined as one which is *not closed*.
+
+        """
+        Condition.not_none(exec_spawn_id, "exec_spawn_id")
+
+        cdef list exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id)
+
+        if not exec_spawn_orders:
+            return None
+
+        cdef:
+            Order spawn_order
+            uint8_t precision = 0
+            uint64_t raw_filled_qty = 0
+        for spawn_order in exec_spawn_orders:
+            precision = spawn_order.filled_qty._mem.precision
+            if not active_only or not spawn_order.is_closed_c():
+                raw_filled_qty += spawn_order.filled_qty._mem.raw
+
+        return Quantity.from_raw_c(raw_filled_qty, precision)
+
+    cpdef Quantity exec_spawn_total_leaves_qty(self, ClientOrderId exec_spawn_id, bint active_only=False):
+        """
+        Return the total leaves quantity for the given execution spawn ID (if found).
+
+        If no execution spawn ID matches then returns ``None``.
+
+        Parameters
+        ----------
+        exec_spawn_id : ClientOrderId
+            The execution algorithm spawning primary (original) client order ID.
+        active_only : bool, default False
+            The flag to filter for active execution spawn orders only.
+
+        Returns
+        -------
+        Quantity or ``None``
+
+        Notes
+        -----
+        An "active" order is defined as one which is *not closed*.
+
+        """
+        Condition.not_none(exec_spawn_id, "exec_spawn_id")
+
+        cdef list exec_spawn_orders = self.orders_for_exec_spawn(exec_spawn_id)
+
+        if not exec_spawn_orders:
+            return None
+
+        cdef:
+            Order spawn_order
+            uint8_t precision = 0
+            uint64_t raw_leaves_qty = 0
+        for spawn_order in exec_spawn_orders:
+            precision = spawn_order.leaves_qty._mem.precision
+            if not active_only or not spawn_order.is_closed_c():
+                raw_leaves_qty += spawn_order.leaves_qty._mem.raw
+
+        return Quantity.from_raw_c(raw_leaves_qty, precision)
 
 # -- POSITION QUERIES -----------------------------------------------------------------------------
 

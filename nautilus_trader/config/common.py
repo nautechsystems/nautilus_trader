@@ -288,7 +288,15 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
 class OrderEmulatorConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``OrderEmulator`` instances.
+
+    Parameters
+    ----------
+    debug : bool, default False
+        If debug mode is active (will provide extra debug logging).
+
     """
+
+    debug: bool = False
 
 
 class StreamingConfig(NautilusConfig, frozen=True):
@@ -561,6 +569,35 @@ class ExecAlgorithmFactory:
         return exec_algorithm_cls(config=config_cls(**config.config))
 
 
+class TracingConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for standard output and file logging for Rust tracing statements for a
+    ``NautilusKernel`` instance.
+
+    Parameters
+    ----------
+    stdout_level : str, optional
+        The minimum log level to write to stdout. Possible options are "debug",
+        "info", "warn", "error". Setting it None means no logs are written to
+        stdout.
+    stderr_level : str, optional
+        The minimum log level to write to stderr. Possible options are "debug",
+        "info", "warn", "error". Setting it None means no logs are written to
+        stderr.
+    file_config : tuple[str, str, str], optional
+        The minimum log level to write to log file. Possible options are "debug",
+        "info", "warn", "error". Setting it None means no logs are written to
+        the log file.
+        The second str is the prefix name of the log file and the third str is
+        the name of the directory.
+
+    """
+
+    stdout_level: Optional[str] = None
+    stderr_level: Optional[str] = None
+    file_level: Optional[tuple[str, str, str]] = None
+
+
 class LoggingConfig(NautilusConfig, frozen=True):
     """
     Configuration for standard output and file logging for a ``NautilusKernel``
@@ -619,6 +656,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The live risk engine configuration.
     exec_engine : ExecEngineConfig, optional
         The live execution engine configuration.
+    emulator : OrderEmulatorConfig, optional
+        The order emulator configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
     catalog : DataCatalogConfig, optional
@@ -654,6 +693,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     data_engine: Optional[DataEngineConfig] = None
     risk_engine: Optional[RiskEngineConfig] = None
     exec_engine: Optional[ExecEngineConfig] = None
+    emulator: Optional[OrderEmulatorConfig] = None
     streaming: Optional[StreamingConfig] = None
     catalog: Optional[DataCatalogConfig] = None
     actors: list[ImportableActorConfig] = []
@@ -663,6 +703,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: Optional[LoggingConfig] = None
+    tracing: Optional[TracingConfig] = None
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0

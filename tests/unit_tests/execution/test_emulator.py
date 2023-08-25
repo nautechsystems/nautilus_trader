@@ -38,8 +38,9 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events import OrderEmulated
 from nautilus_trader.model.events import OrderInitialized
-from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderReleased
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -76,7 +77,7 @@ class TestOrderEmulatorWithSingleOrders:
         self.clock = TestClock()
         self.logger = Logger(
             clock=TestClock(),
-            level_stdout=LogLevel.DEBUG,
+            level_stdout=LogLevel.INFO,
             bypass=True,
         )
 
@@ -196,7 +197,7 @@ class TestOrderEmulatorWithSingleOrders:
         )
 
         # Act, Assert
-        with pytest.raises(RuntimeError):
+        with pytest.raises(KeyError):
             self.emulator.create_matching_core(
                 ETHUSDT_PERP_BINANCE.id,
                 ETHUSDT_PERP_BINANCE.price_increment,
@@ -234,8 +235,8 @@ class TestOrderEmulatorWithSingleOrders:
         # Arrange
         tick: QuoteTick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
             bid_size=10.0,
             ask_size=10.0,
         )
@@ -377,6 +378,30 @@ class TestOrderEmulatorWithSingleOrders:
         assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
 
+    def test_emulator_restart_reactivates_emulated_orders(self) -> None:
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            emulation_trigger=TriggerType.LAST_TRADE,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.emulator.stop()
+        self.emulator.reset()
+        self.emulator.start()
+
+        # Assert
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        assert matching_core is not None
+        assert order in matching_core.get_orders()
+        assert len(self.emulator.get_submit_order_commands()) == 1
+        assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
+
     def test_cancel_all_with_emulated_order_cancels_order(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
@@ -421,7 +446,9 @@ class TestOrderEmulatorWithSingleOrders:
 
         # Assert
         assert order1.is_canceled
+        assert not order1.is_active_local
         assert not order2.is_canceled
+        assert order2.is_active_local
 
     def test_cancel_all_sell_orders_with_emulated_orders_cancels_sell_order(self) -> None:
         # Arrange
@@ -449,7 +476,9 @@ class TestOrderEmulatorWithSingleOrders:
 
         # Assert
         assert not order1.is_canceled
+        assert order1.is_active_local
         assert order2.is_canceled
+        assert not order2.is_active_local
 
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
@@ -486,9 +515,11 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 2
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
@@ -516,8 +547,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
         )
 
         # Act
@@ -527,9 +558,12 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 2
+        assert order.is_active_local
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
@@ -558,8 +592,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
         )
 
         # Act
@@ -569,10 +603,12 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 3
+        assert order.is_active_local
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[1], OrderEmulated)
         assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
@@ -601,22 +637,23 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5000.0,
-            ask=5000.0,
+            bid_price=5000.0,
+            ask_price=5000.0,
         )
 
         # Act
         self.data_engine.process(tick)
 
         # Assert
-        assert order.is_triggered
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 3
+        assert order.is_active_local
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[1], OrderEmulated)
         assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
@@ -645,8 +682,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         # Act
@@ -656,9 +693,11 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 2
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     @pytest.mark.parametrize(
@@ -687,8 +726,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         # Act
@@ -698,9 +737,11 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 2
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
         assert order not in self.cache.orders_emulated()
 
@@ -729,8 +770,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -742,9 +783,11 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.emulation_trigger == TriggerType.BID_ASK
-        assert len(order.events) == 2
+        assert order.is_active_local
+        assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderUpdated)
+        assert isinstance(order.events[2], OrderEmulated)
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
@@ -782,8 +825,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -800,8 +843,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5065.0,
-            ask=5065.0,
+            bid_price=5065.0,
+            ask_price=5065.0,
         )
         self.data_engine.process(tick)
 
@@ -809,9 +852,10 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.emulation_trigger == TriggerType.BID_ASK
-        assert len(order.events) == 2
+        assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderUpdated)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderUpdated)
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
@@ -840,8 +884,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
         self.data_engine.process(tick)
 
@@ -850,8 +894,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5055.0,
-            ask=5075.0,
+            bid_price=5055.0,
+            ask_price=5075.0,
         )
         self.data_engine.process(tick)
 
@@ -859,9 +903,11 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 2
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
@@ -900,8 +946,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
         self.data_engine.process(tick)
 
@@ -912,9 +958,10 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.TRAILING_STOP_LIMIT
         assert order.emulation_trigger == TriggerType.BID_ASK
-        assert len(order.events) == 2
+        assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderUpdated)
+        assert isinstance(order.events[2], OrderEmulated)
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
@@ -957,8 +1004,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -968,8 +1015,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5065.0,
-            ask=5065.0,
+            bid_price=5065.0,
+            ask_price=5065.0,
         )
         self.data_engine.process(tick)
 
@@ -977,9 +1024,10 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.TRAILING_STOP_LIMIT
         assert order.emulation_trigger == TriggerType.BID_ASK
-        assert len(order.events) == 2
+        assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderUpdated)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderUpdated)
         assert order.trigger_price == expected_trigger_price
 
     @pytest.mark.parametrize(
@@ -1010,8 +1058,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.data_engine.process(tick)
@@ -1021,8 +1069,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5055.0,
-            ask=5075.0,
+            bid_price=5055.0,
+            ask_price=5075.0,
         )
 
         self.data_engine.process(tick)
@@ -1031,10 +1079,11 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 3
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderTriggered)
+        assert isinstance(order.events[1], OrderEmulated)
         assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert order not in self.cache.orders_emulated()
 
     @pytest.mark.parametrize(
@@ -1061,8 +1110,8 @@ class TestOrderEmulatorWithSingleOrders:
         # Arrange
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid=5060.0,
-            ask=5070.0,
+            bid_price=5060.0,
+            ask_price=5070.0,
         )
 
         self.emulator.create_matching_core(
@@ -1090,8 +1139,8 @@ class TestOrderEmulatorWithSingleOrders:
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
         assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderTriggered)
-        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[2], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]
         assert order not in self.cache.orders_emulated()
 
@@ -1114,7 +1163,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_BINANCE.id,
             order_side=order_side,
             quantity=Quantity.from_int(10),
-            price=Price.from_str("30000.00000000"),  # <-- Synthetic price
+            price=Price.from_str("30000.00"),  # <-- Synthetic price
             emulation_trigger=TriggerType.DEFAULT,
             trigger_instrument_id=synthetic.id,
         )
@@ -1123,13 +1172,13 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick1 = TestDataStubs.quote_tick(
             instrument=ETHUSDT_BINANCE,
-            bid=10_000.0,
-            ask=10_000.0,
+            bid_price=10_000.0,
+            ask_price=10_000.0,
         )
         tick2 = TestDataStubs.quote_tick(
             instrument=BTCUSDT_BINANCE,
-            bid=50_000.0,
-            ask=50_000.0,
+            bid_price=50_000.0,
+            ask_price=50_000.0,
         )
 
         # Act
@@ -1140,7 +1189,9 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
-        assert len(order.events) == 2
+        assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
-        assert isinstance(order.events[1], OrderInitialized)
+        assert isinstance(order.events[1], OrderEmulated)
+        assert isinstance(order.events[2], OrderInitialized)
+        assert isinstance(order.events[3], OrderReleased)
         assert self.exec_client.calls == ["_start", "submit_order"]

@@ -173,8 +173,8 @@ class TestStrategy:
         self.exchange.process_quote_tick(
             TestDataStubs.quote_tick(
                 instrument=USDJPY_SIM,
-                bid=90.001,
-                ask=90.002,
+                bid_price=90.001,
+                ask_price=90.002,
             ),
         )
 

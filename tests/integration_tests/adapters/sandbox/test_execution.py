@@ -36,8 +36,8 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 def _make_quote_tick(instrument):
     return QuoteTick(
         instrument_id=instrument.id,
-        bid=Price.from_int(10),
-        ask=Price.from_int(10),
+        bid_price=Price.from_int(10),
+        ask_price=Price.from_int(10),
         bid_size=Quantity.from_int(100),
         ask_size=Quantity.from_int(100),
         ts_init=0,

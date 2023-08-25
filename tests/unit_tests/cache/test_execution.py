@@ -297,6 +297,26 @@ class TestCache:
         # Assert
         assert result == {self.strategy.id}
 
+    def test_orders_for_exec_spawn_when_not_found(self):
+        # Arrange, Act, Assert
+        assert self.cache.orders_for_exec_spawn(ClientOrderId("O-UNKNOWN")) == []
+
+    def test_orders_for_exec_algorithm_when_not_found(self):
+        # Arrange, Act, Assert
+        assert self.cache.orders_for_exec_algorithm(ExecAlgorithmId("UNKNOWN")) == []
+
+    def test_exec_spawn_total_quantity_when_not_found(self):
+        # Arrange, Act, Assert
+        assert self.cache.exec_spawn_total_quantity(ClientOrderId("O-UNKNOWN")) is None
+
+    def test_exec_spawn_total_filled_qty_when_not_found(self):
+        # Arrange, Act, Assert
+        assert self.cache.exec_spawn_total_filled_qty(ClientOrderId("O-UNKNOWN")) is None
+
+    def test_exec_spawn_total_leaves_qty_when_not_found(self):
+        # Arrange, Act, Assert
+        assert self.cache.exec_spawn_total_leaves_qty(ClientOrderId("O-UNKNOWN")) is None
+
     def test_position_for_order_when_no_position_returns_none(self):
         # Arrange, Act, Assert
         assert self.cache.position_for_order(ClientOrderId("O-123456")) is None

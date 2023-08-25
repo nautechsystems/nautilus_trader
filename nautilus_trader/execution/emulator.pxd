@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -38,6 +39,7 @@ from nautilus_trader.model.orders.base cimport Order
 
 
 cdef class OrderEmulator(Actor):
+    cdef OrderManager _manager
     cdef dict _matching_cores
     cdef dict _commands_submit_order
 
@@ -45,6 +47,13 @@ cdef class OrderEmulator(Actor):
     cdef set _subscribed_trades
     cdef set _subscribed_strategies
     cdef set _monitored_positions
+
+    cdef readonly bint debug
+    """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly int command_count
+    """The total count of commands received by the emulator.\n\n:returns: `int`"""
+    cdef readonly int event_count
+    """The total count of events received by the emulator.\n\n:returns: `int`"""
 
     cpdef void execute(self, TradingCommand command)
     cpdef MatchingCore create_matching_core(self, InstrumentId instrument_id, Price price_increment)
@@ -54,20 +63,8 @@ cdef class OrderEmulator(Actor):
     cdef void _handle_cancel_order(self, CancelOrder command)
     cdef void _handle_cancel_all_orders(self, CancelAllOrders command)
 
-    cdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id)
-    cdef void _create_new_submit_order(self, Order order, PositionId position_id, ClientId client_id)
-    cdef void _cancel_order(self, MatchingCore matching_core, Order order)
-
-# -- EVENT HANDLERS -------------------------------------------------------------------------------
-
-    cdef void _handle_order_rejected(self, OrderRejected rejected)
-    cdef void _handle_order_canceled(self, OrderCanceled canceled)
-    cdef void _handle_order_expired(self, OrderExpired expired)
-    cdef void _handle_order_updated(self, OrderUpdated updated)
-    cdef void _handle_order_filled(self, OrderFilled filled)
-    cdef void _handle_position_event(self, PositionEvent event)
-    cdef void _handle_contingencies(self, Order order)
-    cdef void _update_order_quantity(self, Order order, Quantity new_quantity)
+    cpdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id)
+    cpdef void _cancel_order(self, Order order)
 
 # -------------------------------------------------------------------------------------------------
 
@@ -77,11 +74,3 @@ cdef class OrderEmulator(Actor):
 
     cdef void _iterate_orders(self, MatchingCore matching_core)
     cdef void _update_trailing_stop_order(self, MatchingCore matching_core, Order order)
-
-# -- EGRESS ---------------------------------------------------------------------------------------
-
-    cdef void _send_algo_command(self, TradingCommand command)
-    cdef void _send_risk_command(self, TradingCommand command)
-    cdef void _send_exec_command(self, TradingCommand command)
-    cdef void _send_risk_event(self, OrderEvent event)
-    cdef void _send_exec_event(self, OrderEvent event)

@@ -16,11 +16,11 @@
 from __future__ import annotations
 
 import asyncio
+from asyncio import Queue
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.queue import Queue
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
@@ -83,8 +83,8 @@ class LiveRiskEngine(RiskEngine):
         )
 
         self._loop: asyncio.AbstractEventLoop = loop
-        self._cmd_queue: Queue = Queue(maxsize=config.qsize)
-        self._evt_queue: Queue = Queue(maxsize=config.qsize)
+        self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+        self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
 
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
@@ -167,8 +167,8 @@ class LiveRiskEngine(RiskEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(command, "command")
@@ -178,8 +178,10 @@ class LiveRiskEngine(RiskEngine):
             self._cmd_queue.put_nowait(command)
         except asyncio.QueueFull:
             self._log.warning(
-                f"Blocking on `_cmd_queue.put` as queue full at {self._cmd_queue.qsize()} items.",
+                f"Blocking on `_cmd_queue.put` as queue full "
+                f"at {self._cmd_queue.qsize():_} items.",
             )
+            # Schedule the `put` operation to be executed once there is space in the queue
             self._loop.create_task(self._cmd_queue.put(command))
 
     def process(self, event: Event) -> None:
@@ -196,8 +198,8 @@ class LiveRiskEngine(RiskEngine):
 
         Warnings
         --------
-        This method should only be called from the same thread the event loop is
-        running on.
+        This method is not thread-safe and should only be called from the same thread the event
+        loop is running on. Calling it from a different thread may lead to unexpected behavior.
 
         """
         PyCondition.not_none(event, "event")
@@ -207,9 +209,11 @@ class LiveRiskEngine(RiskEngine):
             self._evt_queue.put_nowait(event)
         except asyncio.QueueFull:
             self._log.warning(
-                f"Blocking on `_evt_queue.put` as queue full at {self._evt_queue.qsize()} items.",
+                f"Blocking on `_evt_queue.put` as queue full "
+                f"at {self._evt_queue.qsize():_} items.",
             )
-            self._evt_queue.put(event)  # Block until qsize reduces below maxsize
+            # Schedule the `put` operation to be executed once there is space in the queue
+            self._loop.create_task(self._evt_queue.put(event))
 
     # -- INTERNAL -------------------------------------------------------------------------------------
 

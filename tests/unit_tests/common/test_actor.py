@@ -22,6 +22,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
+from nautilus_trader.common.executor import TaskId
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import ActorConfig
@@ -66,7 +67,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestActor:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
@@ -122,7 +123,7 @@ class TestActor:
         self.data_engine.start()
         self.exec_engine.start()
 
-    def test_actor_fully_qualified_name(self):
+    def test_actor_fully_qualified_name(self) -> None:
         # Arrange
         config = ActorConfig(component_id="ALPHA-01")
         actor = Actor(config=config)
@@ -136,7 +137,7 @@ class TestActor:
         assert result.config_path == "nautilus_trader.config.common:ActorConfig"
         assert result.config == {"component_id": "ALPHA-01"}
 
-    def test_id(self):
+    def test_id(self) -> None:
         # Arrange, Act
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -149,7 +150,7 @@ class TestActor:
         # Assert
         assert actor.id == ComponentId(self.component_id)
 
-    def test_pre_initialization(self):
+    def test_pre_initialization(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
 
@@ -157,7 +158,7 @@ class TestActor:
         assert actor.state == ComponentState.PRE_INITIALIZED
         assert not actor.is_initialized
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -174,7 +175,7 @@ class TestActor:
         assert not actor.is_pending_request(UUID4())
         assert actor.pending_requests() == set()
 
-    def test_register_warning_event(self):
+    def test_register_warning_event(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -190,7 +191,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_deregister_warning_event(self):
+    def test_deregister_warning_event(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -208,7 +209,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_handle_event(self):
+    def test_handle_event(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -226,7 +227,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_start_when_not_overridden_does_nothing(self):
+    def test_on_start_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -242,7 +243,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_stop_when_not_overridden_does_nothing(self):
+    def test_on_stop_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -258,7 +259,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_resume_when_not_overridden_does_nothing(self):
+    def test_on_resume_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -274,7 +275,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_reset_when_not_overridden_does_nothing(self):
+    def test_on_reset_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -290,7 +291,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_dispose_when_not_overridden_does_nothing(self):
+    def test_on_dispose_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -306,7 +307,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_degrade_when_not_overridden_does_nothing(self):
+    def test_on_degrade_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -322,7 +323,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_fault_when_not_overridden_does_nothing(self):
+    def test_on_fault_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -338,7 +339,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_instrument_when_not_overridden_does_nothing(self):
+    def test_on_instrument_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -354,7 +355,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_order_book_when_not_overridden_does_nothing(self):
+    def test_on_order_book_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -370,7 +371,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_order_book_delta_when_not_overridden_does_nothing(self):
+    def test_on_order_book_delta_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -386,7 +387,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_ticker_when_not_overridden_does_nothing(self):
+    def test_on_ticker_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -402,7 +403,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_venue_status_update_when_not_overridden_does_nothing(self):
+    def test_on_venue_status_update_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -418,7 +419,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_instrument_status_update_when_not_overridden_does_nothing(self):
+    def test_on_instrument_status_update_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -434,7 +435,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_event_when_not_overridden_does_nothing(self):
+    def test_on_event_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -450,7 +451,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_quote_tick_when_not_overridden_does_nothing(self):
+    def test_on_quote_tick_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -468,7 +469,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_trade_tick_when_not_overridden_does_nothing(self):
+    def test_on_trade_tick_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -486,7 +487,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_bar_when_not_overridden_does_nothing(self):
+    def test_on_bar_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -504,7 +505,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_historical_data_when_not_overridden_does_nothing(self):
+    def test_on_historical_data_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -522,7 +523,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_data_when_not_overridden_does_nothing(self):
+    def test_on_data_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -546,7 +547,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_start_when_invalid_state_does_not_start(self):
+    def test_start_when_invalid_state_does_not_start(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -562,7 +563,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.RUNNING
 
-    def test_stop_when_invalid_state_does_not_stop(self):
+    def test_stop_when_invalid_state_does_not_stop(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -578,7 +579,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.READY
 
-    def test_resume_when_invalid_state_does_not_resume(self):
+    def test_resume_when_invalid_state_does_not_resume(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -594,7 +595,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.READY
 
-    def test_reset_when_invalid_state_does_not_reset(self):
+    def test_reset_when_invalid_state_does_not_reset(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -610,7 +611,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.READY
 
-    def test_dispose_when_invalid_state_does_not_dispose(self):
+    def test_dispose_when_invalid_state_does_not_dispose(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -626,7 +627,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.DISPOSED
 
-    def test_degrade_when_invalid_state_does_not_degrade(self):
+    def test_degrade_when_invalid_state_does_not_degrade(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -642,7 +643,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.READY
 
-    def test_fault_when_invalid_state_does_not_fault(self):
+    def test_fault_when_invalid_state_does_not_fault(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -658,7 +659,7 @@ class TestActor:
         # Assert
         assert actor.state == ComponentState.READY
 
-    def test_start_when_user_code_raises_error_logs_and_reraises(self):
+    def test_start_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -673,7 +674,7 @@ class TestActor:
             actor.start()
         assert actor.state == ComponentState.STARTING
 
-    def test_stop_when_user_code_raises_error_logs_and_reraises(self):
+    def test_stop_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -691,7 +692,7 @@ class TestActor:
             actor.stop()
         assert actor.state == ComponentState.STOPPING
 
-    def test_resume_when_user_code_raises_error_logs_and_reraises(self):
+    def test_resume_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -711,7 +712,7 @@ class TestActor:
             actor.resume()
         assert actor.state == ComponentState.RESUMING
 
-    def test_reset_when_user_code_raises_error_logs_and_reraises(self):
+    def test_reset_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -726,7 +727,7 @@ class TestActor:
             actor.reset()
         assert actor.state == ComponentState.RESETTING
 
-    def test_dispose_when_user_code_raises_error_logs_and_reraises(self):
+    def test_dispose_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -741,7 +742,7 @@ class TestActor:
             actor.dispose()
         assert actor.state == ComponentState.DISPOSING
 
-    def test_degrade_when_user_code_raises_error_logs_and_reraises(self):
+    def test_degrade_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -759,7 +760,7 @@ class TestActor:
             actor.degrade()
         assert actor.state == ComponentState.DEGRADING
 
-    def test_fault_when_user_code_raises_error_logs_and_reraises(self):
+    def test_fault_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -777,7 +778,7 @@ class TestActor:
             actor.fault()
         assert actor.state == ComponentState.FAULTING
 
-    def test_handle_quote_tick_when_user_code_raises_exception_logs_and_reraises(self):
+    def test_handle_quote_tick_when_user_code_raises_exception_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -796,7 +797,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.handle_quote_tick(tick)
 
-    def test_handle_trade_tick_when_user_code_raises_exception_logs_and_reraises(self):
+    def test_handle_trade_tick_when_user_code_raises_exception_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -815,7 +816,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.handle_trade_tick(tick)
 
-    def test_handle_bar_when_user_code_raises_exception_logs_and_reraises(self):
+    def test_handle_bar_when_user_code_raises_exception_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -834,7 +835,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.handle_bar(bar)
 
-    def test_handle_data_when_user_code_raises_exception_logs_and_reraises(self):
+    def test_handle_data_when_user_code_raises_exception_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -859,7 +860,7 @@ class TestActor:
                 ),
             )
 
-    def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self):
+    def test_handle_event_when_user_code_raises_exception_logs_and_reraises(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -878,7 +879,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.on_event(event)
 
-    def test_start(self):
+    def test_start(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -895,7 +896,7 @@ class TestActor:
         assert "on_start" in actor.calls
         assert actor.state == ComponentState.RUNNING
 
-    def test_stop(self):
+    def test_stop(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -913,7 +914,7 @@ class TestActor:
         assert "on_stop" in actor.calls
         assert actor.state == ComponentState.STOPPED
 
-    def test_resume(self):
+    def test_resume(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -933,7 +934,7 @@ class TestActor:
         assert "on_resume" in actor.calls
         assert actor.state == ComponentState.RUNNING
 
-    def test_reset(self):
+    def test_reset(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -950,7 +951,7 @@ class TestActor:
         assert "on_reset" in actor.calls
         assert actor.state == ComponentState.READY
 
-    def test_dispose(self):
+    def test_dispose(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -969,7 +970,7 @@ class TestActor:
         assert "on_dispose" in actor.calls
         assert actor.state == ComponentState.DISPOSED
 
-    def test_degrade(self):
+    def test_degrade(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -988,7 +989,7 @@ class TestActor:
         assert "on_degrade" in actor.calls
         assert actor.state == ComponentState.DEGRADED
 
-    def test_fault(self):
+    def test_fault(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1007,7 +1008,7 @@ class TestActor:
         assert "on_fault" in actor.calls
         assert actor.state == ComponentState.FAULTED
 
-    def test_handle_instrument_with_blow_up_logs_exception(self):
+    def test_handle_instrument_with_blow_up_logs_exception(self) -> None:
         # Arrange
         actor = KaboomActor()
         actor.register_base(
@@ -1024,7 +1025,7 @@ class TestActor:
         with pytest.raises(RuntimeError):
             actor.handle_instrument(AUDUSD_SIM)
 
-    def test_handle_instrument_when_not_running_does_not_send_to_on_instrument(self):
+    def test_handle_instrument_when_not_running_does_not_send_to_on_instrument(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1041,7 +1042,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_instrument_when_running_sends_to_on_instrument(self):
+    def test_handle_instrument_when_running_sends_to_on_instrument(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1060,7 +1061,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_instrument"]
         assert actor.store[0] == AUDUSD_SIM
 
-    def test_handle_instruments_when_running_sends_to_on_instruments(self):
+    def test_handle_instruments_when_running_sends_to_on_instruments(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1079,7 +1080,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_instrument"]
         assert actor.store[0] == AUDUSD_SIM
 
-    def test_handle_instruments_when_not_running_does_not_send_to_on_instrument(self):
+    def test_handle_instruments_when_not_running_does_not_send_to_on_instrument(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1096,7 +1097,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_ticker_when_not_running_does_not_send_to_on_quote_tick(self):
+    def test_handle_ticker_when_not_running_does_not_send_to_on_quote_tick(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1115,7 +1116,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_ticker_when_running_sends_to_on_quote_tick(self):
+    def test_handle_ticker_when_running_sends_to_on_quote_tick(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1136,7 +1137,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_ticker"]
         assert actor.store[0] == ticker
 
-    def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self):
+    def test_handle_quote_tick_when_not_running_does_not_send_to_on_quote_tick(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1155,7 +1156,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_quote_tick_when_running_sends_to_on_quote_tick(self):
+    def test_handle_quote_tick_when_running_sends_to_on_quote_tick(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1176,7 +1177,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_quote_tick"]
         assert actor.store[0] == tick
 
-    def test_handle_trade_tick_when_not_running_does_not_send_to_on_trade_tick(self):
+    def test_handle_trade_tick_when_not_running_does_not_send_to_on_trade_tick(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1195,7 +1196,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_trade_tick_when_running_sends_to_on_trade_tick(self):
+    def test_handle_trade_tick_when_running_sends_to_on_trade_tick(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1216,7 +1217,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_trade_tick"]
         assert actor.store == [tick]
 
-    def test_handle_bar_when_not_running_does_not_send_to_on_bar(self):
+    def test_handle_bar_when_not_running_does_not_send_to_on_bar(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1235,7 +1236,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_bar_when_running_sends_to_on_bar(self):
+    def test_handle_bar_when_running_sends_to_on_bar(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1256,7 +1257,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_bar"]
         assert actor.store[0] == bar
 
-    def test_handle_bars(self):
+    def test_handle_bars(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1265,7 +1266,7 @@ class TestActor:
             clock=self.clock,
             logger=self.logger,
         )
-        result = []
+        result: list[Bar] = []
         actor.on_historical_data = result.append
 
         actor.start()
@@ -1278,7 +1279,7 @@ class TestActor:
         # Assert
         assert result == bars
 
-    def test_handle_data_when_not_running_does_not_send_to_on_data(self):
+    def test_handle_data_when_not_running_does_not_send_to_on_data(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1303,7 +1304,7 @@ class TestActor:
         assert actor.calls == []
         assert actor.store == []
 
-    def test_handle_data_when_running_sends_to_on_data(self):
+    def test_handle_data_when_running_sends_to_on_data(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1330,7 +1331,7 @@ class TestActor:
         assert actor.calls == ["on_start", "on_data"]
         assert actor.store[0] == data
 
-    def test_add_synthetic_instrument_when_already_exists(self):
+    def test_add_synthetic_instrument_when_already_exists(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1347,7 +1348,7 @@ class TestActor:
         with pytest.raises(ValueError):
             actor.add_synthetic(synthetic)
 
-    def test_add_synthetic_instrument_when_no_synthetic(self):
+    def test_add_synthetic_instrument_when_no_synthetic(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1365,7 +1366,7 @@ class TestActor:
         # Assert
         assert actor.cache.synthetic(synthetic.id) == synthetic
 
-    def test_update_synthetic_instrument_when_no_synthetic(self):
+    def test_update_synthetic_instrument_when_no_synthetic(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1381,7 +1382,7 @@ class TestActor:
         with pytest.raises(ValueError):
             actor.update_synthetic(synthetic)
 
-    def test_update_synthetic_instrument(self):
+    def test_update_synthetic_instrument(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1403,7 +1404,136 @@ class TestActor:
         assert new_formula != original_formula
         assert actor.cache.synthetic(synthetic.id).formula == new_formula
 
-    def test_subscribe_custom_data(self):
+    def test_queued_task_ids_when_no_executor(self) -> None:
+        """
+        Test should return empty list.
+        """
+        # Arrange
+        actor = MockActor()
+
+        # Act, Assert
+        assert actor.queued_task_ids() == []
+
+    def test_active_task_ids_when_no_executor(self) -> None:
+        """
+        Test should return empty list.
+        """
+        # Arrange
+        actor = MockActor()
+
+        # Act, Assert
+        assert actor.active_task_ids() == []
+
+    def test_has_queued_tasks_when_no_executor(self) -> None:
+        """
+        Test should return false.
+        """
+        # Arrange
+        actor = MockActor()
+
+        # Act, Assert
+        assert not actor.has_queued_tasks()
+
+    def test_has_active_tasks_when_no_executor(self) -> None:
+        """
+        Test should return false.
+        """
+        # Arrange
+        actor = MockActor()
+
+        # Act, Assert
+        assert not actor.has_active_tasks()
+
+    def test_has_any_tasks_when_no_executor(self) -> None:
+        """
+        Test should return false.
+        """
+        # Arrange
+        actor = MockActor()
+
+        # Act, Assert
+        assert not actor.has_any_tasks()
+
+    def test_cancel_task_when_no_executor(self) -> None:
+        """
+        Test should do nothing and log a warning.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        unknown = TaskId.create()
+
+        # Act, Assert
+        actor.cancel_task(unknown)
+
+    def test_cancel_all_tasks_when_no_executor(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act, Assert
+        actor.cancel_all_tasks()
+
+    def test_run_in_executor_when_no_executor(self) -> None:
+        """
+        Test should immediately execute the function and return a task ID.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        handler: list[str] = []
+        func = handler.append
+        msg = "a"
+
+        # Act
+        task_id: TaskId = actor.run_in_executor(func, (msg,))
+
+        # Assert
+        assert msg in handler
+        assert len(task_id.value) == 36
+
+    def test_queue_for_executor_when_no_executor(self) -> None:
+        """
+        Test should immediately execute the function and return a task ID.
+        """
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        handler: list[str] = []
+        func = handler.append
+        msg = "a"
+
+        # Act
+        task_id: TaskId = actor.queue_for_executor(func, (msg,))
+
+        # Assert
+        assert msg in handler
+        assert len(task_id.value) == 36
+
+    def test_subscribe_custom_data(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1425,7 +1555,7 @@ class TestActor:
             == "data.NewsEvent.type=NEWS_WIRE.topic=Earthquake"
         )
 
-    def test_subscribe_custom_data_with_client_id(self):
+    def test_subscribe_custom_data_with_client_id(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1447,7 +1577,7 @@ class TestActor:
             == "data.NewsEvent.type=NEWS_WIRE.topic=Earthquake"
         )
 
-    def test_unsubscribe_custom_data(self):
+    def test_unsubscribe_custom_data(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1467,7 +1597,7 @@ class TestActor:
         assert self.data_engine.command_count == 0
         assert actor.msgbus.subscriptions() == []
 
-    def test_unsubscribe_custom_data_with_client_id(self):
+    def test_unsubscribe_custom_data_with_client_id(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1487,7 +1617,7 @@ class TestActor:
         assert self.data_engine.command_count == 2
         assert actor.msgbus.subscriptions() == []
 
-    def test_subscribe_order_book(self):
+    def test_subscribe_order_book(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1503,7 +1633,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_order_book(self):
+    def test_unsubscribe_order_book(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1521,7 +1651,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_order_book_data(self):
+    def test_subscribe_order_book_data(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1537,7 +1667,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_order_book_deltas(self):
+    def test_unsubscribe_order_book_deltas(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1555,7 +1685,7 @@ class TestActor:
         # Assert
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_instruments(self):
+    def test_subscribe_instruments(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1576,7 +1706,7 @@ class TestActor:
             InstrumentId.from_str("USD/JPY.SIM"),
         ]
 
-    def test_unsubscribe_instruments(self):
+    def test_unsubscribe_instruments(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1593,7 +1723,7 @@ class TestActor:
         assert self.data_engine.command_count == 1
         assert self.data_engine.subscribed_instruments() == []
 
-    def test_subscribe_instrument(self):
+    def test_subscribe_instrument(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1611,7 +1741,7 @@ class TestActor:
         assert self.data_engine.command_count == 1
         assert self.data_engine.subscribed_instruments() == [expected_instrument]
 
-    def test_unsubscribe_instrument(self):
+    def test_unsubscribe_instrument(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1630,7 +1760,7 @@ class TestActor:
         assert self.data_engine.subscribed_instruments() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_ticker(self):
+    def test_subscribe_ticker(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1648,7 +1778,7 @@ class TestActor:
         assert self.data_engine.subscribed_tickers() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_ticker(self):
+    def test_unsubscribe_ticker(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1667,7 +1797,7 @@ class TestActor:
         assert self.data_engine.subscribed_tickers() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_quote_ticks(self):
+    def test_subscribe_quote_ticks(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1685,7 +1815,7 @@ class TestActor:
         assert self.data_engine.subscribed_quote_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_quote_ticks(self):
+    def test_unsubscribe_quote_ticks(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1704,7 +1834,7 @@ class TestActor:
         assert self.data_engine.subscribed_quote_ticks() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_trade_ticks(self):
+    def test_subscribe_trade_ticks(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1722,7 +1852,7 @@ class TestActor:
         assert self.data_engine.subscribed_trade_ticks() == [expected_instrument]
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_trade_ticks(self):
+    def test_unsubscribe_trade_ticks(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1741,7 +1871,7 @@ class TestActor:
         assert self.data_engine.subscribed_trade_ticks() == []
         assert self.data_engine.command_count == 2
 
-    def test_publish_data_sends_to_subscriber(self):
+    def test_publish_data_sends_to_subscriber(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1751,7 +1881,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        handler = []
+        handler: list[Data] = []
         self.msgbus.subscribe(
             topic="data*",
             handler=handler.append,
@@ -1767,7 +1897,7 @@ class TestActor:
         # Assert
         assert data in handler
 
-    def test_publish_signal_warns_invalid_type(self):
+    def test_publish_signal_warns_invalid_type(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1781,7 +1911,7 @@ class TestActor:
         with pytest.raises(KeyError):
             actor.publish_signal(name="test", value={"a": 1}, ts_event=0)
 
-    def test_publish_signal_sends_to_subscriber(self):
+    def test_publish_signal_sends_to_subscriber(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1791,7 +1921,7 @@ class TestActor:
             logger=self.logger,
         )
 
-        handler = []
+        handler: list[Data] = []
         self.msgbus.subscribe(
             topic="data*",
             handler=handler.append,
@@ -1808,7 +1938,7 @@ class TestActor:
         assert msg.ts_init == 0
         assert msg.value == value
 
-    def test_publish_data_persist(self):
+    def test_publish_data_persist(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1836,7 +1966,7 @@ class TestActor:
         # Assert
         assert catalog.fs.exists(f"{catalog.path}/genericdata_SignalTest.feather")
 
-    def test_subscribe_bars(self):
+    def test_subscribe_bars(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1855,7 +1985,7 @@ class TestActor:
         assert self.data_engine.subscribed_bars() == [bar_type]
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_bars(self):
+    def test_unsubscribe_bars(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1876,7 +2006,7 @@ class TestActor:
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_venue_status_updates(self):
+    def test_subscribe_venue_status_updates(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1891,9 +2021,9 @@ class TestActor:
         # Assert
         # TODO(cs): DataEngine.subscribed_venue_status_updates()
 
-    def test_request_data_sends_request_to_data_engine(self):
+    def test_request_data_sends_request_to_data_engine(self) -> None:
         # Arrange
-        handler = []
+        handler: list[NewsEvent] = []
         actor = MockActor()
         actor.register_base(
             msgbus=self.msgbus,
@@ -1917,7 +2047,7 @@ class TestActor:
         assert actor.is_pending_request(request_id)
         assert request_id in actor.pending_requests()
 
-    def test_request_quote_ticks_sends_request_to_data_engine(self):
+    def test_request_quote_ticks_sends_request_to_data_engine(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1936,9 +2066,9 @@ class TestActor:
         assert actor.is_pending_request(request_id)
         assert request_id in actor.pending_requests()
 
-    def test_request_quote_ticks_with_registered_callback(self):
+    def test_request_quote_ticks_with_registered_callback(self) -> None:
         # Arrange
-        handler = []
+        handler: list[QuoteTick] = []
         actor = MockActor()
         actor.register_base(
             msgbus=self.msgbus,
@@ -1971,7 +2101,7 @@ class TestActor:
         assert request_id not in actor.pending_requests()
         assert request_id in handler
 
-    def test_request_trade_ticks_sends_request_to_data_engine(self):
+    def test_request_trade_ticks_sends_request_to_data_engine(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1990,9 +2120,9 @@ class TestActor:
         assert actor.is_pending_request(request_id)
         assert request_id in actor.pending_requests()
 
-    def test_request_trade_ticks_with_registered_callback(self):
+    def test_request_trade_ticks_with_registered_callback(self) -> None:
         # Arrange
-        handler = []
+        handler: list[TradeTick] = []
         actor = MockActor()
         actor.register_base(
             msgbus=self.msgbus,
@@ -2024,7 +2154,7 @@ class TestActor:
         assert request_id not in actor.pending_requests()
         assert request_id in handler
 
-    def test_request_bars_sends_request_to_data_engine(self):
+    def test_request_bars_sends_request_to_data_engine(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -2045,9 +2175,9 @@ class TestActor:
         assert actor.is_pending_request(request_id)
         assert request_id in actor.pending_requests()
 
-    def test_request_bars_with_registered_callback(self):
+    def test_request_bars_with_registered_callback(self) -> None:
         # Arrange
-        handler = []
+        handler: list[Bar] = []
         actor = MockActor()
         actor.register_base(
             msgbus=self.msgbus,

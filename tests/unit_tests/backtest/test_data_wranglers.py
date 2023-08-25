@@ -64,8 +64,8 @@ class TestQuoteTickDataWrangler:
         # Assert
         assert len(ticks) == 1000
         assert ticks[0].instrument_id == usdjpy.id
-        assert ticks[0].bid == Price.from_str("86.655")
-        assert ticks[0].ask == Price.from_str("86.728")
+        assert ticks[0].bid_price == Price.from_str("86.655")
+        assert ticks[0].ask_price == Price.from_str("86.728")
         assert ticks[0].bid_size == Quantity.from_int(1_000_000)
         assert ticks[0].ask_size == Quantity.from_int(1_000_000)
         assert ticks[0].ts_event == 1357077600295000064
@@ -88,8 +88,8 @@ class TestQuoteTickDataWrangler:
         # Assert
         assert len(ticks) == 1000
         assert ticks[0].instrument_id == usdjpy.id
-        assert ticks[0].bid == Price.from_str("86.655")
-        assert ticks[0].ask == Price.from_str("86.728")
+        assert ticks[0].bid_price == Price.from_str("86.655")
+        assert ticks[0].ask_price == Price.from_str("86.728")
         assert ticks[0].bid_size == Quantity.from_int(1_000_000)
         assert ticks[0].ask_size == Quantity.from_int(1_000_000)
         assert ticks[0].ts_event == 1357077600295000064
@@ -115,8 +115,8 @@ class TestQuoteTickDataWrangler:
         # Assert
         assert len(ticks) == 400
         assert ticks[0].instrument_id == usdjpy.id
-        assert ticks[0].bid == Price.from_str("91.715")
-        assert ticks[0].ask == Price.from_str("91.717")
+        assert ticks[0].bid_price == Price.from_str("91.715")
+        assert ticks[0].ask_price == Price.from_str("91.717")
         assert ticks[0].bid_size == Quantity.from_int(1_000_000)
         assert ticks[0].ask_size == Quantity.from_int(1_000_000)
         assert ticks[0].ts_event == 1359676799700000000
@@ -140,14 +140,14 @@ class TestQuoteTickDataWrangler:
         )
 
         # Assert
-        assert ticks[0].bid == Price.from_str("91.715")
-        assert ticks[0].ask == Price.from_str("91.717")
-        assert ticks[1].bid == Price.from_str("91.653")
-        assert ticks[1].ask == Price.from_str("91.655")
-        assert ticks[2].bid == Price.from_str("91.715")
-        assert ticks[2].ask == Price.from_str("91.717")
-        assert ticks[3].bid == Price.from_str("91.653")
-        assert ticks[3].ask == Price.from_str("91.655")
+        assert ticks[0].bid_price == Price.from_str("91.715")
+        assert ticks[0].ask_price == Price.from_str("91.717")
+        assert ticks[1].bid_price == Price.from_str("91.653")
+        assert ticks[1].ask_price == Price.from_str("91.655")
+        assert ticks[2].bid_price == Price.from_str("91.715")
+        assert ticks[2].ask_price == Price.from_str("91.717")
+        assert ticks[3].bid_price == Price.from_str("91.653")
+        assert ticks[3].ask_price == Price.from_str("91.655")
 
 
 class TestTradeTickDataWrangler:
@@ -320,8 +320,8 @@ class TestTardisQuoteDataWrangler:
 
         # Assert
         assert len(ticks) == 9999
-        assert ticks[0].bid == Price.from_str("9681.92")
-        assert ticks[0].ask == Price.from_str("9682.00")
+        assert ticks[0].bid_price == Price.from_str("9681.92")
+        assert ticks[0].ask_price == Price.from_str("9682.00")
         assert ticks[0].bid_size == Quantity.from_str("0.670000")
         assert ticks[0].ask_size == Quantity.from_str("0.840000")
         assert ticks[0].ts_event == 1582329603502091776

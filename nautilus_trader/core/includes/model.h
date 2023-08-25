@@ -188,7 +188,7 @@ typedef enum BookType {
 } BookType;
 
 /**
- * The order contigency type which specifies the behaviour of linked orders.
+ * The order contigency type which specifies the behavior of linked orders.
  *
  * [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
  */
@@ -367,45 +367,53 @@ typedef enum OrderStatus {
      */
     DENIED = 2,
     /**
-     * The order was submitted by the Nautilus system to the external service or trading venue (closed/done).
+     * The order became emulated by the Nautilus system in the `OrderEmulator` component.
      */
-    SUBMITTED = 3,
+    EMULATED = 3,
+    /**
+     * The order was released by the Nautilus system from the `OrderEmulator` component.
+     */
+    RELEASED = 4,
+    /**
+     * The order was submitted by the Nautilus system to the external service or trading venue (awaiting acknowledgement).
+     */
+    SUBMITTED = 5,
     /**
      * The order was acknowledged by the trading venue as being received and valid (may now be working).
      */
-    ACCEPTED = 4,
+    ACCEPTED = 6,
     /**
      * The order was rejected by the trading venue.
      */
-    REJECTED = 5,
+    REJECTED = 7,
     /**
      * The order was canceled (closed/done).
      */
-    CANCELED = 6,
+    CANCELED = 8,
     /**
      * The order reached a GTD expiration (closed/done).
      */
-    EXPIRED = 7,
+    EXPIRED = 9,
     /**
-     * The order STOP price was triggered (closed/done).
+     * The order STOP price was triggered on a trading venue.
      */
-    TRIGGERED = 8,
+    TRIGGERED = 10,
     /**
-     * The order is currently pending a request to modify at the trading venue.
+     * The order is currently pending a request to modify on a trading venue.
      */
-    PENDING_UPDATE = 9,
+    PENDING_UPDATE = 11,
     /**
-     * The order is currently pending a request to cancel at the trading venue.
+     * The order is currently pending a request to cancel on a trading venue.
      */
-    PENDING_CANCEL = 10,
+    PENDING_CANCEL = 12,
     /**
-     * The order has been partially filled at the trading venue.
+     * The order has been partially filled on a trading venue.
      */
-    PARTIALLY_FILLED = 11,
+    PARTIALLY_FILLED = 13,
     /**
-     * The order has been completely filled at the trading venue (closed/done).
+     * The order has been completely filled on a trading venue (closed/done).
      */
-    FILLED = 12,
+    FILLED = 14,
 } OrderStatus;
 
 /**
@@ -622,8 +630,6 @@ typedef struct Level Level;
 
 typedef struct OrderBook OrderBook;
 
-typedef struct String String;
-
 /**
  * Represents a synthetic instrument with prices derived from component instruments using a
  * formula.
@@ -720,11 +726,11 @@ typedef struct QuoteTick_t {
     /**
      * The top of book bid price.
      */
-    struct Price_t bid;
+    struct Price_t bid_price;
     /**
      * The top of book ask price.
      */
-    struct Price_t ask;
+    struct Price_t ask_price;
     /**
      * The top of book bid size.
      */
@@ -789,7 +795,7 @@ typedef struct BarSpecification_t {
     /**
      * The step for binning samples for bar aggregation.
      */
-    uint64_t step;
+    uintptr_t step;
     /**
      * The type of bar aggregation.
      */
@@ -899,15 +905,77 @@ typedef struct OrderDenied_t {
     struct StrategyId_t strategy_id;
     struct InstrumentId_t instrument_id;
     struct ClientOrderId_t client_order_id;
-    struct String *reason;
+    char* reason;
     UUID4_t event_id;
     uint64_t ts_event;
     uint64_t ts_init;
 } OrderDenied_t;
 
+typedef struct OrderEmulated_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderEmulated_t;
+
+typedef struct OrderReleased_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct Price_t released_price;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderReleased_t;
+
 typedef struct AccountId_t {
     char* value;
 } AccountId_t;
+
+typedef struct OrderSubmitted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderSubmitted_t;
+
+typedef struct VenueOrderId_t {
+    char* value;
+} VenueOrderId_t;
+
+typedef struct OrderAccepted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct VenueOrderId_t venue_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderAccepted_t;
+
+typedef struct OrderRejected_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    char* reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderRejected_t;
 
 typedef struct ClientId_t {
     char* value;
@@ -928,10 +996,6 @@ typedef struct OrderListId_t {
 typedef struct PositionId_t {
     char* value;
 } PositionId_t;
-
-typedef struct VenueOrderId_t {
-    char* value;
-} VenueOrderId_t;
 
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -998,7 +1062,7 @@ typedef struct Money_t {
 
 struct Data_t data_clone(const struct Data_t *data);
 
-struct BarSpecification_t bar_specification_new(uint64_t step,
+struct BarSpecification_t bar_specification_new(uintptr_t step,
                                                 uint8_t aggregation,
                                                 uint8_t price_type);
 
@@ -1394,6 +1458,9 @@ enum TriggerType trigger_type_from_cstr(const char *ptr);
 /**
  * # Safety
  *
+ * - Assumes valid C string pointers.
+ * # Safety
+ *
  * - Assumes `reason_ptr` is a valid C string pointer.
  */
 struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
@@ -1405,14 +1472,58 @@ struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
                                       uint64_t ts_event,
                                       uint64_t ts_init);
 
+struct OrderEmulated_t order_emulated_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+struct OrderReleased_t order_released_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct Price_t released_price,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+struct OrderSubmitted_t order_submitted_new(struct TraderId_t trader_id,
+                                            struct StrategyId_t strategy_id,
+                                            struct InstrumentId_t instrument_id,
+                                            struct ClientOrderId_t client_order_id,
+                                            struct AccountId_t account_id,
+                                            UUID4_t event_id,
+                                            uint64_t ts_event,
+                                            uint64_t ts_init);
+
+struct OrderAccepted_t order_accepted_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct VenueOrderId_t venue_order_id,
+                                          struct AccountId_t account_id,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init,
+                                          uint8_t reconciliation);
+
 /**
- * Frees the memory for the given `event` by dropping.
+ * # Safety
+ *
+ * - Assumes `reason_ptr` is a valid C string pointer.
  */
-void order_denied_drop(struct OrderDenied_t event);
-
-struct OrderDenied_t order_denied_clone(const struct OrderDenied_t *event);
-
-const char *order_denied_reason_to_cstr(const struct OrderDenied_t *event);
+struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct AccountId_t account_id,
+                                          const char *reason_ptr,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init,
+                                          uint8_t reconciliation);
 
 void interned_string_stats(void);
 

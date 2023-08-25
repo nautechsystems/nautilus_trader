@@ -17,14 +17,19 @@ use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
-use super::order::BookOrder;
-use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
+use super::order::{BookOrder, NULL_ORDER};
+use crate::{
+    enums::{BookAction, FromU8, OrderSide},
+    identifiers::instrument_id::InstrumentId,
+    types::{price::Price, quantity::Quantity},
+};
 
 /// Represents a single change/delta in an order book.
 #[repr(C)]
@@ -71,6 +76,7 @@ impl OrderBookDelta {
         }
     }
 
+    /// Returns the metadata for the type, for use with serialization formats.
     pub fn get_metadata(
         instrument_id: &InstrumentId,
         price_precision: u8,
@@ -81,6 +87,61 @@ impl OrderBookDelta {
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());
         metadata
+    }
+
+    /// Create a new [`OrderBookDelta`] extracted from the given [`PyAny`].
+    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str)
+            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .unwrap();
+
+        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
+        let action_u8 = action_obj.getattr("value")?.extract()?;
+        let action = BookAction::from_u8(action_u8).unwrap();
+
+        let flags: u8 = obj.getattr("flags")?.extract()?;
+        let sequence: u64 = obj.getattr("sequence")?.extract()?;
+        let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
+        let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
+
+        let order_pyobject = obj.getattr("order")?;
+        let order: BookOrder = if order_pyobject.is_none() {
+            NULL_ORDER
+        } else {
+            let side_obj: &PyAny = order_pyobject.getattr("side")?.extract()?;
+            let side_u8 = side_obj.getattr("value")?.extract()?;
+            let side = OrderSide::from_u8(side_u8).unwrap();
+
+            let price_py: &PyAny = order_pyobject.getattr("price")?;
+            let price_raw: i64 = price_py.getattr("raw")?.extract()?;
+            let price_prec: u8 = price_py.getattr("precision")?.extract()?;
+            let price = Price::from_raw(price_raw, price_prec);
+
+            let size_py: &PyAny = order_pyobject.getattr("size")?;
+            let size_raw: u64 = size_py.getattr("raw")?.extract()?;
+            let size_prec: u8 = size_py.getattr("precision")?.extract()?;
+            let size = Quantity::from_raw(size_raw, size_prec);
+
+            let order_id: u64 = order_pyobject.getattr("order_id")?.extract()?;
+            BookOrder {
+                side,
+                price,
+                size,
+                order_id,
+            }
+        };
+
+        Ok(Self::new(
+            instrument_id,
+            action,
+            order,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        ))
     }
 }
 
@@ -188,9 +249,8 @@ impl OrderBookDelta {
         let json_str =
             serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str,), None)?
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
     }
@@ -198,13 +258,13 @@ impl OrderBookDelta {
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
             .extract()?;
+
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
+        let instance = serde_json::from_slice(&json_str.into_bytes())
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         Ok(instance)
     }
@@ -339,6 +399,18 @@ mod tests {
             let dict = delta.as_dict(py).unwrap();
             let parsed = OrderBookDelta::from_dict(py, dict).unwrap();
             assert_eq!(parsed, delta);
+        });
+    }
+
+    #[test]
+    fn test_from_pyobject() {
+        pyo3::prepare_freethreaded_python();
+        let delta = create_stub_delta();
+
+        Python::with_gil(|py| {
+            let delta_pyobject = delta.into_py(py);
+            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_delta, delta);
         });
     }
 

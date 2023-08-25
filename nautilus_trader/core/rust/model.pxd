@@ -104,7 +104,7 @@ cdef extern from "../includes/model.h":
         # Market by order, multiple orders per level (full granularity).
         L3_MBO # = 3,
 
-    # The order contigency type which specifies the behaviour of linked orders.
+    # The order contigency type which specifies the behavior of linked orders.
     #
     # [FIX 5.0 SP2 : ContingencyType <1385> field](https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html).
     cpdef enum ContingencyType:
@@ -205,26 +205,30 @@ cdef extern from "../includes/model.h":
         INITIALIZED # = 1,
         # The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
         DENIED # = 2,
-        # The order was submitted by the Nautilus system to the external service or trading venue (closed/done).
-        SUBMITTED # = 3,
+        # The order became emulated by the Nautilus system in the `OrderEmulator` component.
+        EMULATED # = 3,
+        # The order was released by the Nautilus system from the `OrderEmulator` component.
+        RELEASED # = 4,
+        # The order was submitted by the Nautilus system to the external service or trading venue (awaiting acknowledgement).
+        SUBMITTED # = 5,
         # The order was acknowledged by the trading venue as being received and valid (may now be working).
-        ACCEPTED # = 4,
+        ACCEPTED # = 6,
         # The order was rejected by the trading venue.
-        REJECTED # = 5,
+        REJECTED # = 7,
         # The order was canceled (closed/done).
-        CANCELED # = 6,
+        CANCELED # = 8,
         # The order reached a GTD expiration (closed/done).
-        EXPIRED # = 7,
-        # The order STOP price was triggered (closed/done).
-        TRIGGERED # = 8,
-        # The order is currently pending a request to modify at the trading venue.
-        PENDING_UPDATE # = 9,
-        # The order is currently pending a request to cancel at the trading venue.
-        PENDING_CANCEL # = 10,
-        # The order has been partially filled at the trading venue.
-        PARTIALLY_FILLED # = 11,
-        # The order has been completely filled at the trading venue (closed/done).
-        FILLED # = 12,
+        EXPIRED # = 9,
+        # The order STOP price was triggered on a trading venue.
+        TRIGGERED # = 10,
+        # The order is currently pending a request to modify on a trading venue.
+        PENDING_UPDATE # = 11,
+        # The order is currently pending a request to cancel on a trading venue.
+        PENDING_CANCEL # = 12,
+        # The order has been partially filled on a trading venue.
+        PARTIALLY_FILLED # = 13,
+        # The order has been completely filled on a trading venue (closed/done).
+        FILLED # = 14,
 
     # The type of order.
     cpdef enum OrderType:
@@ -337,9 +341,6 @@ cdef extern from "../includes/model.h":
     cdef struct OrderBook:
         pass
 
-    cdef struct String:
-        pass
-
     # Represents a synthetic instrument with prices derived from component instruments using a
     # formula.
     cdef struct SyntheticInstrument:
@@ -396,9 +397,9 @@ cdef extern from "../includes/model.h":
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
         # The top of book bid price.
-        Price_t bid;
+        Price_t bid_price;
         # The top of book ask price.
-        Price_t ask;
+        Price_t ask_price;
         # The top of book bid size.
         Quantity_t bid_size;
         # The top of book ask size.
@@ -432,7 +433,7 @@ cdef extern from "../includes/model.h":
     # method/rule and price type.
     cdef struct BarSpecification_t:
         # The step for binning samples for bar aggregation.
-        uint64_t step;
+        uintptr_t step;
         # The type of bar aggregation.
         uint8_t aggregation;
         # The price type to use for aggregation.
@@ -494,13 +495,69 @@ cdef extern from "../includes/model.h":
         StrategyId_t strategy_id;
         InstrumentId_t instrument_id;
         ClientOrderId_t client_order_id;
-        String *reason;
+        char* reason;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct OrderEmulated_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct OrderReleased_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        Price_t released_price;
         UUID4_t event_id;
         uint64_t ts_event;
         uint64_t ts_init;
 
     cdef struct AccountId_t:
         char* value;
+
+    cdef struct OrderSubmitted_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        AccountId_t account_id;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct VenueOrderId_t:
+        char* value;
+
+    cdef struct OrderAccepted_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        VenueOrderId_t venue_order_id;
+        AccountId_t account_id;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+        uint8_t reconciliation;
+
+    cdef struct OrderRejected_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        AccountId_t account_id;
+        char* reason;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+        uint8_t reconciliation;
 
     cdef struct ClientId_t:
         char* value;
@@ -515,9 +572,6 @@ cdef extern from "../includes/model.h":
         char* value;
 
     cdef struct PositionId_t:
-        char* value;
-
-    cdef struct VenueOrderId_t:
         char* value;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -572,7 +626,7 @@ cdef extern from "../includes/model.h":
 
     Data_t data_clone(const Data_t *data);
 
-    BarSpecification_t bar_specification_new(uint64_t step,
+    BarSpecification_t bar_specification_new(uintptr_t step,
                                              uint8_t aggregation,
                                              uint8_t price_type);
 
@@ -900,6 +954,9 @@ cdef extern from "../includes/model.h":
 
     # # Safety
     #
+    # - Assumes valid C string pointers.
+    # # Safety
+    #
     # - Assumes `reason_ptr` is a valid C string pointer.
     OrderDenied_t order_denied_new(TraderId_t trader_id,
                                    StrategyId_t strategy_id,
@@ -910,12 +967,56 @@ cdef extern from "../includes/model.h":
                                    uint64_t ts_event,
                                    uint64_t ts_init);
 
-    # Frees the memory for the given `event` by dropping.
-    void order_denied_drop(OrderDenied_t event);
+    OrderEmulated_t order_emulated_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
 
-    OrderDenied_t order_denied_clone(const OrderDenied_t *event);
+    OrderReleased_t order_released_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       Price_t released_price,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
 
-    const char *order_denied_reason_to_cstr(const OrderDenied_t *event);
+    OrderSubmitted_t order_submitted_new(TraderId_t trader_id,
+                                         StrategyId_t strategy_id,
+                                         InstrumentId_t instrument_id,
+                                         ClientOrderId_t client_order_id,
+                                         AccountId_t account_id,
+                                         UUID4_t event_id,
+                                         uint64_t ts_event,
+                                         uint64_t ts_init);
+
+    OrderAccepted_t order_accepted_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       VenueOrderId_t venue_order_id,
+                                       AccountId_t account_id,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init,
+                                       uint8_t reconciliation);
+
+    # # Safety
+    #
+    # - Assumes `reason_ptr` is a valid C string pointer.
+    OrderRejected_t order_rejected_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       AccountId_t account_id,
+                                       const char *reason_ptr,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init,
+                                       uint8_t reconciliation);
 
     void interned_string_stats();
 

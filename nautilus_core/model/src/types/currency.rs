@@ -197,7 +197,26 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::{enums::CurrencyType, types::currency::Currency};
+    use nautilus_core::string::str_to_cstr;
+
+    use super::currency_register;
+    use crate::{
+        enums::CurrencyType,
+        types::currency::{currency_exists, Currency},
+    };
+
+    #[test]
+    #[should_panic(expected = "`Currency` code")]
+    fn test_invalid_currency_code() {
+        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
+    }
+
+    #[test]
+    #[should_panic(expected = "`Currency` precision")]
+    fn test_invalid_currency_precision() {
+        // Precision out of range for fixed
+        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
+    }
 
     #[test]
     fn test_currency_new_for_fiat() {
@@ -219,5 +238,29 @@ mod tests {
         assert_eq!(currency.iso4217, 0);
         assert_eq!(currency.name.as_str(), "Ether");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[test]
+    fn test_currency_equality() {
+        let currency1 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let currency2 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+        assert_eq!(currency1, currency2);
+    }
+
+    #[test]
+    fn test_currency_serialization_deserialization() {
+        let currency = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let serialized = serde_json::to_string(&currency).unwrap();
+        let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(currency, deserialized);
+    }
+
+    #[test]
+    fn test_currency_registration() {
+        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto);
+        currency_register(currency);
+        unsafe {
+            assert_eq!(currency_exists(str_to_cstr("MYC")), 1);
+        }
     }
 }

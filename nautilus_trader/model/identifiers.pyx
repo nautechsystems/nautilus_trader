@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdio cimport printf
+from libc.string cimport strcmp
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport account_id_hash
@@ -135,10 +135,10 @@ cdef class Symbol(Identifier):
     def __eq__(self, Symbol other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return symbol_hash(&self._mem)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
 
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t mem):
@@ -178,10 +178,10 @@ cdef class Venue(Identifier):
     def __eq__(self, Venue other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return venue_hash(&self._mem)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
 
     @staticmethod
     cdef Venue from_mem_c(Venue_t mem):
@@ -259,13 +259,10 @@ cdef class InstrumentId(Identifier):
     def __eq__(self, InstrumentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.symbol.value == other._mem.symbol.value and self._mem.venue.value == other._mem.venue.value
+        return strcmp(self._mem.symbol.value, other._mem.symbol.value) == 0 and strcmp(self._mem.venue.value, other._mem.venue.value) == 0
 
-    def __hash__ (self) -> int:
-        return instrument_id_hash(&self._mem)
-
-    cdef str to_str(self):
-        return cstr_to_pystr(instrument_id_to_cstr(&self._mem))
+    def __hash__(self) -> int:
+        return hash(self.to_str())
 
     @staticmethod
     cdef InstrumentId from_mem_c(InstrumentId_t mem):
@@ -278,6 +275,9 @@ cdef class InstrumentId(Identifier):
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
         instrument_id._mem = instrument_id_new_from_cstr(pystr_to_cstr(value))
         return instrument_id
+
+    cdef str to_str(self):
+        return cstr_to_pystr(instrument_id_to_cstr(&self._mem))
 
     @staticmethod
     def from_str(value: str) -> InstrumentId:
@@ -344,10 +344,16 @@ cdef class ComponentId(Identifier):
     def __eq__(self, ComponentId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
     def __hash__(self) -> int:
-        return component_id_hash(&self._mem)
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef ComponentId from_mem_c(ComponentId_t mem):
+        cdef ComponentId component_id = ComponentId.__new__(ComponentId)
+        component_id._mem = mem
+        return component_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -385,10 +391,16 @@ cdef class ClientId(Identifier):
     def __eq__(self, ClientId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
     def __hash__(self) -> int:
-        return client_id_hash(&self._mem)
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef ClientId from_mem_c(ClientId_t mem):
+        cdef ClientId client_id = ClientId.__new__(ClientId)
+        client_id._mem = mem
+        return client_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -435,10 +447,16 @@ cdef class TraderId(Identifier):
     def __eq__(self, TraderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
     def __hash__(self) -> int:
-        return trader_id_hash(&self._mem)
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef TraderId from_mem_c(TraderId_t mem):
+        cdef TraderId trader_id = TraderId.__new__(TraderId)
+        trader_id._mem = mem
+        return trader_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -502,10 +520,20 @@ cdef class StrategyId(Identifier):
     def __eq__(self, StrategyId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
     def __hash__(self) -> int:
-        return strategy_id_hash(&self._mem)
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef StrategyId from_mem_c(StrategyId_t mem):
+        cdef StrategyId strategy_id = StrategyId.__new__(StrategyId)
+        strategy_id._mem = mem
+        return strategy_id
+
+    @staticmethod
+    cdef StrategyId external_c():
+        return EXTERNAL_STRATEGY_ID
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -533,10 +561,6 @@ cdef class StrategyId(Identifier):
 
         """
         return self == EXTERNAL_STRATEGY_ID
-
-    @staticmethod
-    cdef StrategyId external_c():
-        return EXTERNAL_STRATEGY_ID
 
 
 cdef class ExecAlgorithmId(Identifier):
@@ -567,10 +591,16 @@ cdef class ExecAlgorithmId(Identifier):
     def __eq__(self, ExecAlgorithmId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
     def __hash__(self) -> int:
-        return exec_algorithm_id_hash(&self._mem)
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef ExecAlgorithmId from_mem_c(ExecAlgorithmId_t mem):
+        cdef ExecAlgorithmId exec_algorithm_id = ExecAlgorithmId.__new__(ExecAlgorithmId)
+        exec_algorithm_id._mem = mem
+        return exec_algorithm_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -616,10 +646,16 @@ cdef class AccountId(Identifier):
     def __eq__(self, AccountId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return account_id_hash(&self._mem)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef AccountId from_mem_c(AccountId_t mem):
+        cdef AccountId account_id = AccountId.__new__(AccountId)
+        account_id._mem = mem
+        return account_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -679,10 +715,16 @@ cdef class ClientOrderId(Identifier):
     def __eq__(self, ClientOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return client_order_id_hash(&self._mem)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef ClientOrderId from_mem_c(ClientOrderId_t mem):
+        cdef ClientOrderId client_order_id = ClientOrderId.__new__(ClientOrderId)
+        client_order_id._mem = mem
+        return client_order_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -738,10 +780,16 @@ cdef class VenueOrderId(Identifier):
     def __eq__(self, VenueOrderId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return venue_order_id_hash(&self._mem)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef VenueOrderId from_mem_c(VenueOrderId_t mem):
+        cdef VenueOrderId venue_order_id = VenueOrderId.__new__(VenueOrderId)
+        venue_order_id._mem = mem
+        return venue_order_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -775,10 +823,16 @@ cdef class OrderListId(Identifier):
     def __eq__(self, OrderListId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return order_list_id_hash(&self._mem)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
+
+    @staticmethod
+    cdef OrderListId from_mem_c(OrderListId_t mem):
+        cdef OrderListId order_list_id = OrderListId.__new__(OrderListId)
+        order_list_id._mem = mem
+        return order_list_id
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem.value)
@@ -812,22 +866,22 @@ cdef class PositionId(Identifier):
     def __eq__(self, PositionId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return position_id_hash(&self._mem)
-
-    cdef str to_str(self):
-        return ustr_to_pystr(self._mem.value)
-
-    cdef bint is_virtual_c(self):
-        return self.to_str().startswith("P-")
+    def __hash__(self) -> int:
+        return hash(self.to_str())
 
     @staticmethod
     cdef PositionId from_mem_c(PositionId_t mem):
         cdef PositionId position_id = PositionId.__new__(PositionId)
         position_id._mem = mem
         return position_id
+
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)
+
+    cdef bint is_virtual_c(self):
+        return self.to_str().startswith("P-")
 
 
 cdef class TradeId(Identifier):
@@ -867,16 +921,16 @@ cdef class TradeId(Identifier):
     def __eq__(self, TradeId other) -> bool:
         if other is None:
             raise RuntimeError("other was None in __eq__")
-        return self._mem.value == other._mem.value
+        return strcmp(self._mem.value, other._mem.value) == 0
 
-    def __hash__ (self) -> int:
-        return trade_id_hash(&self._mem)
-
-    cdef str to_str(self):
-        return ustr_to_pystr(self._mem.value)
+    def __hash__(self) -> int:
+        return hash(self.to_str())
 
     @staticmethod
     cdef TradeId from_mem_c(TradeId_t mem):
         cdef TradeId trade_id = TradeId.__new__(TradeId)
         trade_id._mem = mem
         return trade_id
+
+    cdef str to_str(self):
+        return ustr_to_pystr(self._mem.value)

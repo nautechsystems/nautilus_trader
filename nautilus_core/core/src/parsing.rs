@@ -19,6 +19,7 @@ use std::{
 };
 
 use serde_json::{Result, Value};
+use ustr::Ustr;
 
 use crate::string::cstr_to_string;
 
@@ -79,6 +80,54 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
     }
 }
 
+/// Convert a C bytes pointer into an owned `Option<HashMap<Ustr, Ustr>>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
+pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Ustr, Ustr>> {
+    if ptr.is_null() {
+        None
+    } else {
+        let c_str = CStr::from_ptr(ptr);
+        let bytes = c_str.to_bytes();
+        let json_string = std::str::from_utf8(bytes).unwrap();
+        let result: Result<HashMap<Ustr, Ustr>> = serde_json::from_str(json_string);
+        match result {
+            Ok(map) => Some(map),
+            Err(err) => {
+                eprintln!("Error parsing JSON: {err}");
+                None
+            }
+        }
+    }
+}
+
+/// Convert a C bytes pointer into an owned `Option<Vec<String>>`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[must_use]
+pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String>> {
+    if ptr.is_null() {
+        None
+    } else {
+        let c_str = CStr::from_ptr(ptr);
+        let bytes = c_str.to_bytes();
+        let json_string = std::str::from_utf8(bytes).unwrap();
+        let result: Result<Vec<String>> = serde_json::from_str(json_string);
+        match result {
+            Ok(map) => Some(map),
+            Err(err) => {
+                eprintln!("Error parsing JSON: {err}");
+                None
+            }
+        }
+    }
+}
+
 /// Return the decimal precision inferred from the given string.
 #[must_use]
 pub fn precision_from_str(s: &str) -> u8 {
@@ -106,6 +155,11 @@ pub fn precision_from_str(s: &str) -> u8 {
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     precision_from_str(&cstr_to_string(ptr))
+}
+
+/// Return a `bool` value from the given `u8`.
+pub fn u8_to_bool(value: u8) -> bool {
+    value != 0
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -206,37 +260,31 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    #[rstest(
-        s,
-        expected,
-        case("", 0),
-        case("0", 0),
-        case("1.0", 1),
-        case("1.00", 2),
-        case("1.23456789", 8),
-        case("123456.789101112", 9),
-        case("0.000000001", 9),
-        case("1e-1", 1),
-        case("1e-2", 2),
-        case("1e-3", 3),
-        case("1e8", 0)
-    )]
-    fn test_precision_from_str(s: &str, expected: u8) {
+    #[rstest]
+    #[case("", 0)]
+    #[case("0", 0)]
+    #[case("1.0", 1)]
+    #[case("1.00", 2)]
+    #[case("1.23456789", 8)]
+    #[case("123456.789101112", 9)]
+    #[case("0.000000001", 9)]
+    #[case("1e-1", 1)]
+    #[case("1e-2", 2)]
+    #[case("1e-3", 3)]
+    #[case("1e8", 0)]
+    fn test_precision_from_str(#[case] s: &str, #[case] expected: u8) {
         let result = precision_from_str(s);
         assert_eq!(result, expected);
     }
 
-    #[rstest(
-        input,
-        expected,
-        case("1e8", 0),
-        case("123", 0),
-        case("123.45", 2),
-        case("123.456789", 6),
-        case("1.23456789e-2", 2),
-        case("1.23456789e-12", 12)
-    )]
-    fn test_precision_from_cstr(input: &str, expected: u8) {
+    #[rstest]
+    #[case("1e8", 0)]
+    #[case("123", 0)]
+    #[case("123.45", 2)]
+    #[case("123.456789", 6)]
+    #[case("1.23456789e-2", 2)]
+    #[case("1.23456789e-12", 12)]
+    fn test_precision_from_cstr(#[case] input: &str, #[case] expected: u8) {
         let c_str = CString::new(input).unwrap();
         assert_eq!(unsafe { precision_from_cstr(c_str.as_ptr()) }, expected);
     }

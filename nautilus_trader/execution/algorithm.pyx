@@ -44,10 +44,15 @@ from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderStatus
 from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
+from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -193,13 +198,12 @@ cdef class ExecAlgorithm(Actor):
         return ClientOrderId(f"{primary.client_order_id.to_str()}-E{spawn_sequence}")
 
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
-        cdef uint8_t size_precision = primary.quantity._mem.precision
-        cdef uint64_t new_raw = primary.quantity._mem.raw - spawn_qty._mem.raw
-        if new_raw <= 0:
-            self._log.error("Cannot reduce primary order to non-positive quantity.")
-            return
+        Condition.true(primary.quantity >= spawn_qty, "Spawn order quantity was greater than or equal to primary order")
 
-        cdef Quantity new_qty = Quantity.from_raw_c(new_raw, size_precision)
+        cdef Quantity new_qty = Quantity.from_raw_c(
+            primary.quantity._mem.raw - spawn_qty._mem.raw,
+            primary.quantity._mem.precision,
+        )
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
@@ -240,7 +244,7 @@ cdef class ExecAlgorithm(Actor):
 
         """
         Condition.not_none(command, "command")
-        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
+        # Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
@@ -251,6 +255,8 @@ cdef class ExecAlgorithm(Actor):
             self._handle_submit_order(command)
         elif isinstance(command, SubmitOrderList):
             self._handle_submit_order_list(command)
+        elif isinstance(command, CancelOrder):
+            self._handle_cancel_order(command)
         else:
             self._log.error(f"Cannot handle command: unrecognized {command}.")
 
@@ -261,23 +267,48 @@ cdef class ExecAlgorithm(Actor):
         self._msgbus.subscribe(topic=f"events.order.{command.strategy_id.to_str()}", handler=self._handle_order_event)
         self._subscribed_strategies.add(command.strategy_id)
 
-    cdef _handle_submit_order(self, SubmitOrder command):
+    cdef void _handle_submit_order(self, SubmitOrder command):
         try:
             self.on_order(command.order)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             self.log.exception(f"Error on handling {repr(command.order)}", e)
             raise
 
-    cdef _handle_submit_order_list(self, SubmitOrderList command):
+    cdef void _handle_submit_order_list(self, SubmitOrderList command):
         cdef Order order
         for order in command.order_list.orders:
             if order.exec_algorithm_id is not None:
                 Condition.equal(order.exec_algorithm_id, self.id, "order.exec_algorithm_id", "self.id")
         try:
             self.on_order_list(command.order_list)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             self.log.exception(f"Error on handling {repr(command.order_list)}", e)
             raise
+
+    cdef void _handle_cancel_order(self, CancelOrder command):
+        cdef Order order = self.cache.order(command.client_order_id)
+        if order is None:  # pragma: no cover (design-time error)
+            self._log.error(
+                f"Cannot cancel order: {repr(command.client_order_id)} not found.",
+            )
+            return
+
+        # Generate event
+        cdef OrderCanceled event = self._generate_order_canceled(order)
+
+        try:
+            order.apply(event)
+        except InvalidStateTrigger as e:  # pragma: no cover
+            self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+            return
+
+        self.cache.update_order(order)
+
+        # Publish canceled event
+        self._msgbus.publish_c(
+            topic=f"events.order.{order.strategy_id.to_str()}",
+            msg=event,
+        )
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
@@ -293,7 +324,7 @@ cdef class ExecAlgorithm(Actor):
 
         try:
             self.on_order_event(event)
-        except Exception as e:
+        except Exception as e:  # pragma: no cover
             self.log.exception(f"Error on handling {repr(event)}", e)
             raise
 
@@ -608,9 +639,9 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `order.status` is not ``INITIALIZED``.
+            If `order.status` is not ``INITIALIZED`` or ``RELEASED``.
         ValueError
-            If `order.emulation_trigger` is not ``None``.
+            If `order.emulation_trigger` is not ``NO_TRIGGER``.
 
         Warning
         -------
@@ -618,26 +649,30 @@ cdef class ExecAlgorithm(Actor):
         position opened by the order will have this position ID assigned. This may
         not be what you intended.
 
-        Emulated orders cannot be sent from execution algorithms (intentioally constraining complexity).
+        Emulated orders cannot be sent from execution algorithms (intentionally constraining complexity).
 
         """
         Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
+        Condition.true(
+            order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            "order",
+            "order status was not either ``INITIALIZED`` or ``RELEASED``",
+        )
 
         cdef Order primary = None
         cdef PositionId position_id = None
         cdef ClientId client_id = None
         cdef SubmitOrder command = None
 
-        if order.exec_spawn_id is not None:
+        if order.is_spawned_c():
             # Handle new spawned order
             primary = self.cache.order(order.exec_spawn_id)
             Condition.equal(order.strategy_id, primary.strategy_id, "order.strategy_id", "primary.strategy_id")
             if primary is None:
                 self._log.error(
-                    "Cannot submit order: cannot find primary order for {repr(order.exec_spawn_id)}."
+                    f"Cannot submit order: cannot find primary order for {order.exec_spawn_id!r}."
                 )
                 return
 
@@ -646,7 +681,7 @@ cdef class ExecAlgorithm(Actor):
 
             if self.cache.order_exists(order.client_order_id):
                 self._log.error(
-                    f"Cannot submit order: order already exists for {repr(order.client_order_id)}.",
+                    f"Cannot submit order: order already exists for {order.client_order_id!r}.",
                 )
                 return
 
@@ -673,6 +708,7 @@ cdef class ExecAlgorithm(Actor):
 
         # Handle primary (original) order
         position_id = self.cache.position_id(order.client_order_id)
+        client_id = self.cache.client_id(order.client_order_id)
         cdef Order cached_order = self.cache.order(order.client_order_id)
         if cached_order.order_type != order.order_type:
             self.cache.add_order(order, position_id, client_id, override=True)
@@ -684,7 +720,7 @@ cdef class ExecAlgorithm(Actor):
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
             position_id=position_id,
-            client_id=None,  # Not yet supported
+            client_id=client_id,
         )
 
         self._send_risk_command(command)
@@ -780,13 +816,13 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingUpdate event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_update(order)
             try:
                 order.apply(event)
                 self.cache.update_order(order)
-            except InvalidStateTrigger as e:
+            except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
 
@@ -838,7 +874,7 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `order.status` is not ``INITIALIZED``.
+            If `order.status` is not ``INITIALIZED`` or ``RELEASED``.
         ValueError
             If `price` is not ``None`` and order does not have a `price`.
         ValueError
@@ -856,7 +892,11 @@ cdef class ExecAlgorithm(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status, OrderStatus.INITIALIZED, "order", "order_status")
+        Condition.true(
+            order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
+            "order",
+            "order status was not either ``INITIALIZED`` or ``RELEASED``",
+        )
 
         cdef bint updating = False  # Set validation flag (must become true)
 
@@ -943,13 +983,13 @@ cdef class ExecAlgorithm(Actor):
             return  # Cannot send command
 
         cdef OrderPendingCancel event
-        if order.status != OrderStatus.INITIALIZED and not order.is_emulated_c():
+        if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
                 order.apply(event)
                 self.cache.update_order(order)
-            except InvalidStateTrigger as e:
+            except InvalidStateTrigger as e:  # pragma: no cover
                 self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
                 return
 
@@ -970,7 +1010,7 @@ cdef class ExecAlgorithm(Actor):
             client_id=client_id,
         )
 
-        if order.is_emulated_c():
+        if order.is_emulated_c() or order.status_c() == OrderStatus.RELEASED:
             self._send_emulator_command(command)
         else:
             self._send_risk_command(command)
@@ -1005,7 +1045,26 @@ cdef class ExecAlgorithm(Actor):
             ts_init=ts_now,
         )
 
+    cdef OrderCanceled _generate_order_canceled(self, Order order):
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        return OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+
 # -- EGRESS ---------------------------------------------------------------------------------------
+
+    cdef void _send_emulator_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
     cdef void _send_risk_command(self, TradingCommand command):
         if not self.log.is_bypassed:

@@ -17,7 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
     array::{Array, Int64Array, UInt64Array, UInt8Array},
-    datatypes::{DataType, Field, Schema, SchemaRef},
+    datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -31,7 +31,7 @@ use super::DecodeDataFromRecordBatch;
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
-    fn get_schema(metadata: HashMap<String, String>) -> SchemaRef {
+    fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
@@ -44,7 +44,10 @@ impl ArrowSchemaProvider for OrderBookDelta {
             Field::new("ts_init", DataType::UInt64, false),
         ];
 
-        Schema::new_with_metadata(fields, metadata).into()
+        match metadata {
+            Some(metadata) => Schema::new_with_metadata(fields, metadata),
+            None => Schema::new(fields),
+        }
     }
 }
 
@@ -104,7 +107,7 @@ impl EncodeToRecordBatch for OrderBookDelta {
 
         // Build record batch
         RecordBatch::try_new(
-            Self::get_schema(metadata.clone()),
+            Self::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(action_array),
                 Arc::new(side_array),
@@ -200,7 +203,7 @@ mod tests {
     fn test_get_schema() {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
-        let schema = OrderBookDelta::get_schema(metadata.clone());
+        let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
             Field::new("action", DataType::UInt8, false),
             Field::new("side", DataType::UInt8, false),
@@ -212,8 +215,24 @@ mod tests {
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata).into();
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
+    }
+
+    #[test]
+    fn test_get_schema_map() {
+        let schema_map = OrderBookDelta::get_schema_map();
+        let mut expected_map = HashMap::new();
+        expected_map.insert("action".to_string(), "UInt8".to_string());
+        expected_map.insert("side".to_string(), "UInt8".to_string());
+        expected_map.insert("price".to_string(), "Int64".to_string());
+        expected_map.insert("size".to_string(), "UInt64".to_string());
+        expected_map.insert("order_id".to_string(), "UInt64".to_string());
+        expected_map.insert("flags".to_string(), "UInt8".to_string());
+        expected_map.insert("sequence".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
+        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
+        assert_eq!(schema_map, expected_map);
     }
 
     #[test]
@@ -222,7 +241,7 @@ mod tests {
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let delta1 = OrderBookDelta {
-            instrument_id: instrument_id,
+            instrument_id,
             action: BookAction::Add,
             order: BookOrder {
                 side: OrderSide::Buy,
@@ -311,7 +330,7 @@ mod tests {
         let ts_init = UInt64Array::from(vec![3, 4]);
 
         let record_batch = RecordBatch::try_new(
-            OrderBookDelta::get_schema(metadata.clone()),
+            OrderBookDelta::get_schema(Some(metadata.clone())).into(),
             vec![
                 Arc::new(action),
                 Arc::new(side),

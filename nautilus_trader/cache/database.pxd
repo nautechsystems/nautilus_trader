@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.common.actor cimport Actor
@@ -29,6 +30,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
+from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Money
@@ -69,6 +71,7 @@ cdef class CacheDatabase:
     cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
     cpdef void add_position(self, Position position)
 
+    cpdef void index_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id)
     cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id)
 
     cpdef void update_account(self, Account account)
@@ -78,6 +81,6 @@ cdef class CacheDatabase:
     cpdef void update_strategy(self, Strategy strategy)
 
     cpdef void snapshot_order_state(self, Order order)
-    cpdef void snapshot_position_state(self, Position position, Money unrealized_pnl=*)
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl=*)
 
     cpdef void heartbeat(self, datetime timestamp)

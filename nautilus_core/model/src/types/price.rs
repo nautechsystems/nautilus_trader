@@ -17,15 +17,16 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, Mul, Neg, Sub, SubAssign},
     str::FromStr,
 };
 
 use nautilus_core::{correctness, parsing::precision_from_str};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::fixed::FIXED_SCALAR;
+use super::fixed::{FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
@@ -91,6 +92,13 @@ impl Price {
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
+
+    #[must_use]
+    pub fn as_decimal(&self) -> Decimal {
+        // Scale down the raw value to match the precision
+        let rescaled_raw = self.raw / i64::pow(10, (FIXED_PRECISION - self.precision) as u32);
+        Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
 }
 
 impl FromStr for Price {
@@ -112,14 +120,14 @@ impl From<&str> for Price {
 }
 
 impl From<Price> for f64 {
-    fn from(value: Price) -> Self {
-        value.as_f64()
+    fn from(price: Price) -> Self {
+        price.as_f64()
     }
 }
 
 impl From<&Price> for f64 {
-    fn from(value: &Price) -> Self {
-        value.as_f64()
+    fn from(price: &Price) -> Self {
+        price.as_f64()
     }
 }
 
@@ -201,16 +209,6 @@ impl Sub for Price {
     }
 }
 
-impl Mul for Price {
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        Self {
-            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as i64),
-            precision: self.precision,
-        }
-    }
-}
-
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
         self.raw += other.raw;
@@ -220,12 +218,6 @@ impl AddAssign for Price {
 impl SubAssign for Price {
     fn sub_assign(&mut self, other: Self) {
         self.raw -= other.raw;
-    }
-}
-
-impl MulAssign for Price {
-    fn mul_assign(&mut self, multiplier: Self) {
-        self.raw *= multiplier.raw;
     }
 }
 
@@ -282,6 +274,29 @@ impl<'de> Deserialize<'de> for Price {
     }
 }
 
+#[pymethods]
+impl Price {
+    #[getter]
+    fn raw(&self) -> i64 {
+        self.raw
+    }
+
+    #[getter]
+    fn precision(&self) -> u8 {
+        self.precision
+    }
+
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
+        fixed_i64_to_f64(self.raw)
+    }
+
+    // #[pyo3(name = "as_decimal")]
+    // fn py_as_decimal(&self) -> Decimal {
+    //     self.as_decimal()
+    // }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -317,6 +332,9 @@ pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
 mod tests {
     use std::str::FromStr;
 
+    use float_cmp::approx_eq;
+    use rust_decimal_macros::dec;
+
     use super::*;
 
     #[test]
@@ -328,6 +346,8 @@ mod tests {
         assert_eq!(price.as_f64(), 0.00812);
         assert_eq!(price.to_string(), "0.00812000");
         assert!(!price.is_zero());
+        assert_eq!(price.as_decimal(), dec!(0.00812000));
+        assert!(approx_eq!(f64, price.as_f64(), 0.00812, epsilon = 0.000001));
     }
 
     #[test]
@@ -465,35 +485,17 @@ mod tests {
     fn test_mul() {
         let price1 = Price::new(1.000, 3);
         let price2 = Price::new(1.011, 3);
-        let price3 = price1 * price2;
-        assert_eq!(price3.raw, 1_011_000_000);
+        let result = price1 * price2.into();
+        assert!(approx_eq!(f64, result, 1.011, epsilon = 0.000001));
     }
 
     #[test]
-    fn test_mul_assign() {
-        let mut price1 = Price::new(1.000, 3);
-        let price2 = Price::new(1.011, 3);
-        price1 *= price2;
-        assert_eq!(price1.raw, 1_011_000_000_000_000_000);
-    }
-
-    #[test]
-    fn test_display_works() {
+    fn test_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
         let price = Price::from_str(input_string).unwrap();
         let mut res = String::new();
         write!(&mut res, "{price}").unwrap();
         assert_eq!(res, input_string);
-    }
-
-    #[test]
-    fn test_display() {
-        let input_string = "44.123456";
-        let price = Price::from_str(input_string).unwrap();
-        assert_eq!(price.raw, 44_123_456_000);
-        assert_eq!(price.precision, 6);
-        assert_eq!(price.as_f64(), 44.123_456_000_000_004);
-        assert_eq!(price.to_string(), input_string);
     }
 }
