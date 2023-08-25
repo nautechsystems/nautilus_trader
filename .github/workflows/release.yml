@@ -190,7 +190,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-20.04, ubuntu-latest, macos-latest, macos-13, windows-latest]
+        os: [ubuntu-20.04, ubuntu-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
     name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
