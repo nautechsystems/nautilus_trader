@@ -16,6 +16,7 @@ this change.
 - Added `Cache.exec_spawn_total_quantity(...)` convenience method
 - Added `Cache.exec_spawn_total_filled_qty(...)` convenience method
 - Added `Cache.exec_spawn_total_leaves_qty(...)` convenience method
+- Added `WebSocketClient.send_text`, thanks @twitu
 - Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
@@ -28,6 +29,7 @@ this change.
 - Fixed `OrderEmulator` processing of exec algorithm orders
 - Fixed `ExecutionEngine` processing of exec algorithm orders (exec spawn IDs)
 - Fixed `Cache` emulated order indexing (were not being properly discarded from the set when closed)
+- Fixed `RedisCacheDatabase` loading of transformed `LIMIT` orders
 - Fixed a connection issue with the IB client, thanks @dkharrat and @rsmb7z
 
 ---
