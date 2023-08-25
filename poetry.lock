@@ -734,14 +734,14 @@ files = [
 
 [[package]]
 name = "eventkit"
-version = "1.0.0"
+version = "1.0.1"
 description = "Event-driven data pipelines"
 category = "main"
 optional = true
 python-versions = "*"
 files = [
-    {file = "eventkit-1.0.0-py3-none-any.whl", hash = "sha256:c3c1ae6e15cda9970c3996b0aaeda48431fc6b8674c01e7a7ff77a13629cc021"},
-    {file = "eventkit-1.0.0.tar.gz", hash = "sha256:c9c4bb8a9685e4131e845882512a630d6a57acee148f38af286562a76873e4a9"},
+    {file = "eventkit-1.0.1-py3-none-any.whl", hash = "sha256:6060a6aa04d5c5d20f2e55b7c17e2a22e8d31f88f2c2791d60eab3301aa040da"},
+    {file = "eventkit-1.0.1.tar.gz", hash = "sha256:56b99a6205f61cd995aa5e0036e37bd61f052f7d32560e60b6fe45e319a7ef3a"},
 ]
 
 [package.dependencies]
