@@ -197,6 +197,10 @@ cdef class Throttler:
             self.is_limiting = True
 
     cdef void _set_timer(self, handler: Callable[[TimeEvent], None]):
+        # Cancel any existing timer
+        if self._timer_name in self._clock.timer_names:
+            self._clock.cancel_timer(self._timer_name)
+
         self._clock.set_time_alert_ns(
             name=self._timer_name,
             alert_time_ns=self._clock.timestamp_ns() + self._delta_next(),
@@ -212,6 +216,7 @@ cdef class Throttler:
         cdef int64_t delta_next
         while self._buffer:
             delta_next = self._delta_next()
+            msg = self._buffer.pop()
             if delta_next <= 0:
                 self._send_msg(msg)
             else:
