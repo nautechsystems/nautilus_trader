@@ -351,6 +351,26 @@ impl From<OrderInitialized> for MarketOrder {
 #[pymethods]
 impl MarketOrder {
     #[new]
+    #[pyo3(signature = (
+        trader_id, strategy_id,
+        instrument_id,
+        client_order_id,
+        order_side,
+        quantity,
+        time_in_force,
+        init_id,
+        ts_init,
+        reduce_only=false,
+        quote_quantity=false,
+        contingency_type=None,
+        order_list_id=None,
+        linked_order_ids=None,
+        parent_order_id=None,
+        exec_algorithm_id=None,
+        exec_algorithm_params=None,
+        exec_spawn_id=None,
+        tags=None,
+    ))]
     #[allow(clippy::too_many_arguments)]
     pub fn py_new(
         trader_id: TraderId,
@@ -360,10 +380,10 @@ impl MarketOrder {
         order_side: OrderSide,
         quantity: Quantity,
         time_in_force: TimeInForce,
-        reduce_only: bool,
-        quote_quantity: bool,
         init_id: UUID4,
         ts_init: UnixNanos,
+        reduce_only: bool,
+        quote_quantity: bool,
         contingency_type: Option<ContingencyType>,
         order_list_id: Option<OrderListId>,
         linked_order_ids: Option<Vec<ClientOrderId>>,

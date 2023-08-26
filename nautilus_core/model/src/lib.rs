@@ -46,6 +46,8 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::BarAggregation>()?;
     m.add_class::<enums::PriceType>()?;
+    m.add_class::<enums::OrderSide>()?;
+    m.add_class::<enums::PositionSide>()?;
     m.add_class::<identifiers::account_id::AccountId>()?;
     m.add_class::<identifiers::client_id::ClientId>()?;
     m.add_class::<identifiers::client_order_id::ClientOrderId>()?;

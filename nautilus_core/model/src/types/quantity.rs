@@ -22,7 +22,7 @@ use std::{
 };
 
 use nautilus_core::{correctness, parsing::precision_from_str};
-use pyo3::prelude::*;
+use pyo3::{exceptions::PyValueError, prelude::*};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -282,6 +282,18 @@ impl Quantity {
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
         self.as_f64()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_int")]
+    fn py_from_int(value: u64) -> Quantity {
+        Quantity::new(value as f64, 0)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<Quantity> {
+        Quantity::from_str(value).map_err(|e| PyValueError::new_err(format!("{e:?}")))
     }
 
     // #[pyo3(name = "as_decimal")]
