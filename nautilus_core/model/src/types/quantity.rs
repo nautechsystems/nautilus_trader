@@ -21,8 +21,8 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{correctness, parsing::precision_from_str};
-use pyo3::{exceptions::PyValueError, prelude::*};
+use nautilus_core::{correctness, parsing::precision_from_str, python::to_pyvalue_err};
+use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -286,14 +286,15 @@ impl Quantity {
 
     #[staticmethod]
     #[pyo3(name = "from_int")]
-    fn py_from_int(value: u64) -> Quantity {
-        Quantity::new(value as f64, 0)
+    fn py_from_int(value: u64) -> PyResult<Quantity> {
+        // TODO: Implement proper error handling
+        Ok(Quantity::new(value as f64, 0))
     }
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Quantity> {
-        Quantity::from_str(value).map_err(|e| PyValueError::new_err(format!("{e:?}")))
+        Quantity::from_str(value).map_err(to_pyvalue_err)
     }
 
     // #[pyo3(name = "as_decimal")]
