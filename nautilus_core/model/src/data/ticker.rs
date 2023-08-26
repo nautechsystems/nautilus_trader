@@ -20,7 +20,7 @@ use std::{
 };
 
 use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use crate::identifiers::instrument_id::InstrumentId;
@@ -126,8 +126,7 @@ impl Ticker {
             .extract()?;
 
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
     }
 

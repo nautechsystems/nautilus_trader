@@ -20,8 +20,8 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -92,7 +92,7 @@ impl TradeTick {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id = InstrumentId::from_str(instrument_id_str)
-            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .map_err(to_pyvalue_err)
             .unwrap();
 
         let price_py: &PyAny = obj.getattr("price")?;
@@ -112,7 +112,7 @@ impl TradeTick {
         let trade_id_obj: &PyAny = obj.getattr("trade_id")?.extract()?;
         let trade_id_str = trade_id_obj.getattr("value")?.extract()?;
         let trade_id = TradeId::from_str(trade_id_str)
-            .map_err(|e| PyValueError::new_err(e.to_string()))
+            .map_err(to_pyvalue_err)
             .unwrap();
 
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
@@ -230,8 +230,7 @@ impl TradeTick {
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Serialize object to JSON bytes
-        let json_str =
-            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
         let py_dict: Py<PyDict> = PyModule::import(py, "json")?
             .call_method("loads", (json_str,), None)?
@@ -248,19 +247,18 @@ impl TradeTick {
             .extract()?;
 
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.
