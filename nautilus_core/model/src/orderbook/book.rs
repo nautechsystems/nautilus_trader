@@ -667,8 +667,8 @@ mod tests {
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(5000.0, 3),
-            Price::new(5100.0, 3),
+            Price::from("5000.000"),
+            Price::from("5100.000"),
             Quantity::from("100.00000000"),
             Quantity::from("99.00000000"),
             0,

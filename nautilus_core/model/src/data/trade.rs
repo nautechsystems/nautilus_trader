@@ -294,7 +294,7 @@ mod tests {
     fn create_stub_trade_tick() -> TradeTick {
         TradeTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            price: Price::new(10000.0, 4),
+            price: Price::from("10000.0000"),
             size: Quantity::new(1.0, 8).unwrap(),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789").unwrap(),

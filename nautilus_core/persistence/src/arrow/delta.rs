@@ -245,7 +245,7 @@ mod tests {
             action: BookAction::Add,
             order: BookOrder {
                 side: OrderSide::Buy,
-                price: Price::new(100.10, 2),
+                price: Price::from("100.10"),
                 size: Quantity::from(100),
                 order_id: 1,
             },
@@ -260,7 +260,7 @@ mod tests {
             action: BookAction::Update,
             order: BookOrder {
                 side: OrderSide::Sell,
-                price: Price::new(101.20, 2),
+                price: Price::from("101.20"),
                 size: Quantity::from(200),
                 order_id: 2,
             },

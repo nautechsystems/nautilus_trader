@@ -356,8 +356,8 @@ mod tests {
     fn test_from_quote_tick(#[case] side: OrderSide) {
         let tick = QuoteTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(5000.0, 2),
-            Price::new(5001.0, 2),
+            Price::from("5000.00"),
+            Price::from("5001.00"),
             Quantity::from("100.000"),
             Quantity::from("99.000"),
             0,
@@ -400,8 +400,8 @@ mod tests {
     fn test_from_trade_tick(#[case] side: OrderSide) {
         let tick = TradeTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(5000.0, 2),
-            Quantity::new(100.0, 2).unwrap(),
+            Price::from("5000.00"),
+            Quantity::from("100.00"),
             AggressorSide::Buyer,
             TradeId::new("1").unwrap(),
             0,

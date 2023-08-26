@@ -15,7 +15,7 @@
 
 use anyhow::{anyhow, Result};
 
-const FAILED: &str = "Condition check failed:";
+const FAILED: &str = "Condition failed:";
 
 /// Validates the content of a string `s`.
 ///

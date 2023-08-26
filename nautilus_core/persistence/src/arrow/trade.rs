@@ -210,7 +210,7 @@ mod tests {
 
         let tick1 = TradeTick {
             instrument_id,
-            price: Price::new(100.10, 2),
+            price: Price::from("100.10"),
             size: Quantity::from(1000),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("1").unwrap(),
@@ -220,7 +220,7 @@ mod tests {
 
         let tick2 = TradeTick {
             instrument_id,
-            price: Price::new(100.50, 2),
+            price: Price::from("100.50"),
             size: Quantity::from(500),
             aggressor_side: AggressorSide::Seller,
             trade_id: TradeId::new("2").unwrap(),
