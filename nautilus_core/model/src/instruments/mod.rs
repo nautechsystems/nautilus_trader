@@ -62,7 +62,7 @@ pub trait Instrument {
     fn taker_fee(&self) -> Decimal;
 
     /// Creates a new price from the given `value` with the correct price precision for the instrument.
-    fn make_price(&self, value: f64) -> Price {
+    fn make_price(&self, value: f64) -> Result<Price> {
         Price::new(value, self.price_precision())
     }
 

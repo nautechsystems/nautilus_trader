@@ -212,20 +212,20 @@ mod tests {
 
         let bar1 = Bar::new(
             bar_type,
-            Price::new(100.10, 2),
-            Price::new(102.00, 2),
-            Price::new(100.00, 2),
-            Price::new(101.00, 2),
+            Price::from("100.10"),
+            Price::from("102.00"),
+            Price::from("100.00"),
+            Price::from("101.00"),
             Quantity::from(1100),
             1,
             3,
         );
         let bar2 = Bar::new(
             bar_type,
-            Price::new(100.00, 2),
-            Price::new(100.00, 2),
-            Price::new(100.00, 2),
-            Price::new(100.10, 2),
+            Price::from("100.00"),
+            Price::from("100.00"),
+            Price::from("100.00"),
+            Price::from("100.10"),
             Quantity::from(1110),
             2,
             4,

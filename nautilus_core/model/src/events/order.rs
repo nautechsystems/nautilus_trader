@@ -481,7 +481,7 @@ impl Default for OrderFilled {
             order_side: OrderSide::Buy,
             order_type: OrderType::Market,
             last_qty: Quantity::new(100_000.0, 0).unwrap(),
-            last_px: Price::new(1.0, 5),
+            last_px: Price::from("1.00000"),
             currency: *USD,
             commission: None,
             liquidity_side: LiquiditySide::Taker,

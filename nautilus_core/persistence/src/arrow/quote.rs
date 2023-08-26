@@ -203,8 +203,8 @@ mod tests {
         let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
         let tick1 = QuoteTick {
             instrument_id,
-            bid_price: Price::new(100.10, 2),
-            ask_price: Price::new(101.50, 2),
+            bid_price: Price::from("100.10"),
+            ask_price: Price::from("101.50"),
             bid_size: Quantity::from(1000),
             ask_size: Quantity::from(500),
             ts_event: 1,
@@ -213,8 +213,8 @@ mod tests {
 
         let tick2 = QuoteTick {
             instrument_id,
-            bid_price: Price::new(100.75, 2),
-            ask_price: Price::new(100.20, 2),
+            bid_price: Price::from("100.75"),
+            ask_price: Price::from("100.20"),
             bid_size: Quantity::from(750),
             ask_size: Quantity::from(300),
             ts_event: 2,

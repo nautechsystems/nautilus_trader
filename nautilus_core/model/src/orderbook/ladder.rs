@@ -228,10 +228,10 @@ mod tests {
     #[test]
     fn test_book_price_bid_sorting() {
         let mut bid_prices = vec![
-            BookPrice::new(Price::new(2.0, 0), OrderSide::Buy),
-            BookPrice::new(Price::new(4.0, 0), OrderSide::Buy),
-            BookPrice::new(Price::new(1.0, 0), OrderSide::Buy),
-            BookPrice::new(Price::new(3.0, 0), OrderSide::Buy),
+            BookPrice::new(Price::from("2.0"), OrderSide::Buy),
+            BookPrice::new(Price::from("4.0"), OrderSide::Buy),
+            BookPrice::new(Price::from("1.0"), OrderSide::Buy),
+            BookPrice::new(Price::from("3.0"), OrderSide::Buy),
         ];
         bid_prices.sort();
         assert_eq!(bid_prices[0].value.as_f64(), 4.0);
@@ -240,10 +240,10 @@ mod tests {
     #[test]
     fn test_book_price_ask_sorting() {
         let mut ask_prices = vec![
-            BookPrice::new(Price::new(2.0, 0), OrderSide::Sell),
-            BookPrice::new(Price::new(4.0, 0), OrderSide::Sell),
-            BookPrice::new(Price::new(1.0, 0), OrderSide::Sell),
-            BookPrice::new(Price::new(3.0, 0), OrderSide::Sell),
+            BookPrice::new(Price::from("2.0"), OrderSide::Sell),
+            BookPrice::new(Price::from("4.0"), OrderSide::Sell),
+            BookPrice::new(Price::from("1.0"), OrderSide::Sell),
+            BookPrice::new(Price::from("3.0"), OrderSide::Sell),
         ];
 
         ask_prices.sort();
@@ -253,7 +253,7 @@ mod tests {
     #[test]
     fn test_add_single_order() {
         let mut ladder = Ladder::new(OrderSide::Buy);
-        let order = BookOrder::new(OrderSide::Buy, Price::new(10.00, 2), Quantity::from(20), 0);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 0);
 
         ladder.add(order);
         assert_eq!(ladder.len(), 1);
@@ -265,10 +265,10 @@ mod tests {
     #[test]
     fn test_add_multiple_buy_orders() {
         let mut ladder = Ladder::new(OrderSide::Buy);
-        let order1 = BookOrder::new(OrderSide::Buy, Price::new(10.00, 2), Quantity::from(20), 0);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::new(9.00, 2), Quantity::from(30), 0);
-        let order3 = BookOrder::new(OrderSide::Buy, Price::new(9.00, 2), Quantity::from(50), 0);
-        let order4 = BookOrder::new(OrderSide::Buy, Price::new(8.00, 2), Quantity::from(200), 0);
+        let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(30), 0);
+        let order3 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(50), 0);
+        let order4 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(200), 0);
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
@@ -280,12 +280,12 @@ mod tests {
     #[test]
     fn test_add_multiple_sell_orders() {
         let mut ladder = Ladder::new(OrderSide::Sell);
-        let order1 = BookOrder::new(OrderSide::Sell, Price::new(11.00, 2), Quantity::from(20), 0);
-        let order2 = BookOrder::new(OrderSide::Sell, Price::new(12.00, 2), Quantity::from(30), 0);
-        let order3 = BookOrder::new(OrderSide::Sell, Price::new(12.00, 2), Quantity::from(50), 0);
+        let order1 = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 0);
+        let order2 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(30), 0);
+        let order3 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(50), 0);
         let order4 = BookOrder::new(
             OrderSide::Sell,
-            Price::new(13.00, 2),
+            Price::from("13.00"),
             Quantity::from(200),
             0,
         );
@@ -300,11 +300,11 @@ mod tests {
     #[test]
     fn test_update_buy_order_price() {
         let mut ladder = Ladder::new(OrderSide::Buy);
-        let order = BookOrder::new(OrderSide::Buy, Price::new(11.00, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order);
 
-        let order = BookOrder::new(OrderSide::Buy, Price::new(11.10, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("11.10"), Quantity::from(20), 1);
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
@@ -319,11 +319,11 @@ mod tests {
     #[test]
     fn test_update_sell_order_price() {
         let mut ladder = Ladder::new(OrderSide::Sell);
-        let order = BookOrder::new(OrderSide::Sell, Price::new(11.00, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order);
 
-        let order = BookOrder::new(OrderSide::Sell, Price::new(11.10, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Sell, Price::from("11.10"), Quantity::from(20), 1);
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
@@ -338,11 +338,11 @@ mod tests {
     #[test]
     fn test_update_buy_order_size() {
         let mut ladder = Ladder::new(OrderSide::Buy);
-        let order = BookOrder::new(OrderSide::Buy, Price::new(11.00, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order);
 
-        let order = BookOrder::new(OrderSide::Buy, Price::new(11.00, 2), Quantity::from(10), 1);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
@@ -354,11 +354,11 @@ mod tests {
     #[test]
     fn test_update_sell_order_size() {
         let mut ladder = Ladder::new(OrderSide::Sell);
-        let order = BookOrder::new(OrderSide::Sell, Price::new(11.00, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order);
 
-        let order = BookOrder::new(OrderSide::Sell, Price::new(11.00, 2), Quantity::from(10), 1);
+        let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(10), 1);
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
@@ -370,11 +370,11 @@ mod tests {
     #[test]
     fn test_delete_buy_order() {
         let mut ladder = Ladder::new(OrderSide::Buy);
-        let order = BookOrder::new(OrderSide::Buy, Price::new(11.00, 2), Quantity::from(20), 1);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order);
 
-        let order = BookOrder::new(OrderSide::Buy, Price::new(11.00, 2), Quantity::from(10), 1);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(10), 1);
 
         ladder.delete(order);
         assert_eq!(ladder.len(), 0);
@@ -386,11 +386,11 @@ mod tests {
     #[test]
     fn test_delete_sell_order() {
         let mut ladder = Ladder::new(OrderSide::Sell);
-        let order = BookOrder::new(OrderSide::Sell, Price::new(10.00, 2), Quantity::from(10), 1);
+        let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
 
         ladder.add(order);
 
-        let order = BookOrder::new(OrderSide::Sell, Price::new(10.00, 2), Quantity::from(10), 1);
+        let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
 
         ladder.delete(order);
         assert_eq!(ladder.len(), 0);
@@ -421,8 +421,8 @@ mod tests {
     }
 
     #[rstest]
-    #[case(OrderSide::Buy, OrderSide::Sell, Price::new(60.0, 2))]
-    #[case(OrderSide::Sell, OrderSide::Buy, Price::new(40.0, 2))]
+    #[case(OrderSide::Buy, OrderSide::Sell, Price::from("60.0"))]
+    #[case(OrderSide::Sell, OrderSide::Buy, Price::from("40.0"))]
     fn test_simulate_order_fills_buy_when_far_from_market(
         #[case] order_side: OrderSide,
         #[case] ladder_side: OrderSide,
@@ -438,7 +438,7 @@ mod tests {
         });
 
         let order = BookOrder {
-            price: Price::new(50.00, 2),
+            price: Price::from("50.00"),
             size: Quantity::from(500),
             side: order_side,
             order_id: 2,
@@ -454,14 +454,14 @@ mod tests {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
         ladder.add(BookOrder {
-            price: Price::new(100.00, 2),
+            price: Price::from("100.00"),
             size: Quantity::from(100),
             side: OrderSide::Buy,
             order_id: 1,
         });
 
         let order = BookOrder {
-            price: Price::new(150.00, 2), // <-- Simulate a MARKET order
+            price: Price::from("150.00"), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Buy,
             order_id: 2,
@@ -478,19 +478,19 @@ mod tests {
 
         ladder.add_bulk(vec![
             BookOrder {
-                price: Price::new(100.00, 2),
+                price: Price::from("100.00"),
                 size: Quantity::from(100),
                 side: OrderSide::Sell,
                 order_id: 1,
             },
             BookOrder {
-                price: Price::new(101.00, 2),
+                price: Price::from("101.00"),
                 size: Quantity::from(200),
                 side: OrderSide::Sell,
                 order_id: 2,
             },
             BookOrder {
-                price: Price::new(102.00, 2),
+                price: Price::from("102.00"),
                 size: Quantity::from(400),
                 side: OrderSide::Sell,
                 order_id: 3,
@@ -498,7 +498,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MAX, 2), // <-- Simulate a MARKET order
+            price: Price::new(PRICE_MAX, 2).unwrap(), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Buy,
             order_id: 4,
@@ -509,15 +509,15 @@ mod tests {
         assert_eq!(fills.len(), 3);
 
         let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::new(100.00, 2));
+        assert_eq!(price1, &Price::from("100.00"));
         assert_eq!(size1, &Quantity::from(100));
 
         let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::new(101.00, 2));
+        assert_eq!(price2, &Price::from("101.00"));
         assert_eq!(size2, &Quantity::from(200));
 
         let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::new(102.00, 2));
+        assert_eq!(price3, &Price::from("102.00"));
         assert_eq!(size3, &Quantity::from(200));
     }
 
@@ -527,19 +527,19 @@ mod tests {
 
         ladder.add_bulk(vec![
             BookOrder {
-                price: Price::new(102.00, 2),
+                price: Price::from("102.00"),
                 size: Quantity::from(100),
                 side: OrderSide::Buy,
                 order_id: 1,
             },
             BookOrder {
-                price: Price::new(101.00, 2),
+                price: Price::from("101.00"),
                 size: Quantity::from(200),
                 side: OrderSide::Buy,
                 order_id: 2,
             },
             BookOrder {
-                price: Price::new(100.00, 2),
+                price: Price::from("100.00"),
                 size: Quantity::from(400),
                 side: OrderSide::Buy,
                 order_id: 3,
@@ -547,7 +547,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MIN, 2), // <-- Simulate a MARKET order
+            price: Price::new(PRICE_MIN, 2).unwrap(), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Sell,
             order_id: 4,
@@ -558,15 +558,15 @@ mod tests {
         assert_eq!(fills.len(), 3);
 
         let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::new(102.00, 2));
+        assert_eq!(price1, &Price::from("102.00"));
         assert_eq!(size1, &Quantity::from(100));
 
         let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::new(101.00, 2));
+        assert_eq!(price2, &Price::from("101.00"));
         assert_eq!(size2, &Quantity::from(200));
 
         let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::new(100.00, 2));
+        assert_eq!(price3, &Price::from("100.00"));
         assert_eq!(size3, &Quantity::from(200));
     }
 
@@ -596,7 +596,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MIN, 2),       // <-- Simulate a MARKET order
+            price: Price::new(PRICE_MIN, 2).unwrap(), // <-- Simulate a MARKET order
             size: Quantity::from("699.999999999"), // <-- Size slightly less than total size in ladder
             side: OrderSide::Sell,
             order_id: 4,

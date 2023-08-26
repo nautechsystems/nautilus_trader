@@ -328,10 +328,10 @@ mod tests {
     fn create_stub_quote_tick() -> QuoteTick {
         QuoteTick {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            bid_price: Price::new(10000.0, 4),
-            ask_price: Price::new(10001.0, 4),
-            bid_size: Quantity::new(1.0, 8).unwrap(),
-            ask_size: Quantity::new(1.0, 8).unwrap(),
+            bid_price: Price::from("10000.0000"),
+            ask_price: Price::from("10001.0000"),
+            bid_size: Quantity::from("1.00000000"),
+            ask_size: Quantity::from("1.00000000"),
             ts_event: 1,
             ts_init: 0,
         }

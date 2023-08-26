@@ -29,7 +29,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
-pytestmark = pytest.mark.skip(reason="WIP")
+# pytestmark = pytest.mark.skip(reason="WIP")
 
 
 class TestOrders:
@@ -38,6 +38,9 @@ class TestOrders:
         self.trader_id = TraderId("TESTER-000")
         self.strategy_id = StrategyId("S-001")
         self.account_id = AccountId("SIM-000")
+
+    def test_identifier(self):
+        TraderId("")
 
     def test_opposite_side_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
