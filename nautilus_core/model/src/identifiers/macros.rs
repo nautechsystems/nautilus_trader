@@ -61,8 +61,16 @@ macro_rules! identifier_for_python {
                 Ok(<$ty>::new(value))
             }
 
-            fn __hash__(&self) -> u64 {
-                self.value.precomputed_hash()
+            fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+                match op {
+                    CompareOp::Eq => self.eq(other).into_py(py),
+                    CompareOp::Ne => self.ne(other).into_py(py),
+                    _ => py.NotImplemented(),
+                }
+            }
+
+            fn __hash__(&self) -> isize {
+                self.value.precomputed_hash() as isize
             }
 
             fn __str__(&self) -> &'static str {
