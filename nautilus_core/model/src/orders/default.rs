@@ -1,0 +1,330 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+use nautilus_core::uuid::UUID4;
+
+use super::{
+    limit::LimitOrder, limit_if_touched::LimitIfTouchedOrder, market::MarketOrder,
+    market_if_touched::MarketIfTouchedOrder, market_to_limit::MarketToLimitOrder,
+    stop_limit::StopLimitOrder, stop_market::StopMarketOrder,
+    trailing_stop_limit::TrailingStopLimitOrder, trailing_stop_market::TrailingStopMarketOrder,
+};
+use crate::{
+    enums::{OrderSide, TimeInForce, TrailingOffsetType, TriggerType},
+    identifiers::{
+        client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
+        trader_id::TraderId,
+    },
+    types::{price::Price, quantity::Quantity},
+};
+
+/// Provides a default [`LimitOrder`] used for testing.
+impl Default for LimitOrder {
+    fn default() -> Self {
+        LimitOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`LimitIfTouchedOrder`] used for testing.
+impl Default for LimitIfTouchedOrder {
+    fn default() -> Self {
+        LimitIfTouchedOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`MarketOrder`] used for testing.
+impl Default for MarketOrder {
+    fn default() -> Self {
+        MarketOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            TimeInForce::Day,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`MarketIfTouchedOrder`] used for testing.
+impl Default for MarketIfTouchedOrder {
+    fn default() -> Self {
+        MarketIfTouchedOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`MarketToLimitOrder`] used for testing.
+impl Default for MarketToLimitOrder {
+    fn default() -> Self {
+        MarketToLimitOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`StopLimitOrder`] used for testing.
+impl Default for StopLimitOrder {
+    fn default() -> Self {
+        StopLimitOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`StopMarketOrder`] used for testing.
+impl Default for StopMarketOrder {
+    fn default() -> Self {
+        StopMarketOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`TrailingStopLimitOrder`] used for testing.
+impl Default for TrailingStopLimitOrder {
+    fn default() -> Self {
+        TrailingStopLimitOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            Price::new(0.001, 5),
+            Price::new(0.001, 5),
+            TrailingOffsetType::Price,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}
+
+/// Provides a default [`TrailingStopMarketOrder`] used for testing.
+impl Default for TrailingStopMarketOrder {
+    fn default() -> Self {
+        TrailingStopMarketOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            InstrumentId::default(),
+            ClientOrderId::default(),
+            OrderSide::Buy,
+            Quantity::new(100_000.0, 0),
+            Price::new(1.0, 5),
+            TriggerType::BidAsk,
+            Price::new(0.001, 5),
+            TrailingOffsetType::Price,
+            TimeInForce::Gtc,
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::default(),
+            0,
+        )
+    }
+}

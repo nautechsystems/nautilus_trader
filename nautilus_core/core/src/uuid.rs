@@ -21,11 +21,13 @@ use std::{
     str::FromStr,
 };
 
+use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[pyclass]
 pub struct UUID4 {
     value: [u8; 37],
 }
