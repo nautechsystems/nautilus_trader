@@ -50,3 +50,34 @@ macro_rules! impl_from_str_for_identifier {
         }
     };
 }
+
+macro_rules! identifier_for_python {
+    ($ty:ty) => {
+        #[pymethods]
+        impl $ty {
+            #[new]
+            fn py_new(value: &str) -> PyResult<Self> {
+                // TODO: Implement proper error handling
+                Ok(<$ty>::new(value))
+            }
+
+            fn __hash__(&self) -> u64 {
+                self.value.precomputed_hash()
+            }
+
+            fn __str__(&self) -> &'static str {
+                self.value.as_str()
+            }
+
+            fn __repr__(&self) -> String {
+                format!("{}('{}')", stringify!($ty), self.value)
+            }
+
+            #[getter]
+            #[pyo3(name = "value")]
+            fn py_value(&self) -> String {
+                self.value.to_string()
+            }
+        }
+    };
+}
