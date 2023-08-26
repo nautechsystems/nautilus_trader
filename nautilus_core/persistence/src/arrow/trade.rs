@@ -49,6 +49,7 @@ impl ArrowSchemaProvider for TradeTick {
 }
 
 fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
+    // TODO: Properly handle errors
     let instrument_id =
         InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
     let price_precision = metadata
@@ -174,7 +175,7 @@ mod tests {
 
     #[test]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
         let schema = TradeTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -205,7 +206,7 @@ mod tests {
     #[test]
     fn test_encode_trade_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let tick1 = TradeTick {
@@ -263,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);

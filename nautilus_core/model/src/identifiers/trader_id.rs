@@ -61,6 +61,12 @@ impl Display for TraderId {
     }
 }
 
+impl From<&str> for TraderId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,7 +78,7 @@ impl Display for TraderId {
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    TraderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -89,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let trader_id = TraderId::new("TRADER-001").unwrap();
+        let trader_id = TraderId::from("TRADER-001");
         assert_eq!(trader_id.to_string(), "TRADER-001");
         assert_eq!(format!("{trader_id}"), "TRADER-001");
     }

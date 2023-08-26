@@ -69,6 +69,12 @@ impl FromStr for InstrumentId {
     }
 }
 
+impl From<&str> for InstrumentId {
+    fn from(input: &str) -> Self {
+        Self::from_str(input).unwrap()
+    }
+}
+
 impl Debug for InstrumentId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "\"{}.{}\"", self.symbol, self.venue)
@@ -124,7 +130,7 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from_str(cstr_to_string(ptr).as_str()).unwrap()
+    InstrumentId::from(cstr_to_string(ptr).as_str())
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.
@@ -163,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_instrument_id_parse_success() {
-        let instrument_id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(instrument_id.symbol.to_string(), "ETH/USDT");
         assert_eq!(instrument_id.venue.to_string(), "BINANCE");
     }
@@ -197,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+        let id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
     }
@@ -205,7 +211,7 @@ mod tests {
     #[test]
     fn test_to_cstr() {
         unsafe {
-            let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+            let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
             assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
         }
@@ -214,7 +220,7 @@ mod tests {
     #[test]
     fn test_to_cstr_and_back() {
         unsafe {
-            let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+            let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
             let id2 = instrument_id_new_from_cstr(result);
             assert_eq!(id, id2);
@@ -224,10 +230,7 @@ mod tests {
     #[test]
     fn test_from_symbol_and_back() {
         unsafe {
-            let id = InstrumentId::new(
-                Symbol::new("ETH/USDT").unwrap(),
-                Venue::new("BINANCE").unwrap(),
-            );
+            let id = InstrumentId::new(Symbol::from("ETH/USDT"), Venue::from("BINANCE"));
             let result = instrument_id_to_cstr(&id);
             let id2 = instrument_id_new_from_cstr(result);
             assert_eq!(id, id2);

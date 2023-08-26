@@ -147,15 +147,13 @@ impl Hash for SyntheticInstrument {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
     use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
 
     #[test]
     fn test_calculate_from_map() {
-        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
-        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),
@@ -179,8 +177,8 @@ mod tests {
 
     #[test]
     fn test_calculate() {
-        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
-        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),
@@ -201,8 +199,8 @@ mod tests {
 
     #[test]
     fn test_change_formula() {
-        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
-        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),

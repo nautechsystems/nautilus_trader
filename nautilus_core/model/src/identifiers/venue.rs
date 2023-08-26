@@ -73,6 +73,12 @@ impl Display for Venue {
     }
 }
 
+impl From<&str> for Venue {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +90,7 @@ impl Display for Venue {
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Venue::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    Venue::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -106,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let venue = Venue::new("BINANCE").unwrap();
+        let venue = Venue::from("BINANCE");
         assert_eq!(venue.to_string(), "BINANCE");
         assert_eq!(format!("{venue}"), "BINANCE");
     }

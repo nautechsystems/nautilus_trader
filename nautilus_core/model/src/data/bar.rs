@@ -480,7 +480,7 @@ mod tests {
 
         assert_eq!(
             bar_type.instrument_id,
-            InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+            InstrumentId::from("BTCUSDT-PERP.BINANCE")
         );
         assert_eq!(
             bar_type.spec,

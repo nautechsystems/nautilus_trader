@@ -16,7 +16,6 @@
 use std::{
     ffi::c_char,
     ops::{Deref, DerefMut},
-    str::FromStr,
 };
 
 use nautilus_core::{
@@ -75,7 +74,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
     // TODO: There is absolutely no error handling here yet
     let components = bytes_to_string_vec(components_ptr)
         .into_iter()
-        .map(|s| InstrumentId::from_str(&s).unwrap())
+        .map(|s| InstrumentId::from(s.as_str()))
         .collect::<Vec<InstrumentId>>();
     let formula = cstr_to_string(formula_ptr);
     let synth = SyntheticInstrument::new(

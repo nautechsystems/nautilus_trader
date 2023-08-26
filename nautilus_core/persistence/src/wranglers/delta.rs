@@ -35,7 +35,6 @@ impl OrderBookDeltaDataWrangler {
     #[new]
     fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
         let instrument_id = InstrumentId::from_str(instrument_id).map_err(to_pyvalue_err)?;
-
         let metadata =
             OrderBookDelta::get_metadata(&instrument_id, price_precision, size_precision);
 

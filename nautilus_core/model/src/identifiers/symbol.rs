@@ -61,6 +61,12 @@ impl Display for Symbol {
     }
 }
 
+impl From<&str> for Symbol {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,7 +78,7 @@ impl Display for Symbol {
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Symbol::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    Symbol::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -89,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let symbol = Symbol::new("ETH-PERP").unwrap();
+        let symbol = Symbol::from("ETH-PERP");
         assert_eq!(symbol.to_string(), "ETH-PERP");
         assert_eq!(format!("{symbol}"), "ETH-PERP");
     }

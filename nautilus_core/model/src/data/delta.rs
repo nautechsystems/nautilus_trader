@@ -296,8 +296,6 @@ impl OrderBookDelta {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
     use crate::{
         enums::OrderSide,
@@ -305,7 +303,7 @@ mod tests {
     };
 
     fn create_stub_delta() -> OrderBookDelta {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let action = BookAction::Add;
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -330,7 +328,7 @@ mod tests {
 
     #[test]
     fn test_new() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let action = BookAction::Add;
         let price = Price::from("100.00");
         let size = Quantity::from("10");

@@ -62,6 +62,12 @@ impl Display for AccountId {
     }
 }
 
+impl From<&str> for AccountId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -73,7 +79,7 @@ impl Display for AccountId {
 #[no_mangle]
 pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    AccountId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    AccountId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -114,7 +120,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = AccountId::new("IB-1234567890").unwrap();
+        let id = AccountId::from("IB-1234567890");
         assert_eq!(id.to_string(), "IB-1234567890");
     }
 
