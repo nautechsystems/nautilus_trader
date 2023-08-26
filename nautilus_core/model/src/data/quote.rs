@@ -21,6 +21,7 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::Result;
 use nautilus_core::{
     correctness, python::to_pyvalue_err, serialization::Serializable, time::UnixNanos,
 };
@@ -55,7 +56,6 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
-    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         bid_price: Price,
@@ -64,20 +64,20 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Self {
+    ) -> Result<Self> {
         correctness::u8_equal(
             bid_price.precision,
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
-        );
+        )?;
         correctness::u8_equal(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
-        );
-        Self {
+        )?;
+        Ok(Self {
             instrument_id,
             bid_price,
             ask_price,
@@ -85,7 +85,7 @@ impl QuoteTick {
             ask_size,
             ts_event,
             ts_init,
-        }
+        })
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
@@ -132,7 +132,7 @@ impl QuoteTick {
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
         let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
 
-        Ok(Self::new(
+        Self::new(
             instrument_id,
             bid_price,
             ask_price,
@@ -140,7 +140,8 @@ impl QuoteTick {
             ask_size,
             ts_event,
             ts_init,
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[must_use]
@@ -185,7 +186,7 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Self {
+    ) -> PyResult<Self> {
         Self::new(
             instrument_id,
             bid_price,
@@ -195,6 +196,7 @@ impl QuoteTick {
             ts_event,
             ts_init,
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -328,8 +330,8 @@ mod tests {
             instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             bid_price: Price::new(10000.0, 4),
             ask_price: Price::new(10001.0, 4),
-            bid_size: Quantity::new(1.0, 8),
-            ask_size: Quantity::new(1.0, 8),
+            bid_size: Quantity::new(1.0, 8).unwrap(),
+            ask_size: Quantity::new(1.0, 8).unwrap(),
             ts_event: 1,
             ts_init: 0,
         }

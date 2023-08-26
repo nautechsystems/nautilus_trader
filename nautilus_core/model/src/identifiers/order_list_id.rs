@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -31,13 +32,12 @@ pub struct OrderListId {
 }
 
 impl OrderListId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`OrderListId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`OrderListId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -64,7 +64,7 @@ impl Display for OrderListId {
 #[no_mangle]
 pub unsafe extern "C" fn order_list_id_new(ptr: *const c_char) -> OrderListId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    OrderListId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    OrderListId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
 }
 
 #[no_mangle]
@@ -81,7 +81,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = OrderListId::new("001");
+        let id = OrderListId::new("001").unwrap();
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }

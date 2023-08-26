@@ -452,7 +452,7 @@ impl OrderCore {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-            filled_qty: Quantity::zero(quantity.precision),
+            filled_qty: Quantity::zero(quantity.precision).unwrap(),
             leaves_qty: quantity,
             avg_px: None,
             slippage: None,
@@ -696,7 +696,7 @@ mod tests {
     fn test_signed_decimal_qty(#[case] order_side: OrderSide, #[case] expected: Decimal) {
         let order: MarketOrder = OrderInitializedBuilder::default()
             .order_side(order_side)
-            .quantity(Quantity::new(10_000.0, 0))
+            .quantity(Quantity::from(10_000))
             .build()
             .unwrap()
             .into();
@@ -764,8 +764,8 @@ mod tests {
 
         assert_eq!(order.client_order_id, init.client_order_id);
         assert_eq!(order.status(), OrderStatus::Filled);
-        assert_eq!(order.filled_qty(), Quantity::from("100000"));
-        assert_eq!(order.leaves_qty(), Quantity::from("0"));
+        assert_eq!(order.filled_qty(), Quantity::from(100000));
+        assert_eq!(order.leaves_qty(), Quantity::from(0));
         assert_eq!(order.avg_px(), Some(1.0));
         assert!(!order.is_open());
         assert!(order.is_closed());

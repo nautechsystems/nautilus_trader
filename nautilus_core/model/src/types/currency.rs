@@ -19,6 +19,7 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::Result;
 use nautilus_core::{
     correctness,
     string::{cstr_to_string, str_to_cstr},
@@ -41,25 +42,24 @@ pub struct Currency {
 }
 
 impl Currency {
-    #[must_use]
     pub fn new(
         code: &str,
         precision: u8,
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> Self {
-        correctness::valid_string(code, "`Currency` code");
-        correctness::valid_string(name, "`Currency` name");
-        correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
+    ) -> Result<Self> {
+        correctness::valid_string(code, "`Currency` code")?;
+        correctness::valid_string(name, "`Currency` name")?;
+        correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision")?;
 
-        Self {
+        Ok(Self {
             code: Ustr::from(code),
             precision,
             iso4217,
             name: Ustr::from(name),
             currency_type,
-        }
+        })
     }
 }
 
@@ -144,6 +144,7 @@ pub unsafe extern "C" fn currency_from_py(
             .expect("CStr::from_ptr failed for `name_ptr`"),
         currency_type,
     )
+    .unwrap()
 }
 
 #[no_mangle]
@@ -208,19 +209,20 @@ mod tests {
     #[test]
     #[should_panic(expected = "`Currency` code")]
     fn test_invalid_currency_code() {
-        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
     #[test]
     #[should_panic(expected = "`Currency` precision")]
     fn test_invalid_currency_precision() {
         // Precision out of range for fixed
-        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
+        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
     #[test]
     fn test_currency_new_for_fiat() {
-        let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
+        let currency =
+            Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat).unwrap();
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);
@@ -231,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_currency_new_for_crypto() {
-        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
+        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto).unwrap();
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "ETH");
         assert_eq!(currency.precision, 8);
@@ -242,14 +244,17 @@ mod tests {
 
     #[test]
     fn test_currency_equality() {
-        let currency1 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
-        let currency2 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let currency1 =
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let currency2 =
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
         assert_eq!(currency1, currency2);
     }
 
     #[test]
     fn test_currency_serialization_deserialization() {
-        let currency = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let currency =
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
@@ -257,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_currency_registration() {
-        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto);
+        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto).unwrap();
         currency_register(currency);
         unsafe {
             assert_eq!(currency_exists(str_to_cstr("MYC")), 1);

@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -31,13 +32,12 @@ pub struct ClientId {
 }
 
 impl ClientId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ClientId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`ClientId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -64,7 +64,7 @@ impl Display for ClientId {
 #[no_mangle]
 pub unsafe extern "C" fn client_id_new(ptr: *const c_char) -> ClientId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ClientId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ClientId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
 }
 
 #[no_mangle]
@@ -81,14 +81,14 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = ClientId::new("BINANCE");
+        let id = ClientId::new("BINANCE").unwrap();
         assert_eq!(id.to_string(), "BINANCE");
         assert_eq!(format!("{id}"), "BINANCE");
     }
 
     #[test]
     fn test_client_id_to_cstr_c() {
-        let id = ClientId::new("BINANCE");
+        let id = ClientId::new("BINANCE").unwrap();
         let c_string = id.value.as_char_ptr();
         let rust_string = unsafe { CStr::from_ptr(c_string) }.to_str().unwrap();
         assert_eq!(rust_string, "BINANCE");
@@ -96,9 +96,9 @@ mod tests {
 
     #[test]
     fn test_client_id_hash_c() {
-        let id1 = ClientId::new("BINANCE");
-        let id2 = ClientId::new("BINANCE");
-        let id3 = ClientId::new("DYDX");
+        let id1 = ClientId::new("BINANCE").unwrap();
+        let id2 = ClientId::new("BINANCE").unwrap();
+        let id3 = ClientId::new("DYDX").unwrap();
         assert_eq!(client_id_hash(&id1), client_id_hash(&id2));
         assert_ne!(client_id_hash(&id1), client_id_hash(&id3));
     }

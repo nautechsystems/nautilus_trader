@@ -200,12 +200,7 @@ mod tests {
     #[test]
     fn test_add_one_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
+        let order = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::from(10), 0);
 
         level.add(order);
         assert!(!level.is_empty());
@@ -216,18 +211,8 @@ mod tests {
     #[test]
     fn test_add_multiple_orders() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(20.0, 0),
-            1,
-        );
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(20), 1);
 
         level.add(order1);
         level.add(order2);
@@ -239,18 +224,8 @@ mod tests {
     #[test]
     fn test_update_order() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(1.00, 2),
-            Quantity::new(20.0, 0),
-            0,
-        );
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::from(20), 0);
 
         level.add(order1);
         level.update(order2);
@@ -262,13 +237,13 @@ mod tests {
     #[test]
     fn test_update_order_with_zero_size() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(
             OrderSide::Buy,
             Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
+            Quantity::zero(0).unwrap(),
             0,
         );
-        let order2 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::zero(0), 0);
 
         level.add(order1);
         level.update(order2);
@@ -284,14 +259,14 @@ mod tests {
         let order1 = BookOrder::new(
             OrderSide::Buy,
             Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
+            Quantity::from(10),
             order1_id,
         );
         let order2_id = 0;
         let order2 = BookOrder::new(
             OrderSide::Buy,
             Price::new(1.00, 2),
-            Quantity::new(20.0, 0),
+            Quantity::from(20),
             order2_id,
         );
 
@@ -311,14 +286,14 @@ mod tests {
         let order1 = BookOrder::new(
             OrderSide::Buy,
             Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
+            Quantity::from(10),
             order1_id,
         );
         let order2_id = 1;
         let order2 = BookOrder::new(
             OrderSide::Buy,
             Price::new(1.00, 2),
-            Quantity::new(20.0, 0),
+            Quantity::from(20),
             order2_id,
         );
 
@@ -338,14 +313,14 @@ mod tests {
         let order1 = BookOrder::new(
             OrderSide::Buy,
             Price::new(2.00, 2),
-            Quantity::new(10.0, 0),
+            Quantity::from(10),
             order1_id,
         );
         let order2_id = 1;
         let order2 = BookOrder::new(
             OrderSide::Buy,
             Price::new(2.00, 2),
-            Quantity::new(20.0, 0),
+            Quantity::from(20),
             order2_id,
         );
 
@@ -366,18 +341,8 @@ mod tests {
     #[test]
     fn test_volume() {
         let mut level = Level::new(BookPrice::new(Price::new(1.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(1.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(1.00, 2),
-            Quantity::new(15.0, 0),
-            1,
-        );
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(1.00, 2), Quantity::from(15), 1);
 
         level.add(order1);
         level.add(order2);
@@ -387,18 +352,8 @@ mod tests {
     #[test]
     fn test_volume_raw() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(20.0, 0),
-            1,
-        );
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(20), 1);
 
         level.add(order1);
         level.add(order2);
@@ -408,18 +363,8 @@ mod tests {
     #[test]
     fn test_exposure() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(20.0, 0),
-            1,
-        );
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(20), 1);
 
         level.add(order1);
         level.add(order2);
@@ -429,18 +374,8 @@ mod tests {
     #[test]
     fn test_exposure_raw() {
         let mut level = Level::new(BookPrice::new(Price::new(2.00, 2), OrderSide::Buy));
-        let order1 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(10.0, 0),
-            0,
-        );
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::new(2.00, 2),
-            Quantity::new(20.0, 0),
-            1,
-        );
+        let order1 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(10), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::new(2.00, 2), Quantity::from(20), 1);
 
         level.add(order1);
         level.add(order2);

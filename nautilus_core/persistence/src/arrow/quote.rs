@@ -205,8 +205,8 @@ mod tests {
             instrument_id,
             bid_price: Price::new(100.10, 2),
             ask_price: Price::new(101.50, 2),
-            bid_size: Quantity::new(1000.0, 0),
-            ask_size: Quantity::new(500.0, 0),
+            bid_size: Quantity::from(1000),
+            ask_size: Quantity::from(500),
             ts_event: 1,
             ts_init: 3,
         };
@@ -215,8 +215,8 @@ mod tests {
             instrument_id,
             bid_price: Price::new(100.75, 2),
             ask_price: Price::new(100.20, 2),
-            bid_size: Quantity::new(750.0, 0),
-            ask_size: Quantity::new(300.0, 0),
+            bid_size: Quantity::from(750),
+            ask_size: Quantity::from(300),
             ts_event: 2,
             ts_init: 4,
         };

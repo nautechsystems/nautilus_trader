@@ -138,7 +138,7 @@ impl DecodeFromRecordBatch for TradeTick {
                     size: Quantity::from_raw(size.unwrap(), size_precision),
                     aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)
                         .expect("cannot parse enum value"),
-                    trade_id: TradeId::new(trade_id.unwrap()),
+                    trade_id: TradeId::new(trade_id.unwrap()).unwrap(),
                     ts_event: ts_event.unwrap(),
                     ts_init: ts_init.unwrap(),
                 },
@@ -211,9 +211,9 @@ mod tests {
         let tick1 = TradeTick {
             instrument_id,
             price: Price::new(100.10, 2),
-            size: Quantity::new(1000.0, 0),
+            size: Quantity::from(1000),
             aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("1"),
+            trade_id: TradeId::new("1").unwrap(),
             ts_event: 1,
             ts_init: 3,
         };
@@ -221,9 +221,9 @@ mod tests {
         let tick2 = TradeTick {
             instrument_id,
             price: Price::new(100.50, 2),
-            size: Quantity::new(500.0, 0),
+            size: Quantity::from(500),
             aggressor_side: AggressorSide::Seller,
-            trade_id: TradeId::new("2"),
+            trade_id: TradeId::new("2").unwrap(),
             ts_event: 2,
             ts_init: 4,
         };

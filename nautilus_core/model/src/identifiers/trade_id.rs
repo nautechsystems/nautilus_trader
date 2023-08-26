@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -31,13 +32,12 @@ pub struct TradeId {
 }
 
 impl TradeId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`TradeId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`TradeId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -72,7 +72,7 @@ impl Display for TradeId {
 #[no_mangle]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    TradeId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    TradeId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
 }
 
 #[no_mangle]
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let trade_id = TradeId::new("1234567890");
+        let trade_id = TradeId::new("1234567890").unwrap();
         assert_eq!(trade_id.to_string(), "1234567890");
         assert_eq!(format!("{trade_id}"), "1234567890");
     }

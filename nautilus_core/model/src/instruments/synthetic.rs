@@ -161,7 +161,7 @@ mod tests {
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC"),
+            Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
@@ -186,7 +186,7 @@ mod tests {
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
         let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC"),
+            Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
@@ -208,7 +208,7 @@ mod tests {
         let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC"),
+            Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance, ltc_binance],
             formula.clone(),

@@ -49,7 +49,8 @@ pub struct Price {
 impl Price {
     #[must_use]
     pub fn new(value: f64, precision: u8) -> Self {
-        correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value");
+        // TODO: Continue error propagation
+        correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value").unwrap();
 
         Self {
             raw: f64_to_fixed_i64(value, precision),

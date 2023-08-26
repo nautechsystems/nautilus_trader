@@ -15,6 +15,7 @@
 
 use std::str::FromStr;
 
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::{prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
