@@ -84,8 +84,10 @@ pub enum AccountType {
 #[pyclass]
 pub enum AggregationSource {
     /// The data is externally aggregated (outside the Nautilus system boundary).
+    #[pyo3(name = "EXTERNAL")]
     External = 1,
     /// The data is internally aggregated (inside the Nautilus system boundary).
+    #[pyo3(name = "INTERNAL")]
     Internal = 2,
 }
 
@@ -113,8 +115,10 @@ pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
     NoAggressor = 0, // Will be replaced by `Option`
     /// The BUY order was the aggressor for the trade.
+    #[pyo3(name = "BUYER")]
     Buyer = 1,
     /// The SELL order was the aggressor for the trade.
+    #[pyo3(name = "SELLER")]
     Seller = 2,
 }
 
@@ -154,20 +158,28 @@ pub enum AssetClass {
     /// Foreign exchange (FOREX) assets.
     FX = 1,
     /// Equity / stock assets.
+    #[pyo3(name = "EQUITY")]
     Equity = 2,
     /// Commodity assets.
+    #[pyo3(name = "COMMODITY")]
     Commodity = 3,
     /// Metal commodity assets.
+    #[pyo3(name = "METAL")]
     Metal = 4,
     /// Energy commodity assets.
+    #[pyo3(name = "ENERGY")]
     Energy = 5,
     /// Fixed income bond assets.
+    #[pyo3(name = "BOND")]
     Bond = 6,
     /// Index based assets.
+    #[pyo3(name = "INDEX")]
     Index = 7,
     /// Cryptocurrency or crypto token assets.
+    #[pyo3(name = "CRYPTO_CURRENCY")]
     Cryptocurrency = 8,
     /// Sports betting instruments.
+    #[pyo3(name = "SPORTS_BETTING")]
     SportsBetting = 9,
 }
 
@@ -193,18 +205,25 @@ pub enum AssetClass {
 #[pyclass]
 pub enum AssetType {
     /// A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
+    #[pyo3(name = "SPOT")]
     Spot = 1,
     /// A swap asset type. A derivative contract through which two parties exchange the cash flows or liabilities from two different financial instruments.
+    #[pyo3(name = "SWAP")]
     Swap = 2,
     /// A futures contract asset type. A legal agreement to buy or sell an asset at a predetermined price at a specified time in the future.
+    #[pyo3(name = "FUTURE")]
     Future = 3,
     /// A forward derivative asset type. A customized contract between two parties to buy or sell an asset at a specified price on a future date.
+    #[pyo3(name = "FORWARD")]
     Forward = 4,
     /// A contract-for-difference (CFD) asset type. A contract between an investor and a CFD broker to exchange the difference in the value of a financial product between the time the contract opens and closes.
+    #[pyo3(name = "CFD")]
     Cfd = 5,
     /// An options contract asset type. A type of derivative that gives the holder the right, but not the obligation, to buy or sell an underlying asset at a predetermined price before or at a certain future date.
+    #[pyo3(name = "OPTION")]
     Option = 6,
     /// A warrant asset type. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
+    #[pyo3(name = "WARRANT")]
     Warrant = 7,
 }
 
@@ -230,36 +249,52 @@ pub enum AssetType {
 #[pyclass]
 pub enum BarAggregation {
     /// Based on a number of ticks.
+    #[pyo3(name = "TICK")]
     Tick = 1,
     /// Based on the buy/sell imbalance of ticks.
+    #[pyo3(name = "TICK_IMBALANCE")]
     TickImbalance = 2,
     /// Based on sequential buy/sell runs of ticks.
+    #[pyo3(name = "TICK_RUNS")]
     TickRuns = 3,
     /// Based on trading volume.
+    #[pyo3(name = "VOLUME")]
     Volume = 4,
     /// Based on the buy/sell imbalance of trading volume.
+    #[pyo3(name = "VOLUME_IMBALANCE")]
     VolumeImbalance = 5,
     /// Based on sequential runs of buy/sell trading volume.
+    #[pyo3(name = "VOLUME_RUNS")]
     VolumeRuns = 6,
     /// Based on the 'notional' value of the instrument.
+    #[pyo3(name = "VALUE")]
     Value = 7,
     /// Based on the buy/sell imbalance of trading by 'notional' value.
+    #[pyo3(name = "VALUE_IMBALANCE")]
     ValueImbalance = 8,
     /// Based on sequential buy/sell runs of trading by 'notional' value.
+    #[pyo3(name = "VALUE_RUNS")]
     ValueRuns = 9,
     /// Based on time intervals with millisecond granularity.
+    #[pyo3(name = "MILLISECOND")]
     Millisecond = 10,
     /// Based on time intervals with second granularity.
+    #[pyo3(name = "SECOND")]
     Second = 11,
     /// Based on time intervals with minute granularity.
+    #[pyo3(name = "MINUTE")]
     Minute = 12,
     /// Based on time intervals with hour granularity.
+    #[pyo3(name = "HOUR")]
     Hour = 13,
     /// Based on time intervals with day granularity.
+    #[pyo3(name = "DAY")]
     Day = 14,
     /// Based on time intervals with week granularity.
+    #[pyo3(name = "WEEK")]
     Week = 15,
     /// Based on time intervals with month granularity.
+    #[pyo3(name = "MONTH")]
     Month = 16,
 }
 
@@ -285,12 +320,16 @@ pub enum BarAggregation {
 #[pyclass]
 pub enum BookAction {
     /// An order is added to the book.
+    #[pyo3(name = "ADD")]
     Add = 1,
     /// An existing order in the book is updated/modified.
+    #[pyo3(name = "UPDATE")]
     Update = 2,
     /// An existing order in the book is deleted/canceled.
+    #[pyo3(name = "DELETE")]
     Delete = 3,
     /// The state of the order book is cleared.
+    #[pyo3(name = "CLEAR")]
     Clear = 4,
 }
 
@@ -373,10 +412,13 @@ pub enum ContingencyType {
     /// Not a contingent order.
     NoContingency = 0, // Will be replaced by `Option`
     /// One-Cancels-the-Other.
+    #[pyo3(name = "OCO")]
     Oco = 1,
     /// One-Triggers-the-Other.
+    #[pyo3(name = "OTO")]
     Oto = 2,
     /// One-Updates-the-Other (by proportional quantity).
+    #[pyo3(name = "OUO")]
     Ouo = 3,
 }
 
@@ -402,8 +444,10 @@ pub enum ContingencyType {
 #[pyclass]
 pub enum CurrencyType {
     /// A type of cryptocurrency or crypto token.
+    #[pyo3(name = "CRYPTO")]
     Crypto = 1,
     /// A type of currency issued by governments which is not backed by a commodity.
+    #[pyo3(name = "FIAT")]
     Fiat = 2,
 }
 
@@ -429,8 +473,10 @@ pub enum CurrencyType {
 #[pyclass]
 pub enum InstrumentCloseType {
     /// When the market session ended.
+    #[pyo3(name = "END_OF_SESSION")]
     EndOfSession = 1,
     /// When the instrument expiration was reached.
+    #[pyo3(name = "CONTRACT_EXPIRED")]
     ContractExpired = 2,
 }
 
@@ -459,8 +505,10 @@ pub enum LiquiditySide {
     /// No specific liqudity side.
     NoLiquiditySide = 0, // Will be replaced by `Option`
     /// The order passively provided liqudity to the market to complete the trade (made a market).
+    #[pyo3(name = "MAKER")]
     Maker = 1,
     /// The order aggressively took liqudity from the market to complete the trade.
+    #[pyo3(name = "TAKER")]
     Taker = 2,
 }
 
@@ -486,14 +534,19 @@ pub enum LiquiditySide {
 #[pyclass]
 pub enum MarketStatus {
     /// The market is closed.
+    #[pyo3(name = "CLOSED")]
     Closed = 1,
     /// The market is in the pre-open session.
+    #[pyo3(name = "PRE_OPEN")]
     PreOpen = 2,
     /// The market is open for the normal session.
+    #[pyo3(name = "OPEN")]
     Open = 3,
     /// The market session is paused.
+    #[pyo3(name = "PAUSE")]
     Pause = 4,
     /// The market is in the pre-close session.
+    #[pyo3(name = "PRE_CLOSE")]
     PreClose = 5,
 }
 
@@ -521,10 +574,12 @@ pub enum OmsType {
     /// There is no specific type of order management specified (will defer to the venue).
     Unspecified = 0, // Will be replaced by `Option`
     /// The netting type where there is one position per instrument.
+    #[pyo3(name = "NETTING")]
     Netting = 1,
     /// The hedging type where there can be multiple positions per instrument.
     /// This can be in LONG/SHORT directions, by position/ticket ID, or tracked virtually by
     /// Nautilus.
+    #[pyo3(name = "HEDGING")]
     Hedging = 2,
 }
 
@@ -550,8 +605,10 @@ pub enum OmsType {
 #[pyclass]
 pub enum OptionKind {
     /// A Call option gives the holder the right, but not the obligation, to buy an underlying asset at a specified strike price within a specified period of time.
+    #[pyo3(name = "CALL")]
     Call = 1,
     /// A Put option gives the holder the right, but not the obligation, to sell an underlying asset at a specified strike price within a specified period of time.
+    #[pyo3(name = "PUT")]
     Put = 2,
 }
 
@@ -640,32 +697,46 @@ impl FromU8 for OrderSide {
 #[pyclass]
 pub enum OrderStatus {
     /// The order is initialized (instantiated) within the Nautilus system.
+    #[pyo3(name = "INITIALIZED")]
     Initialized = 1,
     /// The order was denied by the Nautilus system, either for being invalid, unprocessable or exceeding a risk limit.
+    #[pyo3(name = "DENIED")]
     Denied = 2,
     /// The order became emulated by the Nautilus system in the `OrderEmulator` component.
+    #[pyo3(name = "EMULATED")]
     Emulated = 3,
     /// The order was released by the Nautilus system from the `OrderEmulator` component.
+    #[pyo3(name = "RELEASED")]
     Released = 4,
     /// The order was submitted by the Nautilus system to the external service or trading venue (awaiting acknowledgement).
+    #[pyo3(name = "SUBMITTED")]
     Submitted = 5,
     /// The order was acknowledged by the trading venue as being received and valid (may now be working).
+    #[pyo3(name = "ACCEPTED")]
     Accepted = 6,
     /// The order was rejected by the trading venue.
+    #[pyo3(name = "REJECTED")]
     Rejected = 7,
     /// The order was canceled (closed/done).
+    #[pyo3(name = "CANCELED")]
     Canceled = 8,
     /// The order reached a GTD expiration (closed/done).
+    #[pyo3(name = "EXPIRED")]
     Expired = 9,
     /// The order STOP price was triggered on a trading venue.
+    #[pyo3(name = "TRIGGERED")]
     Triggered = 10,
     /// The order is currently pending a request to modify on a trading venue.
+    #[pyo3(name = "PENDING_UPDATE")]
     PendingUpdate = 11,
     /// The order is currently pending a request to cancel on a trading venue.
+    #[pyo3(name = "PENDING_CANCEL")]
     PendingCancel = 12,
     /// The order has been partially filled on a trading venue.
+    #[pyo3(name = "PARTIALLY_FILLED")]
     PartiallyFilled = 13,
     /// The order has been completely filled on a trading venue (closed/done).
+    #[pyo3(name = "FILLED")]
     Filled = 14,
 }
 
@@ -691,22 +762,31 @@ pub enum OrderStatus {
 #[pyclass]
 pub enum OrderType {
     /// A market order to buy or sell at the best available price in the current market.
+    #[pyo3(name = "MARKET")]
     Market = 1,
     /// A limit order to buy or sell at a specific price or better.
+    #[pyo3(name = "LIMIT")]
     Limit = 2,
     /// A stop market order to buy or sell once the price reaches the specified stop/trigger price. When the stop price is reached, the order effectively becomes a market order.
+    #[pyo3(name = "STOP_MARKET")]
     StopMarket = 3,
     /// A stop limit order to buy or sell which combines the features of a stop order and a limit order. Once the stop/trigger price is reached, a stop-limit order effectively becomes a limit order.
+    #[pyo3(name = "STOP_LIMIT")]
     StopLimit = 4,
     /// A market-to-limit order is a market order that is to be executed as a limit order at the current best market price after reaching the market.
+    #[pyo3(name = "MARKET_TO_LIMIT")]
     MarketToLimit = 5,
     /// A market-if-touched order effectively becomes a market order when the specified trigger price is reached.
+    #[pyo3(name = "MARKET_IF_TOUCHED")]
     MarketIfTouched = 6,
     /// A limit-if-touched order effectively becomes a limit order when the specified trigger price is reached.
+    #[pyo3(name = "LIMIT_IF_TOUCHED")]
     LimitIfTouched = 7,
     /// A trailing stop market order sets the stop/trigger price at a fixed "trailing offset" amount from the market.
+    #[pyo3(name = "TRAILING_STOP_MARKET")]
     TrailingStopMarket = 8,
     /// A trailing stop limit order combines the features of a trailing stop order with those of a limit order.
+    #[pyo3(name = "TRAILING_STOP_LIMIT")]
     TrailingStopLimit = 9,
 }
 
@@ -767,12 +847,16 @@ pub enum PositionSide {
 #[pyclass]
 pub enum PriceType {
     /// A quoted order price where a buyer is willing to buy a quantity of an instrument.
+    #[pyo3(name = "BID")]
     Bid = 1,
     /// A quoted order price where a seller is willing to sell a quantity of an instrument.
+    #[pyo3(name = "ASK")]
     Ask = 2,
     /// The midpoint between the bid and ask prices.
+    #[pyo3(name = "MID")]
     Mid = 3,
     /// The last price at which a trade was made for an instrument.
+    #[pyo3(name = "LAST")]
     Last = 4,
 }
 
@@ -798,18 +882,25 @@ pub enum PriceType {
 #[pyclass]
 pub enum TimeInForce {
     /// Good Till Canceled (GTC) - the order remains active until canceled.
+    #[pyo3(name = "GTD")]
     Gtc = 1,
     /// Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+    #[pyo3(name = "IOC")]
     Ioc = 2,
     /// Fill or Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+    #[pyo3(name = "FOK")]
     Fok = 3,
     /// Good Till Date/Time (GTD) - the order is active until a specified date or time.
+    #[pyo3(name = "GTD")]
     Gtd = 4,
     /// Day - the order is active until the end of the current trading session.
+    #[pyo3(name = "DAY")]
     Day = 5,
     /// At the Opening (ATO) - the order is scheduled to be executed at the market's opening.
+    #[pyo3(name = "AT_THE_OPEN")]
     AtTheOpen = 6,
     /// At the Closing (ATC) - the order is scheduled to be executed at the market's closing.
+    #[pyo3(name = "AT_THE_CLOSE")]
     AtTheClose = 7,
 }
 
@@ -835,10 +926,13 @@ pub enum TimeInForce {
 #[pyclass]
 pub enum TradingState {
     /// Normal trading operations.
+    #[pyo3(name = "ACTIVE")]
     Active = 1,
     /// Trading is completely halted, no new order commands will be emitted.
+    #[pyo3(name = "HALTED")]
     Halted = 2,
     /// Only order commands which would cancel order, or reduce position sizes are permitted.
+    #[pyo3(name = "REDUCING")]
     Reducing = 3,
 }
 
@@ -866,12 +960,16 @@ pub enum TrailingOffsetType {
     /// No trailing offset type is specified (invalid for trailing type orders).
     NoTrailingOffset = 0, // Will be replaced by `Option`
     /// The trailing offset is based on a market price.
+    #[pyo3(name = "PRICE")]
     Price = 1,
     /// The trailing offset is based on a percentage represented in basis points, of a market price.
+    #[pyo3(name = "BASIS_POINTS")]
     BasisPoints = 2,
     /// The trailing offset is based on the number of ticks from a market price.
+    #[pyo3(name = "TICKS")]
     Ticks = 3,
     /// The trailing offset is based on a price tier set by a specific trading venue.
+    #[pyo3(name = "PRICE_TIER")]
     PriceTier = 4,
 }
 
@@ -899,22 +997,31 @@ pub enum TriggerType {
     /// No trigger type is specified (invalid for orders with a trigger).
     NoTrigger = 0, // Will be replaced by `Option`
     /// The default trigger type set by the trading venue.
+    #[pyo3(name = "DEFAULT")]
     Default = 1,
     /// Based on the top-of-book quoted prices for the instrument.
+    #[pyo3(name = "BID_ASK")]
     BidAsk = 2,
     /// Based on the last traded price for the instrument.
+    #[pyo3(name = "LAST_TRADE")]
     LastTrade = 3,
     /// Based on a 'double match' of the last traded price for the instrument
+    #[pyo3(name = "DOUBLE_LAST")]
     DoubleLast = 4,
     /// Based on a 'double match' of the bid/ask price for the instrument
+    #[pyo3(name = "DOUBLE_BID_ASK")]
     DoubleBidAsk = 5,
     /// Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
+    #[pyo3(name = "LAST_OR_BID_ASK")]
     LastOrBidAsk = 6,
     /// Based on the mid-point of the [`TriggerType::BidAsk`].
+    #[pyo3(name = "MID_POINT")]
     MidPoint = 7,
     /// Based on the mark price for the instrument.
+    #[pyo3(name = "MARK_PRICE")]
     MarkPrice = 8,
     /// Based on the index price for the instrument.
+    #[pyo3(name = "INDEX_PRICE")]
     IndexPrice = 9,
 }
 
