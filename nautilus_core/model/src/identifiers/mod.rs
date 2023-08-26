@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use pyo3::prelude::*;
+use pyo3::{prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[macro_use]
