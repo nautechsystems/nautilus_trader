@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
@@ -38,6 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[pyclass]
 pub struct LimitOrder {
     core: OrderCore,
     pub price: Price,
@@ -107,39 +109,6 @@ impl LimitOrder {
             display_qty,
             trigger_instrument_id,
         }
-    }
-}
-
-/// Provides a default [`LimitOrder`] used for testing.
-impl Default for LimitOrder {
-    fn default() -> Self {
-        LimitOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            InstrumentId::default(),
-            ClientOrderId::default(),
-            OrderSide::Buy,
-            Quantity::new(100_000.0, 0),
-            Price::new(1.0, 5),
-            TimeInForce::Gtc,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::default(),
-            0,
-        )
     }
 }
 

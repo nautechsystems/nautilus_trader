@@ -67,6 +67,18 @@ const VALID_LIMIT_ORDER_TYPES: &[OrderType] = &[
     OrderType::MarketIfTouched,
 ];
 
+pub fn ustr_hashmap_to_str(h: HashMap<Ustr, Ustr>) -> HashMap<String, String> {
+    h.into_iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
+}
+
+pub fn str_hashmap_to_ustr(h: HashMap<String, String>) -> HashMap<Ustr, Ustr> {
+    h.into_iter()
+        .map(|(k, v)| (Ustr::from(&k), Ustr::from(&v)))
+        .collect()
+}
+
 impl OrderStatus {
     #[rustfmt::skip]
     pub fn transition(&mut self, event: &OrderEvent) -> Result<OrderStatus, OrderError> {
