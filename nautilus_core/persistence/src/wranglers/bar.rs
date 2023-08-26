@@ -16,8 +16,9 @@
 use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 use datafusion::arrow::ipc::reader::StreamReader;
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::bar::{Bar, BarType};
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
 
 use crate::arrow::DecodeFromRecordBatch;
 
@@ -33,9 +34,7 @@ pub struct BarDataWrangler {
 impl BarDataWrangler {
     #[new]
     fn py_new(bar_type: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
-        let bar_type =
-            BarType::from_str(bar_type).map_err(|e| PyValueError::new_err(e.to_string()))?;
-
+        let bar_type = BarType::from_str(bar_type).map_err(to_pyvalue_err)?;
         let metadata = Bar::get_metadata(&bar_type, price_precision, size_precision);
 
         Ok(Self {
@@ -66,7 +65,7 @@ impl BarDataWrangler {
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {
             Ok(reader) => reader,
-            Err(e) => return Err(PyValueError::new_err(e.to_string())),
+            Err(e) => return Err(to_pyvalue_err(e)),
         };
 
         let mut bars = Vec::new();
@@ -75,7 +74,7 @@ impl BarDataWrangler {
         for maybe_batch in reader {
             let record_batch = match maybe_batch {
                 Ok(record_batch) => record_batch,
-                Err(e) => return Err(PyValueError::new_err(e.to_string())),
+                Err(e) => return Err(to_pyvalue_err(e)),
             };
 
             let batch_bars = Bar::decode_batch(&self.metadata, record_batch);
