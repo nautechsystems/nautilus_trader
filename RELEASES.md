@@ -9,7 +9,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed `OrderBookDelta.clear` method (where the `sequence` field was swapped with `flags` causing an overflow)
 
 ---
 
