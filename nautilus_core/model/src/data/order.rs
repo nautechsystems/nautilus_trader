@@ -260,8 +260,6 @@ impl BookOrder {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use rstest::rstest;
 
     use super::*;
@@ -355,7 +353,7 @@ mod tests {
     #[case(OrderSide::Sell)]
     fn test_from_quote_tick(#[case] side: OrderSide) {
         let tick = QuoteTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             Price::from("5000.00"),
             Price::from("5001.00"),
             Quantity::from("100.000"),
@@ -399,7 +397,7 @@ mod tests {
     #[case(OrderSide::Sell)]
     fn test_from_trade_tick(#[case] side: OrderSide) {
         let tick = TradeTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             Price::from("5000.00"),
             Quantity::from("100.00"),
             AggressorSide::Buyer,

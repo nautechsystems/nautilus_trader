@@ -61,6 +61,12 @@ impl Display for VenueOrderId {
     }
 }
 
+impl From<&str> for VenueOrderId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,7 +78,7 @@ impl Display for VenueOrderId {
 #[no_mangle]
 pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    VenueOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    VenueOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -89,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = VenueOrderId::new("001").unwrap();
+        let id = VenueOrderId::from("001");
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }

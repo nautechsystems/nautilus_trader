@@ -312,8 +312,6 @@ impl QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use nautilus_core::serialization::Serializable;
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
@@ -327,7 +325,7 @@ mod tests {
 
     fn create_stub_quote_tick() -> QuoteTick {
         QuoteTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             bid_price: Price::from("10000.0000"),
             ask_price: Price::from("10001.0000"),
             bid_size: Quantity::from("1.00000000"),

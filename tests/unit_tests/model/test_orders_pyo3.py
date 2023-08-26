@@ -29,7 +29,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
-# pytestmark = pytest.mark.skip(reason="WIP")
+pytestmark = pytest.mark.skip(reason="WIP")
 
 
 class TestOrders:

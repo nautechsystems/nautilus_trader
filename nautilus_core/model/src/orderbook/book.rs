@@ -466,8 +466,6 @@ impl OrderBook {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
     use crate::{
         data::order::BookOrder,
@@ -477,13 +475,13 @@ mod tests {
     };
 
     fn create_stub_book(book_type: BookType) -> OrderBook {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         OrderBook::new(instrument_id, book_type)
     }
 
     #[test]
     fn test_orderbook_creation() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let book = OrderBook::new(instrument_id.clone(), BookType::L2_MBP);
 
         assert_eq!(book.instrument_id, instrument_id);
@@ -585,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_midpoint_with_bids_asks() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
         let bid1 = BookOrder::new(
@@ -617,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_get_price_for_quantity() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
         let ask2 = BookOrder::new(
@@ -663,10 +661,10 @@ mod tests {
 
     #[test]
     fn test_update_quote_tick_l1() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
         let tick = QuoteTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             Price::from("5000.000"),
             Price::from("5100.000"),
             Quantity::from("100.00000000"),
@@ -689,7 +687,7 @@ mod tests {
 
     #[test]
     fn test_update_trade_tick_l1() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
 
         let price = Price::from("15000.000");

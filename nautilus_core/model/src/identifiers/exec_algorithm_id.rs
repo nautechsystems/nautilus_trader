@@ -53,6 +53,12 @@ impl Display for ExecAlgorithmId {
     }
 }
 
+impl From<&str> for ExecAlgorithmId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,7 +70,7 @@ impl Display for ExecAlgorithmId {
 #[no_mangle]
 pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *const c_char) -> ExecAlgorithmId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ExecAlgorithmId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    ExecAlgorithmId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]

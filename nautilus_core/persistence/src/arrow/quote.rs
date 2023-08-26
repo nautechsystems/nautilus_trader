@@ -48,6 +48,7 @@ impl ArrowSchemaProvider for QuoteTick {
 }
 
 fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
+    // TODO: Properly handle errors
     let instrument_id =
         InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
     let price_precision = metadata
@@ -169,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
         let schema = QuoteTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -200,7 +201,7 @@ mod tests {
     #[test]
     fn test_encode_quote_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let tick1 = QuoteTick {
             instrument_id,
             bid_price: Price::from("100.10"),
@@ -257,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
         let bid_price = Int64Array::from(vec![10000, 9900]);

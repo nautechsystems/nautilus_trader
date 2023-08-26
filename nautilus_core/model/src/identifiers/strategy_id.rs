@@ -63,6 +63,12 @@ impl Display for StrategyId {
     }
 }
 
+impl From<&str> for StrategyId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -75,7 +81,7 @@ impl Display for StrategyId {
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    StrategyId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -92,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = StrategyId::new("EMACross-001").unwrap();
+        let id = StrategyId::from("EMACross-001");
         assert_eq!(id.to_string(), "EMACross-001");
         assert_eq!(format!("{id}"), "EMACross-001");
     }

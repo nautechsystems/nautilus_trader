@@ -279,8 +279,6 @@ impl TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use nautilus_core::serialization::Serializable;
     use pyo3::{IntoPy, Python};
 
@@ -293,9 +291,9 @@ mod tests {
 
     fn create_stub_trade_tick() -> TradeTick {
         TradeTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::from("10000.0000"),
-            size: Quantity::new(1.0, 8).unwrap(),
+            size: Quantity::from("1.00000000"),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789").unwrap(),
             ts_event: 1,

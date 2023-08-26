@@ -53,6 +53,12 @@ impl Display for ComponentId {
     }
 }
 
+impl From<&str> for ComponentId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,7 +70,7 @@ impl Display for ComponentId {
 #[no_mangle]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ComponentId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    ComponentId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]

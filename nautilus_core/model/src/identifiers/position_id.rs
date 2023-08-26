@@ -60,6 +60,12 @@ impl Display for PositionId {
     }
 }
 
+impl From<&str> for PositionId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -71,7 +77,7 @@ impl Display for PositionId {
 #[no_mangle]
 pub unsafe extern "C" fn position_id_new(ptr: *const c_char) -> PositionId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    PositionId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
+    PositionId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -88,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = PositionId::new("P-123456789").unwrap();
+        let id = PositionId::from("P-123456789");
         assert_eq!(id.to_string(), "P-123456789");
         assert_eq!(format!("{id}"), "P-123456789");
     }
