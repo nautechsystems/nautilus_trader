@@ -52,10 +52,13 @@ pub trait FromU8 {
 #[pyclass]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
+    #[pyo3(name = "CASH")]
     Cash = 1,
     /// An account which facilitates trading on margin, using account assets as collateral.
+    #[pyo3(name = "MARGIN")]
     Margin = 2,
     /// An account specific to betting markets.
+    #[pyo3(name = "BETTING")]
     Betting = 3,
 }
 
@@ -577,8 +580,10 @@ pub enum OrderSide {
     /// No order side is specified (only valid in the context of a filter for actions involving orders).
     NoOrderSide = 0, // Will be replaced by `Option`
     /// The order is a BUY.
+    #[pyo3(name = "BUY")]
     Buy = 1,
     /// The order is a SELL.
+    #[pyo3(name = "SELL")]
     Sell = 2,
 }
 
@@ -730,10 +735,13 @@ pub enum PositionSide {
     /// No position side is specified (only valid in the context of a filter for actions involving positions).
     NoPositionSide = 0, // Will be replaced by `Option`
     /// A neural/flat position, where no position is currently held in the market.
+    #[pyo3(name = "FLAT")]
     Flat = 1,
     /// A long position in the market, typically acquired through one or many BUY orders.
+    #[pyo3(name = "LONG")]
     Long = 2,
     /// A short position in the market, typically acquired through one or many SELL orders.
+    #[pyo3(name = "SHORT")]
     Short = 3,
 }
 

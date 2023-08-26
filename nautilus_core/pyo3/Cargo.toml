@@ -11,6 +11,7 @@ name = "nautilus_pyo3"
 crate-type = ["cdylib"]
 
 [dependencies]
+nautilus-core = { path = "../core" }
 nautilus-indicators = { path = "../indicators" }
 nautilus-model = { path = "../model" }
 nautilus-persistence = { path = "../persistence" }
@@ -23,6 +24,7 @@ tracing.workspace = true
 [features]
 extension-module = [
     "pyo3/extension-module",
+    "nautilus-core/extension-module",
     "nautilus-indicators/extension-module",
     "nautilus-model/extension-module",
     "nautilus-persistence/extension-module",

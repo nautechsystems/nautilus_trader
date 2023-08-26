@@ -2033,6 +2033,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.9.0"
 dependencies = [
+ "nautilus-core",
  "nautilus-indicators",
  "nautilus-model",
  "nautilus-network",
