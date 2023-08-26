@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -31,14 +32,13 @@ pub struct AccountId {
 }
 
 impl AccountId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`AccountId` value");
-        correctness::string_contains(s, "-", "`TraderId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`accountid` value")?;
+        correctness::string_contains(s, "-", "`traderid` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -73,7 +73,7 @@ impl Display for AccountId {
 #[no_mangle]
 pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    AccountId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    AccountId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
 }
 
 #[no_mangle]
@@ -93,28 +93,28 @@ mod tests {
     #[test]
     fn test_account_id_new_invalid_string() {
         let s = "";
-        let result = std::panic::catch_unwind(|| AccountId::new(s));
+        let result = AccountId::new(s);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_account_id_new_missing_hyphen() {
         let s = "123456789";
-        let result = std::panic::catch_unwind(|| AccountId::new(s));
+        let result = AccountId::new(s);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_account_id_fmt() {
         let s = "IB-U123456789";
-        let account_id = AccountId::new(s);
+        let account_id = AccountId::new(s).unwrap();
         let formatted = format!("{account_id}");
         assert_eq!(formatted, s);
     }
 
     #[test]
     fn test_string_reprs() {
-        let id = AccountId::new("IB-1234567890");
+        let id = AccountId::new("IB-1234567890").unwrap();
         assert_eq!(id.to_string(), "IB-1234567890");
     }
 

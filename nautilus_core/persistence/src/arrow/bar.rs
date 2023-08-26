@@ -216,7 +216,7 @@ mod tests {
             Price::new(102.00, 2),
             Price::new(100.00, 2),
             Price::new(101.00, 2),
-            Quantity::new(1100.0, 0),
+            Quantity::from(1100),
             1,
             3,
         );
@@ -226,7 +226,7 @@ mod tests {
             Price::new(100.00, 2),
             Price::new(100.00, 2),
             Price::new(100.10, 2),
-            Quantity::new(1110.0, 0),
+            Quantity::from(1110),
             2,
             4,
         );

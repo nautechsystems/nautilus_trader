@@ -11,6 +11,7 @@ name = "nautilus_core"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+anyhow.workspace = true
 chrono.workspace = true
 pyo3.workspace = true
 rmp-serde.workspace = true

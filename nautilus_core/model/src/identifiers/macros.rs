@@ -45,7 +45,7 @@ macro_rules! impl_from_str_for_identifier {
             type Err = String;
 
             fn from_str(input: &str) -> Result<Self, Self::Err> {
-                Ok(Self::new(input))
+                Self::new(input).map_err(|e| e.to_string())
             }
         }
     };
@@ -57,8 +57,10 @@ macro_rules! identifier_for_python {
         impl $ty {
             #[new]
             fn py_new(value: &str) -> PyResult<Self> {
-                // TODO: Implement proper error handling
-                Ok(<$ty>::new(value))
+                match <$ty>::new(value) {
+                    Ok(instance) => Ok(instance),
+                    Err(e) => Err(to_pyvalue_err(e)),
+                }
             }
 
             fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

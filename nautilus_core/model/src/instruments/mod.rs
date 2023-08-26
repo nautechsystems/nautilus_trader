@@ -22,6 +22,7 @@ mod options_contract;
 mod synthetic;
 mod synthetic_api;
 
+use anyhow::Result;
 use rust_decimal::Decimal;
 
 use crate::{
@@ -66,7 +67,7 @@ pub trait Instrument {
     }
 
     /// Creates a new quantity from the given `value` with the correct size precision for the instrument.
-    fn make_qty(&self, value: f64) -> Quantity {
+    fn make_qty(&self, value: f64) -> Result<Quantity> {
         Quantity::new(value, self.size_precision())
     }
 
@@ -101,12 +102,12 @@ pub trait Instrument {
             (amount, currency)
         };
 
-        Money::new(amount, currency)
+        Money::new(amount, currency).unwrap() // TODO: Handle error properly
     }
 
     /// Returns the equivalent quantity of the base asset.
     fn calculate_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
         let value = quantity.as_f64() * (1.0 / last_px.as_f64());
-        Quantity::new(value, self.size_precision())
+        Quantity::new(value, self.size_precision()).unwrap() // TODO: Handle error properly
     }
 }

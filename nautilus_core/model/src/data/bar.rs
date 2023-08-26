@@ -437,8 +437,8 @@ mod tests {
 
     fn create_stub_bar() -> Bar {
         let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUDUSD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -560,12 +560,12 @@ mod tests {
     #[test]
     fn test_bar_type_equality() {
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::new("AUD/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUD/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::new("GBP/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("GBP/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -595,13 +595,13 @@ mod tests {
     #[test]
     fn test_bar_type_comparison() {
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::new("AUD/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUD/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
 
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::new("GBP/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("GBP/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -633,8 +633,8 @@ mod tests {
     #[test]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUDUSD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,

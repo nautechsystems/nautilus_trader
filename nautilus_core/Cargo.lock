@@ -1941,6 +1941,7 @@ dependencies = [
 name = "nautilus-core"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "cbindgen",
  "chrono",
  "criterion",

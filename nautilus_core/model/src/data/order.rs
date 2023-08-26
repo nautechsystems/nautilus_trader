@@ -339,7 +339,7 @@ mod tests {
     #[test]
     fn test_display() {
         let price = Price::from("100.00");
-        let size = Quantity::from("10");
+        let size = Quantity::from(10);
         let side = OrderSide::Buy;
         let order_id = 123456;
 
@@ -358,11 +358,12 @@ mod tests {
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),
             Price::new(5001.0, 2),
-            Quantity::new(100.0, 3),
-            Quantity::new(99.0, 3),
+            Quantity::from("100.000"),
+            Quantity::from("99.000"),
             0,
             0,
-        );
+        )
+        .unwrap();
 
         let book_order = BookOrder::from_quote_tick(&tick, side.clone());
 
@@ -400,9 +401,9 @@ mod tests {
         let tick = TradeTick::new(
             InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
             Price::new(5000.0, 2),
-            Quantity::new(100.0, 2),
+            Quantity::new(100.0, 2).unwrap(),
             AggressorSide::Buyer,
-            TradeId::new("1"),
+            TradeId::new("1").unwrap(),
             0,
             0,
         );

@@ -18,6 +18,7 @@ use std::{
     fmt::{Debug, Display, Formatter},
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -30,16 +31,15 @@ pub struct StrategyId {
 }
 
 impl StrategyId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`StrategyId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`StrategyId` value")?;
         if s != "EXTERNAL" {
-            correctness::string_contains(s, "-", "`StrategyId` value");
+            correctness::string_contains(s, "-", "`StrategyId` value")?;
         }
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -75,7 +75,7 @@ impl Display for StrategyId {
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")).unwrap()
 }
 
 #[no_mangle]
@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = StrategyId::new("EMACross-001");
+        let id = StrategyId::new("EMACross-001").unwrap();
         assert_eq!(id.to_string(), "EMACross-001");
         assert_eq!(format!("{id}"), "EMACross-001");
     }
