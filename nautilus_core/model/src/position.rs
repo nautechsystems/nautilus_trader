@@ -85,8 +85,8 @@ impl Position {
             client_order_ids: Vec::<ClientOrderId>::new(),
             venue_order_ids: Vec::<VenueOrderId>::new(),
             trade_ids: Vec::<TradeId>::new(),
-            buy_qty: Quantity::zero(instrument.size_precision()).unwrap(),
-            sell_qty: Quantity::zero(instrument.size_precision()).unwrap(),
+            buy_qty: Quantity::zero(instrument.size_precision()),
+            sell_qty: Quantity::zero(instrument.size_precision()),
             commissions: HashMap::<Currency, Money>::new(),
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
@@ -129,12 +129,12 @@ impl Position {
             // Reset position
             self.events.clear();
             self.trade_ids.clear();
-            self.buy_qty = Quantity::zero(self.size_precision).unwrap();
-            self.sell_qty = Quantity::zero(self.size_precision).unwrap();
+            self.buy_qty = Quantity::zero(self.size_precision);
+            self.sell_qty = Quantity::zero(self.size_precision);
             self.commissions.clear();
             self.opening_order_id = fill.client_order_id;
             self.closing_order_id = None;
-            self.peak_qty = Quantity::zero(self.size_precision).unwrap();
+            self.peak_qty = Quantity::zero(self.size_precision);
             self.ts_init = fill.ts_init;
             self.ts_opened = fill.ts_event;
             self.duration_ns = None;

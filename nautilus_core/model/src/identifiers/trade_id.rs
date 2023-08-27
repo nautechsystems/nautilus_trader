@@ -20,7 +20,7 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_core::correctness;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -33,7 +33,7 @@ pub struct TradeId {
 
 impl TradeId {
     pub fn new(s: &str) -> Result<Self> {
-        correctness::valid_string(s, "`TradeId` value")?;
+        check_valid_string(s, "`TradeId` value")?;
 
         Ok(Self {
             value: Ustr::from(s),

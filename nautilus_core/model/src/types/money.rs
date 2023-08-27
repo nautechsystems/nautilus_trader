@@ -22,7 +22,7 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_core::correctness;
+use nautilus_core::correctness::check_f64_in_range_inclusive;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -46,7 +46,7 @@ pub struct Money {
 
 impl Money {
     pub fn new(amount: f64, currency: Currency) -> Result<Self> {
-        correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount")?;
+        check_f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount")?;
 
         Ok(Self {
             raw: f64_to_fixed_i64(amount, currency.precision),

@@ -23,7 +23,8 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::{
-    correctness, python::to_pyvalue_err, serialization::Serializable, time::UnixNanos,
+    correctness::check_u8_equal, python::to_pyvalue_err, serialization::Serializable,
+    time::UnixNanos,
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
@@ -65,13 +66,13 @@ impl QuoteTick {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Result<Self> {
-        correctness::u8_equal(
+        check_u8_equal(
             bid_price.precision,
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
         )?;
-        correctness::u8_equal(
+        check_u8_equal(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",

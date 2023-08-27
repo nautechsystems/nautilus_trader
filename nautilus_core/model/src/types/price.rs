@@ -22,12 +22,12 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness, parsing::precision_from_str};
+use nautilus_core::{correctness::check_f64_in_range_inclusive, parsing::precision_from_str};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::fixed::{FIXED_PRECISION, FIXED_SCALAR};
+use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
@@ -49,7 +49,8 @@ pub struct Price {
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> Result<Self> {
-        correctness::f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value")?;
+        check_f64_in_range_inclusive(value, PRICE_MIN, PRICE_MAX, "`Price` value")?;
+        check_fixed_precision(precision)?;
 
         Ok(Self {
             raw: f64_to_fixed_i64(value, precision),
@@ -59,11 +60,13 @@ impl Price {
 
     #[must_use]
     pub fn from_raw(raw: i64, precision: u8) -> Self {
+        check_fixed_precision(precision).unwrap();
         Self { raw, precision }
     }
 
     #[must_use]
     pub fn max(precision: u8) -> Self {
+        check_fixed_precision(precision).unwrap();
         Self {
             raw: (PRICE_MAX * FIXED_SCALAR) as i64,
             precision,
@@ -72,6 +75,7 @@ impl Price {
 
     #[must_use]
     pub fn min(precision: u8) -> Self {
+        check_fixed_precision(precision).unwrap();
         Self {
             raw: (PRICE_MIN * FIXED_SCALAR) as i64,
             precision,
@@ -80,6 +84,7 @@ impl Price {
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
+        check_fixed_precision(precision).unwrap();
         Self { raw: 0, precision }
     }
 
@@ -338,6 +343,41 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_new() {
+        // Precision out of range for fixed
+        let _ = Price::new(1.0, 10).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_from_raw() {
+        // Precision out of range for fixed
+        let _ = Price::from_raw(1, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_max() {
+        // Precision out of range for fixed
+        let _ = Price::max(10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_min() {
+        // Precision out of range for fixed
+        let _ = Price::min(10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_zero() {
+        // Precision out of range for fixed
+        let _ = Price::zero(10);
+    }
 
     #[test]
     fn test_new() {
