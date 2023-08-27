@@ -452,7 +452,7 @@ impl OrderCore {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-            filled_qty: Quantity::zero(quantity.precision).unwrap(),
+            filled_qty: Quantity::zero(quantity.precision),
             leaves_qty: quantity,
             avg_px: None,
             slippage: None,

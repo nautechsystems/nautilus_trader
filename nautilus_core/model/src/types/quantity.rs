@@ -27,7 +27,7 @@ use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
-use super::fixed::{FIXED_PRECISION, FIXED_SCALAR};
+use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
@@ -44,6 +44,7 @@ pub struct Quantity {
 impl Quantity {
     pub fn new(value: f64, precision: u8) -> Result<Self> {
         correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value")?;
+        check_fixed_precision(precision)?;
 
         Ok(Self {
             raw: f64_to_fixed_u64(value, precision),
@@ -53,11 +54,14 @@ impl Quantity {
 
     #[must_use]
     pub fn from_raw(raw: u64, precision: u8) -> Self {
+        check_fixed_precision(precision).unwrap();
         Self { raw, precision }
     }
 
-    pub fn zero(precision: u8) -> Result<Self> {
-        Quantity::new(0.0, precision)
+    #[must_use]
+    pub fn zero(precision: u8) -> Self {
+        check_fixed_precision(precision).unwrap();
+        Quantity::new(0.0, precision).unwrap()
     }
 
     #[must_use]
@@ -354,6 +358,27 @@ mod tests {
     use super::*;
 
     #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_new() {
+        // Precision out of range for fixed
+        let _ = Quantity::new(1.0, 10).unwrap();
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_from_raw() {
+        // Precision out of range for fixed
+        let _ = Quantity::from_raw(1, 10);
+    }
+
+    #[test]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision_zero() {
+        // Precision out of range for fixed
+        let _ = Quantity::zero(10);
+    }
+
+    #[test]
     fn test_new() {
         let qty = Quantity::new(0.00812, 8).unwrap();
         assert_eq!(qty, qty);
@@ -369,7 +394,7 @@ mod tests {
 
     #[test]
     fn test_zero() {
-        let qty = Quantity::zero(8).unwrap();
+        let qty = Quantity::zero(8);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);
         assert!(qty.is_zero());
@@ -407,7 +432,7 @@ mod tests {
 
     #[test]
     fn test_is_zero() {
-        let qty = Quantity::zero(8).unwrap();
+        let qty = Quantity::zero(8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.precision, 8);

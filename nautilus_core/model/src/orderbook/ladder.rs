@@ -177,7 +177,7 @@ impl Ladder {
         let is_reversed = self.side == OrderSide::Buy;
 
         let mut fills = Vec::new();
-        let mut cumulative_denominator = Quantity::zero(order.size.precision).unwrap();
+        let mut cumulative_denominator = Quantity::zero(order.size.precision);
         let target = order.size;
 
         for level in self.levels.values() {
