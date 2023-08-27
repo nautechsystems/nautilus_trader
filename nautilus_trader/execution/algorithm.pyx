@@ -244,7 +244,6 @@ cdef class ExecAlgorithm(Actor):
 
         """
         Condition.not_none(command, "command")
-        # Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
 
         self._log.debug(f"{RECV}{CMD} {command}.", LogColor.MAGENTA)
 
@@ -268,6 +267,7 @@ cdef class ExecAlgorithm(Actor):
         self._subscribed_strategies.add(command.strategy_id)
 
     cdef void _handle_submit_order(self, SubmitOrder command):
+        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
         try:
             self.on_order(command.order)
         except Exception as e:  # pragma: no cover
@@ -275,6 +275,7 @@ cdef class ExecAlgorithm(Actor):
             raise
 
     cdef void _handle_submit_order_list(self, SubmitOrderList command):
+        Condition.equal(command.exec_algorithm_id, self.id, "command.exec_algorithm_id", "self.id")
         cdef Order order
         for order in command.order_list.orders:
             if order.exec_algorithm_id is not None:
@@ -291,6 +292,10 @@ cdef class ExecAlgorithm(Actor):
             self._log.error(
                 f"Cannot cancel order: {repr(command.client_order_id)} not found.",
             )
+            return
+
+        if order.is_closed_c():
+            self._log.warning(f"Order already canceled for {command}.")
             return
 
         # Generate event
@@ -960,7 +965,7 @@ cdef class ExecAlgorithm(Actor):
         Cancel the given order with optional routing instructions.
 
         A `CancelOrder` command will be created and then sent to **either** the
-        `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
+        `OrderEmulator` or the `ExecutionEngine` (depending on whether the order is emulated).
 
         Logs an error if no `VenueOrderId` has been assigned to the order.
 
@@ -1013,7 +1018,7 @@ cdef class ExecAlgorithm(Actor):
         if order.is_emulated_c() or order.status_c() == OrderStatus.RELEASED:
             self._send_emulator_command(command)
         else:
-            self._send_risk_command(command)
+            self._send_exec_command(command)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 
@@ -1070,3 +1075,8 @@ cdef class ExecAlgorithm(Actor):
         if not self.log.is_bypassed:
             self.log.info(f"{CMD}{SENT} {command}.")
         self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
+
+    cdef void _send_exec_command(self, TradingCommand command):
+        if not self.log.is_bypassed:
+            self.log.info(f"{CMD}{SENT} {command}.")
+        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
