@@ -23,6 +23,8 @@ futures-util = "0.3.28"
 hyper = { version = "0.14.27", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }
+dashmap = "5.5.1"
+nonzero_ext = "0.3.0"
 
 [dev-dependencies]
 serde_json.workspace = true

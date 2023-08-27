@@ -13,11 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+
+use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
 /// Provides a high-performance HttpClient for HTTP requests.
 ///
@@ -27,11 +29,16 @@ use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 ///
 /// The client returns an [HttpResponse]. The client filters only the key value
 /// for the give `header_keys`.
-#[pyclass]
 #[derive(Clone)]
-pub struct HttpClient {
+pub struct InnerHttpClient {
     client: Client<HttpsConnector<hyper::client::HttpConnector>>,
     header_keys: Vec<String>,
+}
+
+#[pyclass]
+pub struct HttpClient {
+    rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    client: InnerHttpClient,
 }
 
 /// HttpResponse contains relevant data from a HTTP request.
@@ -45,7 +52,7 @@ pub struct HttpResponse {
     body: Vec<u8>,
 }
 
-impl Default for HttpClient {
+impl Default for InnerHttpClient {
     fn default() -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
@@ -67,14 +74,24 @@ impl HttpResponse {
 #[pymethods]
 impl HttpClient {
     #[new]
-    #[pyo3(signature=(header_keys=[].to_vec()))]
-    pub fn py_new(header_keys: Vec<String>) -> Self {
+    // #[pyo3(signature=(header_keys=[].to_vec()))]
+    pub fn py_new(
+        header_keys: Vec<String>,
+        base_quota: Quota,
+        keyed_quotas: Vec<(String, Quota)>,
+    ) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(base_quota, keyed_quotas));
 
-        Self {
+        let client = InnerHttpClient {
             client,
             header_keys,
+        };
+
+        Self {
+            rate_limiter,
+            client,
         }
     }
 
@@ -90,8 +107,10 @@ impl HttpClient {
             .unwrap_or_else(|_| panic!("Invalid HTTP method {method_str}"));
 
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
+        let client = slf.client.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            rate_limiter.until_key_ready(&url).await;
             match client.send_request(method, url, headers, body_vec).await {
                 Ok(res) => Ok(res),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
@@ -109,8 +128,10 @@ impl HttpClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
+        let client = slf.client.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            rate_limiter.until_key_ready(&url).await;
             match client
                 .send_request(Method::GET, url, headers, body_vec)
                 .await
@@ -131,8 +152,10 @@ impl HttpClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
+        let client = slf.client.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            rate_limiter.until_key_ready(&url).await;
             match client
                 .send_request(Method::POST, url, headers, body_vec)
                 .await
@@ -153,8 +176,10 @@ impl HttpClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
+        let client = slf.client.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            rate_limiter.until_key_ready(&url).await;
             match client
                 .send_request(Method::PATCH, url, headers, body_vec)
                 .await
@@ -175,8 +200,10 @@ impl HttpClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
+        let client = slf.client.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            rate_limiter.until_key_ready(&url).await;
             match client
                 .send_request(Method::DELETE, url, headers, body_vec)
                 .await
@@ -190,7 +217,7 @@ impl HttpClient {
     }
 }
 
-impl HttpClient {
+impl InnerHttpClient {
     pub async fn send_request(
         &self,
         method: Method,
@@ -331,7 +358,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(Method::GET, format!("{url}/get"), HashMap::new(), None)
             .await
@@ -346,7 +373,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(Method::POST, format!("{url}/post"), HashMap::new(), None)
             .await
@@ -360,7 +387,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
 
         let mut body = HashMap::new();
         body.insert(
@@ -393,7 +420,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(Method::PATCH, format!("{url}/patch"), HashMap::new(), None)
             .await
@@ -407,7 +434,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(
                 Method::DELETE,
