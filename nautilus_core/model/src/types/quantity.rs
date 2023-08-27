@@ -22,7 +22,9 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness, parsing::precision_from_str, python::to_pyvalue_err};
+use nautilus_core::{
+    correctness::check_f64_in_range_inclusive, parsing::precision_from_str, python::to_pyvalue_err,
+};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -43,7 +45,7 @@ pub struct Quantity {
 
 impl Quantity {
     pub fn new(value: f64, precision: u8) -> Result<Self> {
-        correctness::f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value")?;
+        check_f64_in_range_inclusive(value, QUANTITY_MIN, QUANTITY_MAX, "`Quantity` value")?;
         check_fixed_precision(precision)?;
 
         Ok(Self {
