@@ -21,7 +21,7 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::{
-    correctness,
+    correctness::check_valid_string,
     string::{cstr_to_string, str_to_cstr},
 };
 use pyo3::prelude::*;
@@ -50,8 +50,8 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Result<Self> {
-        correctness::valid_string(code, "`Currency` code")?;
-        correctness::valid_string(name, "`Currency` name")?;
+        check_valid_string(code, "`Currency` code")?;
+        check_valid_string(name, "`Currency` name")?;
         check_fixed_precision(precision).unwrap();
 
         Ok(Self {
