@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 
 const FAILED: &str = "Condition failed:";
 
@@ -26,15 +26,11 @@ const FAILED: &str = "Condition failed:";
 /// - If `s` contains one or more non-ASCII characters.
 pub fn valid_string(s: &str, desc: &str) -> Result<()> {
     if s.is_empty() {
-        Err(anyhow!("{FAILED} invalid string for {desc}, was empty"))
+        bail!("{FAILED} invalid string for {desc}, was empty")
     } else if s.chars().all(char::is_whitespace) {
-        Err(anyhow!(
-            "{FAILED} invalid string for {desc}, was all whitespace",
-        ))
+        bail!("{FAILED} invalid string for {desc}, was all whitespace",)
     } else if !s.is_ascii() {
-        Err(anyhow!(
-            "{FAILED} invalid string for {desc} contained a non-ASCII char, was '{s}'",
-        ))
+        bail!("{FAILED} invalid string for {desc} contained a non-ASCII char, was '{s}'",)
     } else {
         Ok(())
     }
@@ -42,79 +38,59 @@ pub fn valid_string(s: &str, desc: &str) -> Result<()> {
 
 /// Validates that the string `s` contains the pattern `pat`.
 pub fn string_contains(s: &str, pat: &str, desc: &str) -> Result<()> {
-    if s.contains(pat) {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} invalid string for {desc} did not contain '{pat}', was '{s}'"
-        ))
+    if !s.contains(pat) {
+        bail!("{FAILED} invalid string for {desc} did not contain '{pat}', was '{s}'")
     }
+    Ok(())
 }
 
 /// Validates that `u8` values are equal.
 pub fn u8_equal(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> Result<()> {
-    if lhs == rhs {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}"
-        ))
+    if lhs != rhs {
+        bail!("{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}")
     }
+    Ok(())
 }
 
 /// Validates that the `u8` value is in the inclusive range [`l`, `r`].
 pub fn u8_in_range_inclusive(value: u8, l: u8, r: u8, desc: &str) -> Result<()> {
-    if value >= l && value <= r {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} invalid u8 for {desc} not in range [{l}, {r}], was {value}"
-        ))
+    if value < l || value > r {
+        bail!("{FAILED} invalid u8 for {desc} not in range [{l}, {r}], was {value}")
     }
+    Ok(())
 }
 
 /// Validates that the `u64` value is in the inclusive range [`l`, `r`].
 pub fn u64_in_range_inclusive(value: u64, l: u64, r: u64, desc: &str) -> Result<()> {
-    if value >= l && value <= r {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} invalid u64 for {desc} not in range [{l}, {r}], was {value}"
-        ))
+    if value < l || value > r {
+        bail!("{FAILED} invalid u64 for {desc} not in range [{l}, {r}], was {value}")
     }
+    Ok(())
 }
 
 /// Validates that the `i64` value is in the inclusive range [`l`, `r`].
 pub fn i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) -> Result<()> {
-    if value >= l && value <= r {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} invalid i64 for {desc} not in range [{l}, {r}], was {value}"
-        ))
+    if value < l || value > r {
+        bail!("{FAILED} invalid i64 for {desc} not in range [{l}, {r}], was {value}")
     }
+    Ok(())
 }
 
 /// Validates that the `f64` value is in the inclusive range [`l`, `r`].
 pub fn f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) -> Result<()> {
-    if value >= l && value <= r {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} invalid f64 for {desc} not in range [{l}, {r}], was {value}"
-        ))
+    if value < l || value > r {
+        bail!("{FAILED} invalid f64 for {desc} not in range [{l}, {r}], was {value}")
     }
+
+    Ok(())
 }
 
 /// Validates that the `f64` value is non-negative.
 pub fn f64_non_negative(value: f64, desc: &str) -> Result<()> {
-    if value >= 0.0 {
-        Ok(())
-    } else {
-        Err(anyhow!(
-            "{FAILED} invalid f64 for {desc} negative, was {value}"
-        ))
+    if value < 0.0 {
+        bail!("{FAILED} invalid f64 for {desc} negative, was {value}")
     }
+    Ok(())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -140,7 +116,7 @@ mod tests {
     #[case("")] // <-- empty string
     #[case(" ")] // <-- whitespace-only
     #[case("  ")] // <-- whitespace-only string
-    #[case("🦀")] // <-- contains Non-ASCII char
+    #[case("🦀")] // <-- contains non-ASCII char
     fn test_valid_string_with_invalid_values(#[case] s: &str) {
         assert!(valid_string(s, "value").is_err());
     }
