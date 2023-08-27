@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -31,13 +32,12 @@ pub struct ExecAlgorithmId {
 }
 
 impl ExecAlgorithmId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ExecAlgorithmId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`ExecAlgorithmId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -53,6 +53,12 @@ impl Display for ExecAlgorithmId {
     }
 }
 
+impl From<&str> for ExecAlgorithmId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -64,7 +70,7 @@ impl Display for ExecAlgorithmId {
 #[no_mangle]
 pub unsafe extern "C" fn exec_algorithm_id_new(ptr: *const c_char) -> ExecAlgorithmId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ExecAlgorithmId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ExecAlgorithmId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -81,7 +87,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = ExecAlgorithmId::new("001");
+        let id = ExecAlgorithmId::new("001").unwrap();
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }

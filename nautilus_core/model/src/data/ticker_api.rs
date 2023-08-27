@@ -17,6 +17,7 @@ use std::ffi::c_char;
 
 use nautilus_core::{string::str_to_cstr, time::UnixNanos};
 
+use super::ticker::Ticker;
 use crate::identifiers::instrument_id::InstrumentId;
 
 #[no_mangle]
@@ -25,21 +26,7 @@ pub extern "C" fn ticker_new(
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> Ticker {
-    Ticker::new(
-        instrument_id,
-        ts_event,
-        ts_init,
-    )
-}
-
-#[no_mangle]
-pub extern "C" fn ticker_drop(ticker: Ticker) {
-    drop(tick); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn ticker_clone(ticker: &Ticker) -> Ticker {
-    ticker.clone()
+    Ticker::new(instrument_id, ts_event, ts_init)
 }
 
 /// Returns a [`Ticker`] as a C string pointer.

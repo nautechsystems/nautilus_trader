@@ -13,21 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{prelude::*, PyResult, Python};
+use std::fmt;
 
-pub mod correctness;
-pub mod cvec;
-pub mod datetime;
-pub mod parsing;
-pub mod python;
-pub mod serialization;
-pub mod string;
-pub mod time;
-pub mod uuid;
+use pyo3::{exceptions::PyValueError, prelude::*};
 
-/// Loaded as nautilus_pyo3.core
-#[pymodule]
-pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<uuid::UUID4>()?;
-    Ok(())
+/// A helper function for converting any type that implements `Debug` to a Python
+/// `ValueError`.
+pub fn to_pyvalue_err(e: impl fmt::Debug) -> PyErr {
+    PyValueError::new_err(format!("{e:?}"))
 }

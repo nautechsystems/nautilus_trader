@@ -49,6 +49,8 @@ cdef class OrderManager:
     cdef MessageBus _msgbus
     cdef Cache _cache
 
+    cdef readonly bint debug
+
     cdef dict _submit_order_commands
     cdef object _submit_order_handler
     cdef object _cancel_order_handler

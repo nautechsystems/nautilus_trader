@@ -373,8 +373,7 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(Level.from_mem_c(raw_levels[i]))
 
-        # TODO(chris): Reimplement to avoid segfaults
-        # vec_levels_drop(raw_levels_vec)
+        vec_levels_drop(raw_levels_vec)
 
         return levels
 
@@ -398,8 +397,7 @@ cdef class OrderBook(Data):
         for i in range(raw_levels_vec.len):
             levels.append(Level.from_mem_c(raw_levels[i]))
 
-        # TODO(chris): Reimplement to avoid segfaults
-        # vec_levels_drop(raw_levels_vec)
+        vec_levels_drop(raw_levels_vec)
 
         return levels
 
@@ -548,12 +546,12 @@ cdef class OrderBook(Data):
         )
 
         cdef CVec raw_fills_vec = orderbook_simulate_fills(&self._mem, submit_order)
-        cdef tuple[Price_t, Quantity_t]* raw_fills = <tuple[Price_t, Quantity_t]*>raw_fills_vec.ptr
+        cdef (Price_t, Quantity_t)* raw_fills = <(Price_t, Quantity_t)*>raw_fills_vec.ptr
         cdef list fills = []
 
         cdef:
             uint64_t i
-            tuple[Price_t, Quantity_t] raw_fill
+            (Price_t, Quantity_t) raw_fill
             Price fill_price
             Quantity fill_size
         for i in range(raw_fills_vec.len):

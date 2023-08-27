@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore, OrderError};
@@ -37,6 +38,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[pyclass]
 pub struct TrailingStopLimitOrder {
     core: OrderCore,
     pub price: Price,
@@ -125,44 +127,6 @@ impl TrailingStopLimitOrder {
             is_triggered: false,
             ts_triggered: None,
         }
-    }
-}
-
-/// Provides a default [`TrailingStopLimitOrder`] used for testing.
-impl Default for TrailingStopLimitOrder {
-    fn default() -> Self {
-        TrailingStopLimitOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            InstrumentId::default(),
-            ClientOrderId::default(),
-            OrderSide::Buy,
-            Quantity::new(100_000.0, 0),
-            Price::new(1.0, 5),
-            Price::new(1.0, 5),
-            TriggerType::BidAsk,
-            Price::new(0.001, 5),
-            Price::new(0.001, 5),
-            TrailingOffsetType::Price,
-            TimeInForce::Gtc,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::default(),
-            0,
-        )
     }
 }
 
@@ -371,9 +335,16 @@ impl Order for TrailingStopLimitOrder {
 
     fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
         if let OrderEvent::OrderUpdated(ref event) = event {
-            self.update(event)
+            self.update(event);
         };
+        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+
         self.core.apply(event)?;
+
+        if is_order_filled {
+            self.core.set_slippage(self.price)
+        };
+
         Ok(())
     }
 

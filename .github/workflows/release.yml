@@ -47,7 +47,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Test pip installation
         run: pip install .
@@ -77,7 +77,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Set poetry caching
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -141,7 +141,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Set poety output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -190,7 +190,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-20.04, ubuntu-latest, macos-latest, macos-13, windows-latest]
+        os: [ubuntu-20.04, ubuntu-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
     name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -222,7 +222,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Set poetry output (Linux, macOS)
         if: (runner.os == 'Linux') || (runner.os == 'macOS')

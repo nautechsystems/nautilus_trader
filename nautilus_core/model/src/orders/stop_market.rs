@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
@@ -38,6 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[pyclass]
 pub struct StopMarketOrder {
     core: OrderCore,
     pub trigger_price: Price,
@@ -111,39 +113,6 @@ impl StopMarketOrder {
             is_triggered: false,
             ts_triggered: None,
         }
-    }
-}
-
-/// Provides a default [`StopMarketOrder`] used for testing.
-impl Default for StopMarketOrder {
-    fn default() -> Self {
-        StopMarketOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            InstrumentId::default(),
-            ClientOrderId::default(),
-            OrderSide::Buy,
-            Quantity::new(100_000.0, 0),
-            Price::new(1.0, 5),
-            TriggerType::BidAsk,
-            TimeInForce::Gtc,
-            None,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::default(),
-            0,
-        )
     }
 }
 
@@ -352,9 +321,16 @@ impl Order for StopMarketOrder {
 
     fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
         if let OrderEvent::OrderUpdated(ref event) = event {
-            self.update(event)
+            self.update(event);
         };
+        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+
         self.core.apply(event)?;
+
+        if is_order_filled {
+            self.core.set_slippage(self.trigger_price)
+        };
+
         Ok(())
     }
 

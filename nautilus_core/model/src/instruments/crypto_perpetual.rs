@@ -162,7 +162,7 @@ impl Instrument for CryptoPerpetual {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::new(1.0, 0)
+        Quantity::new(1.0, 0).unwrap()
     }
 
     fn lot_size(&self) -> Option<Quantity> {

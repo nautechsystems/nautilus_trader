@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -33,18 +34,18 @@ pub struct Venue {
 }
 
 impl Venue {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`Venue` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`Venue` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 
     #[must_use]
     pub fn synthetic() -> Self {
-        Self::new(SYNTHETIC_VENUE)
+        // Safety: using synethtic venue constant
+        Self::new(SYNTHETIC_VENUE).unwrap()
     }
 
     pub fn is_synthetic(&self) -> bool {
@@ -72,6 +73,12 @@ impl Display for Venue {
     }
 }
 
+impl From<&str> for Venue {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -83,7 +90,7 @@ impl Display for Venue {
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Venue::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    Venue::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -105,7 +112,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let venue = Venue::new("BINANCE");
+        let venue = Venue::from("BINANCE");
         assert_eq!(venue.to_string(), "BINANCE");
         assert_eq!(format!("{venue}"), "BINANCE");
     }

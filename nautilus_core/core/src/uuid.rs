@@ -21,11 +21,15 @@ use std::{
     str::FromStr,
 };
 
+use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+use crate::python::to_pyvalue_err;
+
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[pyclass]
 pub struct UUID4 {
     value: [u8; 37],
 }
@@ -98,6 +102,29 @@ impl<'de> Deserialize<'de> for UUID4 {
         let uuid4_str: &str = Deserialize::deserialize(_deserializer)?;
         let uuid4: Self = uuid4_str.into();
         Ok(uuid4)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[pymethods]
+impl UUID4 {
+    #[new]
+    fn py_new() -> Self {
+        UUID4::new()
+    }
+
+    #[getter]
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> String {
+        self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<UUID4> {
+        UUID4::from_str(value).map_err(to_pyvalue_err)
     }
 }
 

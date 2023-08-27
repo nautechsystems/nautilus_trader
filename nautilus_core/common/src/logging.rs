@@ -58,7 +58,6 @@ pub struct LogEvent {
     timestamp: UnixNanos,
     /// The log level for the event.
     level: LogLevel,
-    #[serde(skip_serializing)]
     /// The color for the log message content.
     color: LogColor,
     /// The Nautilus system component the log event originated from.
@@ -443,7 +442,7 @@ mod tests {
 
     fn create_logger() -> Logger {
         Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -479,7 +478,7 @@ mod tests {
     fn test_new_logger() {
         let logger = create_logger();
 
-        assert_eq!(logger.trader_id, TraderId::new("TRADER-001"));
+        assert_eq!(logger.trader_id, TraderId::from("TRADER-001"));
         assert_eq!(logger.level_stdout, LogLevel::Info);
         assert_eq!(logger.level_file, None);
         assert!(!logger.is_bypassed);
@@ -538,7 +537,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -600,7 +599,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -657,7 +656,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -699,7 +698,7 @@ mod tests {
 
         assert_eq!(
         log_contents,
-        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
+        "{\"timestamp\":1650000000000000,\"level\":\"INFO\",\"color\":\"Normal\",\"component\":\"RiskEngine\",\"message\":\"This is a test.\"}\n"
     );
     }
 }

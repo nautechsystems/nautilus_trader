@@ -21,6 +21,7 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::Result;
 use nautilus_core::string::{cstr_to_string, str_to_cstr};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -43,7 +44,6 @@ pub struct InstrumentIdParseError {
 }
 
 impl InstrumentId {
-    #[must_use]
     pub fn new(symbol: Symbol, venue: Venue) -> Self {
         Self { symbol, venue }
     }
@@ -59,13 +59,19 @@ impl FromStr for InstrumentId {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.rsplit_once('.') {
             Some((symbol_part, venue_part)) => Ok(Self {
-                symbol: Symbol::new(symbol_part),
-                venue: Venue::new(venue_part),
+                symbol: Symbol::new(symbol_part).unwrap(), // Implement error handling
+                venue: Venue::new(venue_part).unwrap(),    // Implement error handling
             }),
             None => Err(InstrumentIdParseError {
                 input: s.to_string(),
             }),
         }
+    }
+}
+
+impl From<&str> for InstrumentId {
+    fn from(input: &str) -> Self {
+        Self::from_str(input).unwrap()
     }
 }
 
@@ -124,7 +130,7 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from_str(cstr_to_string(ptr).as_str()).unwrap()
+    InstrumentId::from(cstr_to_string(ptr).as_str())
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.
@@ -163,7 +169,7 @@ mod tests {
 
     #[test]
     fn test_instrument_id_parse_success() {
-        let instrument_id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(instrument_id.symbol.to_string(), "ETH/USDT");
         assert_eq!(instrument_id.venue.to_string(), "BINANCE");
     }
@@ -197,7 +203,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+        let id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
     }
@@ -205,7 +211,7 @@ mod tests {
     #[test]
     fn test_to_cstr() {
         unsafe {
-            let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+            let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
             assert_eq!(CStr::from_ptr(result).to_str().unwrap(), "ETH/USDT.BINANCE");
         }
@@ -214,7 +220,7 @@ mod tests {
     #[test]
     fn test_to_cstr_and_back() {
         unsafe {
-            let id = InstrumentId::from_str("ETH/USDT.BINANCE").unwrap();
+            let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
             let id2 = instrument_id_new_from_cstr(result);
             assert_eq!(id, id2);
@@ -224,7 +230,7 @@ mod tests {
     #[test]
     fn test_from_symbol_and_back() {
         unsafe {
-            let id = InstrumentId::new(Symbol::new("ETH/USDT"), Venue::new("BINANCE"));
+            let id = InstrumentId::new(Symbol::from("ETH/USDT"), Venue::from("BINANCE"));
             let result = instrument_id_to_cstr(&id);
             let id2 = instrument_id_new_from_cstr(result);
             assert_eq!(id, id2);

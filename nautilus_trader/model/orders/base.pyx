@@ -55,19 +55,25 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 
 
-VALID_STOP_ORDER_TYPES = (
+VALID_STOP_ORDER_TYPES = {
     OrderType.STOP_MARKET,
     OrderType.STOP_LIMIT,
     OrderType.MARKET_IF_TOUCHED,
     OrderType.LIMIT_IF_TOUCHED,
-)
+}
 
-VALID_LIMIT_ORDER_TYPES = (
+VALID_LIMIT_ORDER_TYPES = {
     OrderType.LIMIT,
     OrderType.STOP_LIMIT,
     OrderType.LIMIT_IF_TOUCHED,
     OrderType.MARKET_TO_LIMIT,
-)
+}
+
+LOCAL_ACTIVE_ORDER_STATUS =  {
+    OrderStatus.INITIALIZED,
+    OrderStatus.EMULATED,
+    OrderStatus.RELEASED,
+}
 
 # OrderStatus being used as trigger
 cdef dict _ORDER_STATE_TABLE = {
@@ -353,6 +359,9 @@ cdef class Order:
     cdef bint is_emulated_c(self):
         return self._fsm.state == OrderStatus.EMULATED
 
+    cdef bint is_active_local_c(self):
+        return self._fsm.state in LOCAL_ACTIVE_ORDER_STATUS
+
     cdef bint is_primary_c(self):
         return self.exec_algorithm_id is not None and self.exec_spawn_id == self.client_order_id
 
@@ -595,6 +604,23 @@ cdef class Order:
 
         """
         return self.is_emulated_c()
+
+    @property
+    def is_active_local(self):
+        """
+        Return whether the order is active and held in the local system.
+
+        An order is considered active local when its status is any of;
+        - ``INITIALIZED``
+        - ``EMULATED``
+        - ``RELEASED``
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.is_active_local_c()
 
     @property
     def is_primary(self):

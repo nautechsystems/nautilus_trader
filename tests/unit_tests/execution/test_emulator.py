@@ -197,7 +197,7 @@ class TestOrderEmulatorWithSingleOrders:
         )
 
         # Act, Assert
-        with pytest.raises(RuntimeError):
+        with pytest.raises(KeyError):
             self.emulator.create_matching_core(
                 ETHUSDT_PERP_BINANCE.id,
                 ETHUSDT_PERP_BINANCE.price_increment,
@@ -378,6 +378,30 @@ class TestOrderEmulatorWithSingleOrders:
         assert len(self.emulator.get_submit_order_commands()) == 1
         assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
 
+    def test_emulator_restart_reactivates_emulated_orders(self) -> None:
+        # Arrange
+        order = self.strategy.order_factory.limit(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=Quantity.from_int(10),
+            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            emulation_trigger=TriggerType.LAST_TRADE,
+        )
+
+        self.strategy.submit_order(order)
+
+        # Act
+        self.emulator.stop()
+        self.emulator.reset()
+        self.emulator.start()
+
+        # Assert
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        assert matching_core is not None
+        assert order in matching_core.get_orders()
+        assert len(self.emulator.get_submit_order_commands()) == 1
+        assert self.emulator.subscribed_trades == [InstrumentId.from_str("ETHUSDT-PERP.BINANCE")]
+
     def test_cancel_all_with_emulated_order_cancels_order(self) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
@@ -422,7 +446,9 @@ class TestOrderEmulatorWithSingleOrders:
 
         # Assert
         assert order1.is_canceled
+        assert not order1.is_active_local
         assert not order2.is_canceled
+        assert order2.is_active_local
 
     def test_cancel_all_sell_orders_with_emulated_orders_cancels_sell_order(self) -> None:
         # Arrange
@@ -450,7 +476,9 @@ class TestOrderEmulatorWithSingleOrders:
 
         # Assert
         assert not order1.is_canceled
+        assert order1.is_active_local
         assert order2.is_canceled
+        assert not order2.is_active_local
 
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
@@ -530,6 +558,7 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.MARKET
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
+        assert order.is_active_local
         assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderEmulated)
@@ -574,6 +603,7 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
+        assert order.is_active_local
         assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderEmulated)
@@ -618,6 +648,7 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.LIMIT
         assert order.emulation_trigger == TriggerType.NO_TRIGGER
+        assert order.is_active_local
         assert len(order.events) == 4
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderEmulated)
@@ -752,6 +783,7 @@ class TestOrderEmulatorWithSingleOrders:
         order = self.cache.order(order.client_order_id)  # Recover transformed order from cache
         assert order.order_type == OrderType.TRAILING_STOP_MARKET
         assert order.emulation_trigger == TriggerType.BID_ASK
+        assert order.is_active_local
         assert len(order.events) == 3
         assert isinstance(order.events[0], OrderInitialized)
         assert isinstance(order.events[1], OrderUpdated)

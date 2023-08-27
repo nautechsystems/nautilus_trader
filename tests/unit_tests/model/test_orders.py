@@ -298,6 +298,8 @@ class TestOrders:
         assert not order.is_open
         assert not order.is_closed
         assert not order.is_inflight
+        assert not order.is_emulated
+        assert order.is_active_local
         assert order.is_buy
         assert order.is_aggressive
         assert not order.is_sell
@@ -335,6 +337,8 @@ class TestOrders:
         assert not order.is_closed
         assert not order.is_inflight
         assert not order.is_buy
+        assert not order.is_emulated
+        assert order.is_active_local
         assert order.is_sell
         assert order.ts_last == 0
         assert isinstance(order.init_event, OrderInitialized)
@@ -436,6 +440,8 @@ class TestOrders:
         assert not order.is_open
         assert not order.is_aggressive
         assert not order.is_closed
+        assert not order.is_emulated
+        assert order.is_active_local
         assert order.is_primary
         assert not order.is_spawned
         assert isinstance(order.init_event, OrderInitialized)

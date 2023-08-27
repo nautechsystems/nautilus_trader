@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
 import pickle
 from decimal import Decimal
 
@@ -22,10 +23,18 @@ from nautilus_trader.model.objects import Price
 
 
 class TestPrice:
+    def test_instantiate_with_nan_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Price(math.nan, precision=0)
+
     def test_instantiate_with_none_value_raises_type_error(self):
         # Arrange, Act, Assert
         with pytest.raises(TypeError):
             Price(None)
+
+        with pytest.raises(TypeError):
+            Price(None, precision=0)
 
     def test_instantiate_with_negative_precision_raises_overflow_error(self):
         # Arrange, Act, Assert

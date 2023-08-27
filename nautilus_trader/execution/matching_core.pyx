@@ -236,7 +236,7 @@ cdef class MatchingCore:
         cdef Order order
         for order in self._orders_bid + self._orders_ask:  # Lists implicitly copied
             if order.is_closed_c():
-                continue  # Orders state has changed since iteration started
+                continue  # Orders state has changed since iteration started  # pragma: no cover
             self.match_order(order)
 
 # -- MATCHING -------------------------------------------------------------------------------------
@@ -427,7 +427,7 @@ cdef inline int64_t order_sort_key(Order order):
         price = order.price
         return price._mem.raw if order.is_triggered else trigger_price._mem.raw
     else:
-        raise RuntimeError(
+        raise RuntimeError(  # pragma: no cover (design-time error)
             f"invalid order type to sort in book, "
             f"was {order_type_to_str(order.order_type)}",
         )

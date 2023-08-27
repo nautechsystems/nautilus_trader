@@ -19,8 +19,8 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::serialization::Serializable;
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use nautilus_core::{python::to_pyvalue_err, serialization::Serializable};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
@@ -210,12 +210,10 @@ impl BookOrder {
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Serialize object to JSON bytes
-        let json_str =
-            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str,), None)?
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
     }
@@ -223,25 +221,24 @@ impl BookOrder {
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
             .extract()?;
+
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.
@@ -263,8 +260,6 @@ impl BookOrder {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use rstest::rstest;
 
     use super::*;
@@ -342,7 +337,7 @@ mod tests {
     #[test]
     fn test_display() {
         let price = Price::from("100.00");
-        let size = Quantity::from("10");
+        let size = Quantity::from(10);
         let side = OrderSide::Buy;
         let order_id = 123456;
 
@@ -358,14 +353,15 @@ mod tests {
     #[case(OrderSide::Sell)]
     fn test_from_quote_tick(#[case] side: OrderSide) {
         let tick = QuoteTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(5000.0, 2),
-            Price::new(5001.0, 2),
-            Quantity::new(100.0, 3),
-            Quantity::new(99.0, 3),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Price::from("5000.00"),
+            Price::from("5001.00"),
+            Quantity::from("100.000"),
+            Quantity::from("99.000"),
             0,
             0,
-        );
+        )
+        .unwrap();
 
         let book_order = BookOrder::from_quote_tick(&tick, side.clone());
 
@@ -401,11 +397,11 @@ mod tests {
     #[case(OrderSide::Sell)]
     fn test_from_trade_tick(#[case] side: OrderSide) {
         let tick = TradeTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(5000.0, 2),
-            Quantity::new(100.0, 2),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Price::from("5000.00"),
+            Quantity::from("100.00"),
             AggressorSide::Buyer,
-            TradeId::new("1"),
+            TradeId::new("1").unwrap(),
             0,
             0,
         );

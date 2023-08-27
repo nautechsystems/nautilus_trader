@@ -21,8 +21,11 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{correctness, serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use anyhow::Result;
+use nautilus_core::{
+    correctness, python::to_pyvalue_err, serialization::Serializable, time::UnixNanos,
+};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -53,7 +56,6 @@ pub struct QuoteTick {
 }
 
 impl QuoteTick {
-    #[must_use]
     pub fn new(
         instrument_id: InstrumentId,
         bid_price: Price,
@@ -62,20 +64,20 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Self {
+    ) -> Result<Self> {
         correctness::u8_equal(
             bid_price.precision,
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
-        );
+        )?;
         correctness::u8_equal(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
-        );
-        Self {
+        )?;
+        Ok(Self {
             instrument_id,
             bid_price,
             ask_price,
@@ -83,7 +85,7 @@ impl QuoteTick {
             ask_size,
             ts_event,
             ts_init,
-        }
+        })
     }
 
     /// Returns the metadata for the type, for use with serialization formats.
@@ -104,7 +106,7 @@ impl QuoteTick {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id = InstrumentId::from_str(instrument_id_str)
-            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .map_err(to_pyvalue_err)
             .unwrap();
 
         let bid_price_py: &PyAny = obj.getattr("bid_price")?;
@@ -130,7 +132,7 @@ impl QuoteTick {
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
         let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
 
-        Ok(Self::new(
+        Self::new(
             instrument_id,
             bid_price,
             ask_price,
@@ -138,7 +140,8 @@ impl QuoteTick {
             ask_size,
             ts_event,
             ts_init,
-        ))
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[must_use]
@@ -183,7 +186,7 @@ impl QuoteTick {
         ask_size: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Self {
+    ) -> PyResult<Self> {
         Self::new(
             instrument_id,
             bid_price,
@@ -193,6 +196,7 @@ impl QuoteTick {
             ts_event,
             ts_init,
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -259,12 +263,10 @@ impl QuoteTick {
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Serialize object to JSON bytes
-        let json_str =
-            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str,), None)?
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
     }
@@ -272,25 +274,24 @@ impl QuoteTick {
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
             .extract()?;
+
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.
@@ -311,8 +312,6 @@ impl QuoteTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use nautilus_core::serialization::Serializable;
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
@@ -326,11 +325,11 @@ mod tests {
 
     fn create_stub_quote_tick() -> QuoteTick {
         QuoteTick {
-            instrument_id: InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            bid_price: Price::new(10000.0, 4),
-            ask_price: Price::new(10001.0, 4),
-            bid_size: Quantity::new(1.0, 8),
-            ask_size: Quantity::new(1.0, 8),
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            bid_price: Price::from("10000.0000"),
+            ask_price: Price::from("10001.0000"),
+            bid_size: Quantity::from("1.00000000"),
+            ask_size: Quantity::from("1.00000000"),
             ts_event: 1,
             ts_init: 0,
         }
@@ -383,6 +382,7 @@ mod tests {
 
     #[test]
     fn test_from_pyobject() {
+        pyo3::prepare_freethreaded_python();
         let tick = create_stub_quote_tick();
 
         Python::with_gil(|py| {

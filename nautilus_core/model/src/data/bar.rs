@@ -20,8 +20,8 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror;
 
@@ -252,7 +252,7 @@ impl Bar {
         let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
         let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
         let bar_type = BarType::from_str(bar_type_str)
-            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .map_err(to_pyvalue_err)
             .unwrap();
 
         let open_py: &PyAny = obj.getattr("open")?;
@@ -380,12 +380,10 @@ impl Bar {
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Serialize object to JSON bytes
-        let json_str =
-            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("decode", (json_str,), None)?
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
     }
@@ -393,25 +391,24 @@ impl Bar {
     /// Return a new object from the given dictionary representation.
     #[staticmethod]
     pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Serialize to JSON bytes
-        let json_bytes: Vec<u8> = PyModule::import(py, "msgspec")?
-            .getattr("json")?
-            .call_method("encode", (values,), None)?
+        // Extract to JSON string
+        let json_str: String = PyModule::import(py, "json")?
+            .call_method("dumps", (values,), None)?
             .extract()?;
+
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_bytes)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.
@@ -440,8 +437,8 @@ mod tests {
 
     fn create_stub_bar() -> Bar {
         let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUDUSD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -483,7 +480,7 @@ mod tests {
 
         assert_eq!(
             bar_type.instrument_id,
-            InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+            InstrumentId::from("BTCUSDT-PERP.BINANCE")
         );
         assert_eq!(
             bar_type.spec,
@@ -563,12 +560,12 @@ mod tests {
     #[test]
     fn test_bar_type_equality() {
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::new("AUD/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUD/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::new("GBP/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("GBP/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -598,13 +595,13 @@ mod tests {
     #[test]
     fn test_bar_type_comparison() {
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::new("AUD/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUD/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
 
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::new("GBP/USD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("GBP/USD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -636,8 +633,8 @@ mod tests {
     #[test]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD"),
-            venue: Venue::new("SIM"),
+            symbol: Symbol::new("AUDUSD").unwrap(),
+            venue: Venue::new("SIM").unwrap(),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -702,6 +699,7 @@ mod tests {
 
     #[test]
     fn test_from_pyobject() {
+        pyo3::prepare_freethreaded_python();
         let bar = create_stub_bar();
 
         Python::with_gil(|py| {

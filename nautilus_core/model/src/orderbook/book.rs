@@ -466,8 +466,6 @@ impl OrderBook {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
     use crate::{
         data::order::BookOrder,
@@ -477,13 +475,13 @@ mod tests {
     };
 
     fn create_stub_book(book_type: BookType) -> OrderBook {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         OrderBook::new(instrument_id, book_type)
     }
 
     #[test]
     fn test_orderbook_creation() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let book = OrderBook::new(instrument_id.clone(), BookType::L2_MBP);
 
         assert_eq!(book.instrument_id, instrument_id);
@@ -585,7 +583,7 @@ mod tests {
 
     #[test]
     fn test_midpoint_with_bids_asks() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
         let bid1 = BookOrder::new(
@@ -609,7 +607,7 @@ mod tests {
     #[test]
     fn test_get_price_for_quantity_no_market() {
         let book = create_stub_book(BookType::L2_MBP);
-        let qty = Quantity::new(1.0, 0);
+        let qty = Quantity::from(1);
 
         assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Buy), 0.0);
         assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Sell), 0.0);
@@ -617,7 +615,7 @@ mod tests {
 
     #[test]
     fn test_get_price_for_quantity() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
         let ask2 = BookOrder::new(
@@ -663,17 +661,18 @@ mod tests {
 
     #[test]
     fn test_update_quote_tick_l1() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
         let tick = QuoteTick::new(
-            InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap(),
-            Price::new(5000.0, 3),
-            Price::new(5100.0, 3),
-            Quantity::new(100.0, 8),
-            Quantity::new(99.0, 8),
+            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            Price::from("5000.000"),
+            Price::from("5100.000"),
+            Quantity::from("100.00000000"),
+            Quantity::from("99.00000000"),
             0,
             0,
-        );
+        )
+        .unwrap();
 
         book.update_quote_tick(&tick);
 
@@ -688,17 +687,17 @@ mod tests {
 
     #[test]
     fn test_update_trade_tick_l1() {
-        let instrument_id = InstrumentId::from_str("ETHUSDT-PERP.BINANCE").unwrap();
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
 
-        let price = Price::new(15_000.0, 3);
-        let size = Quantity::new(10.0, 8);
+        let price = Price::from("15000.000");
+        let size = Quantity::from("10.00000000");
         let trade_tick = TradeTick::new(
             instrument_id,
             price,
             size,
             AggressorSide::Buyer,
-            TradeId::new("123456789"),
+            TradeId::new("123456789").unwrap(),
             0,
             0,
         );

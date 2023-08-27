@@ -18,6 +18,7 @@ use std::{
     fmt::{Debug, Display, Formatter},
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -30,14 +31,13 @@ pub struct TraderId {
 }
 
 impl TraderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`TraderId` value");
-        correctness::string_contains(s, "-", "`TraderId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`TraderId` value")?;
+        correctness::string_contains(s, "-", "`TraderId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -61,6 +61,12 @@ impl Display for TraderId {
     }
 }
 
+impl From<&str> for TraderId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,7 +78,7 @@ impl Display for TraderId {
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    TraderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -89,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let trader_id = TraderId::new("TRADER-001");
+        let trader_id = TraderId::from("TRADER-001");
         assert_eq!(trader_id.to_string(), "TRADER-001");
         assert_eq!(format!("{trader_id}"), "TRADER-001");
     }

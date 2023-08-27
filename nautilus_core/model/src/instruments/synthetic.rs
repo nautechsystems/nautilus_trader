@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use anyhow;
+use anyhow::{anyhow, Result};
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
@@ -54,7 +54,7 @@ impl SyntheticInstrument {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Result<Self, anyhow::Error> {
-        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
+        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision)?;
 
         // Extract variables from the component instruments
         let variables: Vec<String> = components
@@ -92,10 +92,7 @@ impl SyntheticInstrument {
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as a map.
     #[allow(dead_code)]
-    pub fn calculate_from_map(
-        &mut self,
-        inputs: &HashMap<String, f64>,
-    ) -> Result<Price, anyhow::Error> {
+    pub fn calculate_from_map(&mut self, inputs: &HashMap<String, f64>) -> Result<Price> {
         let mut input_values = Vec::new();
 
         for variable in &self.variables {
@@ -113,9 +110,9 @@ impl SyntheticInstrument {
 
     /// Calculates the price of the synthetic instrument based on the given component input prices
     /// provided as an array of `f64` values.
-    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price, anyhow::Error> {
+    pub fn calculate(&mut self, inputs: &[f64]) -> Result<Price> {
         if inputs.len() != self.variables.len() {
-            return Err(anyhow::anyhow!("Invalid number of input values"));
+            return Err(anyhow!("Invalid number of input values"));
         }
 
         for (variable, input) in self.variables.iter().zip(inputs) {
@@ -126,8 +123,8 @@ impl SyntheticInstrument {
         let result: Value = self.operator_tree.eval_with_context(&self.context)?;
 
         match result {
-            Value::Float(price) => Ok(Price::new(price, self.price_precision)),
-            _ => Err(anyhow::anyhow!(
+            Value::Float(price) => Price::new(price, self.price_precision),
+            _ => Err(anyhow!(
                 "Failed to evaluate formula to a floating point number"
             )),
         }
@@ -150,18 +147,16 @@ impl Hash for SyntheticInstrument {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
     use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
 
     #[test]
     fn test_calculate_from_map() {
-        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
-        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC"),
+            Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
@@ -182,11 +177,11 @@ mod tests {
 
     #[test]
     fn test_calculate() {
-        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
-        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2.0".to_string();
         let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC"),
+            Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance.clone(), ltc_binance],
             formula.clone(),
@@ -204,11 +199,11 @@ mod tests {
 
     #[test]
     fn test_change_formula() {
-        let btc_binance = InstrumentId::from_str("BTC.BINANCE").unwrap();
-        let ltc_binance = InstrumentId::from_str("LTC.BINANCE").unwrap();
+        let btc_binance = InstrumentId::from("BTC.BINANCE");
+        let ltc_binance = InstrumentId::from("LTC.BINANCE");
         let formula = "(BTC.BINANCE + LTC.BINANCE) / 2".to_string();
         let mut synth = SyntheticInstrument::new(
-            Symbol::new("BTC-LTC"),
+            Symbol::new("BTC-LTC").unwrap(),
             2,
             vec![btc_binance, ltc_binance],
             formula.clone(),

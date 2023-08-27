@@ -45,7 +45,48 @@ macro_rules! impl_from_str_for_identifier {
             type Err = String;
 
             fn from_str(input: &str) -> Result<Self, Self::Err> {
-                Ok(Self::new(input))
+                Self::new(input).map_err(|e| e.to_string())
+            }
+        }
+    };
+}
+
+macro_rules! identifier_for_python {
+    ($ty:ty) => {
+        #[pymethods]
+        impl $ty {
+            #[new]
+            fn py_new(value: &str) -> PyResult<Self> {
+                match <$ty>::new(value) {
+                    Ok(instance) => Ok(instance),
+                    Err(e) => Err(to_pyvalue_err(e)),
+                }
+            }
+
+            fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+                match op {
+                    CompareOp::Eq => self.eq(other).into_py(py),
+                    CompareOp::Ne => self.ne(other).into_py(py),
+                    _ => py.NotImplemented(),
+                }
+            }
+
+            fn __hash__(&self) -> isize {
+                self.value.precomputed_hash() as isize
+            }
+
+            fn __str__(&self) -> &'static str {
+                self.value.as_str()
+            }
+
+            fn __repr__(&self) -> String {
+                format!("{}('{}')", stringify!($ty), self.value)
+            }
+
+            #[getter]
+            #[pyo3(name = "value")]
+            fn py_value(&self) -> String {
+                self.value.to_string()
             }
         }
     };

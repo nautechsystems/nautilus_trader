@@ -21,6 +21,8 @@ pub mod order;
 pub mod order_api;
 pub mod quote;
 pub mod quote_api;
+pub mod ticker;
+pub mod ticker_api;
 pub mod trade;
 pub mod trade_api;
 

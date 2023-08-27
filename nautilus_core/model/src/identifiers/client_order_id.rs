@@ -19,6 +19,7 @@ use std::{
     hash::Hash,
 };
 
+use anyhow::Result;
 use nautilus_core::correctness;
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -31,13 +32,12 @@ pub struct ClientOrderId {
 }
 
 impl ClientOrderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ClientOrderId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        correctness::valid_string(s, "`ClientOrderId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -66,7 +66,7 @@ pub fn optional_ustr_to_vec_client_order_ids(s: Option<Ustr>) -> Option<Vec<Clie
         let s_str = ustr.to_string();
         s_str
             .split(',')
-            .map(ClientOrderId::new)
+            .map(|s| ClientOrderId::new(s).unwrap())
             .collect::<Vec<ClientOrderId>>()
     })
 }
@@ -82,6 +82,12 @@ pub fn optional_vec_client_order_ids_to_ustr(vec: Option<Vec<ClientOrderId>>) ->
     })
 }
 
+impl From<&str> for ClientOrderId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,7 +99,7 @@ pub fn optional_vec_client_order_ids_to_ustr(vec: Option<Vec<ClientOrderId>>) ->
 #[no_mangle]
 pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ClientOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ClientOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
 #[no_mangle]
@@ -115,7 +121,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = ClientOrderId::new("O-20200814-102234-001-001-1");
+        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
         assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
         assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
     }
@@ -140,9 +146,9 @@ mod tests {
 
         // Test with Some
         let client_order_ids = vec![
-            ClientOrderId::new("id1"),
-            ClientOrderId::new("id2"),
-            ClientOrderId::new("id3"),
+            ClientOrderId::from("id1"),
+            ClientOrderId::from("id2"),
+            ClientOrderId::from("id3"),
         ];
         let ustr = optional_vec_client_order_ids_to_ustr(Some(client_order_ids.into())).unwrap();
         assert_eq!(ustr.to_string(), "id1,id2,id3");

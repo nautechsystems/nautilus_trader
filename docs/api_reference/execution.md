@@ -39,6 +39,14 @@
 ```
 
 ```{eval-rst}
+.. automodule:: nautilus_trader.execution.manager
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
 .. automodule:: nautilus_trader.execution.matching_core
    :show-inheritance:
    :inherited-members:

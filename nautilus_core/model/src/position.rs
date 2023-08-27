@@ -85,8 +85,8 @@ impl Position {
             client_order_ids: Vec::<ClientOrderId>::new(),
             venue_order_ids: Vec::<VenueOrderId>::new(),
             trade_ids: Vec::<TradeId>::new(),
-            buy_qty: Quantity::zero(instrument.size_precision()),
-            sell_qty: Quantity::zero(instrument.size_precision()),
+            buy_qty: Quantity::zero(instrument.size_precision()).unwrap(),
+            sell_qty: Quantity::zero(instrument.size_precision()).unwrap(),
             commissions: HashMap::<Currency, Money>::new(),
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
@@ -129,12 +129,12 @@ impl Position {
             // Reset position
             self.events.clear();
             self.trade_ids.clear();
-            self.buy_qty = Quantity::zero(self.size_precision);
-            self.sell_qty = Quantity::zero(self.size_precision);
+            self.buy_qty = Quantity::zero(self.size_precision).unwrap();
+            self.sell_qty = Quantity::zero(self.size_precision).unwrap();
             self.commissions.clear();
             self.opening_order_id = fill.client_order_id;
             self.closing_order_id = None;
-            self.peak_qty = Quantity::zero(self.size_precision);
+            self.peak_qty = Quantity::zero(self.size_precision).unwrap();
             self.ts_init = fill.ts_init;
             self.ts_opened = fill.ts_event;
             self.duration_ns = None;
@@ -148,14 +148,14 @@ impl Position {
         self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions
-        let commission_currency = fill.commission.currency;
-        let commission_clone = fill.commission;
-
-        if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
-            *existing_commission += commission_clone;
-        } else {
-            self.commissions
-                .insert(commission_currency, fill.commission);
+        if let Some(commission_value) = fill.commission {
+            let commission_currency = commission_value.currency;
+            if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
+                *existing_commission += commission_value;
+            } else {
+                self.commissions
+                    .insert(commission_currency, commission_value);
+            }
         }
 
         // Calculate avg prices, points, return, PnL
@@ -166,7 +166,7 @@ impl Position {
         }
 
         // Set quantities
-        self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
+        self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision).unwrap();
         if self.quantity > self.peak_qty {
             self.peak_qty.raw = self.quantity.raw;
         }

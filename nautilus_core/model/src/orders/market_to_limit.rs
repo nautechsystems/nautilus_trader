@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore};
@@ -38,6 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[pyclass]
 pub struct MarketToLimitOrder {
     core: OrderCore,
     pub price: Option<Price>,
@@ -102,36 +104,6 @@ impl MarketToLimitOrder {
             is_post_only: post_only,
             display_qty,
         }
-    }
-}
-
-/// Provides a default [`MarketToLimitOrder`] used for testing.
-impl Default for MarketToLimitOrder {
-    fn default() -> Self {
-        MarketToLimitOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            InstrumentId::default(),
-            ClientOrderId::default(),
-            OrderSide::Buy,
-            Quantity::new(100_000.0, 0),
-            TimeInForce::Gtc,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::default(),
-            0,
-        )
     }
 }
 
@@ -340,9 +312,16 @@ impl Order for MarketToLimitOrder {
 
     fn apply(&mut self, event: OrderEvent) -> Result<(), OrderError> {
         if let OrderEvent::OrderUpdated(ref event) = event {
-            self.update(event)
+            self.update(event);
         };
+        let is_order_filled = matches!(event, OrderEvent::OrderFilled(_));
+
         self.core.apply(event)?;
+
+        if is_order_filled && self.price.is_some() {
+            self.core.set_slippage(self.price.unwrap())
+        };
+
         Ok(())
     }
 
