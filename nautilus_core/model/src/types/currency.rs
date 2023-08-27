@@ -28,6 +28,7 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
+use super::fixed::check_fixed_precision;
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
@@ -51,7 +52,7 @@ impl Currency {
     ) -> Result<Self> {
         correctness::valid_string(code, "`Currency` code")?;
         correctness::valid_string(name, "`Currency` name")?;
-        correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision")?;
+        check_fixed_precision(precision).unwrap();
 
         Ok(Self {
             code: Ustr::from(code),
@@ -213,14 +214,14 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "`Currency` precision")]
-    fn test_invalid_currency_precision() {
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision() {
         // Precision out of range for fixed
         let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
     #[test]
-    fn test_currency_new_for_fiat() {
+    fn test_new_for_fiat() {
         let currency =
             Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat).unwrap();
         assert_eq!(currency, currency);
@@ -232,7 +233,7 @@ mod tests {
     }
 
     #[test]
-    fn test_currency_new_for_crypto() {
+    fn test_new_for_crypto() {
         let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto).unwrap();
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "ETH");
@@ -243,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn test_currency_equality() {
+    fn test_equality() {
         let currency1 =
             Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
         let currency2 =
@@ -252,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn test_currency_serialization_deserialization() {
+    fn test_serialization_deserialization() {
         let currency =
             Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
         let serialized = serde_json::to_string(&currency).unwrap();
@@ -261,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn test_currency_registration() {
+    fn test_registration() {
         let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto).unwrap();
         currency_register(currency);
         unsafe {

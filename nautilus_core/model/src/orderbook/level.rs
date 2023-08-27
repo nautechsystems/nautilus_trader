@@ -238,12 +238,7 @@ mod tests {
     fn test_update_order_with_zero_size() {
         let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
-        let order2 = BookOrder::new(
-            OrderSide::Buy,
-            Price::from("1.00"),
-            Quantity::zero(0).unwrap(),
-            0,
-        );
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::zero(0), 0);
 
         level.add(order1);
         level.update(order2);
