@@ -15,6 +15,7 @@
 
 use std::{
     cmp::Ordering,
+    collections::hash_map::DefaultHasher,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
     ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
@@ -273,8 +274,38 @@ impl<'de> Deserialize<'de> for Quantity {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
 #[pymethods]
 impl Quantity {
+    #[new]
+    fn py_new(value: f64, precision: u8) -> PyResult<Self> {
+        Quantity::new(value, precision).map_err(to_pyvalue_err)
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "zero")]
+    #[pyo3(signature = (precision = 0))]
+    fn py_zero(precision: u8) -> PyResult<Quantity> {
+        Quantity::new(0.0, precision).map_err(to_pyvalue_err)
+    }
+
     #[getter]
     fn raw(&self) -> u64 {
         self.raw
@@ -302,10 +333,10 @@ impl Quantity {
         Quantity::from_str(value).map_err(to_pyvalue_err)
     }
 
-    // #[pyo3(name = "as_decimal")]
-    // fn py_as_decimal(&self, py: Python<'py>) -> Decimal {
-    //     self.as_decimal().into_py(py)
-    // }
+    #[pyo3(name = "as_decimal")]
+    fn py_as_decimal(&self) -> Decimal {
+        self.as_decimal()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

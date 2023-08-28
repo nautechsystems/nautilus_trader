@@ -30,6 +30,7 @@ pub struct QuoteTickDataWrangler {
     metadata: HashMap<String, String>,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl QuoteTickDataWrangler {
     #[new]

@@ -148,6 +148,7 @@ impl Display for BookOrder {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl BookOrder {
     #[new]

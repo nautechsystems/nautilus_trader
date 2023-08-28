@@ -163,6 +163,7 @@ impl Display for OrderBookDelta {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl OrderBookDelta {
     #[new]

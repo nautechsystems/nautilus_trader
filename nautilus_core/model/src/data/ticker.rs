@@ -62,6 +62,7 @@ impl Display for Ticker {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl Ticker {
     #[new]

@@ -176,6 +176,7 @@ impl Display for QuoteTick {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl QuoteTick {
     #[new]

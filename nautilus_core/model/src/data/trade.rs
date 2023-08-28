@@ -147,6 +147,7 @@ impl Display for TradeTick {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl TradeTick {
     #[new]
