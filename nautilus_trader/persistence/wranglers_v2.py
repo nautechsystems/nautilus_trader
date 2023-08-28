@@ -449,7 +449,7 @@ class BarDataWrangler(WranglerBase):
         ts_init_delta: int = 0,
     ) -> list[RustBar]:
         """
-        Process the given `data` into Nautilus `TradeTick` objects.
+        Process the given `data` into Nautilus `Bar` objects.
 
         Parameters
         ----------

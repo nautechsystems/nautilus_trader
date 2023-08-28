@@ -61,6 +61,7 @@ from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.filters import NewsEvent
+from tests import TEST_DATA_DIR
 from tests.unit_tests.portfolio.test_portfolio import BETFAIR
 
 
@@ -2302,18 +2303,24 @@ class TestDataEngine:
         instrument = TestInstrumentProvider.adabtc_binance()
         wrangler = BarDataWrangler(bar_type, instrument)
 
-        def parser(data):
-            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
-            bars = wrangler.process(data.set_index("timestamp"))
-            return bars
-
-        raise NotImplementedError
-        # reader = CSVReader(block_parser=parser, header=binance_spot_header)
-        # _ = process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
-        #     reader=reader,
-        #     catalog=catalog,
-        # )
+        binance_spot_header = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        df = pd.read_csv(f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-27.csv", names=binance_spot_header)
+        df["timestamp"] = df["timestamp"].astype("datetime64[ms]")
+        bars = wrangler.process(df.set_index("timestamp"))
+        catalog.write_data(bars)
 
         self.data_engine.register_catalog(catalog)
 

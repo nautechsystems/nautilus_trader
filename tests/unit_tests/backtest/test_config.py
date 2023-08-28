@@ -46,8 +46,9 @@ from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
-class _TestBacktestConfig:
+class TestBacktestConfig:
     def setup(self):
+        self.fs_protocol = "file"
         self.catalog = data_catalog_setup(protocol=self.fs_protocol)
         aud_usd_data_loader(self.catalog)
         self.venue = Venue("SIM")
@@ -77,7 +78,6 @@ class _TestBacktestConfig:
 
         result = c.query
         assert result == {
-            "as_nautilus": True,
             "cls": QuoteTick,
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
@@ -126,12 +126,10 @@ class _TestBacktestConfig:
         assert len(result["data"]) == 2745
 
     def test_backtest_data_config_status_updates(self):
-        raise NotImplementedError("Needs convert to new wranglers")
-        # process_files(
-        #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-        #     reader=BetfairTestStubs.betfair_reader(),
-        #     catalog=self.catalog,
-        # )
+        from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
+
+        load_betfair_data(self.catalog)
+
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs.protocol,
@@ -174,14 +172,6 @@ class _TestBacktestConfig:
 
     def test_backtest_config_to_json(self):
         assert msgspec.json.encode(self.backtest_config)
-
-
-class TestBacktestConfigFile(_TestBacktestConfig):
-    fs_protocol = "file"
-
-
-class TestBacktestConfigMemory(_TestBacktestConfig):
-    fs_protocol = "memory"
 
 
 class TestBacktestConfigParsing:

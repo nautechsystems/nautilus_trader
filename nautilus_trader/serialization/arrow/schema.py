@@ -24,6 +24,7 @@ from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import VenueStatusUpdate
 from nautilus_trader.model.events import OrderAccepted
@@ -69,6 +70,16 @@ NAUTILUS_ARROW_SCHEMA = {
         },
     ),
     TradeTick: pa.schema(
+        [
+            pa.field("price", pa.int64(), False),
+            pa.field("size", pa.uint64(), False),
+            pa.field("aggressor_side", pa.uint8(), False),
+            pa.field("trade_id", pa.string(), False),
+            pa.field("ts_event", pa.uint64(), False),
+            pa.field("ts_init", pa.uint64(), False),
+        ],
+    ),
+    Ticker: pa.schema(
         [
             pa.field("price", pa.int64(), False),
             pa.field("size", pa.uint64(), False),
