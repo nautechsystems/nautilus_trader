@@ -250,6 +250,10 @@ impl<'de> Deserialize<'de> for Money {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
 #[pymethods]
 impl Money {
     #[getter]
@@ -267,35 +271,40 @@ impl Money {
         fixed_i64_to_f64(self.raw)
     }
 
-    // #[pyo3(name = "as_decimal")]
-    // fn py_as_decimal(&self) -> Decimal {
-    //     self.as_decimal()
-    // }
+    #[pyo3(name = "as_decimal")]
+    fn py_as_decimal(&self) -> Decimal {
+        self.as_decimal()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
     Money::new(amount, currency).unwrap()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
     Money::from_raw(raw, currency)
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_as_f64(money: &Money) -> f64 {
     money.as_f64()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_add_assign(mut a: Money, b: Money) {
     a.add_assign(b);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
     a.sub_assign(b);

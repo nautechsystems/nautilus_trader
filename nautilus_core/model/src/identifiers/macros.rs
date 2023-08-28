@@ -51,6 +51,7 @@ macro_rules! impl_from_str_for_identifier {
     };
 }
 
+#[cfg(feature = "python")]
 macro_rules! identifier_for_python {
     ($ty:ty) => {
         #[pymethods]

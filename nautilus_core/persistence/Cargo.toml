@@ -13,13 +13,13 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
-chrono.workspace = true
-futures.workspace = true
-pyo3.workspace = true
-pyo3-asyncio.workspace = true
-rand.workspace = true
-tokio.workspace = true
-thiserror.workspace = true
+chrono = { workspace = true }
+futures = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-asyncio = { workspace = true, optional = true }
+rand = { workspace = true }
+tokio = { workspace = true }
+thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 # FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
@@ -32,10 +32,11 @@ extension-module = [
   "nautilus-core/extension-module", 
   "nautilus-model/extension-module",
 ]
-default = []
+python = ["pyo3", "pyo3-asyncio"]
+default = ["python"]
 
 [dev-dependencies]
-criterion.workspace = true
+criterion = { workspace = true }
 
 [[bench]]
 name = "bench_persistence"

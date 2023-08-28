@@ -87,17 +87,20 @@ impl From<&str> for Venue {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Venue::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn venue_hash(id: &Venue) -> u64 {
     id.value.precomputed_hash()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
     u8::from(venue.is_synthetic())

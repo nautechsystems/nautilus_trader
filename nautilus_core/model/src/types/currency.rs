@@ -123,6 +123,7 @@ impl<'de> Deserialize<'de> for Currency {
 ///
 /// - Assumes `code_ptr` is a valid C string pointer.
 /// - Assumes `name_ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_py(
     code_ptr: *const c_char,

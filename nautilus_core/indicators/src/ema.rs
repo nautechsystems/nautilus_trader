@@ -84,6 +84,7 @@ impl ExponentialMovingAverage {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl ExponentialMovingAverage {
     #[new]

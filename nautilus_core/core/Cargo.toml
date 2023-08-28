@@ -11,26 +11,28 @@ name = "nautilus_core"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
-anyhow.workspace = true
-chrono.workspace = true
-pyo3.workspace = true
-rmp-serde.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-ustr.workspace = true
-uuid.workspace = true
+anyhow = { workspace = true }
+chrono = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rmp-serde = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ustr = { workspace = true }
+uuid = { workspace = true }
 
 [features]
 extension-module = ["pyo3/extension-module"]
-default = []
+ffi = ["cbindgen"]
+python = ["pyo3"]
+default = ["ffi", "python"]
 
 [dev-dependencies]
-criterion.workspace = true
-iai.workspace = true
-rstest.workspace = true
+criterion = { workspace = true }
+iai = { workspace = true }
+rstest = { workspace = true }
 
 [build-dependencies]
-cbindgen.workspace = true
+cbindgen = { workspace = true, optional = true }
 
 [[bench]]
 name = "criterion_time_benchmark"

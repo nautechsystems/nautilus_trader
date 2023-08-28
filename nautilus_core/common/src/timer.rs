@@ -113,6 +113,7 @@ pub trait Timer {
     fn cancel(&mut self);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
     v

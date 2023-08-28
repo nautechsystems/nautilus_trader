@@ -14,7 +14,9 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod book;
+#[cfg(feature = "ffi")]
 pub mod book_api;
 pub mod ladder;
 pub mod level;
+#[cfg(feature = "ffi")]
 pub mod level_api;

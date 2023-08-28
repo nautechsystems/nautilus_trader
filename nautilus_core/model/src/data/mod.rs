@@ -14,16 +14,22 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod bar;
+#[cfg(feature = "ffi")]
 pub mod bar_api;
 pub mod delta;
+#[cfg(feature = "ffi")]
 pub mod delta_api;
 pub mod order;
+#[cfg(feature = "ffi")]
 pub mod order_api;
 pub mod quote;
+#[cfg(feature = "ffi")]
 pub mod quote_api;
 pub mod ticker;
+#[cfg(feature = "ffi")]
 pub mod ticker_api;
 pub mod trade;
+#[cfg(feature = "ffi")]
 pub mod trade_api;
 
 use nautilus_core::time::UnixNanos;
