@@ -14,10 +14,12 @@
 # -------------------------------------------------------------------------------------------------
 import datetime
 
+import fsspec
 import pyarrow.dataset as ds
 from _decimal import Decimal
 
 from nautilus_trader.core.rust.model import AggressorSide
+from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import QuoteTick
@@ -32,17 +34,19 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
-class _TestPersistenceCatalog:
+class TestPersistenceCatalog:
+    fs_protocol = "file"
+
     def setup(self) -> None:
-        pass
-        # self.catalog = data_catalog_setup(protocol=self.fs_protocol)  # type: ignore
-        # self.fs: fsspec.AbstractFileSystem = self.catalog.fs
+        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
+        self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def test_list_data_types(self, betfair_catalog):
         data_types = betfair_catalog.list_data_types()
@@ -54,26 +58,6 @@ class _TestPersistenceCatalog:
             "trade_tick",
         ]
         assert data_types == expected
-
-    def test_list_partitions(self):
-        # Arrange
-        instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        tick = QuoteTick(
-            instrument_id=instrument.id,
-            bid_price=Price(10, 1),
-            ask_price=Price(11, 1),
-            bid_size=Quantity(10, 1),
-            ask_size=Quantity(10, 1),
-            ts_init=0,
-            ts_event=0,
-        )
-        self.catalog.write_data([tick])
-
-        # Act
-        self.catalog.list_partitions(QuoteTick)
-
-        # Assert
-        # TODO(cs): Assert new HivePartitioning object for catalog v2
 
     def test_data_catalog_query_filtered(self, betfair_catalog):
         ticks = self.catalog.trade_ticks()
@@ -92,7 +76,9 @@ class _TestPersistenceCatalog:
         assert len(deltas) == 2384
 
     def test_data_catalog_query_custom_filtered(self, betfair_catalog):
-        filtered_deltas = self.catalog.order_book_deltas(where="action = 'DELETE'")
+        filtered_deltas = self.catalog.order_book_deltas(
+            where=f"action = '{BookAction.DELETE.value}'",
+        )
         assert len(filtered_deltas) == 351
 
     def test_data_catalog_instruments_df(self, betfair_catalog):
@@ -103,11 +89,8 @@ class _TestPersistenceCatalog:
         instrument_id = self.catalog.instruments()[0].id.value
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
         assert len(instruments) == 1
-        assert instruments["id"].iloc[0] == instrument_id
-
-    def test_data_catalog_instruments_as_nautilus(self, betfair_catalog):
-        instruments = self.catalog.instruments()
         assert all(isinstance(ins, BettingInstrument) for ins in instruments)
+        assert instruments[0].id.value == instrument_id
 
     def test_data_catalog_currency_with_null_max_price_loads(self, betfair_catalog):
         # Arrange
@@ -326,11 +309,3 @@ class _TestPersistenceCatalog:
 
         # Assert
         assert result == ["abc"]
-
-
-class TestPersistenceCatalogFile(_TestPersistenceCatalog):
-    fs_protocol = "file"
-
-
-# class TestPersistenceCatalogMemory(_TestPersistenceCatalog):
-#     fs_protocol = "memory"

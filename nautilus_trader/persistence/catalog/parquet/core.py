@@ -229,16 +229,52 @@ class ParquetDataCatalog(BaseDataCatalog):
         instrument_ids=None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
-        where: Optional[str] = None,
+        filter_expr: Optional[str] = None,
         **kwargs,
     ):
         file_prefix = class_to_filename(cls)
         dataset_path = f"{self.path}/data/{file_prefix}"
         if not self.fs.exists(dataset_path):
             return
-        dataset = pds.dataset(dataset_path, filesystem=self.fs)
-        table = dataset.to_table(filter=kwargs.get("filter_expr"))
+        table = self._load_pyarrow_table(
+            path=dataset_path,
+            filter_expr=filter_expr,
+            instrument_ids=instrument_ids,
+            start=start,
+            end=end,
+        )
+        assert table.num_rows, "No rows found for "
         return self._handle_table_nautilus(table, cls=cls)
+
+    def _load_pyarrow_table(
+        self,
+        path: str,
+        filter_expr: Optional[str] = None,
+        instrument_ids: Optional[list[str]] = None,
+        start: Optional[timestamp_like] = None,
+        end: Optional[timestamp_like] = None,
+        ts_column: str = "ts_init",
+    ) -> Optional[pds.Dataset]:
+        # Original dataset
+        dataset = pds.dataset(path, filesystem=self.fs)
+
+        # Instrument id filters (not stored in table, need to filter based on files)
+        if instrument_ids is not None:
+            if not isinstance(instrument_ids, list):
+                instrument_ids = [instrument_ids]
+            valid_files = [fn for fn in dataset.files if any(x in fn for x in instrument_ids)]
+            dataset = pds.dataset(valid_files)
+
+        filters: list[pds.Expression] = [filter_expr] if filter_expr is not None else []
+        if start is not None:
+            filters.append(pds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
+        if end is not None:
+            filters.append(pds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
+        if filters:
+            filter_ = combine_filters(*filters)
+        else:
+            filter_ = None
+        return dataset.to_table(filter=filter_)
 
     def query(
         self,
@@ -437,3 +473,16 @@ def uri_instrument_id(instrument_id: str) -> str:
     Convert an instrument_id into a valid URI for writing to a file path.
     """
     return instrument_id.replace("/", "|")
+
+
+def combine_filters(*filters):
+    filters = tuple(x for x in filters if x is not None)
+    if len(filters) == 0:
+        return
+    elif len(filters) == 1:
+        return filters[0]
+    else:
+        expr = filters[0]
+        for f in filters[1:]:
+            expr = expr & f
+        return expr

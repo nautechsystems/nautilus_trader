@@ -25,7 +25,7 @@ from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
-from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
+from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalog
 
 
 # TODO: skip in CI
@@ -40,7 +40,7 @@ class TestCatalogPerformance(PerformanceHarness):
 
         def setup():
             # Arrange
-            cls = TestPersistenceCatalogFile()
+            cls = TestPersistenceCatalog()
 
             cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
 
@@ -62,7 +62,7 @@ class TestCatalogPerformance(PerformanceHarness):
 
         def setup():
             # Arrange
-            cls = TestPersistenceCatalogFile()
+            cls = TestPersistenceCatalog()
 
             cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
 
