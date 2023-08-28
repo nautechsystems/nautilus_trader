@@ -25,3 +25,8 @@ pub mod testing;
 pub mod timer;
 #[cfg(feature = "ffi")]
 pub mod timer_api;
+
+#[cfg(feature = "test")]
+pub mod stubs {
+    use crate::{clock::stubs::*, logging::stubs::*};
+}
