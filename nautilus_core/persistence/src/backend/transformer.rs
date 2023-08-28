@@ -40,7 +40,6 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
-
         Ok(deltas)
     }
 
@@ -50,7 +49,6 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| QuoteTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
-
         Ok(ticks)
     }
 
@@ -60,7 +58,6 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| TradeTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
-
         Ok(ticks)
     }
 
@@ -70,7 +67,6 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<Bar>>>()?;
-
         Ok(bars)
     }
 
@@ -266,7 +262,7 @@ impl DataTransformer {
             .map(|bar| Bar::encode_batch(&metadata, &[bar]))
             .collect();
 
-        let schema = TradeTick::get_schema(Some(metadata));
+        let schema = Bar::get_schema(Some(metadata));
         Self::record_batches_to_pybytes(py, batches, schema)
     }
 }

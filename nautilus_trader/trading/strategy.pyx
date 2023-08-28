@@ -799,7 +799,7 @@ cdef class Strategy(Actor):
         elif order.exec_algorithm_id is not None and order.is_active_local_c():
             self._send_algo_command(command, order.exec_algorithm_id)
         else:
-            self._send_risk_command(command)
+            self._send_exec_command(command)
 
     cpdef void cancel_all_orders(
         self,
@@ -811,7 +811,7 @@ cdef class Strategy(Actor):
         Cancel all orders for this strategy for the given instrument ID.
 
         A `CancelAllOrders` command will be created and then sent to **both** the
-        `OrderEmulator` and the `RiskEngine`.
+        `OrderEmulator` and the `ExecutionEngine`.
 
         Parameters
         ----------
@@ -897,7 +897,7 @@ cdef class Strategy(Actor):
                 if order.strategy_id == self.id and not order.is_closed_c():
                     self.cancel_order(order)
 
-        self._send_risk_command(command)
+        self._send_exec_command(command)
         self._send_emulator_command(command)
 
     cpdef void close_position(

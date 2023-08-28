@@ -403,12 +403,8 @@ cdef class RiskEngine(Component):
             self._handle_submit_order_list(command)
         elif isinstance(command, ModifyOrder):
             self._handle_modify_order(command)
-        elif isinstance(command, CancelOrder):
-            self._handle_cancel_order(command)
-        elif isinstance(command, CancelAllOrders):
-            self._handle_cancel_all_orders(command)
         else:
-            self._log.error(f"Cannot handle command: unrecognized {command}.")
+            self._log.error(f"Cannot handle command: {command}.")
 
     cpdef void _handle_submit_order(self, SubmitOrder command):
         if self.is_bypassed:
@@ -426,7 +422,7 @@ cdef class RiskEngine(Component):
                 if position is None or not order.would_reduce_only(position.side, position.quantity):
                     self._deny_command(
                         command=command,
-                        reason=f"Reduce only order would increase position {repr(command.position_id)}",
+                        reason=f"Reduce only order would increase position {command.position_id!r}",
                     )
                     return  # Denied
 
@@ -554,29 +550,6 @@ cdef class RiskEngine(Component):
                     return  # Denied
 
         self._order_modify_throttler.send(command)
-
-    cpdef void _handle_cancel_order(self, CancelOrder command):
-        ########################################################################
-        # VALIDATE COMMAND
-        ########################################################################
-        cdef Order order = self._cache.order(command.client_order_id)
-        if order is None:
-            self._log.error(
-                f"CancelOrder DENIED: Order with {repr(command.client_order_id)} not found.",
-            )
-            return  # Denied
-        elif order.is_closed_c():
-            self._reject_cancel_order(
-                order=order,
-                reason=f"Order with {repr(command.client_order_id)} already closed",
-            )
-            return  # Denied
-
-        # All checks passed
-        self._send_to_execution(command)
-
-    cpdef void _handle_cancel_all_orders(self, CancelAllOrders command):
-        self._send_to_execution(command)
 
 # -- PRE-TRADE CHECKS -----------------------------------------------------------------------------
 
@@ -815,42 +788,6 @@ cdef class RiskEngine(Component):
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
 
-    cpdef void _reject_modify_order(self, Order order, str reason):
-        # Generate event
-        cdef uint64_t ts_now = self._clock.timestamp_ns()
-        cdef OrderModifyRejected denied = OrderModifyRejected(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            account_id=order.account_id,
-            reason=reason,
-            event_id=UUID4(),
-            ts_event=ts_now,
-            ts_init=ts_now,
-        )
-
-        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
-
-    cpdef void _reject_cancel_order(self, Order order, str reason):
-        # Generate event
-        cdef uint64_t ts_now = self._clock.timestamp_ns()
-        cdef OrderCancelRejected denied = OrderCancelRejected(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            account_id=order.account_id,
-            reason=reason,
-            event_id=UUID4(),
-            ts_event=ts_now,
-            ts_init=ts_now,
-        )
-
-        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
-
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cpdef void _execution_gateway(self, Instrument instrument, TradingCommand command):
@@ -915,6 +852,24 @@ cdef class RiskEngine(Component):
     # Needs to be `cpdef` due being called from throttler
     cpdef void _send_to_execution(self, TradingCommand command):
         self._msgbus.send(endpoint="ExecEngine.execute", msg=command)
+
+    cpdef void _reject_modify_order(self, Order order, str reason):
+        # Generate event
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        cdef OrderModifyRejected denied = OrderModifyRejected(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            account_id=order.account_id,
+            reason=reason,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+
+        self._msgbus.send(endpoint="ExecEngine.process", msg=denied)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
