@@ -191,7 +191,7 @@ unsafe impl Send for DataBackendSession {}
 ////////////////////////////////////////////////////////////////////////////////
 // Python API
 ////////////////////////////////////////////////////////////////////////////////
-
+#[cfg(feature = "python")]
 #[pymethods]
 impl DataBackendSession {
     #[new]
@@ -301,6 +301,7 @@ pub struct DataQueryResult {
     chunk: Option<CVec>,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl DataQueryResult {
     /// The reader implements an iterator.

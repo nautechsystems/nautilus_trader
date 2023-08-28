@@ -78,15 +78,20 @@ pub fn check_i64_in_range_inclusive(value: i64, l: i64, r: i64, desc: &str) -> R
 
 /// Validates that the `f64` value is in the inclusive range [`l`, `r`].
 pub fn check_f64_in_range_inclusive(value: f64, l: f64, r: f64, desc: &str) -> Result<()> {
+    if value.is_nan() || value.is_infinite() {
+        bail!("{FAILED} invalid f64 for {desc}, was {value}")
+    }
     if value < l || value > r {
         bail!("{FAILED} invalid f64 for {desc} not in range [{l}, {r}], was {value}")
     }
-
     Ok(())
 }
 
 /// Validates that the `f64` value is non-negative.
 pub fn check_f64_non_negative(value: f64, desc: &str) -> Result<()> {
+    if value.is_nan() || value.is_infinite() {
+        bail!("{FAILED} invalid f64 for {desc}, was {value}")
+    }
     if value < 0.0 {
         bail!("{FAILED} invalid f64 for {desc} negative, was {value}")
     }
@@ -239,6 +244,9 @@ mod tests {
     }
 
     #[rstest]
+    #[case(f64::NAN, "value")]
+    #[case(f64::INFINITY, "value")]
+    #[case(f64::NEG_INFINITY, "value")]
     #[case(-0.1, "value")]
     fn test_f64_non_negative_when_invalid_values(#[case] value: f64, #[case] desc: &str) {
         assert!(check_f64_non_negative(value, desc).is_err());

@@ -160,6 +160,7 @@ impl<'de> Deserialize<'de> for BarType {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl BarType {
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -298,6 +299,7 @@ impl Display for Bar {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 #[allow(clippy::too_many_arguments)]
 impl Bar {

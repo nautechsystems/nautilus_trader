@@ -1355,40 +1355,40 @@ files = [
 
 [[package]]
 name = "msgspec"
-version = "0.18.1"
+version = "0.18.2"
 description = "A fast serialization and validation library, with builtin support for JSON, MessagePack, YAML, and TOML."
 optional = false
 python-versions = ">=3.8"
 files = [
-    {file = "msgspec-0.18.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:262e5f1a981644f5e9b28a984d6df238eac0ed2c37d788f40abaf10d380b0424"},
-    {file = "msgspec-0.18.1-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:e3f4a7d5897984f59baf51976682f52f4d2eff88aa64eec8b7f5b80b7a2b6dc5"},
-    {file = "msgspec-0.18.1-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:b6d21f0da90d1f3e7f65123d375c2b590bfbe3a014920ea812e1a022027b60d3"},
-    {file = "msgspec-0.18.1-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ebb71f51ca2f62d0d1cf9585f763e3d9fd8a85a0f00d682112916532964692ae"},
-    {file = "msgspec-0.18.1-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:52bb422d2b2e80e86d72439edb1a372ff016c0c5d9f44d277b220511486b3f9a"},
-    {file = "msgspec-0.18.1-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:119ff9d5412eccf53f0d7ab43b587a58f6f806a40ae6b14fd8140173b1cc0285"},
-    {file = "msgspec-0.18.1-cp310-cp310-win_amd64.whl", hash = "sha256:36da63a8f64292fff7c814bd3cbbba669f0fa5068c149b4a386dba662ace5621"},
-    {file = "msgspec-0.18.1-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:b132ae2691623b3fbee730604671da3bf57ca97d648f1a46a35ea09c6f490fcf"},
-    {file = "msgspec-0.18.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:944af5f9ec66de8e21b30ccafdab3e87be11d757ca9304c01e3b2efc373f3293"},
-    {file = "msgspec-0.18.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4e96b71e98728830ea3d20acf65969ba7059dfc9e32581039f05e88b8461d98b"},
-    {file = "msgspec-0.18.1-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:914ab6407fdce1bc795583ba0428f49baf6eedd40df117200ec8fe7666ca2ec4"},
-    {file = "msgspec-0.18.1-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:13980627b9ba28fac2e051757ef5edbe0bebfef411d648e58d2100b86c5eca03"},
-    {file = "msgspec-0.18.1-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:a6bd460e2057a6d9ca6d0e2b848a441c6e30977012d1fca43e4bc1702c9abca5"},
-    {file = "msgspec-0.18.1-cp311-cp311-win_amd64.whl", hash = "sha256:c63f9dc8c33ca56903d7957ee7a5d0b3ece6b345b8b10f44b226787a4410c8e1"},
-    {file = "msgspec-0.18.1-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:3a88d2fb82eb59de0f0f365a27dcea2020440883770b99353e0a3e0aa8ef552a"},
-    {file = "msgspec-0.18.1-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:f936f6ea351c2e8c0d53875a6a71d9887603e3faadbe380172d22283e011f1b3"},
-    {file = "msgspec-0.18.1-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:597324c72b504f04fb283078b748e664f7f7fc5337bb493e0996511bab895e7e"},
-    {file = "msgspec-0.18.1-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f94eca90ac47a24cb07b3702c863a6b0881830ea02de7ac58a00f778b4b7762b"},
-    {file = "msgspec-0.18.1-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:c256b21baa1336d651aa9955d69d3f8d0e971d78e0e75fd28a89742af7dcff65"},
-    {file = "msgspec-0.18.1-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:9721948182d471c4f1655634f1970628a7321ec58a2cfb89d35af78c2fc2ebfa"},
-    {file = "msgspec-0.18.1-cp38-cp38-win_amd64.whl", hash = "sha256:f01fe87b592185a11091206a745fdcba5b40d4c4342d1089959df49f18d6a700"},
-    {file = "msgspec-0.18.1-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:966ee615b8227c208276863c4269a01dfe8c3b2538b8e1ee33bb01010fe7a3af"},
-    {file = "msgspec-0.18.1-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:d94555a79013c100b1345e0a5a6d36bfa915e74831e42de3a97cb81313426ea7"},
-    {file = "msgspec-0.18.1-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9c63a0f49540e2a888acec8c154066b6ef985813ce27132eb38e1f0c7f49df27"},
-    {file = "msgspec-0.18.1-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:0784a23d1b5b8a6fe4c9f5b9c1779adc5bff4de0fe388545dc2a4f1b5b90e546"},
-    {file = "msgspec-0.18.1-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:4bd273e373e220437a22a5ad83a90e3dd648c4e625f48e42e172026de77a3038"},
-    {file = "msgspec-0.18.1-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:a0f5070d77658ac953f63114fbaafc6ec967e9e61993ff70cc2432e938a3cf3e"},
-    {file = "msgspec-0.18.1-cp39-cp39-win_amd64.whl", hash = "sha256:fe22658000c165be1055c8df3f7ecc3db85be838d47d1ce1e0526b10747bdf0f"},
-    {file = "msgspec-0.18.1.tar.gz", hash = "sha256:a7d837e370cfe5afb941e9c922dbdbee9c854b21bafdebaf068bdf15c43ec21d"},
+    {file = "msgspec-0.18.2-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:1535855b0db1bee4e5c79384010861de2a23391b45095785e84ec9489abc56cd"},
+    {file = "msgspec-0.18.2-cp310-cp310-macosx_11_0_arm64.whl", hash = "sha256:2ad4f4704045a0fb1b5226769d9cdc00a4a69adec2e6770064f3db73bb91bbf9"},
+    {file = "msgspec-0.18.2-cp310-cp310-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:abcb92ffbca77bcfbedd5b29b68629628948982aafb994658e7abfad6e15913c"},
+    {file = "msgspec-0.18.2-cp310-cp310-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:358c2b908f1ed63419ccc5f185150c0caa3fc49599f4582504637cbfd5ff6242"},
+    {file = "msgspec-0.18.2-cp310-cp310-musllinux_1_1_aarch64.whl", hash = "sha256:78a593bc0db95416d633b28cff00af0465f04590d53ff1a80a33d7e2728820ad"},
+    {file = "msgspec-0.18.2-cp310-cp310-musllinux_1_1_x86_64.whl", hash = "sha256:7b065995f3a41e4c8274a86e1ee84ac432969918373c777de239ef14f9537d80"},
+    {file = "msgspec-0.18.2-cp310-cp310-win_amd64.whl", hash = "sha256:d127bf90f29f1211520f1baa897b10f2a9c05b8648ce7dc89dfc9ca45599be53"},
+    {file = "msgspec-0.18.2-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:3bfc55d5ca60b3aa2c2287191aa9e943c54eb0aef16d4babb92fddcc047093b1"},
+    {file = "msgspec-0.18.2-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:e03ff009f3a2e1fe883703f98098d12aea6b30934707b404fd994e9ea1c1bfa7"},
+    {file = "msgspec-0.18.2-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ade3959577bff46c7d9476962d2d7aa086b2820f3da03ee000e9be4958404829"},
+    {file = "msgspec-0.18.2-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:80e57102469ee0d2186c72d42fa9460981ccd4252bdb997bf04ef2af0818984f"},
+    {file = "msgspec-0.18.2-cp311-cp311-musllinux_1_1_aarch64.whl", hash = "sha256:25f7e3adaf1ca5d80455057576785069475b1d941eb877dbd0ae738cc5d1fefa"},
+    {file = "msgspec-0.18.2-cp311-cp311-musllinux_1_1_x86_64.whl", hash = "sha256:b56cc7b9956daefb309447bbbb2581c84e5d5e3b89d573b1d5a25647522d2e43"},
+    {file = "msgspec-0.18.2-cp311-cp311-win_amd64.whl", hash = "sha256:84cc7932f78aeec6ef014cca4bb4ecea8469bc05f13c9eacdfa27baa785e54b9"},
+    {file = "msgspec-0.18.2-cp38-cp38-macosx_10_9_x86_64.whl", hash = "sha256:35420ae8afaa90498733541c0d8b2a73c70548a8a4d86da11201ed6df557e98f"},
+    {file = "msgspec-0.18.2-cp38-cp38-macosx_11_0_arm64.whl", hash = "sha256:3f71c33efda990ecddc878ea2bb37f22e941d4264ded83e1b2309f86d335cde7"},
+    {file = "msgspec-0.18.2-cp38-cp38-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:ccaddb764b5abe457c0eded4a252f5fbeb8b04a946b46a06a7e6ca299c35dcb1"},
+    {file = "msgspec-0.18.2-cp38-cp38-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:23e65efaef864bf66a4ddfae9c2200c40ce1a50411f454de1757f3651e5762cd"},
+    {file = "msgspec-0.18.2-cp38-cp38-musllinux_1_1_aarch64.whl", hash = "sha256:baaba2411003f2e7a4328b5a58eba9efeb4c5e6a27e8ffd2adaccdc8feb0a805"},
+    {file = "msgspec-0.18.2-cp38-cp38-musllinux_1_1_x86_64.whl", hash = "sha256:eb80befd343f3b378c8abad0367154703c74bde02fc62cbcf1a0e6b5fa779459"},
+    {file = "msgspec-0.18.2-cp38-cp38-win_amd64.whl", hash = "sha256:b9b3ed82f71816cddf0a9cdaae30a1d1addf8fe56ec09e7368db93ce43b29a81"},
+    {file = "msgspec-0.18.2-cp39-cp39-macosx_10_9_x86_64.whl", hash = "sha256:84fcf74b6371494aa536bf438ef96b08ce8f6e40483a01ed305535a40113136b"},
+    {file = "msgspec-0.18.2-cp39-cp39-macosx_11_0_arm64.whl", hash = "sha256:a75c4efa7565048f81e709a366e14b9dc10752b3fb5ea1f3c8de5abfca3db3c2"},
+    {file = "msgspec-0.18.2-cp39-cp39-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4c1ee8b9667fde3b5d7e0e0b555a8b70e2fa7bf2e02e9e8673af262c82c7b691"},
+    {file = "msgspec-0.18.2-cp39-cp39-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:c79ac853409b0000727f4c3e5fb32fe38122ad94b9e074f992fa9ea7f00eb498"},
+    {file = "msgspec-0.18.2-cp39-cp39-musllinux_1_1_aarch64.whl", hash = "sha256:595f14f628825d9d79eeea6e08514144a3d516eb014f0c6191f91899c83a6836"},
+    {file = "msgspec-0.18.2-cp39-cp39-musllinux_1_1_x86_64.whl", hash = "sha256:b90a44550f19ee0b8c37dbca75f96473299275001af2a00273d736b7347ead6d"},
+    {file = "msgspec-0.18.2-cp39-cp39-win_amd64.whl", hash = "sha256:70fa7f008008e2c823ecc1a143258bb2820ac76010cf6003091fa3832b6334c9"},
+    {file = "msgspec-0.18.2.tar.gz", hash = "sha256:3996bf1fc252658a7e028a0c263d28ac4dc48476e35f6fd8ebaf461a39459825"},
 ]
 
 [package.extras]
@@ -1758,13 +1758,13 @@ test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=7.4)", "pytest-co
 
 [[package]]
 name = "pluggy"
-version = "1.2.0"
+version = "1.3.0"
 description = "plugin and hook calling mechanisms for python"
 optional = false
-python-versions = ">=3.7"
+python-versions = ">=3.8"
 files = [
-    {file = "pluggy-1.2.0-py3-none-any.whl", hash = "sha256:c2fd55a7d7a3863cba1a013e4e2414658b1d07b6bc57b3919e0c63c9abb99849"},
-    {file = "pluggy-1.2.0.tar.gz", hash = "sha256:d12f0c4b579b15f5e054301bb226ee85eeeba08ffec228092f8defbaa3a4c4b3"},
+    {file = "pluggy-1.3.0-py3-none-any.whl", hash = "sha256:d89c696a773f8bd377d18e5ecda92b7a3793cbe66c87060a6fb58c7b6e1061f7"},
+    {file = "pluggy-1.3.0.tar.gz", hash = "sha256:cf61ae8f126ac6f7c451172cf30e3e43d3ca77615509771b3a984a0730651e12"},
 ]
 
 [package.extras]

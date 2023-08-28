@@ -348,6 +348,7 @@ impl From<OrderInitialized> for MarketOrder {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl MarketOrder {
     #[new]

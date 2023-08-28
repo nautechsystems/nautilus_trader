@@ -30,6 +30,7 @@ pub struct OrderBookDeltaDataWrangler {
     metadata: HashMap<String, String>,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl OrderBookDeltaDataWrangler {
     #[new]
