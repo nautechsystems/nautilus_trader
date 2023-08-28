@@ -1,7 +1,6 @@
 //! A rate limiter implementation heavily inspired by [governor](https://github.com/antifuchs/governor)
 //!
 //! The governor does not support different quota for different key. It is an open [issue](https://github.com/antifuchs/governor/issues/193)
-
 pub mod clock;
 mod gcra;
 mod nanos;
@@ -57,10 +56,6 @@ impl InMemoryState {
         // This map shouldn't be needed, as we only get here in the error case, but the compiler
         // can't see it.
         decision.map(|(result, _)| result)
-    }
-
-    pub(crate) fn is_older_than(&self, nanos: Nanos) -> bool {
-        self.0.load(Ordering::Relaxed) <= nanos.into()
     }
 }
 
@@ -171,7 +166,7 @@ where
         }
     }
 
-    pub async fn until_key_ready(&self, key: &K) -> () {
+    pub async fn until_key_ready(&self, key: &K) {
         loop {
             match self.check_key(key) {
                 Ok(x) => x,
@@ -185,16 +180,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        num::NonZeroU32,
-        sync::{atomic::AtomicU64, Arc},
-        time::Duration,
-    };
+    use std::{num::NonZeroU32, time::Duration};
 
     use dashmap::DashMap;
 
     use super::{
-        clock::{self, Clock, FakeRelativeClock},
+        clock::{Clock, FakeRelativeClock},
         gcra::Gcra,
         quota::Quota,
         DashMapStateStore, RateLimiter,

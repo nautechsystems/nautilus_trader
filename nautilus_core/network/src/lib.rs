@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod http;
+#[allow(dead_code)]
 mod ratelimiter;
 pub mod socket;
 pub mod websocket;

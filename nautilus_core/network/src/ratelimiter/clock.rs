@@ -7,44 +7,6 @@
 //! You can supply a custom time source by implementing both [`Reference`]
 //! and [`Clock`] for your own types, and by implementing `Add<Nanos>` for
 //! your [`Reference`] type:
-//! ```rust
-//! # use std::ops::Add;
-//! use governor::clock::{Reference, Clock};
-//! use governor::nanos::Nanos;
-//!
-//! #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
-//! struct MyInstant(u64);
-//!
-//! impl Add<Nanos> for MyInstant {
-//!     type Output = Self;
-//!
-//!    fn add(self, other: Nanos) -> Self {
-//!        Self(self.0 + other.as_u64())
-//!    }
-//! }
-//!
-//! impl Reference for MyInstant {
-//!     fn duration_since(&self, earlier: Self) -> Nanos {
-//!         self.0.checked_sub(earlier.0).unwrap_or(0).into()
-//!     }
-//!
-//!     fn saturating_sub(&self, duration: Nanos) -> Self {
-//!         Self(self.0.checked_sub(duration.into()).unwrap_or(self.0))
-//!     }
-//! }
-//!
-//! #[derive(Clone)]
-//! struct MyCounter(u64);
-//!
-//! impl Clock for MyCounter {
-//!     type Instant = MyInstant;
-//!
-//!     fn now(&self) -> Self::Instant {
-//!         MyInstant(self.0)
-//!     }
-//! }
-//! ```
-
 use std::{
     convert::TryInto,
     fmt::Debug,
@@ -86,12 +48,6 @@ pub trait Clock: Clone {
 
 impl Reference for Duration {
     /// The internal duration between this point and another.
-    /// ```rust
-    /// # use std::time::Duration;
-    /// # use governor::clock::Reference;
-    /// let diff = Duration::from_secs(20).duration_since(Duration::from_secs(10));
-    /// assert_eq!(diff, Duration::from_secs(10).into());
-    /// ```
     fn duration_since(&self, earlier: Self) -> Nanos {
         self.checked_sub(earlier)
             .unwrap_or_else(|| Duration::new(0, 0))
@@ -99,12 +55,6 @@ impl Reference for Duration {
     }
 
     /// The internal duration between this point and another.
-    /// ```rust
-    /// # use std::time::Duration;
-    /// # use governor::clock::Reference;
-    /// let diff = Reference::saturating_sub(&Duration::from_secs(20), Duration::from_secs(10).into());
-    /// assert_eq!(diff, Duration::from_secs(10));
-    /// ```
     fn saturating_sub(&self, duration: Nanos) -> Self {
         self.checked_sub(duration.into()).unwrap_or(*self)
     }
@@ -152,17 +102,6 @@ impl FakeRelativeClock {
 }
 
 impl PartialEq for FakeRelativeClock {
-    /// Compares two fake relative clocks' current state, snapshotted.
-    ///
-    /// ```rust
-    /// # use std::time::Duration;
-    /// # use governor::clock::FakeRelativeClock;
-    /// let clock1 = FakeRelativeClock::default();
-    /// let clock2 = FakeRelativeClock::default();
-    /// assert_eq!(clock1, clock2);
-    /// clock1.advance(Duration::from_secs(1));
-    /// assert_ne!(clock1, clock2);
-    /// ```
     fn eq(&self, other: &Self) -> bool {
         self.now.load(Ordering::Relaxed) == other.now.load(Ordering::Relaxed)
     }
@@ -175,9 +114,6 @@ impl Clock for FakeRelativeClock {
         self.now.load(Ordering::Relaxed).into()
     }
 }
-
-/// The default clock that reports [`Instant`][std::time::Instant]s.
-pub type DefaultClock = MonotonicClock;
 
 #[cfg(all(feature = "std", test))]
 mod test {

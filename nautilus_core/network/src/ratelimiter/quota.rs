@@ -27,37 +27,6 @@ use super::nanos::Nanos;
 ///
 /// In other words, the burst size is the maximum number of cells that the rate limiter will ever
 /// allow through without replenishing them.
-///
-/// # Examples
-///
-/// Construct a quota that allows 50 cells per second (replenishing at a rate of one cell
-/// per 20 milliseconds), with a burst size of 50 cells, allowing a full rate limiter to allow 50
-/// cells through at a time:
-/// ```rust
-/// # use governor::Quota;
-/// # use nonzero_ext::nonzero;
-/// # use std::time::Duration;
-/// let q = Quota::per_second(nonzero!(50u32));
-/// assert_eq!(q, Quota::per_second(nonzero!(50u32)).allow_burst(nonzero!(50u32)));
-/// assert_eq!(q.replenish_interval(), Duration::from_millis(20));
-/// assert_eq!(q.burst_size().get(), 50);
-/// // The Quota::new constructor is deprecated, but this constructs the equivalent quota:
-/// #[allow(deprecated)]
-/// assert_eq!(q, Quota::new(nonzero!(50u32), Duration::from_secs(1)).unwrap());
-/// ```
-///
-/// Construct a quota that allows 2 cells per hour through (replenishing at a rate of one cell
-/// per 30min), but allows bursting up to 90 cells at once:
-/// ```rust
-/// # use governor::Quota;
-/// # use nonzero_ext::nonzero;
-/// # use std::time::Duration;
-/// let q = Quota::per_hour(nonzero!(2u32)).allow_burst(nonzero!(90u32));
-/// assert_eq!(q.replenish_interval(), Duration::from_secs(30 * 60));
-/// assert_eq!(q.burst_size().get(), 90);
-/// // The entire maximum burst size will be restored if no cells are let through for 45 hours:
-/// assert_eq!(q.burst_size_replenished_in(), Duration::from_secs(60 * 60 * (90 / 2)));
-/// ```
 #[pyclass]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Quota {
@@ -139,17 +108,6 @@ impl Quota {
     /// necessary.
     ///
     /// If the time interval is zero, returns `None`.
-    ///
-    /// # Example
-    /// ```rust
-    /// # use nonzero_ext::nonzero;
-    /// # use governor::Quota;
-    /// # use std::time::Duration;
-    /// // Replenish one cell per day, with a burst capacity of 10 cells:
-    /// let _quota = Quota::with_period(Duration::from_secs(60 * 60 * 24))
-    ///     .unwrap()
-    ///     .allow_burst(nonzero!(10u32));
-    /// ```
     pub fn with_period(replenish_1_per: Duration) -> Option<Quota> {
         if replenish_1_per.as_nanos() == 0 {
             None
