@@ -26,6 +26,7 @@ from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
@@ -35,7 +36,9 @@ from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.tick import TradeTick
@@ -48,6 +51,8 @@ from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -443,36 +448,30 @@ def test_bsp_deltas_apply(data_client, instrument):
         book_type=BookType.L2_MBP,
         asks=[(0.0010000, 55.81)],
     )
-    deltas = BSPOrderBookDeltas.from_dict(
-        {
-            "type": "BSPOrderBookDeltas",
-            "instrument_id": instrument.id.value,
-            "deltas": msgspec.json.encode(
-                [
-                    {
-                        "type": "OrderBookDelta",
-                        "instrument_id": instrument.id.value,
-                        "book_type": "L2_MBP",
-                        "action": "UPDATE",
-                        "price": "0.990099",
-                        "size": "2.0",
-                        "side": "BUY",
-                        "order_id": 1,
-                        "flags": 0,
-                        "sequence": 0,
-                        "ts_event": 1667288437852999936,
-                        "ts_init": 1667288437852999936,
-                    },
-                ],
+
+    deltas = [
+        BSPOrderBookDelta(
+            instrument_id=instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                price=Price.from_str("0.990099"),
+                size=Quantity.from_str("2.0"),
+                side=OrderSide.BUY,
+                order_id=1,
             ),
-            "update_id": 0,
-            "ts_event": 1667288437852999936,
-            "ts_init": 1667288437852999936,
-        },
+            flags=0,
+            sequence=0,
+            ts_event=1667288437852999936,
+            ts_init=1667288437852999936,
+        ),
+    ]
+    bsp_deltas = BSPOrderBookDeltas(
+        instrument_id=instrument.id,
+        deltas=deltas,
     )
 
     # Act
-    book.apply(deltas)
+    book.apply(bsp_deltas)
 
     # Assert
     assert book.best_ask_price() == betfair_float_to_price(0.001)

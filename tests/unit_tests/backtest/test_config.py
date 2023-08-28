@@ -91,7 +91,7 @@ class _TestBacktestConfig:
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
 
-        raise NotImplementedError("Needs convert to new loader")
+        raise NotImplementedError("Needs convert to new wranglers")
         # process_files(
         #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
         #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
@@ -115,7 +115,7 @@ class _TestBacktestConfig:
     def test_backtest_data_config_filters(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        raise NotImplementedError("Needs convert to new loader")
+        raise NotImplementedError("Needs convert to new wranglers")
         # process_files(
         #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
         #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
@@ -133,7 +133,7 @@ class _TestBacktestConfig:
         assert len(result["data"]) == 2745
 
     def test_backtest_data_config_status_updates(self):
-        raise NotImplementedError("Needs convert to new loader")
+        raise NotImplementedError("Needs convert to new wranglers")
         # process_files(
         #     glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
         #     reader=BetfairTestStubs.betfair_reader(),
@@ -264,7 +264,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
-        assert token == "acf938231c1e196f54f34716dd4feb5e16f820087ca3b5b15bccf7b8e2e36bd0"  # UNIX
+        assert token == "6e57cf048bce699d9a43e9e79cabee5bf89b4809abde56f59fe80318da78567c"  # UNIX
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(

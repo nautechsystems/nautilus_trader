@@ -39,6 +39,8 @@ from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
+from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
+from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
 from nautilus_trader.config import BacktestDataConfig
@@ -53,6 +55,7 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
 
@@ -823,3 +826,17 @@ def betting_instrument_handicap() -> BettingInstrument:
             "ts_init": 0,
         },
     )
+
+
+def load_betfair_data(catalog: ParquetDataCatalog):
+    fn = TEST_DATA_DIR + "/betfair/1.166564490.bz2"
+
+    # Write betting instruments
+    instruments = betting_instruments_from_file(fn)
+    catalog.write_data(instruments)
+
+    # Write data
+    data = list(parse_betfair_file(fn))
+    catalog.write_data(data)
+
+    return catalog

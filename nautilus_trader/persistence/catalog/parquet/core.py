@@ -235,7 +235,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         dataset_path = f"{self.path}/data/{file_prefix}"
         if not self.fs.exists(dataset_path):
             return
-        dataset = pds.dataset(dataset_path)
+        dataset = pds.dataset(dataset_path, filesystem=self.fs)
         table = dataset.to_table()
         return self._handle_table_nautilus(table, cls=cls)
 

@@ -32,9 +32,7 @@ from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
-from nautilus_trader.serialization.arrow.implementations.instruments import (
-    SCHEMAS as INSTRUMENT_SCHEMAS,
-)
+from nautilus_trader.serialization.arrow.implementations.instruments import SCHEMAS as INS_SCHEMAS
 from nautilus_trader.serialization.arrow.implementations.instruments import deserialize_instrument
 from nautilus_trader.serialization.arrow.implementations.instruments import serialize_instrument
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
@@ -278,7 +276,7 @@ for _cls in NAUTILUS_ARROW_SCHEMA:
 for cls in Instrument.__subclasses__():
     register_arrow(
         cls=cls,
-        schema=INSTRUMENT_SCHEMAS[cls],
+        schema=INS_SCHEMAS[cls],
         serializer=serialize_instrument,
         deserializer=deserialize_instrument,
     )

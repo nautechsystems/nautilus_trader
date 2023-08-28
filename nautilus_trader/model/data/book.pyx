@@ -685,7 +685,7 @@ cdef class OrderBookDeltas(Data):
     cdef dict to_dict_c(OrderBookDeltas obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "OrderBookDeltas",
+            "type": obj.__class__.__name__,
             "instrument_id": obj.instrument_id.to_str(),
             "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
         }

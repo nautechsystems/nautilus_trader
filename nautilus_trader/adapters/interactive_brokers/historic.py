@@ -43,7 +43,6 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.external.core import write_objects
 
 
 logger = logging.getLogger(__name__)
@@ -99,7 +98,7 @@ def back_fill_catalog(
 
             # Check if this instrument exists in the catalog, if not, write it.
             if not catalog.instruments(instrument_ids=[instrument.id.value], as_nautilus=True):
-                write_objects(catalog=catalog, chunk=[instrument])
+                catalog.write_data([instrument])
 
             for kind in kinds:
                 fn = generate_filename(catalog, instrument_id=instrument.id, kind=kind, date=date)
@@ -122,7 +121,7 @@ def back_fill_catalog(
                     continue
 
                 template = f"{date:%Y%m%d}" + "-{i}.parquet"
-                write_objects(catalog=catalog, chunk=data, basename_template=template)
+                catalog.write_data(data, basename_template=template)
 
 
 def request_data(

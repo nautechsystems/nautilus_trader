@@ -15,12 +15,14 @@
 from enum import Enum
 from typing import Optional
 
+import msgspec
 import pyarrow as pa
 
 # fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data.book import BookOrder
+from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
@@ -45,27 +47,25 @@ class SubscriptionStatus(Enum):
     RUNNING = 2
 
 
-class BSPOrderBookDeltas(OrderBookDeltas):
-    """
-    Represents a `Betfair` BSP order book delta.
-    """
-
+class BSPOrderBookDelta(OrderBookDelta):
     @staticmethod
     def from_dict(values) -> "BSPOrderBookDeltas":
         PyCondition.not_none(values, "values")
+        instrument_id = InstrumentId.from_str(values["instrument_id"])
         action: BookAction = book_action_from_str(values["action"])
         if action != BookAction.CLEAR:
             book_dict = {
-                "price": str(values["price"]),
-                "size": str(values["size"]),
-                "side": values["side"],
-                "order_id": values["order_id"],
+                "price": str(values["order"]["price"]),
+                "size": str(values["order"]["size"]),
+                "side": values["order"]["side"],
+                "order_id": values["order"]["order_id"],
             }
             book_order = BookOrder.from_dict(book_dict)
         else:
             book_order = None
-        return BSPOrderBookDeltas(
-            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+
+        return BSPOrderBookDelta(
+            instrument_id=instrument_id,
             action=action,
             order=book_order,
             ts_event=values["ts_event"],
@@ -74,7 +74,7 @@ class BSPOrderBookDeltas(OrderBookDeltas):
 
     @staticmethod
     def to_dict(obj) -> dict:
-        values = OrderBookDeltas.to_dict(obj)
+        values = OrderBookDelta.to_dict(obj)
         values["type"] = obj.__class__.__name__
         return values
 
@@ -91,7 +91,27 @@ class BSPOrderBookDeltas(OrderBookDeltas):
                 "ts_event": pa.uint64(),
                 "ts_init": pa.uint64(),
             },
-            metadata={"type": "OrderBookDelta"},
+            metadata={"type": "BSPOrderBookDelta"},
+        )
+
+
+class BSPOrderBookDeltas(OrderBookDeltas):
+    """
+    Represents a `Betfair` BSP order book delta.
+    """
+
+    @staticmethod
+    def to_dict(obj) -> dict:
+        values = super().to_dict(obj)
+        values["type"] = obj.__class__.__name__
+        return values
+
+    def from_dict(self, data: dict):
+        return BSPOrderBookDeltas(
+            instrument_id=InstrumentId.from_str(data["instrument_id"]),
+            deltas=[
+                BSPOrderBookDelta.from_dict(delta) for delta in msgspec.json.decode(data["deltas"])
+            ],
         )
 
 
@@ -208,6 +228,7 @@ class BetfairStartingPrice(Data):
             bsp=values["bsp"] if values["bsp"] else None,
         )
 
+    @staticmethod
     def to_dict(self):
         return {
             "type": type(self).__name__,
@@ -245,5 +266,5 @@ register_arrow(
     cls=BSPOrderBookDeltas,
     serializer=BSPOrderBookDeltas.to_dict,
     deserializer=BSPOrderBookDeltas.from_dict,
-    schema=BSPOrderBookDeltas.schema(),
+    schema=BSPOrderBookDelta.schema(),
 )

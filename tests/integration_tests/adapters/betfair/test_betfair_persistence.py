@@ -12,34 +12,45 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.persistence.catalog.parquet.serializers import ParquetSerializer
+from nautilus_trader.core.rust.model import BookAction
+from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
+from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
 class TestBetfairPersistence:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory")
+        self.catalog = data_catalog_setup(protocol="memory", path="/catalog")
         self.fs = self.catalog.fs
         self.instrument = betting_instrument()
 
     def test_bsp_delta_serialize(self):
         # Arrange
-        bsp_delta = BSPOrderBookDeltas.from_dict(
-            {
-                "type": "BSPOrderBookDelta",
-                "instrument_id": self.instrument.id.value,
-                "action": "UPDATE",
-                "price": 0.990099,
-                "size": 60.07,
-                "side": "BUY",
-                "order_id": 1635313844283000000,
-                "ts_event": 1635313844283000000,
-                "ts_init": 1635313844283000000,
-            },
+        bsp_delta = BSPOrderBookDeltas(
+            instrument_id=self.instrument.id,
+            deltas=[
+                BSPOrderBookDelta(
+                    instrument_id=self.instrument.id,
+                    action=BookAction.UPDATE,
+                    order=BookOrder(
+                        price=Price.from_str("0.990099"),
+                        size=Quantity.from_str("60.07"),
+                        side=OrderSide.BUY,
+                        order_id=1,
+                    ),
+                    ts_event=1635313844283000000,
+                    ts_init=1635313844283000000,
+                ),
+            ],
         )
 
         # Act
@@ -47,7 +58,7 @@ class TestBetfairPersistence:
 
         # Assert
         assert bsp_delta.from_dict(values) == bsp_delta
-        assert values["type"] == "BSPOrderBookDelta"
+        assert values["type"] == "BSPOrderBookDeltas"
 
     def test_betfair_starting_price_to_from_dict(self):
         # Arrange
@@ -62,7 +73,7 @@ class TestBetfairPersistence:
         )
 
         # Act
-        values = bsp.to_dict()
+        values = bsp.to_dict(bsp)
         result = bsp.from_dict(values)
 
         # Assert
@@ -82,17 +93,18 @@ class TestBetfairPersistence:
         )
 
         # Act
-        serialized = ParquetSerializer.serialize(bsp)
-        [result] = ParquetSerializer.deserialize(BetfairStartingPrice, [serialized])
+        serialized = ArrowSerializer.serialize(bsp)
+        [result] = ArrowSerializer.deserialize(BetfairStartingPrice, serialized)
 
         # Assert
         assert result.bsp == bsp.bsp
 
-    def test_bsp_deltas(self, load_betfair_data):
+    def test_query_custom_type(self):
         # Arrange
+        load_betfair_data(self.catalog)
 
         # Act
-        data = self.catalog.query(BSPOrderBookDeltas)
+        data = self.catalog.query(BetfairTicker)
 
         # Assert
-        assert len(data) == 2824
+        assert len(data) == 210
