@@ -11,13 +11,14 @@ use std::{
     hash::Hash,
     num::NonZeroU64,
     sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
 };
 
 use dashmap::DashMap;
 use tokio::time::sleep;
 
 use self::{
-    clock::{Clock, MonotonicClock},
+    clock::{Clock, FakeRelativeClock, MonotonicClock},
     gcra::{Gcra, NotUntil},
     nanos::Nanos,
     quota::Quota,
@@ -143,11 +144,24 @@ where
     }
 }
 
+impl<K> RateLimiter<K, FakeRelativeClock>
+where
+    K: Hash + Eq + Clone,
+{
+    pub fn advance_clock(&self, by: Duration) {
+        self.clock.advance(by)
+    }
+}
+
 impl<K, C> RateLimiter<K, C>
 where
     K: Hash + Eq + Clone,
     C: Clock,
 {
+    pub fn add_quota_for_key(&self, key: K, value: Quota) {
+        self.gcra.insert(key, Gcra::new(value));
+    }
+
     pub fn check_key(&self, key: &K) -> Result<(), NotUntil<C::Instant>> {
         match self.gcra.get(key) {
             Some(quota) => quota.test_and_update(self.start, key, &self.state, self.clock.now()),
@@ -166,5 +180,62 @@ where
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        num::NonZeroU32,
+        sync::{atomic::AtomicU64, Arc},
+        time::Duration,
+    };
+
+    use dashmap::DashMap;
+
+    use super::{
+        clock::{self, Clock, FakeRelativeClock},
+        gcra::Gcra,
+        quota::Quota,
+        DashMapStateStore, RateLimiter,
+    };
+
+    fn initialize_mock_rate_limiter() -> RateLimiter<String, FakeRelativeClock> {
+        let clock = FakeRelativeClock::default();
+        let start = clock.now();
+        let gcra = DashMap::new();
+        let base_quota = Quota::per_second(NonZeroU32::new(2).unwrap());
+        RateLimiter {
+            base_gcra: Gcra::new(base_quota),
+            state: DashMapStateStore::new(),
+            gcra,
+            clock,
+            start,
+        }
+    }
+
+    #[test]
+    fn test_default_quota() {
+        let mock_limiter = initialize_mock_rate_limiter();
+        // check base quota is exceeded
+        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"lmao".to_string()).is_err());
+
+        // increment clock and check base quota is passed
+        mock_limiter.advance_clock(Duration::from_secs(1));
+        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
+
+        // add new key quota pair
+        mock_limiter.add_quota_for_key(
+            "yeet".to_string(),
+            Quota::per_second(NonZeroU32::new(1).unwrap()),
+        );
+
+        // check base quota and key quota to exceed
+        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"lmao".to_string()).is_err());
+        assert!(mock_limiter.check_key(&"yeet".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"yeet".to_string()).is_err());
     }
 }
