@@ -27,14 +27,16 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import OrderBookDeltaDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
-from nautilus_trader.serialization.arrow.implementations.instruments import SCHEMAS as INS_SCHEMAS
-from nautilus_trader.serialization.arrow.implementations.instruments import deserialize_instrument
-from nautilus_trader.serialization.arrow.implementations.instruments import serialize_instrument
+from nautilus_trader.serialization.arrow.implementations import account_state
+from nautilus_trader.serialization.arrow.implementations import instruments
+from nautilus_trader.serialization.arrow.implementations import position_events
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
 
@@ -273,10 +275,25 @@ for _cls in NAUTILUS_ARROW_SCHEMA:
         )
 
 
+# Custom implementations
 for cls in Instrument.__subclasses__():
     register_arrow(
         cls=cls,
-        schema=INS_SCHEMAS[cls],
-        serializer=serialize_instrument,
-        deserializer=deserialize_instrument,
+        schema=instruments.SCHEMAS[cls],
+        serializer=instruments.serialize,
+        deserializer=instruments.serialize,
+    )
+
+register_arrow(
+    AccountState,
+    schema=account_state.SCHEMA,
+    serializer=account_state.serialize,
+    deserializer=account_state.deserialize,
+)
+for pos_cls in PositionEvent.__subclasses__():
+    register_arrow(
+        pos_cls,
+        schema=position_events.SCHEMAS[pos_cls],
+        serializer=position_events.serialize,
+        deserializer=position_events.deserialize,
     )

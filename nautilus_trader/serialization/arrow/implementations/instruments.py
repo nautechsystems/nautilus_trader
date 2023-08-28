@@ -193,13 +193,13 @@ SCHEMAS = {
 }
 
 
-def serialize_instrument(obj) -> pa.RecordBatch:
+def serialize(obj) -> pa.RecordBatch:
     data = obj.to_dict(obj)
     schema = SCHEMAS[obj.__class__].with_metadata({"class": obj.__class__.__name__})
     return pa.RecordBatch.from_pylist([data], schema)
 
 
-def deserialize_instrument(batch: pa.RecordBatch) -> list[Instrument]:
+def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
     ins_type = batch.schema.metadata.get(b"type") or batch.schema.metadata[b"class"]
     Cls = {
         b"BettingInstrument": BettingInstrument,

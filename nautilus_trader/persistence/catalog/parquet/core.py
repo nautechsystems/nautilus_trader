@@ -169,6 +169,8 @@ class ParquetDataCatalog(BaseDataCatalog):
             name = type(obj).__name__
             if isinstance(obj, Instrument):
                 return name, obj.id.value
+            elif isinstance(obj, Bar):
+                return name, obj.bar_type.instrument_id.value
             elif hasattr(obj, "instrument_id"):
                 return name, obj.instrument_id.value
             return name, None

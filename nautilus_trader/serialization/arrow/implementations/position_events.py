@@ -22,7 +22,6 @@ from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.objects import Money
-from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 def try_float(x):
@@ -70,7 +69,7 @@ def deserialize(cls):
     return inner
 
 
-SCHEMAS = {
+SCHEMAS: dict[PositionEvent, pa.Schema] = {
     PositionOpened: pa.schema(
         {
             "trader_id": pa.dictionary(pa.int16(), pa.string()),
@@ -151,11 +150,3 @@ SCHEMAS = {
         },
     ),
 }
-
-for cls in (PositionOpened, PositionChanged, PositionClosed):
-    register_arrow(
-        cls=cls,
-        schema=SCHEMAS[cls],
-        serializer=serialize,
-        deserializer=deserialize(cls=cls),
-    )

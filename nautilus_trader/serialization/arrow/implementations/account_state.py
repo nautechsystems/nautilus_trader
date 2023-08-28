@@ -23,7 +23,6 @@ from pyarrow import RecordBatch
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 def serialize(state: AccountState) -> RecordBatch:
@@ -143,11 +142,4 @@ SCHEMA = pa.schema(
         "ts_init": pa.uint64(),
     },
     metadata={"type": "AccountState"},
-)
-
-register_arrow(
-    AccountState,
-    schema=SCHEMA,
-    serializer=serialize,
-    deserializer=deserialize,
 )
