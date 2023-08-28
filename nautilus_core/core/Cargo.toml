@@ -22,8 +22,9 @@ uuid = { workspace = true }
 
 [features]
 extension-module = ["pyo3/extension-module"]
+ffi = ["cbindgen"]
 python = ["pyo3"]
-default = ["python"]
+default = ["ffi", "python"]
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -31,7 +32,7 @@ iai = { workspace = true }
 rstest = { workspace = true }
 
 [build-dependencies]
-cbindgen = { workspace = true }
+cbindgen = { workspace = true, optional = true }
 
 [[bench]]
 name = "criterion_time_benchmark"

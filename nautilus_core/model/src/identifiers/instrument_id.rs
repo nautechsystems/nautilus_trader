@@ -118,6 +118,7 @@ impl InstrumentId {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentId {
     InstrumentId::new(symbol, venue)
@@ -128,17 +129,20 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
     InstrumentId::from(cstr_to_string(ptr).as_str())
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn instrument_id_to_cstr(instrument_id: &InstrumentId) -> *const c_char {
     str_to_cstr(&instrument_id.to_string())
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
     let mut h = DefaultHasher::new();
@@ -146,6 +150,7 @@ pub extern "C" fn instrument_id_hash(instrument_id: &InstrumentId) -> u64 {
     h.finish()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn instrument_id_is_synthetic(instrument_id: &InstrumentId) -> u8 {
     u8::from(instrument_id.is_synthetic())

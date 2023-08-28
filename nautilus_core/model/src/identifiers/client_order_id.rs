@@ -96,12 +96,14 @@ impl From<&str> for ClientOrderId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     ClientOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
     id.value.precomputed_hash()

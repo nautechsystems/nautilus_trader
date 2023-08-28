@@ -342,37 +342,44 @@ impl Quantity {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
     // SAFETY: Assumes `value` and `precision` were properly validated
     Quantity::new(value, precision).unwrap()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
     Quantity::from_raw(raw, precision)
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
     qty.as_f64()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
     a.add_assign(b);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
     a.add_assign(b);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
     a.sub_assign(b);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
     a.sub_assign(b);
