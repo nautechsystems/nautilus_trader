@@ -90,13 +90,8 @@ class _TestBacktestConfig:
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-
-        raise NotImplementedError("Needs convert to new wranglers")
-        # process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-        #     catalog=self.catalog,
-        # )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
 
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
@@ -115,12 +110,10 @@ class _TestBacktestConfig:
     def test_backtest_data_config_filters(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        raise NotImplementedError("Needs convert to new wranglers")
-        # process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-        #     catalog=self.catalog,
-        # )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
+
+        # Act
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs.protocol,

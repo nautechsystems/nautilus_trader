@@ -31,6 +31,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.persistence.catalog.parquet.core import uri_instrument_id
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -132,7 +133,7 @@ class StreamingFeatherWriter:
         folder = f"{self.path}/{table_name}"
         key = (table_name, obj.instrument_id.value)
         self.fs.makedirs(folder, exist_ok=True)
-        full_path = f"{folder}/{obj.instrument_id.value}.feather"
+        full_path = f"{folder}/{uri_instrument_id(obj.instrument_id.value)}.feather"
         f = self.fs.open(full_path, "wb")
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)

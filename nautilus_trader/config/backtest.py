@@ -101,7 +101,6 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             "start": self.start_time,
             "end": self.end_time,
             "filter_expr": parse_filters_expr(filter_expr),
-            "as_nautilus": True,
             "metadata": self.metadata,
             "use_rust": self.use_rust,
         }
@@ -131,7 +130,6 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         self,
         start_time: Optional[pd.Timestamp] = None,
         end_time: Optional[pd.Timestamp] = None,
-        as_nautilus: bool = True,
     ):
         query = self.query
         query.update(
@@ -142,10 +140,10 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         )
 
         catalog = self.catalog()
-        instruments = catalog.instruments(
-            instrument_ids=[self.instrument_id] if self.instrument_id else None,
+        instruments = (
+            catalog.instruments(instrument_ids=[self.instrument_id]) if self.instrument_id else None
         )
-        if not instruments:
+        if self.instrument_id and not instruments:
             return {"data": [], "instrument": None}
         data = catalog.query(**query)
         return {

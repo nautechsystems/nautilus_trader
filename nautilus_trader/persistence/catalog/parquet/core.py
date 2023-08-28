@@ -48,7 +48,6 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
-from nautilus_trader.persistence.streaming.writer import read_feather_file
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
@@ -236,7 +235,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if not self.fs.exists(dataset_path):
             return
         dataset = pds.dataset(dataset_path, filesystem=self.fs)
-        table = dataset.to_table()
+        table = dataset.to_table(filter=kwargs.get("filter_expr"))
         return self._handle_table_nautilus(table, cls=cls)
 
     def query(
@@ -388,6 +387,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         return self._read_feather(kind="backtest", instance_id=instance_id, **kwargs)
 
     def _read_feather(self, kind: str, instance_id: str, raise_on_failed_deserialize: bool = False):
+        from nautilus_trader.persistence.streaming.writer import read_feather_file
+
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = defaultdict(list)
         for feather_file in self._list_feather_files(kind=kind, instance_id=instance_id):
@@ -416,14 +417,21 @@ class ParquetDataCatalog(BaseDataCatalog):
         kind: str,
         instance_id: str,
     ) -> Generator[FeatherFile, None, None]:
-        prefix = f"{self.path}/{kind}/{instance_id}"
+        prefix = f"{self.path}/{kind}/{uri_instrument_id(instance_id)}"
 
         # Non-instrument feather files
-        for fn in self.fs.glob(f"{self.path}/{kind}/{instance_id}/*.feather"):
+        for fn in self.fs.glob(f"{prefix}/*.feather"):
             cls_name = fn.replace(prefix + "/", "").replace(".feather", "")
             yield FeatherFile(path=fn, class_name=cls_name)
 
         # Per-instrument feather files
-        for ins_fn in self.fs.glob(f"{self.path}/{kind}/{instance_id}/**/*.feather"):
+        for ins_fn in self.fs.glob(f"{prefix}/**/*.feather"):
             ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
             yield FeatherFile(path=ins_fn, class_name=ins_cls_name)
+
+
+def uri_instrument_id(instrument_id: str) -> str:
+    """
+    Convert an instrument_id into a valid URI for writing to a file path.
+    """
+    return instrument_id.replace("/", "|")
