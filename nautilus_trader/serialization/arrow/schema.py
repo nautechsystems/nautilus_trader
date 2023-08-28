@@ -81,10 +81,7 @@ NAUTILUS_ARROW_SCHEMA = {
     ),
     Ticker: pa.schema(
         [
-            pa.field("price", pa.int64(), False),
-            pa.field("size", pa.uint64(), False),
-            pa.field("aggressor_side", pa.uint8(), False),
-            pa.field("trade_id", pa.string(), False),
+            pa.field("instrument_id", pa.dictionary(pa.int16(), pa.string()), False),
             pa.field("ts_event", pa.uint64(), False),
             pa.field("ts_init", pa.uint64(), False),
         ],

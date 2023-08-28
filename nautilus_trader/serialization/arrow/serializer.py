@@ -276,12 +276,12 @@ for _cls in NAUTILUS_ARROW_SCHEMA:
 
 
 # Custom implementations
-for cls in Instrument.__subclasses__():
+for ins_cls in Instrument.__subclasses__():
     register_arrow(
-        cls=cls,
-        schema=instruments.SCHEMAS[cls],
+        cls=ins_cls,
+        schema=instruments.SCHEMAS[ins_cls],
         serializer=instruments.serialize,
-        deserializer=instruments.serialize,
+        deserializer=instruments.deserialize,
     )
 
 register_arrow(
@@ -295,5 +295,5 @@ for pos_cls in PositionEvent.__subclasses__():
         pos_cls,
         schema=position_events.SCHEMAS[pos_cls],
         serializer=position_events.serialize,
-        deserializer=position_events.deserialize,
+        deserializer=position_events.deserialize(pos_cls),
     )

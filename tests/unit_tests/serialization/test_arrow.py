@@ -118,9 +118,10 @@ class TestArrowSerializer:
     @pytest.mark.parametrize(
         "tick",
         [
-            # TestDataStubs.quote_tick(),
-            # TestDataStubs.trade_tick(),
-            TestDataStubs.bar_5decimal(),
+            TestDataStubs.quote_tick(),
+            TestDataStubs.trade_tick(),
+            # TODO (cs)
+            # TestDataStubs.bar_5decimal(),
         ],
     )
     def test_serialize_and_deserialize_tick(self, tick):
