@@ -74,12 +74,14 @@ impl From<&str> for PositionId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn position_id_new(ptr: *const c_char) -> PositionId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     PositionId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn position_id_hash(id: &PositionId) -> u64 {
     id.value.precomputed_hash()

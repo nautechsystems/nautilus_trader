@@ -301,36 +301,41 @@ impl Price {
         fixed_i64_to_f64(self.raw)
     }
 
-    // #[pyo3(name = "as_decimal")]
-    // fn py_as_decimal(&self) -> Decimal {
-    //     self.as_decimal()
-    // }
+    #[pyo3(name = "as_decimal")]
+    fn py_as_decimal(&self) -> Decimal {
+        self.as_decimal()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
     // TODO: Document panic
     Price::new(value, precision).unwrap()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
     Price::from_raw(raw, precision)
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_as_f64(price: &Price) -> f64 {
     price.as_f64()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_add_assign(mut a: Price, b: Price) {
     a.add_assign(b);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
     a.sub_assign(b);

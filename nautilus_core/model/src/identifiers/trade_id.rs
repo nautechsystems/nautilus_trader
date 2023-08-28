@@ -75,12 +75,14 @@ impl From<&str> for TradeId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     TradeId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
     id.value.precomputed_hash()

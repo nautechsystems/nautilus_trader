@@ -76,12 +76,14 @@ impl From<&str> for AccountId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     AccountId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn account_id_hash(id: &AccountId) -> u64 {
     id.value.precomputed_hash()

@@ -75,12 +75,14 @@ impl From<&str> for Symbol {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Symbol::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
     id.value.precomputed_hash()
