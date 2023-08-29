@@ -26,7 +26,11 @@ use anyhow::Result;
 use nautilus_core::{
     correctness::check_f64_in_range_inclusive, parsing::precision_from_str, python::to_pyvalue_err,
 };
-use pyo3::prelude::*;
+use pyo3::{
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyLong, PyTuple},
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -38,7 +42,11 @@ pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
-#[pyclass]
+// #[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Quantity {
     pub raw: u64,
     pub precision: u8,
@@ -283,6 +291,39 @@ impl Quantity {
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {
         Quantity::new(value, precision).map_err(to_pyvalue_err)
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let tuple: (&PyLong, &PyLong) = state.extract(py)?;
+        self.raw = tuple.0.extract()?;
+        self.precision = tuple.1.extract::<u8>()?;
+        Ok(())
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok((self.raw, self.precision).to_object(py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(Quantity::zero(0)) // Safe default values
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            CompareOp::Ge => self.ge(other).into_py(py),
+            CompareOp::Gt => self.gt(other).into_py(py),
+            CompareOp::Le => self.le(other).into_py(py),
+            CompareOp::Lt => self.lt(other).into_py(py),
+        }
     }
 
     fn __hash__(&self) -> isize {
