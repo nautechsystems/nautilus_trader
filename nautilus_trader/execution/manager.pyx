@@ -328,7 +328,6 @@ cdef class OrderManager:
             Order child_order
             Order primary_order
             Order spawn_order
-            Quantity parent_quantity
             Quantity parent_filled_qty
         if order.contingency_type == ContingencyType.OTO:
             Condition.not_empty(order.linked_order_ids, "order.linked_order_ids")
@@ -337,11 +336,9 @@ cdef class OrderManager:
             client_id = self._cache.client_id(order.client_order_id)
 
             if order.exec_spawn_id is not None:
-                # Determine total quantities of execution spawn sequence
-                parent_quantity = self._cache.exec_spawn_total_quantity(order.exec_spawn_id)
+                # Determine total filled of execution spawn sequence
                 parent_filled_qty = self._cache.exec_spawn_total_filled_qty(order.exec_spawn_id)
             else:
-                parent_quantity = order.quantity
                 parent_filled_qty = order.filled_qty
 
             for client_order_id in order.linked_order_ids:
@@ -351,6 +348,7 @@ cdef class OrderManager:
 
                 if self.debug:
                     self._log.info(f"Processing OTO child order {child_order}.", LogColor.MAGENTA)
+                    self._log.info(f"{parent_filled_qty=}.", LogColor.MAGENTA)
 
                 if not child_order.is_active_local_c():
                     continue
@@ -360,8 +358,6 @@ cdef class OrderManager:
 
                 if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
                     self.update_order_quantity(child_order, parent_filled_qty)
-                elif parent_quantity._mem.raw != child_order.quantity._mem.raw:
-                    self.update_order_quantity(child_order, parent_quantity)
 
                 if child_order.status_c() not in (OrderStatus.INITIALIZED, OrderStatus.EMULATED) or self._submit_order_handler is None:
                     return  # Order does not need to be released

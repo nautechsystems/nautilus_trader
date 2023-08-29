@@ -10,6 +10,7 @@ None
 
 ### Fixes
 - Fixed `OrderBookDelta.clear` method (where the `sequence` field was swapped with `flags` causing an overflow)
+- Fixed `OrderManager` OTO contingency handling on fills
 
 ---
 
