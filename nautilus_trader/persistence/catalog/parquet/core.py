@@ -131,7 +131,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _make_path(self, cls: type[Data], instrument_id: Optional[str] = None) -> str:
         if instrument_id is not None:
             assert isinstance(instrument_id, str), "instrument_id must be a string"
-            clean_instrument_id = instrument_id.replace("/", "-")
+            clean_instrument_id = uri_instrument_id(instrument_id)
             return f"{self.path}/data/{class_to_filename(cls)}/{clean_instrument_id}"
         else:
             return f"{self.path}/data/{class_to_filename(cls)}"
@@ -203,7 +203,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         # TODO (bm) - fix this glob, query once on catalog creation?
         for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
             assert self.fs.exists(fn)
-            if instrument_ids and not any(id_ in fn for id_ in instrument_ids):
+            if instrument_ids and not any(uri_instrument_id(id_) in fn for id_ in instrument_ids):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
@@ -243,7 +243,10 @@ class ParquetDataCatalog(BaseDataCatalog):
             start=start,
             end=end,
         )
-        assert table.num_rows, "No rows found for "
+
+        assert (
+            table.num_rows
+        ), f"No rows found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
         return self._handle_table_nautilus(table, cls=cls)
 
     def _load_pyarrow_table(
@@ -262,7 +265,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
-            valid_files = [fn for fn in dataset.files if any(x in fn for x in instrument_ids)]
+            valid_files = [
+                fn
+                for fn in dataset.files
+                if any(uri_instrument_id(x) in fn for x in instrument_ids)
+            ]
             dataset = pds.dataset(valid_files)
 
         filters: list[pds.Expression] = [filter_expr] if filter_expr is not None else []

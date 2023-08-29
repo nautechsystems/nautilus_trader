@@ -103,7 +103,7 @@ class TestPersistenceCatalog:
         # Assert
         assert instrument.max_price is None
 
-    def test_data_catalog_instrument_ids_correctly_unmapped(self, betfair_catalog):
+    def test_data_catalog_instrument_ids_correctly_unmapped(self):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
@@ -115,7 +115,7 @@ class TestPersistenceCatalog:
             ts_event=0,
             ts_init=0,
         )
-        betfair_catalog.write_data([instrument, trade_tick])
+        self.catalog.write_data([instrument, trade_tick])
 
         # Act
         self.catalog.instruments()
