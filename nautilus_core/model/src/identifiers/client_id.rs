@@ -81,19 +81,38 @@ pub extern "C" fn client_id_hash(id: &ClientId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::client_id::ClientId;
+
+    #[fixture]
+    pub fn client_binance() -> ClientId {
+        ClientId::from("BINANCE")
+    }
+
+    #[fixture]
+    pub fn client_dydx() -> ClientId {
+        ClientId::from("COINBASE")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::*;
+    use super::{stubs::*, *};
 
     #[rstest]
-    fn test_string_reprs() {
-        let id = ClientId::from("BINANCE");
-        assert_eq!(id.to_string(), "BINANCE");
-        assert_eq!(format!("{id}"), "BINANCE");
+    fn test_string_reprs(client_binance: ClientId) {
+        assert_eq!(client_binance.to_string(), "BINANCE");
+        assert_eq!(format!("{client_binance}"), "BINANCE");
     }
 
     #[rstest]
@@ -106,9 +125,9 @@ mod tests {
 
     #[rstest]
     fn test_client_id_hash_c() {
-        let id1 = ClientId::from("BINANCE");
-        let id2 = ClientId::from("BINANCE");
-        let id3 = ClientId::from("DYDX");
+        let id1 = client_binance();
+        let id2 = client_binance();
+        let id3 = client_dydx();
         assert_eq!(client_id_hash(&id1), client_id_hash(&id2));
         assert_ne!(client_id_hash(&id1), client_id_hash(&id3));
     }

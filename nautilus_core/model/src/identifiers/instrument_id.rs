@@ -156,6 +156,32 @@ pub extern "C" fn instrument_id_is_synthetic(instrument_id: &InstrumentId) -> u8
     u8::from(instrument_id.is_synthetic())
 }
 
+#[cfg(test)]
+pub mod stubs {
+    use std::str::FromStr;
+
+    use rstest::fixture;
+
+    use crate::identifiers::{
+        instrument_id::InstrumentId,
+        symbol::{stubs::*, Symbol},
+        venue::{stubs::*, Venue},
+    };
+
+    #[fixture]
+    pub fn btc_usdt_perp_binance() -> InstrumentId {
+        InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+    }
+
+    #[fixture]
+    pub fn audusd_sim(aud_usd: Symbol, simulation: Venue) -> InstrumentId {
+        InstrumentId {
+            symbol: aud_usd,
+            venue: simulation,
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

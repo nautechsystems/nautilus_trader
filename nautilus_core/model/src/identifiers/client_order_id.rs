@@ -110,6 +110,21 @@ pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::client_order_id::ClientOrderId;
+
+    #[fixture]
+    pub fn client_order_id() -> ClientOrderId {
+        ClientOrderId::from("O-20200814-102234-001-001-1")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -117,16 +132,15 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::ClientOrderId;
+    use super::{stubs::*, ClientOrderId};
     use crate::identifiers::client_order_id::{
         optional_ustr_to_vec_client_order_ids, optional_vec_client_order_ids_to_ustr,
     };
 
     #[rstest]
-    fn test_string_reprs() {
-        let id = ClientOrderId::from("O-20200814-102234-001-001-1");
-        assert_eq!(id.to_string(), "O-20200814-102234-001-001-1");
-        assert_eq!(format!("{id}"), "O-20200814-102234-001-001-1");
+    fn test_string_reprs(client_order_id: ClientOrderId) {
+        assert_eq!(client_order_id.to_string(), "O-20200814-102234-001-001-1");
+        assert_eq!(format!("{client_order_id}"), "O-20200814-102234-001-001-1");
     }
 
     #[rstest]

@@ -107,18 +107,36 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::venue::Venue;
+
+    #[fixture]
+    pub fn binance() -> Venue {
+        Venue::from("BINANCE")
+    }
+    #[fixture]
+    pub fn simulation() -> Venue {
+        Venue::from("SIM")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::Venue;
+    use super::{stubs::*, Venue};
 
     #[rstest]
-    fn test_string_reprs() {
-        let venue = Venue::from("BINANCE");
-        assert_eq!(venue.to_string(), "BINANCE");
-        assert_eq!(format!("{venue}"), "BINANCE");
+    fn test_string_reprs(binance: Venue) {
+        assert_eq!(binance.to_string(), "BINANCE");
+        assert_eq!(format!("{binance}"), "BINANCE");
     }
 }

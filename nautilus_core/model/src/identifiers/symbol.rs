@@ -89,18 +89,37 @@ pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::symbol::Symbol;
+
+    #[fixture]
+    pub fn eth_perp() -> Symbol {
+        Symbol::from("ETH-PERP")
+    }
+
+    #[fixture]
+    pub fn aud_usd() -> Symbol {
+        Symbol::from("AUDUSD")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::Symbol;
+    use super::{stubs::*, Symbol};
 
     #[rstest]
-    fn test_string_reprs() {
-        let symbol = Symbol::from("ETH-PERP");
-        assert_eq!(symbol.to_string(), "ETH-PERP");
-        assert_eq!(format!("{symbol}"), "ETH-PERP");
+    fn test_string_reprs(eth_perp: Symbol) {
+        assert_eq!(eth_perp.to_string(), "ETH-PERP");
+        assert_eq!(format!("{eth_perp}"), "ETH-PERP");
     }
 }

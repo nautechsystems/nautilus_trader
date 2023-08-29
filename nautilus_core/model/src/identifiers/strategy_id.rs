@@ -92,6 +92,21 @@ pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::strategy_id::StrategyId;
+
+    #[fixture]
+    pub fn strategy_id_ema_cross() -> StrategyId {
+        StrategyId::from("EMACross-001")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -99,11 +114,11 @@ mod tests {
     use rstest::rstest;
 
     use super::StrategyId;
+    use crate::identifiers::strategy_id::stubs::strategy_id_ema_cross;
 
     #[rstest]
-    fn test_string_reprs() {
-        let id = StrategyId::from("EMACross-001");
-        assert_eq!(id.to_string(), "EMACross-001");
-        assert_eq!(format!("{id}"), "EMACross-001");
+    fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
+        assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
+        assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
     }
 }

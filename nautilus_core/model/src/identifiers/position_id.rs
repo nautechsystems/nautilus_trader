@@ -88,6 +88,21 @@ pub extern "C" fn position_id_hash(id: &PositionId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::position_id::PositionId;
+
+    #[fixture]
+    pub fn test_position_id() -> PositionId {
+        PositionId::from("P-123456789")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -95,11 +110,11 @@ mod tests {
     use rstest::rstest;
 
     use super::PositionId;
+    use crate::identifiers::position_id::stubs::test_position_id;
 
     #[rstest]
-    fn test_string_reprs() {
-        let id = PositionId::from("P-123456789");
-        assert_eq!(id.to_string(), "P-123456789");
-        assert_eq!(format!("{id}"), "P-123456789");
+    fn test_string_reprs(test_position_id: PositionId) {
+        assert_eq!(test_position_id.to_string(), "P-123456789");
+        assert_eq!(format!("{test_position_id}"), "P-123456789");
     }
 }

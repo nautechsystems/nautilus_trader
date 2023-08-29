@@ -81,18 +81,32 @@ pub extern "C" fn exec_algorithm_id_hash(id: &ExecAlgorithmId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use super::ExecAlgorithmId;
+
+    #[fixture]
+    pub fn exec_algorithm_id() -> ExecAlgorithmId {
+        ExecAlgorithmId::from("001")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::ExecAlgorithmId;
+    use super::{stubs::*, ExecAlgorithmId};
 
     #[rstest]
-    fn test_string_reprs() {
-        let id = ExecAlgorithmId::new("001").unwrap();
-        assert_eq!(id.to_string(), "001");
-        assert_eq!(format!("{id}"), "001");
+    fn test_string_reprs(exec_algorithm_id: ExecAlgorithmId) {
+        assert_eq!(exec_algorithm_id.to_string(), "001");
+        assert_eq!(format!("{exec_algorithm_id}"), "001");
     }
 }
