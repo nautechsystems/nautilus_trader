@@ -270,7 +270,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 for fn in dataset.files
                 if any(uri_instrument_id(x) in fn for x in instrument_ids)
             ]
-            dataset = pds.dataset(valid_files)
+            dataset = pds.dataset(valid_files, filesystem=self.fs)
 
         filters: list[pds.Expression] = [filter_expr] if filter_expr is not None else []
         if start is not None:
