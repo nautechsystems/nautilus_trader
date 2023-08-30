@@ -385,6 +385,20 @@ impl WebSocketClient {
         })
     }
 
+    /// Send text data to the connection.
+    ///
+    /// # Safety
+    /// - Throws an Exception if it is not able to send data
+    fn send_text<'py>(slf: PyRef<'_, Self>, data: String, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let writer = slf.writer.clone();
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard.send(Message::Text(data)).await.map_err(|err| {
+                PyException::new_err(format!("Unable to send data because of error: {}", err))
+            })
+        })
+    }
+
     /// Send bytes data to the connection.
     ///
     /// # Safety

@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct PositionId {
 }
 
 impl PositionId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`PositionId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`PositionId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -60,6 +60,12 @@ impl Display for PositionId {
     }
 }
 
+impl From<&str> for PositionId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -68,12 +74,14 @@ impl Display for PositionId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn position_id_new(ptr: *const c_char) -> PositionId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    PositionId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    PositionId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn position_id_hash(id: &PositionId) -> u64 {
     id.value.precomputed_hash()
@@ -88,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = PositionId::new("P-123456789");
+        let id = PositionId::from("P-123456789");
         assert_eq!(id.to_string(), "P-123456789");
         assert_eq!(format!("{id}"), "P-123456789");
     }

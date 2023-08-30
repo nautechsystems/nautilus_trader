@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
+
 import pandas as pd
 from numpy import float64
 from numpy import linspace
@@ -42,6 +44,7 @@ class TestSharpeRatioPortfolioStatistic:
         result = stat.calculate_from_returns(data)
 
         # Assert
+        assert result
         assert pd.isna(result)
 
     def test_calculate_given_nan_series_returns_nan(self):
@@ -55,6 +58,7 @@ class TestSharpeRatioPortfolioStatistic:
         result = stat.calculate_from_returns(data)
 
         # Assert
+        assert result
         assert pd.isna(result)
 
     def test_calculate_given_mix_of_pnls1_returns_expected(self):
@@ -81,4 +85,5 @@ class TestSharpeRatioPortfolioStatistic:
         result = stat.calculate_from_returns(data)
 
         # Assert
-        assert result == 27.6097808756245
+        assert result
+        assert math.isclose(result, 27.6097808756245, rel_tol=1e-9)

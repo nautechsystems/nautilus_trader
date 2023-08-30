@@ -16,6 +16,7 @@
 #![allow(dead_code)]
 
 pub mod base;
+pub mod default;
 pub mod limit;
 pub mod limit_if_touched;
 pub mod market;

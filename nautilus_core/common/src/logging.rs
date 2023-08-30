@@ -442,7 +442,7 @@ mod tests {
 
     fn create_logger() -> Logger {
         Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -478,7 +478,7 @@ mod tests {
     fn test_new_logger() {
         let logger = create_logger();
 
-        assert_eq!(logger.trader_id, TraderId::new("TRADER-001"));
+        assert_eq!(logger.trader_id, TraderId::from("TRADER-001"));
         assert_eq!(logger.level_stdout, LogLevel::Info);
         assert_eq!(logger.level_file, None);
         assert!(!logger.is_bypassed);
@@ -537,7 +537,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -599,7 +599,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -656,7 +656,7 @@ mod tests {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,

@@ -16,7 +16,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use nautilus_core::{
-    correctness,
+    correctness::check_valid_string,
     datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs},
     time::{duration_since_unix_epoch, UnixNanos},
 };
@@ -261,7 +261,7 @@ impl Clock for TestClock {
         alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -289,7 +289,7 @@ impl Clock for TestClock {
         stop_time_ns: Option<UnixNanos>,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -394,7 +394,7 @@ impl Clock for LiveClock {
         mut alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -424,7 +424,7 @@ impl Clock for LiveClock {
         stop_time_ns: Option<UnixNanos>,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"

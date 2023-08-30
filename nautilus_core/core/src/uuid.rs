@@ -21,11 +21,15 @@ use std::{
     str::FromStr,
 };
 
+use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+use crate::python::to_pyvalue_err;
+
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[pyclass]
 pub struct UUID4 {
     value: [u8; 37],
 }
@@ -102,8 +106,33 @@ impl<'de> Deserialize<'de> for UUID4 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
+#[pymethods]
+impl UUID4 {
+    #[new]
+    fn py_new() -> Self {
+        UUID4::new()
+    }
+
+    #[getter]
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> String {
+        self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<UUID4> {
+        UUID4::from_str(value).map_err(to_pyvalue_err)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
@@ -118,6 +147,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 /// # Panics
 ///
 /// - If `ptr` cannot be cast to a valid C string.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -128,16 +158,19 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     )
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
     uuid.to_cstr().as_ptr()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
     u8::from(lhs == rhs)
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
     let mut h = DefaultHasher::new();

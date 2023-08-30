@@ -372,8 +372,8 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
             order=order,
             ts_event=ts_event,
             ts_init=ts_init,
-            sequence=update_id,
             flags=0,
+            sequence=update_id,
         )
 
 

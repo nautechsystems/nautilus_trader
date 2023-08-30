@@ -19,9 +19,10 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
-use super::base::{Order, OrderCore};
+use super::base::{str_hashmap_to_ustr, Order, OrderCore};
 use crate::{
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
@@ -38,6 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[pyclass]
 pub struct MarketOrder {
     core: OrderCore,
 }
@@ -91,33 +93,6 @@ impl MarketOrder {
                 ts_init,
             ),
         }
-    }
-}
-
-/// Provides a default [`MarketOrder`] used for testing.
-impl Default for MarketOrder {
-    fn default() -> Self {
-        MarketOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            InstrumentId::default(),
-            ClientOrderId::default(),
-            OrderSide::Buy,
-            Quantity::new(100_000.0, 0),
-            TimeInForce::Day,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::default(),
-            0,
-        )
     }
 }
 
@@ -369,6 +344,76 @@ impl From<OrderInitialized> for MarketOrder {
             event.tags,
             event.event_id,
             event.ts_event,
+        )
+    }
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl MarketOrder {
+    #[new]
+    #[pyo3(signature = (
+        trader_id, strategy_id,
+        instrument_id,
+        client_order_id,
+        order_side,
+        quantity,
+        time_in_force,
+        init_id,
+        ts_init,
+        reduce_only=false,
+        quote_quantity=false,
+        contingency_type=None,
+        order_list_id=None,
+        linked_order_ids=None,
+        parent_order_id=None,
+        exec_algorithm_id=None,
+        exec_algorithm_params=None,
+        exec_spawn_id=None,
+        tags=None,
+    ))]
+    #[allow(clippy::too_many_arguments)]
+    pub fn py_new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        init_id: UUID4,
+        ts_init: UnixNanos,
+        reduce_only: bool,
+        quote_quantity: bool,
+        contingency_type: Option<ContingencyType>,
+        order_list_id: Option<OrderListId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+        parent_order_id: Option<ClientOrderId>,
+        exec_algorithm_id: Option<ExecAlgorithmId>,
+        exec_algorithm_params: Option<HashMap<String, String>>,
+        exec_spawn_id: Option<ClientOrderId>,
+        tags: Option<String>,
+    ) -> Self {
+        MarketOrder::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            order_side,
+            quantity,
+            time_in_force,
+            reduce_only,
+            quote_quantity,
+            contingency_type,
+            order_list_id,
+            linked_order_ids,
+            parent_order_id,
+            exec_algorithm_id,
+            exec_algorithm_params.map(str_hashmap_to_ustr),
+            exec_spawn_id,
+            tags.map(|s| Ustr::from(&s)),
+            init_id,
+            ts_init,
         )
     }
 }

@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct VenueOrderId {
 }
 
 impl VenueOrderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`VenueOrderId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`VenueOrderId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -61,6 +61,12 @@ impl Display for VenueOrderId {
     }
 }
 
+impl From<&str> for VenueOrderId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,12 +75,14 @@ impl Display for VenueOrderId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    VenueOrderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    VenueOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn venue_order_id_hash(id: &VenueOrderId) -> u64 {
     id.value.precomputed_hash()
@@ -89,7 +97,7 @@ mod tests {
 
     #[test]
     fn test_string_reprs() {
-        let id = VenueOrderId::new("001");
+        let id = VenueOrderId::from("001");
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }

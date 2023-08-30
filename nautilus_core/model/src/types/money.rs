@@ -21,7 +21,8 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_f64_in_range_inclusive;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -44,14 +45,13 @@ pub struct Money {
 }
 
 impl Money {
-    #[must_use]
-    pub fn new(amount: f64, currency: Currency) -> Self {
-        correctness::f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount");
+    pub fn new(amount: f64, currency: Currency) -> Result<Self> {
+        check_f64_in_range_inclusive(amount, MONEY_MIN, MONEY_MAX, "`Money` amount")?;
 
-        Self {
+        Ok(Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
-        }
+        })
     }
 
     #[must_use]
@@ -246,10 +246,14 @@ impl<'de> Deserialize<'de> for Money {
         let currency = Currency::from_str(currency_str)
             .map_err(|_| serde::de::Error::custom("Invalid currency"))?;
 
-        Ok(Money::new(amount, currency))
+        Ok(Money::new(amount, currency).unwrap()) // TODO: Properly handle the error
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
 #[pymethods]
 impl Money {
     #[getter]
@@ -267,35 +271,40 @@ impl Money {
         fixed_i64_to_f64(self.raw)
     }
 
-    // #[pyo3(name = "as_decimal")]
-    // fn py_as_decimal(&self) -> Decimal {
-    //     self.as_decimal()
-    // }
+    #[pyo3(name = "as_decimal")]
+    fn py_as_decimal(&self) -> Decimal {
+        self.as_decimal()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
-    Money::new(amount, currency)
+    Money::new(amount, currency).unwrap()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_from_raw(raw: i64, currency: Currency) -> Money {
     Money::from_raw(raw, currency)
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_as_f64(money: &Money) -> f64 {
     money.as_f64()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_add_assign(mut a: Money, b: Money) {
     a.add_assign(b);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
     a.sub_assign(b);
@@ -315,29 +324,29 @@ mod tests {
     #[test]
     #[should_panic]
     fn test_money_different_currency_addition() {
-        let usd = Money::new(1000.0, USD.clone());
-        let btc = Money::new(1.0, BTC.clone());
+        let usd = Money::new(1000.0, *USD).unwrap();
+        let btc = Money::new(1.0, *BTC).unwrap();
         let _result = usd + btc; // This should panic since currencies are different
     }
 
     #[test]
     fn test_money_min_max_values() {
-        let min_money = Money::new(MONEY_MIN, USD.clone());
-        let max_money = Money::new(MONEY_MAX, USD.clone());
+        let min_money = Money::new(MONEY_MIN, *USD).unwrap();
+        let max_money = Money::new(MONEY_MAX, *USD).unwrap();
         assert_eq!(min_money.raw, f64_to_fixed_i64(MONEY_MIN, USD.precision));
         assert_eq!(max_money.raw, f64_to_fixed_i64(MONEY_MAX, USD.precision));
     }
 
     #[test]
     fn test_money_addition_f64() {
-        let money = Money::new(1000.0, USD.clone());
+        let money = Money::new(1000.0, *USD).unwrap();
         let result = money + 500.0;
         assert_eq!(result, 1500.0);
     }
 
     #[test]
     fn test_money_negation() {
-        let money = Money::new(100.0, USD.clone());
+        let money = Money::new(100.0, *USD).unwrap();
         let result = -money;
         assert_eq!(result.as_f64(), -100.0);
         assert_eq!(result.currency, USD.clone());
@@ -345,7 +354,7 @@ mod tests {
 
     #[test]
     fn test_money_new_usd() {
-        let money = Money::new(1000.0, USD.clone());
+        let money = Money::new(1000.0, *USD).unwrap();
         assert_eq!(money.currency.code.as_str(), "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
@@ -355,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_money_new_btc() {
-        let money = Money::new(10.3, BTC.clone());
+        let money = Money::new(10.3, *BTC).unwrap();
         assert_eq!(money.currency.code.as_str(), "BTC");
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");
@@ -363,7 +372,7 @@ mod tests {
 
     #[test]
     fn test_money_serialization_deserialization() {
-        let money = Money::new(123.45, USD.clone());
+        let money = Money::new(123.45, *USD).unwrap();
         let serialized = serde_json::to_string(&money).unwrap();
         let deserialized: Money = serde_json::from_str(&serialized).unwrap();
         assert_eq!(money, deserialized);

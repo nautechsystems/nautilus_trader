@@ -13,8 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use anyhow::{bail, Result};
+
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
+
+pub fn check_fixed_precision(precision: u8) -> Result<()> {
+    if precision > FIXED_PRECISION {
+        bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
+    }
+    Ok(())
+}
 
 #[must_use]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
@@ -52,6 +61,21 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(0)]
+    #[case(FIXED_PRECISION)]
+    fn test_valid_precision(#[case] precision: u8) {
+        let result = check_fixed_precision(precision);
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_invalid_precision() {
+        let precision = FIXED_PRECISION + 1;
+        let result = check_fixed_precision(precision);
+        assert!(result.is_err());
+    }
 
     #[rstest]
     #[case(0, 0.0)]

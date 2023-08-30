@@ -52,6 +52,7 @@ impl ArrowSchemaProvider for OrderBookDelta {
 }
 
 fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
+    // TODO: Properly handle errors
     let instrument_id =
         InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
     let price_precision = metadata
@@ -201,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
         let schema = OrderBookDelta::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -237,7 +238,7 @@ mod tests {
 
     #[test]
     fn test_encode_batch() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let delta1 = OrderBookDelta {
@@ -245,8 +246,8 @@ mod tests {
             action: BookAction::Add,
             order: BookOrder {
                 side: OrderSide::Buy,
-                price: Price::new(100.10, 2),
-                size: Quantity::new(100.0, 0),
+                price: Price::from("100.10"),
+                size: Quantity::from(100),
                 order_id: 1,
             },
             flags: 0,
@@ -260,8 +261,8 @@ mod tests {
             action: BookAction::Update,
             order: BookOrder {
                 side: OrderSide::Sell,
-                price: Price::new(101.20, 2),
-                size: Quantity::new(200.0, 0),
+                price: Price::from("101.20"),
+                size: Quantity::from(200),
                 order_id: 2,
             },
             flags: 1,
@@ -316,7 +317,7 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
 
         let action = UInt8Array::from(vec![1, 2]);

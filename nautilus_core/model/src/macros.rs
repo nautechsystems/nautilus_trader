@@ -37,6 +37,7 @@ macro_rules! enum_strum_serde {
     };
 }
 
+#[cfg(feature = "python")]
 #[macro_export]
 macro_rules! enum_for_python {
     ($type:ty) => {

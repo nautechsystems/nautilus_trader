@@ -1,6 +1,22 @@
+# NautilusTrader 1.178.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed `OrderBookDelta.clear` method (where the `sequence` field was swapped with `flags` causing an overflow)
+- Fixed `OrderManager` OTO contingency handling on fills
+
+---
+
 # NautilusTrader 1.177.0 Beta
 
-Released on TBD (UTC)
+Released on 26th August 2023 (UTC).
 
 This release includes a large breaking change to quote tick bid and ask price property and 
 parameter naming. This was done in the interest of maintaining our generally explicit naming 
@@ -16,6 +32,7 @@ this change.
 - Added `Cache.exec_spawn_total_quantity(...)` convenience method
 - Added `Cache.exec_spawn_total_filled_qty(...)` convenience method
 - Added `Cache.exec_spawn_total_leaves_qty(...)` convenience method
+- Added `WebSocketClient.send_text`, thanks @twitu
 - Implemented string interning for `TimeEvent`
 
 ### Breaking Changes
@@ -28,6 +45,7 @@ this change.
 - Fixed `OrderEmulator` processing of exec algorithm orders
 - Fixed `ExecutionEngine` processing of exec algorithm orders (exec spawn IDs)
 - Fixed `Cache` emulated order indexing (were not being properly discarded from the set when closed)
+- Fixed `RedisCacheDatabase` loading of transformed `LIMIT` orders
 - Fixed a connection issue with the IB client, thanks @dkharrat and @rsmb7z
 
 ---

@@ -48,6 +48,7 @@ impl ArrowSchemaProvider for QuoteTick {
 }
 
 fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
+    // TODO: Properly handle errors
     let instrument_id =
         InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
     let price_precision = metadata
@@ -169,7 +170,7 @@ mod tests {
 
     #[test]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
         let schema = QuoteTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -200,23 +201,23 @@ mod tests {
     #[test]
     fn test_encode_quote_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let tick1 = QuoteTick {
             instrument_id,
-            bid_price: Price::new(100.10, 2),
-            ask_price: Price::new(101.50, 2),
-            bid_size: Quantity::new(1000.0, 0),
-            ask_size: Quantity::new(500.0, 0),
+            bid_price: Price::from("100.10"),
+            ask_price: Price::from("101.50"),
+            bid_size: Quantity::from(1000),
+            ask_size: Quantity::from(500),
             ts_event: 1,
             ts_init: 3,
         };
 
         let tick2 = QuoteTick {
             instrument_id,
-            bid_price: Price::new(100.75, 2),
-            ask_price: Price::new(100.20, 2),
-            bid_size: Quantity::new(750.0, 0),
-            ask_size: Quantity::new(300.0, 0),
+            bid_price: Price::from("100.75"),
+            ask_price: Price::from("100.20"),
+            bid_size: Quantity::from(750),
+            ask_size: Quantity::from(300),
             ts_event: 2,
             ts_init: 4,
         };
@@ -257,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = QuoteTick::get_metadata(&instrument_id, 2, 0);
 
         let bid_price = Int64Array::from(vec![10000, 9900]);

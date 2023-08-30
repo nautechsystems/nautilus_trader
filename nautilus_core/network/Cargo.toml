@@ -12,13 +12,12 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
-anyhow.workspace = true
-criterion.workspace = true
-futures.workspace = true
-pyo3.workspace = true
-pyo3-asyncio.workspace = true
-tracing.workspace = true
-tokio.workspace = true
+anyhow = { workspace = true }
+futures = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+pyo3-asyncio = { workspace = true, optional = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
 futures-util = "0.3.28"
 hyper = { version = "0.14.27", features = ["client", "http1", "server"] }
 hyper-tls = "0.5.0"
@@ -27,9 +26,14 @@ dashmap = "5.5.1"
 nonzero_ext = "0.3.0"
 
 [dev-dependencies]
-serde_json.workspace = true
+criterion = { workspace = true }
+serde_json = { workspace = true }
 tracing-test = "0.2.4"
 
 [features]
-extension-module = ["pyo3/extension-module", "nautilus-core/extension-module"]
-default = []
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+python = ["pyo3", "pyo3-asyncio"]
+default = ["python"]

@@ -33,7 +33,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.5.1 msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
       - name: Setup cached pre-commit
         id: cached-pre-commit
