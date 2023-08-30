@@ -261,7 +261,7 @@ impl Clock for TestClock {
         alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -289,7 +289,7 @@ impl Clock for TestClock {
         stop_time_ns: Option<UnixNanos>,
         callback_py: Option<PyObject>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -394,7 +394,7 @@ impl Clock for LiveClock {
         mut alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -424,7 +424,7 @@ impl Clock for LiveClock {
         stop_time_ns: Option<UnixNanos>,
         callback_py: Option<PyObject>,
     ) {
-        check_valid_string(&name, "`Timer` name").unwrap(); // TODO!
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
