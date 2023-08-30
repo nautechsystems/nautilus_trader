@@ -34,10 +34,9 @@ fn single_stream_bench(c: &mut Criterion) {
                 let mut catalog = DataBackendSession::new(chunk_size);
                 rt.block_on(catalog.add_file_default_query::<QuoteTick>("quote_tick", file_path))
                     .unwrap();
-                let _guard = rt.enter();
-                catalog.get_query_result()
+                rt.block_on(catalog.get_query_result())
             },
-            |query_result: QueryResult| {
+            |query_result: &mut QueryResult| {
                 let rt = get_runtime();
                 let _guard = rt.enter();
                 let count: usize = query_result.map(|vec| vec.len()).sum();
@@ -84,10 +83,9 @@ fn multi_stream_bench(c: &mut Criterion) {
                     }
                 }
 
-                let _guard = rt.enter();
-                catalog.get_query_result()
+                rt.block_on(catalog.get_query_result())
             },
-            |query_result: QueryResult| {
+            |query_result: &mut QueryResult| {
                 let rt = get_runtime();
                 let _guard = rt.enter();
                 let count: usize = query_result.map(|vec| vec.len()).sum();
