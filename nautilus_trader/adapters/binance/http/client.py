@@ -27,6 +27,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 
@@ -115,7 +116,7 @@ class BinanceHttpClient:
 
     async def sign_request(
         self,
-        http_method: str,
+        http_method: HttpMethod,
         url_path: str,
         payload: Optional[dict[str, str]] = None,
     ) -> Any:
@@ -132,7 +133,7 @@ class BinanceHttpClient:
 
     async def send_request(
         self,
-        http_method: str,
+        http_method: HttpMethod,
         url_path: str,
         payload: Optional[dict[str, str]] = None,
     ) -> bytes:
