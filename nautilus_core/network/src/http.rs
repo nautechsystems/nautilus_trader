@@ -13,8 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
+use futures_util::{stream, StreamExt};
 use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
@@ -39,6 +40,27 @@ pub struct InnerHttpClient {
 pub struct HttpClient {
     rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     client: InnerHttpClient,
+}
+
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
+pub enum HttpMethod {
+    GET,
+    POST,
+    DELETE,
+    PATCH,
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<Method> for HttpMethod {
+    fn into(self) -> Method {
+        match self {
+            HttpMethod::GET => Method::GET,
+            HttpMethod::POST => Method::POST,
+            HttpMethod::DELETE => Method::DELETE,
+            HttpMethod::PATCH => Method::PATCH,
+        }
+    }
 }
 
 /// HttpResponse contains relevant data from a HTTP request.
@@ -73,16 +95,20 @@ impl HttpResponse {
 
 #[pymethods]
 impl HttpClient {
+    /// Create a new HttpClient
+    ///
+    /// * `header_keys` - key value pairs for the given `header_keys` are retained from the responses.
+    /// * `default_quota` - the default rate limiting quota for any request.
+    /// * `keyed_quota` - list of string quota pairs that gives quota for specific key values
     #[new]
-    // #[pyo3(signature=(header_keys=[].to_vec()))]
     pub fn py_new(
         header_keys: Vec<String>,
-        base_quota: Quota,
+        default_quota: Quota,
         keyed_quotas: Vec<(String, Quota)>,
     ) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(base_quota, keyed_quotas));
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         let client = InnerHttpClient {
             client,
@@ -95,119 +121,35 @@ impl HttpClient {
         }
     }
 
+    /// Send an HTTP request
+    ///
+    /// * `method` - the HTTP method to call
+    /// * `url` - the request is sent to this url
+    /// * `keys` - the keys used for rate limiting the request
+    /// * `headers` - the header key value pairs in the request
+    /// * `body` - the bytes sent in the body of request
     pub fn request<'py>(
-        slf: PyRef<'_, Self>,
-        method_str: String,
+        &self,
+        method: HttpMethod,
         url: String,
+        keys: Vec<String>,
         headers: HashMap<String, String>,
         body: Option<&'py PyBytes>,
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
-        let method: Method = Method::from_str(&method_str.to_uppercase())
-            .unwrap_or_else(|_| panic!("Invalid HTTP method {method_str}"));
-
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.client.clone();
-        let rate_limiter = slf.rate_limiter.clone();
+        let client = self.client.clone();
+        let rate_limiter = self.rate_limiter.clone();
+        let method = method.into();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            rate_limiter.until_key_ready(&url).await;
+            // check keys for rate limiting quota
+            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
+            stream::iter(tasks)
+                .for_each(|key| async move {
+                    key.await;
+                })
+                .await;
             match client.send_request(method, url, headers, body_vec).await {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn get<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.client.clone();
-        let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rate_limiter.until_key_ready(&url).await;
-            match client
-                .send_request(Method::GET, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn post<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.client.clone();
-        let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rate_limiter.until_key_ready(&url).await;
-            match client
-                .send_request(Method::POST, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn patch<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.client.clone();
-        let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rate_limiter.until_key_ready(&url).await;
-            match client
-                .send_request(Method::PATCH, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn delete<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.client.clone();
-        let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            rate_limiter.until_key_ready(&url).await;
-            match client
-                .send_request(Method::DELETE, url, headers, body_vec)
-                .await
-            {
                 Ok(res) => Ok(res),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
                     "Error handling repsonse: {e}"
