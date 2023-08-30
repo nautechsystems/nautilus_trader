@@ -174,6 +174,10 @@ cdef class OrderManager:
         """
         Condition.not_none(order, "order")
 
+        if order.is_closed_c():
+            self._log.error("Cannot cancel order: already closed.")
+            return
+
         if self.debug:
             self._log.info(f"Cancelling order {order}.", LogColor.MAGENTA)
 
