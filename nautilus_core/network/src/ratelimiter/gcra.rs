@@ -1,8 +1,6 @@
 use std::{cmp, fmt, time::Duration};
 
 use super::{clock, nanos::Nanos, quota::Quota, StateStore};
-#[cfg(feature = "std")]
-use crate::Jitter;
 
 /// Information about the rate-limiting state used to reach a decision.
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -93,20 +91,6 @@ impl<P: clock::Reference> NotUntil<P> {
     pub fn quota(&self) -> Quota {
         self.state.quota()
     }
-
-    #[cfg(feature = "std")] // not used unless we use Instant-compatible clocks.
-    #[inline]
-    pub(crate) fn earliest_possible_with_offset(&self, jitter: Jitter) -> P {
-        let tat = jitter + self.state.tat;
-        self.start + tat
-    }
-
-    #[cfg(feature = "std")] // not used unless we use Instant-compatible clocks.
-    #[inline]
-    pub(crate) fn wait_time_with_offset(&self, from: P, jitter: Jitter) -> Duration {
-        let earliest = self.earliest_possible_with_offset(jitter);
-        earliest.duration_since(earliest.min(from)).into()
-    }
 }
 
 impl<P: clock::Reference> fmt::Display for NotUntil<P> {
@@ -162,84 +146,3 @@ impl Gcra {
         })
     }
 }
-
-// #[cfg(test)]
-// mod test {
-//     use std::num::NonZeroU32;
-
-//     use proptest::prelude::*;
-
-//     use super::*;
-//     use crate::Quota;
-
-//     /// Exercise derives and convenience impls on Gcra to make coverage happy
-//     #[cfg(feature = "std")]
-//     #[test]
-//     fn gcra_derives() {
-//         use all_asserts::assert_gt;
-//         use nonzero_ext::nonzero;
-
-//         let g = Gcra::new(Quota::per_second(nonzero!(1u32)));
-//         let g2 = Gcra::new(Quota::per_second(nonzero!(2u32)));
-//         assert_eq!(g, g);
-//         assert_ne!(g, g2);
-//         assert_gt!(format!("{:?}", g).len(), 0);
-//     }
-
-//     /// Exercise derives and convenience impls on NotUntil to make coverage happy
-//     #[cfg(feature = "std")]
-//     #[test]
-//     fn notuntil_impls() {
-//         use all_asserts::assert_gt;
-//         use clock::FakeRelativeClock;
-//         use nonzero_ext::nonzero;
-
-//         use crate::RateLimiter;
-
-//         let clock = FakeRelativeClock::default();
-//         let quota = Quota::per_second(nonzero!(1u32));
-//         let lb = RateLimiter::direct_with_clock(quota, &clock);
-//         assert!(lb.check().is_ok());
-//         assert!(lb
-//             .check()
-//             .map_err(|nu| {
-//                 assert_eq!(nu, nu);
-//                 assert_gt!(format!("{:?}", nu).len(), 0);
-//                 assert_eq!(format!("{}", nu), "rate-limited until Nanos(1s)");
-//                 assert_eq!(nu.quota(), quota);
-//             })
-//             .is_err());
-//     }
-
-//     #[derive(Debug)]
-//     struct Count(NonZeroU32);
-//     impl Arbitrary for Count {
-//         type Parameters = ();
-//         fn arbitrary_with(_args: ()) -> Self::Strategy {
-//             (1..10000u32)
-//                 .prop_map(|x| Count(NonZeroU32::new(x).unwrap()))
-//                 .boxed()
-//         }
-
-//         type Strategy = BoxedStrategy<Count>;
-//     }
-
-//     #[cfg(feature = "std")]
-//     #[test]
-//     fn cover_count_derives() {
-//         assert_eq!(
-//             format!("{:?}", Count(nonzero_ext::nonzero!(1_u32))),
-//             "Count(1)"
-//         );
-//     }
-
-//     #[test]
-//     fn roundtrips_quota() {
-//         proptest!(ProptestConfig::default(), |(per_second: Count, burst: Count)| {
-//             let quota = Quota::per_second(per_second.0).allow_burst(burst.0);
-//             let gcra = Gcra::new(quota);
-//             let back = Quota::from_gcra_parameters(gcra.t, gcra.tau);
-//             assert_eq!(quota, back);
-//         })
-//     }
-// }

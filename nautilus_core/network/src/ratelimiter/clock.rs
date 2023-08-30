@@ -16,7 +16,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    time::{Duration, Instant, SystemTime},
+    time::{Duration, Instant},
 };
 
 use super::nanos::Nanos;
@@ -115,42 +115,6 @@ impl Clock for FakeRelativeClock {
     }
 }
 
-#[cfg(all(feature = "std", test))]
-mod test {
-    use std::{iter::repeat, sync::Arc, thread, time::Duration};
-
-    use super::*;
-    use crate::nanos::Nanos;
-
-    #[test]
-    fn fake_clock_parallel_advances() {
-        let clock = Arc::new(FakeRelativeClock::default());
-        let threads = repeat(())
-            .take(10)
-            .map(move |_| {
-                let clock = Arc::clone(&clock);
-                thread::spawn(move || {
-                    for _ in 0..1000000 {
-                        let now = clock.now();
-                        clock.advance(Duration::from_nanos(1));
-                        assert!(clock.now() > now);
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-        for t in threads {
-            t.join().unwrap();
-        }
-    }
-
-    #[test]
-    fn duration_addition_coverage() {
-        let d = Duration::from_secs(1);
-        let one_ns = Nanos::new(1);
-        assert!(d + one_ns > d);
-    }
-}
-
 /// The monotonic clock implemented by [`Instant`].
 #[derive(Clone, Debug, Default)]
 pub struct MonotonicClock;
@@ -186,54 +150,37 @@ impl Clock for MonotonicClock {
     }
 }
 
-/// The non-monotonic clock implemented by [`SystemTime`].
-#[derive(Clone, Debug, Default)]
-pub struct SystemClock;
+#[cfg(test)]
+mod test {
+    use std::{iter::repeat, sync::Arc, thread, time::Duration};
 
-impl Reference for SystemTime {
-    /// Returns the difference in times between the two
-    /// SystemTimes. Due to the fallible nature of SystemTimes,
-    /// returns the zero duration if a negative duration would
-    /// result (e.g. due to system clock adjustments).
-    fn duration_since(&self, earlier: Self) -> Nanos {
-        self.duration_since(earlier)
-            .unwrap_or_else(|_| Duration::new(0, 0))
-            .into()
+    use super::*;
+
+    #[test]
+    fn fake_clock_parallel_advances() {
+        let clock = Arc::new(FakeRelativeClock::default());
+        let threads = repeat(())
+            .take(10)
+            .map(move |_| {
+                let clock = Arc::clone(&clock);
+                thread::spawn(move || {
+                    for _ in 0..1000000 {
+                        let now = clock.now();
+                        clock.advance(Duration::from_nanos(1));
+                        assert!(clock.now() > now);
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        for t in threads {
+            t.join().unwrap();
+        }
     }
 
-    fn saturating_sub(&self, duration: Nanos) -> Self {
-        self.checked_sub(duration.into()).unwrap_or(*self)
-    }
-}
-
-impl Add<Nanos> for SystemTime {
-    type Output = SystemTime;
-
-    fn add(self, other: Nanos) -> SystemTime {
-        let other: Duration = other.into();
-        self + other
-    }
-}
-
-impl Clock for SystemClock {
-    type Instant = SystemTime;
-
-    fn now(&self) -> Self::Instant {
-        SystemTime::now()
+    #[test]
+    fn duration_addition_coverage() {
+        let d = Duration::from_secs(1);
+        let one_ns = Nanos::from(1);
+        assert!(d + one_ns > d);
     }
 }
-
-/// Identifies clocks that run similarly to the monotonic realtime clock.
-///
-/// Clocks implementing this trait can be used with rate-limiters functions that operate
-/// asynchronously.
-pub trait ReasonablyRealtime: Clock {
-    /// Returns a reference point at the start of an operation.
-    fn reference_point(&self) -> Self::Instant {
-        self.now()
-    }
-}
-
-impl ReasonablyRealtime for MonotonicClock {}
-
-impl ReasonablyRealtime for SystemClock {}
