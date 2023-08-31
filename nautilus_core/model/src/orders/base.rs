@@ -735,7 +735,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_order_state_transition_denied() {
         let mut order: MarketOrder = OrderInitializedBuilder::default().build().unwrap().into();
         let denied = OrderDeniedBuilder::default().build().unwrap();
@@ -750,7 +750,7 @@ mod tests {
         assert_eq!(order.last_event(), &event);
     }
 
-    #[test]
+    #[rstest]
     fn test_order_life_cycle_to_filled() {
         let init = OrderInitializedBuilder::default().build().unwrap();
         let submitted = OrderSubmittedBuilder::default().build().unwrap();

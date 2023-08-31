@@ -66,9 +66,11 @@ pub extern "C" fn unix_timestamp_ns() -> u64 {
 mod tests {
     use std::time::UNIX_EPOCH;
 
+    use rstest::*;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_duration_since_unix_epoch() {
         let duration = duration_since_unix_epoch();
         let now = SystemTime::now();
@@ -84,7 +86,7 @@ mod tests {
         assert!(duration > Duration::from_secs(1_650_000_000));
     }
 
-    #[test]
+    #[rstest]
     fn test_unix_timestamp_is_monotonic_increasing() {
         let result1 = unix_timestamp();
         let result2 = unix_timestamp();
@@ -99,7 +101,7 @@ mod tests {
         assert!(result1 > 1_650_000_000.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_unix_timestamp_ms_is_monotonic_increasing() {
         let result1 = unix_timestamp_ms();
         let result2 = unix_timestamp_ms();
@@ -114,7 +116,7 @@ mod tests {
         assert!(result1 >= 1_650_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_unix_timestamp_us_is_monotonic_increasing() {
         let result1 = unix_timestamp_us();
         let result2 = unix_timestamp_us();
@@ -129,7 +131,7 @@ mod tests {
         assert!(result1 > 1_650_000_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_unix_timestamp_ns_is_monotonic_increasing() {
         let result1 = unix_timestamp_ns();
         let result2 = unix_timestamp_ns();

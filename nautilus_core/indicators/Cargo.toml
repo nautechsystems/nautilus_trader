@@ -15,6 +15,9 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
 pyo3 = { workspace = true, optional = true }
 
+[dev-dependencies]
+rstest.workspace = true
+
 [features]
 extension-module = [
     "pyo3/extension-module",

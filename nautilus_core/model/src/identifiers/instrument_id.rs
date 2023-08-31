@@ -156,12 +156,40 @@ pub extern "C" fn instrument_id_is_synthetic(instrument_id: &InstrumentId) -> u8
     u8::from(instrument_id.is_synthetic())
 }
 
+#[cfg(test)]
+pub mod stubs {
+    use std::str::FromStr;
+
+    use rstest::fixture;
+
+    use crate::identifiers::{
+        instrument_id::InstrumentId,
+        symbol::{stubs::*, Symbol},
+        venue::{stubs::*, Venue},
+    };
+
+    #[fixture]
+    pub fn btc_usdt_perp_binance() -> InstrumentId {
+        InstrumentId::from_str("BTCUSDT-PERP.BINANCE").unwrap()
+    }
+
+    #[fixture]
+    pub fn audusd_sim(aud_usd: Symbol, simulation: Venue) -> InstrumentId {
+        InstrumentId {
+            symbol: aud_usd,
+            venue: simulation,
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::{ffi::CStr, str::FromStr};
+
+    use rstest::rstest;
 
     use super::InstrumentId;
     use crate::identifiers::{
@@ -172,14 +200,14 @@ mod tests {
         venue::Venue,
     };
 
-    #[test]
+    #[rstest]
     fn test_instrument_id_parse_success() {
         let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(instrument_id.symbol.to_string(), "ETH/USDT");
         assert_eq!(instrument_id.venue.to_string(), "BINANCE");
     }
 
-    #[test]
+    #[rstest]
     fn test_instrument_id_parse_failure_no_dot() {
         let result = InstrumentId::from_str("ETHUSDT-BINANCE");
         assert!(result.is_err());
@@ -193,7 +221,7 @@ mod tests {
     }
 
     #[ignore] // Cannot implement yet due Betfair instrument IDs
-    #[test]
+    #[rstest]
     fn test_instrument_id_parse_failure_multiple_dots() {
         let result = InstrumentId::from_str("ETH.USDT.BINANCE");
         assert!(result.is_err());
@@ -206,14 +234,14 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_string_reprs() {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
         assert_eq!(id.to_string(), "ETH/USDT.BINANCE");
         assert_eq!(format!("{id}"), "ETH/USDT.BINANCE");
     }
 
-    #[test]
+    #[rstest]
     fn test_to_cstr() {
         unsafe {
             let id = InstrumentId::from("ETH/USDT.BINANCE");
@@ -222,7 +250,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_to_cstr_and_back() {
         unsafe {
             let id = InstrumentId::from("ETH/USDT.BINANCE");
@@ -232,7 +260,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_from_symbol_and_back() {
         unsafe {
             let id = InstrumentId::new(Symbol::from("ETH/USDT"), Venue::from("BINANCE"));

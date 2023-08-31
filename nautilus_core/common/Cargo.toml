@@ -23,6 +23,7 @@ ustr = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+rstest = { workspace = true }
 
 [features]
 extension-module = [

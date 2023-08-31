@@ -129,10 +129,11 @@ pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
 #[cfg(test)]
 mod tests {
     use pyo3::AsPyPointer;
+    use rstest::*;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_pystr_to_string() {
         pyo3::prepare_freethreaded_python();
         // Create a valid Python object pointer
@@ -141,7 +142,7 @@ mod tests {
         assert_eq!(result, "test string1");
     }
 
-    #[test]
+    #[rstest]
     #[should_panic]
     fn test_pystr_to_string_with_null_ptr() {
         // Create a null Python object pointer
@@ -151,7 +152,7 @@ mod tests {
         };
     }
 
-    #[test]
+    #[rstest]
     fn test_cstr_to_string() {
         // Create a valid C string pointer
         let c_string = CString::new("test string2").expect("CString::new failed");
@@ -160,7 +161,7 @@ mod tests {
         assert_eq!(result, "test string2");
     }
 
-    #[test]
+    #[rstest]
     #[should_panic]
     fn test_cstr_to_string_with_null_ptr() {
         // Create a null C string pointer
@@ -170,7 +171,7 @@ mod tests {
         };
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_cstr_to_string_with_null_ptr() {
         // Call optional_cstr_to_string with null pointer
         let ptr = std::ptr::null();
@@ -178,7 +179,7 @@ mod tests {
         assert!(result.is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_cstr_to_string_with_valid_ptr() {
         // Create a valid C string
         let input_str = "hello world";
@@ -188,7 +189,7 @@ mod tests {
         assert_eq!(result.unwrap(), input_str);
     }
 
-    #[test]
+    #[rstest]
     fn test_string_to_cstr() {
         let s = "test string";
         let c_str_ptr = str_to_cstr(s);
@@ -197,7 +198,7 @@ mod tests {
         assert_eq!(result, s);
     }
 
-    #[test]
+    #[rstest]
     fn test_cstr_drop() {
         let c_string = CString::new("test string3").expect("CString::new failed");
         let ptr = c_string.into_raw(); // <-- pointer _must_ be obtained this way

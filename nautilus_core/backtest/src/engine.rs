@@ -109,10 +109,11 @@ mod tests {
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
     use pyo3::{types::PyList, AsPyPointer, Py, Python};
+    use rstest::*;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_accumulator_drain_sorted() {
         pyo3::prepare_freethreaded_python();
 
