@@ -20,7 +20,6 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggTrade
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceDepth
@@ -36,6 +35,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
@@ -64,7 +64,7 @@ class BinancePingHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "ping"
         super().__init__(
@@ -75,7 +75,7 @@ class BinancePingHttp(BinanceHttpEndpoint):
         self._get_resp_decoder = msgspec.json.Decoder()
 
     async def _get(self) -> dict:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
 
@@ -102,14 +102,14 @@ class BinanceTimeHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "time"
         super().__init__(client, methods, url_path)
         self._get_resp_decoder = msgspec.json.Decoder(BinanceTime)
 
     async def _get(self) -> BinanceTime:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
 
@@ -136,7 +136,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "depth"
         super().__init__(
@@ -168,7 +168,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
         limit: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> BinanceDepth:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -195,7 +195,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "trades"
         super().__init__(
@@ -222,7 +222,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
         limit: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -249,7 +249,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.MARKET_DATA,
+            HttpMethod.GET: BinanceSecurityType.MARKET_DATA,
         }
         url_path = base_endpoint + "historicalTrades"
         super().__init__(
@@ -279,7 +279,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         fromId: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -307,7 +307,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "aggTrades"
         super().__init__(
@@ -343,7 +343,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
         endTime: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -371,7 +371,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "klines"
         super().__init__(
@@ -407,7 +407,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
         endTime: Optional[int] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceKline]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -439,7 +439,7 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "ticker/24hr"
         super().__init__(
@@ -473,7 +473,7 @@ class BinanceTicker24hrHttp(BinanceHttpEndpoint):
         type: Optional[str] = None  # SPOT/MARIN only
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTicker24hr]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
             return [self._get_obj_resp_decoder.decode(raw)]
@@ -503,7 +503,7 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "ticker/price"
         super().__init__(
@@ -533,7 +533,7 @@ class BinanceTickerPriceHttp(BinanceHttpEndpoint):
         symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTickerPrice]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
             return [self._get_obj_resp_decoder.decode(raw)]
@@ -563,7 +563,7 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "ticker/price"
         super().__init__(
@@ -593,7 +593,7 @@ class BinanceTickerBookHttp(BinanceHttpEndpoint):
         symbols: Optional[BinanceSymbols] = None  # SPOT/MARGIN only
 
     async def _get(self, parameters: GetParameters) -> list[BinanceTickerBook]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
             return [self._get_obj_resp_decoder.decode(raw)]

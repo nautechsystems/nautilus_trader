@@ -245,18 +245,6 @@ class BinanceSecurityType(Enum):
 
 
 @unique
-class BinanceMethodType(Enum):
-    """
-    Represents a `Binance` endpoint method type.
-    """
-
-    GET = "GET"
-    POST = "POST"
-    PUT = "PUT"
-    DELETE = "DELETE"
-
-
-@unique
 class BinanceNewOrderRespType(Enum):
     """
     Represents a `Binance` newOrderRespType.

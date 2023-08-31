@@ -17,11 +17,11 @@ from typing import Any
 
 import msgspec
 
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 def enc_hook(obj: Any) -> Any:
@@ -46,7 +46,7 @@ class BinanceHttpEndpoint:
     def __init__(
         self,
         client: BinanceHttpClient,
-        methods_desc: dict[BinanceMethodType, BinanceSecurityType],
+        methods_desc: dict[HttpMethod, BinanceSecurityType],
         url_path: str,
     ):
         self.client = client
@@ -65,7 +65,7 @@ class BinanceHttpEndpoint:
             BinanceSecurityType.USER_DATA: self.client.sign_request,
         }
 
-    async def _method(self, method_type: BinanceMethodType, parameters: Any) -> bytes:
+    async def _method(self, method_type: HttpMethod, parameters: Any) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(parameters))
         if self.methods_desc[method_type] is None:
             raise RuntimeError(
