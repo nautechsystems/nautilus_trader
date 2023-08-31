@@ -98,13 +98,15 @@ impl HttpClient {
     /// Create a new HttpClient
     ///
     /// * `header_keys` - key value pairs for the given `header_keys` are retained from the responses.
-    /// * `default_quota` - the default rate limiting quota for any request.
     /// * `keyed_quota` - list of string quota pairs that gives quota for specific key values
+    /// * `default_quota` - the default rate limiting quota for any request.
+    ///   Default quota is optional and no quota is passthrough.
     #[new]
+    #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
     pub fn py_new(
         header_keys: Vec<String>,
-        default_quota: Quota,
         keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
     ) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);

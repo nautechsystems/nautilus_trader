@@ -114,7 +114,7 @@ pub struct RateLimiter<K, C>
 where
     C: Clock,
 {
-    base_gcra: Gcra,
+    default_gcra: Option<Gcra>,
     state: DashMapStateStore<K>,
     gcra: DashMap<K, Gcra>,
     clock: C,
@@ -125,12 +125,12 @@ impl<K> RateLimiter<K, MonotonicClock>
 where
     K: Eq + Hash,
 {
-    pub fn new_with_quota(base_quota: Quota, keyed_quotas: Vec<(K, Quota)>) -> Self {
+    pub fn new_with_quota(base_quota: Option<Quota>, keyed_quotas: Vec<(K, Quota)>) -> Self {
         let clock = MonotonicClock {};
         let start = MonotonicClock::now(&clock);
         let gcra = DashMap::from_iter(keyed_quotas.into_iter().map(|(k, q)| (k, Gcra::new(q))));
         Self {
-            base_gcra: Gcra::new(base_quota),
+            default_gcra: base_quota.map(Gcra::new),
             state: DashMapStateStore::new(),
             gcra,
             clock,
@@ -161,8 +161,10 @@ where
         match self.gcra.get(key) {
             Some(quota) => quota.test_and_update(self.start, key, &self.state, self.clock.now()),
             None => self
-                .base_gcra
-                .test_and_update(self.start, key, &self.state, self.clock.now()),
+                .default_gcra
+                .as_ref()
+                .map(|gcra| gcra.test_and_update(self.start, key, &self.state, self.clock.now()))
+                .unwrap_or(Ok(())),
         }
     }
 
@@ -197,7 +199,7 @@ mod tests {
         let gcra = DashMap::new();
         let base_quota = Quota::per_second(NonZeroU32::new(2).unwrap());
         RateLimiter {
-            base_gcra: Gcra::new(base_quota),
+            default_gcra: Some(Gcra::new(base_quota)),
             state: DashMapStateStore::new(),
             gcra,
             clock,
