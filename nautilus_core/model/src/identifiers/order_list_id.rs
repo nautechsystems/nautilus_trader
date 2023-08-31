@@ -81,16 +81,32 @@ pub extern "C" fn order_list_id_hash(id: &OrderListId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::order_list_id::OrderListId;
+
+    #[fixture]
+    pub fn test_order_list_id() -> OrderListId {
+        OrderListId::from("001")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::OrderListId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let id = OrderListId::from("001");
-        assert_eq!(id.to_string(), "001");
-        assert_eq!(format!("{id}"), "001");
+    use super::{stubs::*, OrderListId};
+
+    #[rstest]
+    fn test_string_reprs(test_order_list_id: OrderListId) {
+        assert_eq!(test_order_list_id.to_string(), "001");
+        assert_eq!(format!("{test_order_list_id}"), "001");
     }
 }

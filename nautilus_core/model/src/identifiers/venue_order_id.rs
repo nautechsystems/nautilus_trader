@@ -89,15 +89,32 @@ pub extern "C" fn venue_order_id_hash(id: &VenueOrderId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::venue_order_id::VenueOrderId;
+
+    #[fixture]
+    pub fn venue_order_id() -> VenueOrderId {
+        VenueOrderId::from("001")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::VenueOrderId;
+    use rstest::rstest;
 
-    #[test]
+    use super::stubs;
+
+    #[rstest]
     fn test_string_reprs() {
-        let id = VenueOrderId::from("001");
+        let id = stubs::venue_order_id();
         assert_eq!(id.to_string(), "001");
         assert_eq!(format!("{id}"), "001");
     }

@@ -201,6 +201,7 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 #[cfg(test)]
 mod tests {
     use nautilus_core::string::str_to_cstr;
+    use rstest::rstest;
 
     use super::currency_register;
     use crate::{
@@ -208,20 +209,20 @@ mod tests {
         types::currency::{currency_exists, Currency},
     };
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "`Currency` code")]
     fn test_invalid_currency_code() {
         let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision() {
         // Precision out of range for fixed
         let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
-    #[test]
+    #[rstest]
     fn test_new_for_fiat() {
         let currency =
             Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat).unwrap();
@@ -233,7 +234,7 @@ mod tests {
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
     }
 
-    #[test]
+    #[rstest]
     fn test_new_for_crypto() {
         let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto).unwrap();
         assert_eq!(currency, currency);
@@ -244,7 +245,7 @@ mod tests {
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 
-    #[test]
+    #[rstest]
     fn test_equality() {
         let currency1 =
             Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
@@ -253,7 +254,7 @@ mod tests {
         assert_eq!(currency1, currency2);
     }
 
-    #[test]
+    #[rstest]
     fn test_serialization_deserialization() {
         let currency =
             Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
@@ -262,7 +263,7 @@ mod tests {
         assert_eq!(currency, deserialized);
     }
 
-    #[test]
+    #[rstest]
     fn test_registration() {
         let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto).unwrap();
         currency_register(currency);

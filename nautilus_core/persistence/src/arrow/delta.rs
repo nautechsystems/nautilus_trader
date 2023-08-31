@@ -197,10 +197,11 @@ mod tests {
     use std::sync::Arc;
 
     use datafusion::arrow::record_batch::RecordBatch;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_get_schema() {
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
@@ -220,7 +221,7 @@ mod tests {
         assert_eq!(schema, expected_schema);
     }
 
-    #[test]
+    #[rstest]
     fn test_get_schema_map() {
         let schema_map = OrderBookDelta::get_schema_map();
         let mut expected_map = HashMap::new();
@@ -236,7 +237,7 @@ mod tests {
         assert_eq!(schema_map, expected_map);
     }
 
-    #[test]
+    #[rstest]
     fn test_encode_batch() {
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
@@ -315,7 +316,7 @@ mod tests {
         assert_eq!(ts_init_values.value(1), 4);
     }
 
-    #[test]
+    #[rstest]
     fn test_decode_batch() {
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
