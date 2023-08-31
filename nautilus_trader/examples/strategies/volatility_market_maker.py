@@ -132,7 +132,7 @@ class VolatilityMarketMaker(Strategy):
         self.subscribe_quote_ticks(self.instrument_id)
         # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_deltas(self.instrument_id, depth=50)  # For debugging
+        # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.subscribe_order_book_snapshots(
         #     self.instrument_id,
         #     depth=20,
