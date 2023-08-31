@@ -812,7 +812,7 @@ cdef class Cache(CacheFacade):
                 self._index_orders_closed.add(client_order_id)
 
             # 12: Build _index_orders_emulated -> {ClientOrderId}
-            if order.is_emulated_c() and not order.is_closed_c():
+            if order.emulation_trigger != TriggerType.NO_TRIGGER and not order.is_closed_c():
                 self._index_orders_emulated.add(client_order_id)
 
             # 13: Build _index_orders_inflight -> {ClientOrderId}

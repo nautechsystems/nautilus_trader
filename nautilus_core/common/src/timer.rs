@@ -44,7 +44,7 @@ pub struct TimeEvent {
 impl TimeEvent {
     #[must_use]
     pub fn new(name: String, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
-        check_valid_string(&name, "`TimeEvent` name").unwrap(); // TODO!
+        check_valid_string(&name, "`TimeEvent` name").unwrap();
 
         TimeEvent {
             name: Ustr::from(&name),
