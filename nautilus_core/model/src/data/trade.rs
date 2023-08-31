@@ -280,8 +280,6 @@ impl TradeTick {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use nautilus_core::serialization::Serializable;
     use pyo3::{IntoPy, Python};
     use rstest::rstest;

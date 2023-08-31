@@ -110,7 +110,7 @@ pub mod stubs {
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs, VenueOrderId};
+    use super::stubs;
 
     #[rstest]
     fn test_string_reprs() {
