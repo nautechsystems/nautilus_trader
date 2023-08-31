@@ -170,10 +170,11 @@ mod tests {
     use std::sync::Arc;
 
     use datafusion::arrow::record_batch::RecordBatch;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_get_schema() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
@@ -191,7 +192,7 @@ mod tests {
         assert_eq!(schema, expected_schema);
     }
 
-    #[test]
+    #[rstest]
     fn test_get_schema_map() {
         let schema_map = Bar::get_schema_map();
         let mut expected_map = HashMap::new();
@@ -205,7 +206,7 @@ mod tests {
         assert_eq!(schema_map, expected_map);
     }
 
-    #[test]
+    #[rstest]
     fn test_encode_batch() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
@@ -267,7 +268,7 @@ mod tests {
         assert_eq!(ts_init_values.value(1), 4);
     }
 
-    #[test]
+    #[rstest]
     fn test_decode_batch() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);

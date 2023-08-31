@@ -11,6 +11,8 @@ None
 ### Fixes
 - Fixed `OrderBookDelta.clear` method (where the `sequence` field was swapped with `flags` causing an overflow)
 - Fixed `OrderManager` OTO contingency handling on fills
+- Fixed `Cache` loading of initialized emulated orders (were not being correctly indexed as emulated)
+- Fixed Binance order book subscriptions for deltas at full depth (was not requesting initial snapshot), thanks for reporting @doublier1
 
 ---
 

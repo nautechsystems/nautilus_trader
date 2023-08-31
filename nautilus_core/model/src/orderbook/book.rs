@@ -466,6 +466,8 @@ impl OrderBook {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::{
         data::order::BookOrder,
@@ -479,7 +481,7 @@ mod tests {
         OrderBook::new(instrument_id, book_type)
     }
 
-    #[test]
+    #[rstest]
     fn test_orderbook_creation() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let book = OrderBook::new(instrument_id.clone(), BookType::L2_MBP);
@@ -491,7 +493,7 @@ mod tests {
         assert_eq!(book.count, 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_orderbook_reset() {
         let mut book = create_stub_book(BookType::L2_MBP);
         book.sequence = 10;
@@ -505,7 +507,7 @@ mod tests {
         assert_eq!(book.count, 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_best_bid_and_ask_when_nothing_in_book() {
         let book = create_stub_book(BookType::L2_MBP);
 
@@ -517,7 +519,7 @@ mod tests {
         assert_eq!(book.has_ask(), false);
     }
 
-    #[test]
+    #[rstest]
     fn test_bid_side_with_one_order() {
         let mut book = create_stub_book(BookType::L3_MBO);
         let order1 = BookOrder::new(
@@ -533,7 +535,7 @@ mod tests {
         assert_eq!(book.has_bid(), true);
     }
 
-    #[test]
+    #[rstest]
     fn test_ask_side_with_one_order() {
         let mut book = create_stub_book(BookType::L3_MBO);
         let order = BookOrder::new(
@@ -548,13 +550,13 @@ mod tests {
         assert_eq!(book.best_ask_size(), Some(Quantity::from("2.0")));
         assert_eq!(book.has_ask(), true);
     }
-    #[test]
+    #[rstest]
     fn test_spread_with_no_bids_or_asks() {
         let book = create_stub_book(BookType::L3_MBO);
         assert_eq!(book.spread(), None);
     }
 
-    #[test]
+    #[rstest]
     fn test_spread_with_bids_and_asks() {
         let mut book = create_stub_book(BookType::L2_MBP);
         let bid1 = BookOrder::new(
@@ -575,13 +577,13 @@ mod tests {
         assert_eq!(book.spread(), Some(1.0));
     }
 
-    #[test]
+    #[rstest]
     fn test_midpoint_with_no_bids_or_asks() {
         let book = create_stub_book(BookType::L2_MBP);
         assert_eq!(book.midpoint(), None);
     }
 
-    #[test]
+    #[rstest]
     fn test_midpoint_with_bids_asks() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -604,7 +606,7 @@ mod tests {
         assert_eq!(book.midpoint(), Some(1.5));
     }
 
-    #[test]
+    #[rstest]
     fn test_get_price_for_quantity_no_market() {
         let book = create_stub_book(BookType::L2_MBP);
         let qty = Quantity::from(1);
@@ -613,7 +615,7 @@ mod tests {
         assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Sell), 0.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_get_price_for_quantity() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -659,7 +661,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_update_quote_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
@@ -685,7 +687,7 @@ mod tests {
         assert_eq!(*top_ask_order, expected_ask_order);
     }
 
-    #[test]
+    #[rstest]
     fn test_update_trade_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
@@ -710,7 +712,7 @@ mod tests {
         assert_eq!(book.best_ask_size().unwrap(), size);
     }
 
-    #[test]
+    #[rstest]
     fn test_pprint() {
         let mut book = create_stub_book(BookType::L3_MBO);
         let order1 = BookOrder::new(

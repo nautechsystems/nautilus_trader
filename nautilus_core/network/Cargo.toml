@@ -27,6 +27,7 @@ tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-nati
 criterion = { workspace = true }
 serde_json = { workspace = true }
 tracing-test = "0.2.4"
+rstest.workspace = true
 
 [features]
 extension-module = [

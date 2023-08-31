@@ -34,7 +34,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.7.0",
     "numpy>=1.25.2",
-    "Cython==3.0.0",
+    "Cython==3.0.2",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -44,13 +44,13 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.0"
-click = "^8.1.5"
+cython = "==3.0.2"
+click = "^8.1.7"
 frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
-msgspec = "^0.18.1"
+msgspec = "^0.18.2"
 numpy = "^1.25.2"
-pandas = "^2.0.3"
+pandas = "^2.1.0"
 psutil = "^5.9.5"
 pyarrow = "^12.0.1"
 pytz = "^2023.3.0"

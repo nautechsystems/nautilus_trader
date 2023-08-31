@@ -316,12 +316,13 @@ pub extern "C" fn money_sub_assign(mut a: Money, b: Money) {
 #[cfg(test)]
 mod tests {
     use float_cmp::approx_eq;
+    use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
     use crate::currencies::{BTC, USD};
 
-    #[test]
+    #[rstest]
     #[should_panic]
     fn test_money_different_currency_addition() {
         let usd = Money::new(1000.0, *USD).unwrap();
@@ -329,7 +330,7 @@ mod tests {
         let _result = usd + btc; // This should panic since currencies are different
     }
 
-    #[test]
+    #[rstest]
     fn test_money_min_max_values() {
         let min_money = Money::new(MONEY_MIN, *USD).unwrap();
         let max_money = Money::new(MONEY_MAX, *USD).unwrap();
@@ -337,14 +338,14 @@ mod tests {
         assert_eq!(max_money.raw, f64_to_fixed_i64(MONEY_MAX, USD.precision));
     }
 
-    #[test]
+    #[rstest]
     fn test_money_addition_f64() {
         let money = Money::new(1000.0, *USD).unwrap();
         let result = money + 500.0;
         assert_eq!(result, 1500.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_money_negation() {
         let money = Money::new(100.0, *USD).unwrap();
         let result = -money;
@@ -352,7 +353,7 @@ mod tests {
         assert_eq!(result.currency, USD.clone());
     }
 
-    #[test]
+    #[rstest]
     fn test_money_new_usd() {
         let money = Money::new(1000.0, *USD).unwrap();
         assert_eq!(money.currency.code.as_str(), "USD");
@@ -362,7 +363,7 @@ mod tests {
         assert!(approx_eq!(f64, money.as_f64(), 1000.0, epsilon = 0.001));
     }
 
-    #[test]
+    #[rstest]
     fn test_money_new_btc() {
         let money = Money::new(10.3, *BTC).unwrap();
         assert_eq!(money.currency.code.as_str(), "BTC");
@@ -370,7 +371,7 @@ mod tests {
         assert_eq!(money.to_string(), "10.30000000 BTC");
     }
 
-    #[test]
+    #[rstest]
     fn test_money_serialization_deserialization() {
         let money = Money::new(123.45, *USD).unwrap();
         let serialized = serde_json::to_string(&money).unwrap();

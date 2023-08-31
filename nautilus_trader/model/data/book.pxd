@@ -68,10 +68,12 @@ cdef class OrderBookDeltas(Data):
     """The order book deltas.\n\n:returns: `list[OrderBookDelta]`"""
     cdef readonly bint is_snapshot
     """If the deltas represent a snapshot (an initial CLEAR then deltas).\n\n:returns: `bool`"""
+    cdef readonly uint64_t sequence
+    """If the sequence number for the last delta.\n\n:returns: `bool`"""
     cdef readonly uint64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    """The UNIX timestamp (nanoseconds) when the last delta event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """The UNIX timestamp (nanoseconds) when the last delta event was initialized.\n\n:returns: `uint64_t`"""
 
 
     @staticmethod

@@ -225,7 +225,7 @@ mod tests {
         },
     };
 
-    #[test]
+    #[rstest]
     fn test_book_price_bid_sorting() {
         let mut bid_prices = vec![
             BookPrice::new(Price::from("2.0"), OrderSide::Buy),
@@ -237,7 +237,7 @@ mod tests {
         assert_eq!(bid_prices[0].value.as_f64(), 4.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_book_price_ask_sorting() {
         let mut ask_prices = vec![
             BookPrice::new(Price::from("2.0"), OrderSide::Sell),
@@ -250,7 +250,7 @@ mod tests {
         assert_eq!(ask_prices[0].value.as_f64(), 1.0);
     }
 
-    #[test]
+    #[rstest]
     fn test_add_single_order() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 0);
@@ -262,7 +262,7 @@ mod tests {
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
 
-    #[test]
+    #[rstest]
     fn test_add_multiple_buy_orders() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 0);
@@ -277,7 +277,7 @@ mod tests {
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
 
-    #[test]
+    #[rstest]
     fn test_add_multiple_sell_orders() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order1 = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 0);
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
 
-    #[test]
+    #[rstest]
     fn test_update_buy_order_price() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
@@ -316,7 +316,7 @@ mod tests {
         )
     }
 
-    #[test]
+    #[rstest]
     fn test_update_sell_order_price() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 1);
@@ -335,7 +335,7 @@ mod tests {
         )
     }
 
-    #[test]
+    #[rstest]
     fn test_update_buy_order_size() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
@@ -351,7 +351,7 @@ mod tests {
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
 
-    #[test]
+    #[rstest]
     fn test_update_sell_order_size() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 1);
@@ -367,7 +367,7 @@ mod tests {
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
 
-    #[test]
+    #[rstest]
     fn test_delete_buy_order() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(ladder.top(), None)
     }
 
-    #[test]
+    #[rstest]
     fn test_delete_sell_order() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order = BookOrder::new(OrderSide::Sell, Price::from("10.00"), Quantity::from(10), 1);
@@ -449,7 +449,7 @@ mod tests {
         assert!(fills.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_simulate_order_fills_sell_when_far_from_market() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
@@ -472,7 +472,7 @@ mod tests {
         assert!(fills.is_empty());
     }
 
-    #[test]
+    #[rstest]
     fn test_simulate_order_fills_buy_with_volume_depth_type() {
         let mut ladder = Ladder::new(OrderSide::Sell);
 
@@ -521,7 +521,7 @@ mod tests {
         assert_eq!(size3, &Quantity::from(200));
     }
 
-    #[test]
+    #[rstest]
     fn test_simulate_order_fills_sell_with_volume_depth_type() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
@@ -570,7 +570,7 @@ mod tests {
         assert_eq!(size3, &Quantity::from(200));
     }
 
-    #[test]
+    #[rstest]
     fn test_simulate_order_fills_sell_with_volume_at_limit_of_precision() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 

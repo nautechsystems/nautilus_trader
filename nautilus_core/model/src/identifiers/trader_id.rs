@@ -89,16 +89,32 @@ pub extern "C" fn trader_id_hash(id: &TraderId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::trader_id::TraderId;
+
+    #[fixture]
+    pub fn test_trader() -> TraderId {
+        TraderId::from("TRADER-001")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TraderId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let trader_id = TraderId::from("TRADER-001");
-        assert_eq!(trader_id.to_string(), "TRADER-001");
-        assert_eq!(format!("{trader_id}"), "TRADER-001");
+    use super::{stubs::*, TraderId};
+
+    #[rstest]
+    fn test_string_reprs(test_trader: TraderId) {
+        assert_eq!(test_trader.to_string(), "TRADER-001");
+        assert_eq!(format!("{test_trader}"), "TRADER-001");
     }
 }

@@ -18,7 +18,7 @@ use std::{
     collections::hash_map::DefaultHasher,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
     str::FromStr,
 };
 
@@ -31,8 +31,9 @@ use pyo3::{
     pyclass::CompareOp,
     types::{PyLong, PyTuple},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Deserializer, Serialize};
+use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
@@ -83,6 +84,11 @@ impl Quantity {
     #[must_use]
     pub fn is_positive(&self) -> bool {
         self.raw > 0
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> String {
+        format!("{self:?}").separate_with_underscores()
     }
 
     #[must_use]
@@ -312,7 +318,30 @@ impl Quantity {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(Quantity::zero(0)) // Safe default values
+        Ok(Quantity::zero(0)) // Safe default
+    }
+
+    fn __neg__(&self) -> Decimal {
+        self.as_decimal().neg()
+    }
+
+    fn __pos__(&self) -> Decimal {
+        let mut value = self.as_decimal();
+        value.set_sign_positive(true);
+        value
+    }
+
+    fn __abs__(&self) -> Decimal {
+        self.as_decimal().abs()
+    }
+
+    fn __float__(&self) -> f64 {
+        self.as_f64()
+    }
+
+    fn __round__(&self, ndigits: Option<u32>) -> Decimal {
+        self.as_decimal()
+            .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -357,11 +386,6 @@ impl Quantity {
         self.precision
     }
 
-    #[pyo3(name = "as_double")]
-    fn py_as_double(&self) -> f64 {
-        self.as_f64()
-    }
-
     #[staticmethod]
     #[pyo3(name = "from_int")]
     fn py_from_int(value: u64) -> PyResult<Quantity> {
@@ -374,9 +398,19 @@ impl Quantity {
         Quantity::from_str(value).map_err(to_pyvalue_err)
     }
 
+    #[pyo3(name = "to_str")]
+    fn py_to_str(&self) -> String {
+        self.as_str()
+    }
+
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()
+    }
+
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
+        self.as_f64()
     }
 }
 
@@ -434,32 +468,33 @@ mod tests {
     use std::str::FromStr;
 
     use float_cmp::approx_eq;
+    use rstest::rstest;
     use rust_decimal_macros::dec;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
         let _ = Quantity::new(1.0, 10).unwrap();
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
         let _ = Quantity::from_raw(1, 10);
     }
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_zero() {
         // Precision out of range for fixed
         let _ = Quantity::zero(10);
     }
 
-    #[test]
+    #[rstest]
     fn test_new() {
         let qty = Quantity::new(0.00812, 8).unwrap();
         assert_eq!(qty, qty);
@@ -473,7 +508,7 @@ mod tests {
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000001));
     }
 
-    #[test]
+    #[rstest]
     fn test_zero() {
         let qty = Quantity::zero(8);
         assert_eq!(qty.raw, 0);
@@ -482,7 +517,7 @@ mod tests {
         assert!(!qty.is_positive());
     }
 
-    #[test]
+    #[rstest]
     fn test_from_i64() {
         let qty = Quantity::from(100_000);
         assert_eq!(qty, qty);
@@ -490,28 +525,28 @@ mod tests {
         assert_eq!(qty.precision, 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_with_maximum_value() {
         let qty = Quantity::new(QUANTITY_MAX, 0).unwrap();
         assert_eq!(qty.raw, 18_446_744_073_000_000_000);
         assert_eq!(qty.to_string(), "18446744073");
     }
 
-    #[test]
+    #[rstest]
     fn test_with_minimum_positive_value() {
         let qty = Quantity::new(0.000000001, 9).unwrap();
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.to_string(), "0.000000001");
     }
 
-    #[test]
+    #[rstest]
     fn test_with_minimum_value() {
         let qty = Quantity::new(QUANTITY_MIN, 9).unwrap();
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.to_string(), "0.000000000");
     }
 
-    #[test]
+    #[rstest]
     fn test_is_zero() {
         let qty = Quantity::zero(8);
         assert_eq!(qty, qty);
@@ -522,14 +557,14 @@ mod tests {
         assert!(qty.is_zero());
     }
 
-    #[test]
+    #[rstest]
     fn test_precision() {
         let qty = Quantity::new(1.001, 2).unwrap();
         assert_eq!(qty.raw, 1_000_000_000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
-    #[test]
+    #[rstest]
     fn test_new_from_str() {
         let qty = Quantity::from_str("0.00812000").unwrap();
         assert_eq!(qty, qty);
@@ -539,7 +574,7 @@ mod tests {
         assert_eq!(qty.to_string(), "0.00812000");
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str_valid_input() {
         let input = "1000.25";
         let expected_quantity = Quantity::new(1000.25, precision_from_str(input)).unwrap();
@@ -547,14 +582,14 @@ mod tests {
         assert_eq!(result, expected_quantity);
     }
 
-    #[test]
+    #[rstest]
     fn test_from_str_invalid_input() {
         let input = "invalid";
         let result = Quantity::from_str(input);
         assert!(result.is_err());
     }
 
-    #[test]
+    #[rstest]
     fn test_add() {
         let quantity1 = Quantity::new(1.0, 0).unwrap();
         let quantity2 = Quantity::new(2.0, 0).unwrap();
@@ -562,7 +597,7 @@ mod tests {
         assert_eq!(quantity3.raw, 3_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_sub() {
         let quantity1 = Quantity::new(3.0, 0).unwrap();
         let quantity2 = Quantity::new(2.0, 0).unwrap();
@@ -570,7 +605,7 @@ mod tests {
         assert_eq!(quantity3.raw, 1_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_add_assign() {
         let mut quantity1 = Quantity::new(1.0, 0).unwrap();
         let quantity2 = Quantity::new(2.0, 0).unwrap();
@@ -578,7 +613,7 @@ mod tests {
         assert_eq!(quantity1.raw, 3_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_sub_assign() {
         let mut quantity1 = Quantity::new(3.0, 0).unwrap();
         let quantity2 = Quantity::new(2.0, 0).unwrap();
@@ -586,7 +621,7 @@ mod tests {
         assert_eq!(quantity1.raw, 1_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_mul() {
         let quantity1 = Quantity::new(2.0, 1).unwrap();
         let quantity2 = Quantity::new(2.0, 1).unwrap();
@@ -594,7 +629,7 @@ mod tests {
         assert_eq!(quantity3.raw, 4_000_000_000);
     }
 
-    #[test]
+    #[rstest]
     fn test_equality() {
         assert_eq!(
             Quantity::new(1.0, 1).unwrap(),
@@ -618,7 +653,7 @@ mod tests {
         assert!(Quantity::new(0.9, 1).unwrap() <= Quantity::new(1.0, 1).unwrap());
     }
 
-    #[test]
+    #[rstest]
     fn test_display() {
         use std::fmt::Write as FmtWrite;
         let input_string = "44.12";
