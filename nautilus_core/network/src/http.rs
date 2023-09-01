@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
 use futures_util::{stream, StreamExt};
 use hyper::{Body, Client, Method, Request, Response};
@@ -43,7 +47,7 @@ pub struct HttpClient {
 }
 
 #[pyclass]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -62,6 +66,15 @@ impl Into<Method> for HttpMethod {
             HttpMethod::DELETE => Method::DELETE,
             HttpMethod::PATCH => Method::PATCH,
         }
+    }
+}
+
+#[pymethods]
+impl HttpMethod {
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
     }
 }
 
