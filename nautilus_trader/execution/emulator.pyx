@@ -210,6 +210,17 @@ cdef class OrderEmulator(Actor):
             if order.status_c() not in (OrderStatus.INITIALIZED, OrderStatus.EMULATED):
                 continue  # No longer emulated
 
+            if order.parent_order_id is not None:
+                parent_order = self.cache.order(order.parent_order_id)
+                if parent_order is None:
+                    self._log.error("Cannot handle order: parent {order.parent_order_id!r} not found.")
+                    continue
+                if parent_order.is_closed_c():
+                    self._manager.cancel_order(order=order)
+                    continue  # Parent already closed
+                if parent_order.contingency_type == ContingencyType.OTO and parent_order.is_emulated_c():
+                    continue  # Process contingency order later once parent triggered
+
             position_id = self.cache.position_id(order.client_order_id)
             client_id = self.cache.client_id(order.client_order_id)
             command = SubmitOrder(
@@ -457,7 +468,7 @@ cdef class OrderEmulator(Actor):
                 parent_order = self.cache.order(order.parent_order_id)
                 assert parent_order, f"Parent order for {repr(order.client_order_id)} not found"
                 if parent_order.contingency_type == ContingencyType.OTO:
-                    continue  # Process contingency order later once triggered
+                    continue  # Process contingency order later once parent triggered
             self._manager.create_new_submit_order(
                 order=order,
                 position_id=command.position_id,
