@@ -20,8 +20,6 @@ from decimal import Decimal
 
 import msgspec
 import pandas as pd
-from ib_insync import HistoricalTickBidAsk
-from ib_insync import HistoricalTickLast
 from ibapi.commission_report import CommissionReport
 from ibapi.common import BarData
 from ibapi.contract import Contract  # We use this for the expected response from IB
@@ -315,26 +313,6 @@ class IBTestDataStubs:
     def tickers(name: str = "eurusd"):
         with open(STREAMING_PATH / f"{name}_ticker.pkl", "rb") as f:
             return pickle.loads(f.read())  # noqa: S301
-
-    @staticmethod
-    def historic_trades():
-        trades = []
-        with gzip.open(RESPONSES_PATH / "historic/trade_ticks.json.gz", "rb") as f:
-            for line in f:
-                data = msgspec.json.decode(line)
-                tick = HistoricalTickLast(**data)
-                trades.append(tick)
-        return trades
-
-    @staticmethod
-    def historic_bid_ask():
-        trades = []
-        with gzip.open(RESPONSES_PATH / "historic/bid_ask_ticks.json.gz", "rb") as f:
-            for line in f:
-                data = msgspec.json.decode(line)
-                tick = HistoricalTickBidAsk(**data)
-                trades.append(tick)
-        return trades
 
     @staticmethod
     def historic_bars():
