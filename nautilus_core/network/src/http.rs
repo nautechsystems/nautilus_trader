@@ -47,6 +47,7 @@ pub struct HttpClient {
 pub enum HttpMethod {
     GET,
     POST,
+    PUT,
     DELETE,
     PATCH,
 }
@@ -57,6 +58,7 @@ impl Into<Method> for HttpMethod {
         match self {
             HttpMethod::GET => Method::GET,
             HttpMethod::POST => Method::POST,
+            HttpMethod::PUT => Method::PUT,
             HttpMethod::DELETE => Method::DELETE,
             HttpMethod::PATCH => Method::PATCH,
         }
