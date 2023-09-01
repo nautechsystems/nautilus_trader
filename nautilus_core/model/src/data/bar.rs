@@ -431,6 +431,8 @@ impl Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::{
         enums::BarAggregation,
@@ -464,7 +466,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_spec_string_reprs() {
         let bar_spec = BarSpecification {
             step: 1,
@@ -475,7 +477,7 @@ mod tests {
         assert_eq!(format!("{bar_spec}"), "1-MINUTE-BID");
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_parse_valid() {
         let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
         let bar_type = BarType::from_str(input).unwrap();
@@ -495,7 +497,7 @@ mod tests {
         assert_eq!(bar_type.aggregation_source, AggregationSource::External);
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_parse_invalid_token_pos_0() {
         let input = "BTCUSDT-PERP-1-MINUTE-LAST-INTERNAL";
         let result = BarType::from_str(input);
@@ -506,7 +508,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_parse_invalid_token_pos_1() {
         let input = "BTCUSDT-PERP.BINANCE-INVALID-MINUTE-LAST-INTERNAL";
         let result = BarType::from_str(input);
@@ -519,7 +521,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_parse_invalid_token_pos_2() {
         let input = "BTCUSDT-PERP.BINANCE-1-INVALID-LAST-INTERNAL";
         let result = BarType::from_str(input);
@@ -532,7 +534,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_parse_invalid_token_pos_3() {
         let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-INVALID-INTERNAL";
         let result = BarType::from_str(input);
@@ -545,7 +547,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_parse_invalid_token_pos_4() {
         let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-BID-INVALID";
         let result = BarType::from_str(input);
@@ -559,7 +561,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_equality() {
         let instrument_id1 = InstrumentId {
             symbol: Symbol::new("AUD/USD").unwrap(),
@@ -594,7 +596,7 @@ mod tests {
         assert_ne!(bar_type1, bar_type3);
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_type_comparison() {
         let instrument_id1 = InstrumentId {
             symbol: Symbol::new("AUD/USD").unwrap(),
@@ -632,7 +634,7 @@ mod tests {
         assert!(bar_type3 >= bar_type1);
     }
 
-    #[test]
+    #[rstest]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {
             symbol: Symbol::new("AUDUSD").unwrap(),
@@ -673,7 +675,7 @@ mod tests {
         assert_ne!(bar1, bar2);
     }
 
-    #[test]
+    #[rstest]
     fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -686,7 +688,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_as_from_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -699,7 +701,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_from_pyobject() {
         pyo3::prepare_freethreaded_python();
         let bar = create_stub_bar();
@@ -711,7 +713,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_json_serialization() {
         let bar = create_stub_bar();
         let serialized = bar.as_json_bytes().unwrap();
@@ -719,7 +721,7 @@ mod tests {
         assert_eq!(deserialized, bar);
     }
 
-    #[test]
+    #[rstest]
     fn test_msgpack_serialization() {
         let bar = create_stub_bar();
         let serialized = bar.as_msgpack_bytes().unwrap();

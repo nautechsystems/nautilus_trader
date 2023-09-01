@@ -278,7 +278,7 @@ mod tests {
         BookOrder::new(side, price, size, order_id)
     }
 
-    #[test]
+    #[rstest]
     fn test_new() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -293,7 +293,7 @@ mod tests {
         assert_eq!(order.order_id, order_id);
     }
 
-    #[test]
+    #[rstest]
     fn test_to_book_price() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(book_price.side, side);
     }
 
-    #[test]
+    #[rstest]
     fn test_exposure() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(exposure, price.as_f64() * size.as_f64());
     }
 
-    #[test]
+    #[rstest]
     fn test_signed_size() {
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -335,7 +335,7 @@ mod tests {
         assert_eq!(signed_size_sell, -(size.as_f64()));
     }
 
-    #[test]
+    #[rstest]
     fn test_display() {
         let price = Price::from("100.00");
         let size = Quantity::from(10);
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(book_order.order_id, tick.price.raw as u64);
     }
 
-    #[test]
+    #[rstest]
     fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -429,7 +429,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_from_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -442,7 +442,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_json_serialization() {
         let order = create_stub_book_order();
         let serialized = order.as_json_bytes().unwrap();
@@ -450,7 +450,7 @@ mod tests {
         assert_eq!(deserialized, order);
     }
 
-    #[test]
+    #[rstest]
     fn test_msgpack_serialization() {
         let order = create_stub_book_order();
         let serialized = order.as_msgpack_bytes().unwrap();

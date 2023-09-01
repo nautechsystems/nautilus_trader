@@ -81,16 +81,32 @@ pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::component_id::ComponentId;
+
+    #[fixture]
+    pub fn component_risk_engine() -> ComponentId {
+        ComponentId::from("RiskEngine")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::ComponentId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let id = ComponentId::new("RiskEngine").unwrap();
-        assert_eq!(id.to_string(), "RiskEngine");
-        assert_eq!(format!("{id}"), "RiskEngine");
+    use super::{stubs::*, ComponentId};
+
+    #[rstest]
+    fn test_string_reprs(component_risk_engine: ComponentId) {
+        assert_eq!(component_risk_engine.to_string(), "RiskEngine");
+        assert_eq!(format!("{component_risk_engine}"), "RiskEngine");
     }
 }

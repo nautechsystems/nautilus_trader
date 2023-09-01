@@ -650,6 +650,7 @@ cdef class OrderBookDeltas(Data):
         self.instrument_id = instrument_id
         self.deltas = deltas
         self.is_snapshot = deltas[0].is_clear
+        self.sequence = deltas[-1].sequence
         self.ts_event = deltas[-1].ts_event
         self.ts_init = deltas[-1].ts_init
 
@@ -665,6 +666,7 @@ cdef class OrderBookDeltas(Data):
             f"instrument_id={self.instrument_id}, "
             f"{self.deltas}, "
             f"is_snapshot={self.is_snapshot}, "
+            f"sequence={self.sequence}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )

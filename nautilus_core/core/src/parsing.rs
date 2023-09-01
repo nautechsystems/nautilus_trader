@@ -173,14 +173,14 @@ mod tests {
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_optional_bytes_to_json_null() {
         let ptr = std::ptr::null();
         let result = unsafe { optional_bytes_to_json(ptr) };
         assert_eq!(result, None);
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_bytes_to_json_empty() {
         let json_str = CString::new("{}").unwrap();
         let ptr = json_str.as_ptr() as *const c_char;
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(result, Some(HashMap::new()));
     }
 
-    #[test]
+    #[rstest]
     fn test_string_vec_to_bytes_valid() {
         let strings = vec!["value1", "value2", "value3"]
             .into_iter()
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(result, strings);
     }
 
-    #[test]
+    #[rstest]
     fn test_string_vec_to_bytes_empty() {
         let strings = Vec::new();
         let ptr = string_vec_to_bytes(strings.clone());
@@ -210,7 +210,7 @@ mod tests {
         assert_eq!(result, strings);
     }
 
-    #[test]
+    #[rstest]
     fn test_bytes_to_string_vec_valid() {
         let json_str = CString::new(r#"["value1", "value2", "value3"]"#).unwrap();
         let ptr = json_str.as_ptr() as *const c_char;
@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(result, expected_vec);
     }
 
-    #[test]
+    #[rstest]
     fn test_bytes_to_string_vec_invalid() {
         let json_str = CString::new(r#"["value1", 42, "value3"]"#).unwrap();
         let ptr = json_str.as_ptr() as *const c_char;
@@ -238,7 +238,7 @@ mod tests {
         assert_eq!(result, expected_vec);
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_bytes_to_json_valid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": 2}"#).unwrap();
         let ptr = json_str.as_ptr() as *const c_char;
@@ -252,7 +252,7 @@ mod tests {
         assert_eq!(result, Some(expected_map));
     }
 
-    #[test]
+    #[rstest]
     fn test_optional_bytes_to_json_invalid() {
         let json_str = CString::new(r#"{"key1": "value1", "key2": }"#).unwrap();
         let ptr = json_str.as_ptr() as *const c_char;

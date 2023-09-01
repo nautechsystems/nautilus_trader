@@ -147,10 +147,12 @@ impl Hash for SyntheticInstrument {
 
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
     use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol};
 
-    #[test]
+    #[rstest]
     fn test_calculate_from_map() {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
@@ -175,7 +177,7 @@ mod tests {
         assert_eq!(synth.formula, formula);
     }
 
-    #[test]
+    #[rstest]
     fn test_calculate() {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
@@ -197,7 +199,7 @@ mod tests {
         assert_eq!(synth.formula, formula);
     }
 
-    #[test]
+    #[rstest]
     fn test_change_formula() {
         let btc_binance = InstrumentId::from("BTC.BINANCE");
         let ltc_binance = InstrumentId::from("LTC.BINANCE");
