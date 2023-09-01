@@ -49,6 +49,7 @@ from ibapi.utils import BadMessage
 from ibapi.utils import current_fn_name
 from ibapi.wrapper import EWrapper
 
+from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
@@ -132,7 +133,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._bar_type_to_last_bar: dict[str, Union[BarData, None]] = {}
         self.registered_nautilus_clients: set = set()
         self._event_subscriptions: dict[str, Callable] = {}
-        self._order_id_to_order: dict[int, IBOrder] = {}
+        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
 
         # Temporary caches
         self._exec_id_details: dict[
@@ -354,44 +355,38 @@ class InteractiveBrokersClient(Component, EWrapper):
             elif request := self.requests.get(req_id=req_id):
                 self._log.warning(f"{error_code}: {error_string}, {request}")
                 self._end_request(req_id, success=False)
-            elif req_id in self._order_id_to_order:
+            elif req_id in self._order_id_to_order_ref:
                 if error_code == 321:
                     # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
-                    order = self._order_id_to_order.get(req_id, None)
-                    if order:
-                        name = f"orderStatus-{order.account}"
+                    order_ref = self._order_id_to_order_ref.get(req_id, None)
+                    if order_ref:
+                        name = f"orderStatus-{order_ref.account}"
                         if handler := self._event_subscriptions.get(name, None):
                             handler(
-                                order_ref=self._order_id_to_order[req_id].orderRef.rsplit(":", 1)[
-                                    0
-                                ],
+                                order_ref=self._order_id_to_order_ref[req_id].order_id,
                                 order_status="Rejected",
                                 reason=error_string,
                             )
                 elif error_code in [201, 203]:
                     # --> Warning 201 req_id= Order rejected - reason
                     # --> Warning 203 The security <security> is not available or allowed for this account.
-                    order = self._order_id_to_order.get(req_id, None)
-                    if order:
-                        name = f"orderStatus-{order.account}"
+                    order_ref = self._order_id_to_order_ref.get(req_id, None)
+                    if order_ref:
+                        name = f"orderStatus-{order_ref.account}"
                         if handler := self._event_subscriptions.get(name, None):
                             handler(
-                                order_ref=self._order_id_to_order[req_id].orderRef.rsplit(":", 1)[
-                                    0
-                                ],
+                                order_ref=self._order_id_to_order_ref[req_id].order_id,
                                 order_status="Rejected",
                                 reason=error_string,
                             )
                 elif error_code == 202:
                     # --> Warning 202 req_id= Order Canceled - reason
-                    order = self._order_id_to_order.get(req_id, None)
-                    if order:
-                        name = f"orderStatus-{order.account}"
+                    order_ref = self._order_id_to_order_ref.get(req_id, None)
+                    if order_ref:
+                        name = f"orderStatus-{order_ref.account}"
                         if handler := self._event_subscriptions.get(name, None):
                             handler(
-                                order_ref=self._order_id_to_order[req_id].orderRef.rsplit(":", 1)[
-                                    0
-                                ],
+                                order_ref=self._order_id_to_order_ref[req_id].order_id,
                                 order_status="Cancelled",
                                 reason=error_string,
                             )
@@ -789,7 +784,10 @@ class InteractiveBrokersClient(Component, EWrapper):
     # -- Options -----------------------------------------------------------------------------------------
     # -- Orders ------------------------------------------------------------------------------------------
     def place_order(self, order: IBOrder):
-        self._order_id_to_order[order.orderId] = order
+        self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
+            account=order.account,
+            order_id=order.orderRef.rsplit(":", 1)[0],
+        )
         order.orderRef = f"{order.orderRef}:{order.orderId}"
         self._client.placeOrder(order.orderId, order.contract, order)
 
@@ -821,6 +819,20 @@ class InteractiveBrokersClient(Component, EWrapper):
             order.order_state = order_state
             order.orderRef = order.orderRef.rsplit(":", 1)[0]
             request.result.append(order)
+            # Validate and add reverse mapping, if not exists
+            if order_ref := self._order_id_to_order_ref.get(order.orderId):
+                if not (
+                    order_ref.account == order.account and order_ref.order_id == order.orderRef
+                ):
+                    self._log.warning(
+                        f"Discrepancy found in order, expected {order_ref}, "
+                        f"was (account={order.account}, order_id={order.orderRef}",
+                    )
+            else:
+                self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
+                    account=order.account,
+                    order_id=order.orderRef,
+                )
             return
 
         # Handle event based response
@@ -852,12 +864,12 @@ class InteractiveBrokersClient(Component, EWrapper):
         mkt_cap_price: float,
     ):
         self.logAnswer(current_fn_name(), vars())
-        order = self._order_id_to_order.get(order_id, None)
-        if order:
-            name = f"orderStatus-{order.account}"
+        order_ref = self._order_id_to_order_ref.get(order_id, None)
+        if order_ref:
+            name = f"orderStatus-{order_ref.account}"
             if handler := self._event_subscriptions.get(name, None):
                 handler(
-                    order_ref=self._order_id_to_order[order_id].orderRef.rsplit(":", 1)[0],
+                    order_ref=self._order_id_to_order_ref[order_id].order_id,
                     order_status=status,
                 )
 

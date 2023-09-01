@@ -80,7 +80,7 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
             "EUR/USD.IDEALPRO",
             "BTC/USD.PAXOS",
             "SPY.ARCA",
-            "ABC.NYSE",
+            "V.NYSE",
             "YMH24.CBOT",
             "CLZ27.NYMEX",
             "ESZ27.CME",

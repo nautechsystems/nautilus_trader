@@ -15,6 +15,7 @@
 
 import asyncio
 import json
+from decimal import Decimal
 from typing import Any, Optional
 
 import pandas as pd
@@ -265,7 +266,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         return report
 
     async def _parse_ib_order_to_order_status_report(self, ib_order: IBOrder):
-        self._log.debug(f"Trying OrderStatusReport for {ib_order}")
+        self._log.debug(f"Trying OrderStatusReport for {ib_order.__dict__}")
         instrument = await self.instrument_provider.find_with_contract_id(
             ib_order.contract.conId,
         )
@@ -302,7 +303,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             time_in_force=ib_to_nautilus_time_in_force[ib_order.tif],
             order_status=order_status,
             quantity=total_qty,
-            filled_qty=filled_qty,
+            filled_qty=Quantity.from_int(0),
+            avg_px=Decimal(0),
             report_id=UUID4(),
             ts_accepted=ts_init,
             ts_last=ts_init,
@@ -352,13 +354,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         positions: list[IBPosition] = await self._client.get_positions(self.account_id.get_id())
         ts_init = self._clock.timestamp_ns()
         for position in positions:
-            self._log.debug(f"Trying OrderStatusReport for {position.contract.conId}")
+            self._log.debug(
+                f"Infer OrderStatusReport from open position {position.contract.__dict__}",
+            )
             if position.quantity > 0:
                 order_side = OrderSide.BUY
             elif position.quantity < 0:
                 order_side = OrderSide.SELL
             else:
-                order_side = OrderSide.NO_ORDER_SIDE
                 continue  # Skip, IB may continue to display closed positions
 
             instrument = await self.instrument_provider.find_with_contract_id(
@@ -711,21 +714,23 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # TODO: self.generate_order_pending_cancel
             self._log.warning(f"{order.client_order_id} is {status}")
         elif status == OrderStatus.CANCELED:
-            self.generate_order_canceled(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
+            if order.status != OrderStatus.CANCELED:
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    ts_event=self._clock.timestamp_ns(),
+                )
         elif status == OrderStatus.REJECTED:
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
+            if order.status != OrderStatus.REJECTED:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState):
         if not order.orderRef:
@@ -734,8 +739,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
         if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
+            # report = await self._parse_ib_order_to_order_status_report(order)
             self._log.warning(
-                f"ClientOrderId not found in Cache, order={order.__dict__}, state={order_state.__dict__}",
+                "Placeholder to claim external Orders during runtime using OrderStatusReport.",
             )
             return
 
@@ -797,7 +803,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             status = OrderStatus.PENDING_CANCEL
         elif order_status == "Rejected":
             status = OrderStatus.REJECTED
+        elif order_status in ["PreSubmitted", "Submitted"]:
+            self._log.debug(
+                f"Ignoring `_on_order_status` event for {order_status=} is handled in `_on_open_order`",
+            )
+            return
         else:
+            self._log.warning(
+                f"Unknown {order_status=} received on " f"`_on_order_status` for {order_ref=}",
+            )
             return
 
         nautilus_order = self._cache.order(ClientOrderId(order_ref))
@@ -807,6 +821,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=nautilus_order,
                 reason=reason,
             )
+        else:
+            self._log.warning(f"ClientOrderId {order_ref} not found in Cache")
 
     def _on_exec_details(
         self,
