@@ -15,6 +15,7 @@
 
 import asyncio
 import json
+from decimal import Decimal
 from typing import Any, Optional
 
 import pandas as pd
@@ -265,7 +266,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         return report
 
     async def _parse_ib_order_to_order_status_report(self, ib_order: IBOrder):
-        self._log.debug(f"Trying OrderStatusReport for {ib_order}")
+        self._log.debug(f"Trying OrderStatusReport for {ib_order.__dict__}")
         instrument = await self.instrument_provider.find_with_contract_id(
             ib_order.contract.conId,
         )
@@ -302,7 +303,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             time_in_force=ib_to_nautilus_time_in_force[ib_order.tif],
             order_status=order_status,
             quantity=total_qty,
-            filled_qty=filled_qty,
+            filled_qty=Quantity.from_int(0),
+            avg_px=Decimal(0),
             report_id=UUID4(),
             ts_accepted=ts_init,
             ts_last=ts_init,
@@ -352,13 +354,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         positions: list[IBPosition] = await self._client.get_positions(self.account_id.get_id())
         ts_init = self._clock.timestamp_ns()
         for position in positions:
-            self._log.debug(f"Trying OrderStatusReport for {position.contract.conId}")
+            self._log.debug(
+                f"Infer OrderStatusReport from open position {position.contract.__dict__}",
+            )
             if position.quantity > 0:
                 order_side = OrderSide.BUY
             elif position.quantity < 0:
                 order_side = OrderSide.SELL
             else:
-                order_side = OrderSide.NO_ORDER_SIDE
                 continue  # Skip, IB may continue to display closed positions
 
             instrument = await self.instrument_provider.find_with_contract_id(
