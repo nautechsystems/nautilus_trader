@@ -242,7 +242,9 @@ impl Bar {
         size_precision: u8,
     ) -> HashMap<String, String> {
         let mut metadata = HashMap::new();
+        let instrument_id = bar_type.instrument_id;
         metadata.insert("bar_type".to_string(), bar_type.to_string());
+        metadata.insert("instrument_id".to_string(), instrument_id.to_string());
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());
         metadata
