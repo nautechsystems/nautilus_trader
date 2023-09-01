@@ -142,24 +142,26 @@ impl HttpClient {
     ///
     /// * `method` - the HTTP method to call
     /// * `url` - the request is sent to this url
-    /// * `keys` - the keys used for rate limiting the request
     /// * `headers` - the header key value pairs in the request
     /// * `body` - the bytes sent in the body of request
+    /// * `keys` - the keys used for rate limiting the request
     pub fn request<'py>(
         &self,
         method: HttpMethod,
         url: String,
-        keys: Vec<String>,
-        headers: HashMap<String, String>,
+        headers: Option<HashMap<String, String>>,
         body: Option<&'py PyBytes>,
+        keys: Option<Vec<String>>,
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
+        let headers = headers.unwrap_or_default();
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
+        let keys = keys.unwrap_or_default();
         let client = self.client.clone();
         let rate_limiter = self.rate_limiter.clone();
         let method = method.into();
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            // check keys for rate limiting quota
+            // Check keys for rate limiting quota
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)
                 .for_each(|key| async move {
@@ -169,7 +171,7 @@ impl HttpClient {
             match client.send_request(method, url, headers, body_vec).await {
                 Ok(res) => Ok(res),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
+                    "Error handling response: {e}"
                 ))),
             }
         })

@@ -72,7 +72,7 @@ class BinanceHttpEndpoint:
                 f"{method_type.name} not available for {self.url_path}",
             )
         raw: bytes = await self._method_request[self.methods_desc[method_type]](
-            http_method=method_type.name,
+            http_method=method_type,
             url_path=self.url_path,
             payload=payload,
         )
