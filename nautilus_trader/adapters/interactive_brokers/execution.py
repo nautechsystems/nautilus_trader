@@ -739,8 +739,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
         if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
+            # report = await self._parse_ib_order_to_order_status_report(order)
             self._log.warning(
-                f"ClientOrderId not found in Cache, order={order.__dict__}, state={order_state.__dict__}",
+                "Placeholder to claim external Orders during runtime using OrderStatusReport.",
             )
             return
 
