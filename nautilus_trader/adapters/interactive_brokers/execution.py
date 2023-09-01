@@ -714,21 +714,23 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # TODO: self.generate_order_pending_cancel
             self._log.warning(f"{order.client_order_id} is {status}")
         elif status == OrderStatus.CANCELED:
-            self.generate_order_canceled(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-                ts_event=self._clock.timestamp_ns(),
-            )
+            if order.status != OrderStatus.CANCELED:
+                self.generate_order_canceled(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    ts_event=self._clock.timestamp_ns(),
+                )
         elif status == OrderStatus.REJECTED:
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
+            if order.status != OrderStatus.REJECTED:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState):
         if not order.orderRef:
@@ -800,7 +802,15 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             status = OrderStatus.PENDING_CANCEL
         elif order_status == "Rejected":
             status = OrderStatus.REJECTED
+        elif order_status in ["PreSubmitted", "Submitted"]:
+            self._log.debug(
+                f"Ignoring `_on_order_status` event for {order_status=} is handled in `_on_open_order`",
+            )
+            return
         else:
+            self._log.warning(
+                f"Unknown {order_status=} received on " f"`_on_order_status` for {order_ref=}",
+            )
             return
 
         nautilus_order = self._cache.order(ClientOrderId(order_ref))
@@ -810,6 +820,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order=nautilus_order,
                 reason=reason,
             )
+        else:
+            self._log.warning(f"ClientOrderId {order_ref} not found in Cache")
 
     def _on_exec_details(
         self,
