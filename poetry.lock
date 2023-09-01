@@ -710,20 +710,6 @@ files = [
 ]
 
 [[package]]
-name = "eventkit"
-version = "1.0.1"
-description = "Event-driven data pipelines"
-optional = true
-python-versions = "*"
-files = [
-    {file = "eventkit-1.0.1-py3-none-any.whl", hash = "sha256:6060a6aa04d5c5d20f2e55b7c17e2a22e8d31f88f2c2791d60eab3301aa040da"},
-    {file = "eventkit-1.0.1.tar.gz", hash = "sha256:56b99a6205f61cd995aa5e0036e37bd61f052f7d32560e60b6fe45e319a7ef3a"},
-]
-
-[package.dependencies]
-numpy = "*"
-
-[[package]]
 name = "exceptiongroup"
 version = "1.1.3"
 description = "Backport of PEP 654 (exception groups)"
@@ -1017,21 +1003,6 @@ files = [
     {file = "hiredis-2.2.3-pp39-pypy39_pp73-win_amd64.whl", hash = "sha256:d194decd9608f11c777946f596f31d5aacad13972a0a87829ae1e6f2d26c1885"},
     {file = "hiredis-2.2.3.tar.gz", hash = "sha256:e75163773a309e56a9b58165cf5a50e0f84b755f6ff863b2c01a38918fe92daa"},
 ]
-
-[[package]]
-name = "ib-insync"
-version = "0.9.86"
-description = "Python sync/async framework for Interactive Brokers API"
-optional = true
-python-versions = ">=3.6"
-files = [
-    {file = "ib_insync-0.9.86-py3-none-any.whl", hash = "sha256:a61fbe56ff405d93d211dad8238d7300de76dd6399eafc04c320470edec9a4a4"},
-    {file = "ib_insync-0.9.86.tar.gz", hash = "sha256:73af602ca2463f260999970c5bd937b1c4325e383686eff301743a4de08d381e"},
-]
-
-[package.dependencies]
-eventkit = "*"
-nest-asyncio = "*"
 
 [[package]]
 name = "identify"
@@ -1576,17 +1547,6 @@ python-versions = ">=3.9,<3.12"
 files = [
     {file = "nautilus_ibapi-1019.1-py3-none-any.whl", hash = "sha256:00a521ee8a7870f6a2430d9f5145e42cfc48aae5791d3c54fc0d5d54b099f615"},
     {file = "nautilus_ibapi-1019.1.tar.gz", hash = "sha256:dae539d667d7f06d953ccd5353ff4f5315c9f4d1fe448ef71704fae1daa95585"},
-]
-
-[[package]]
-name = "nest-asyncio"
-version = "1.5.7"
-description = "Patch asyncio to allow nested event loops"
-optional = true
-python-versions = ">=3.5"
-files = [
-    {file = "nest_asyncio-1.5.7-py3-none-any.whl", hash = "sha256:5301c82941b550b3123a1ea772ba9a1c80bad3a182be8c1a5ae6ad3be57a9657"},
-    {file = "nest_asyncio-1.5.7.tar.gz", hash = "sha256:6a80f7b98f24d9083ed24608977c09dd608d83f91cccc24c9d2cba6d10e01c10"},
 ]
 
 [[package]]
@@ -2889,10 +2849,10 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [extras]
 betfair = ["betfair_parser"]
 docker = ["docker"]
-ib = ["ib_insync", "nautilus_ibapi"]
+ib = ["nautilus_ibapi"]
 redis = ["hiredis", "redis"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.12"
-content-hash = "3bc1c0636d3f46fa59676a7fa86b731d31282952441399f9cf5326d7a329f858"
+content-hash = "7750a1dc71fea061e73422fb46677612a7d71b881b3baae3f75d45cc61ad10a8"
