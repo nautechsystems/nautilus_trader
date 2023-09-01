@@ -40,7 +40,6 @@ from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-@pytest.mark.skip(reason="Rust datafusion backend currently being integrated")
 class TestBatchingData:
     test_parquet_files = [
         os.path.join(TEST_DATA_DIR, "quote_tick_eurusd_2019_sim_rust.parquet"),

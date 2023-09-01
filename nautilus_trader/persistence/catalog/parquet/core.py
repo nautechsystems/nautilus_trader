@@ -388,6 +388,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                     **kwargs,
                 )
                 dfs.append(df)
+            except AssertionError as e:
+                if "No rows found for" in str(e):
+                    continue
+                raise
             except ArrowInvalid as e:
                 # If we're using a `filter_expr` here, there's a good chance
                 # this error is using a filter that is specific to one set of

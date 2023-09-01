@@ -51,6 +51,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
+from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -506,6 +507,43 @@ class TestDataStubs:
                     }
 
         return [msg for data in json.loads(open(filename).read()) for msg in parser(data)]
+
+    @staticmethod
+    def bar_data_from_csv(
+        filename: str,
+        bar_type: BarType,
+        instrument: Instrument,
+        names=None,
+    ) -> list[Bar]:
+        wrangler = BarDataWrangler(bar_type, instrument)
+        data = TestDataProvider().read_csv(filename, names=names)
+        data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
+        data = data.set_index("timestamp")
+        bars = wrangler.process(data)
+        return bars
+
+    @staticmethod
+    def binance_bars_from_csv(filename: str, bar_type: BarType, instrument: Instrument):
+        names = [
+            "timestamp",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "ts_close",
+            "quote_volume",
+            "n_trades",
+            "taker_buy_base_volume",
+            "taker_buy_quote_volume",
+            "ignore",
+        ]
+        return TestDataStubs.bar_data_from_csv(
+            filename=filename,
+            bar_type=bar_type,
+            instrument=instrument,
+            names=names,
+        )
 
 
 class MyData(Data):

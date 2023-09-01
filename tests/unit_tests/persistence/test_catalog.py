@@ -32,7 +32,6 @@ from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -138,12 +137,8 @@ class TestPersistenceCatalog:
     def test_data_catalog_generic_data(self, betfair_catalog):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        raise NotImplementedError("Needs new record batch loader")
-        # process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-        #     reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-        #     catalog=self.catalog,
-        # )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
 
         # Act
         df = self.catalog.generic_data(cls=NewsEventData, filter_expr=ds.field("currency") == "USD")
@@ -155,7 +150,7 @@ class TestPersistenceCatalog:
         # Assert
         assert df is not None
         assert data is not None
-        assert len(df) == 22925
+        assert len(df) == 22941
         assert len(data) == 2745
         assert isinstance(data[0], GenericData)
 
@@ -163,21 +158,14 @@ class TestPersistenceCatalog:
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
-        wrangler = BarDataWrangler(bar_type, instrument)
-
-        def parser(data):
-            data["timestamp"] = data["timestamp"].astype("datetime64[ms]")
-            bars = wrangler.process(data.set_index("timestamp"))
-            return bars
+        bars = TestDataStubs.binance_bars_from_csv(
+            "ADABTC-1m-2021-11-27.csv",
+            bar_type,
+            instrument,
+        )
 
         # Act
-        raise NotImplementedError("Needs new record batch loader")
-        # reader = CSVReader(block_parser=parser, header=binance_spot_header)
-        # _ = process_files(
-        #     glob_path=f"{TEST_DATA_DIR}/ADABTC-1m-2021-11-*.csv",
-        #     reader=reader,
-        #     catalog=self.catalog,
-        # )
+        self.catalog.write_data(bars)
 
         # Assert
         bars = self.catalog.bars()
@@ -189,13 +177,10 @@ class TestPersistenceCatalog:
         betfair_catalog.write_data([bar])
 
         # Act
-        objs = self.catalog.bars(instrument_ids=[TestIdStubs.audusd_id().value])
         data = self.catalog.bars(instrument_ids=[TestIdStubs.audusd_id().value])
 
         # Assert
-        assert len(objs) == 1
-        assert data.shape[0] == 1
-        assert "instrument_id" in data.columns
+        assert len(data) == 1
 
     def test_catalog_persists_equity(self, betfair_catalog):
         # Arrange
