@@ -419,21 +419,17 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_equity():
-        return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
-
-    @staticmethod
-    def es_future() -> FuturesContract:
+    def future(symbol: str = "ESZ21", underlying: str = "ES", venue: str = "CME"):
         return FuturesContract(
-            instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
-            raw_symbol=Symbol("ESZ21"),
+            instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
+            raw_symbol=Symbol(symbol),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
-            underlying="ES",
+            underlying=underlying,
             expiry_date=date(2021, 12, 17),
             ts_event=0,
             ts_init=0,

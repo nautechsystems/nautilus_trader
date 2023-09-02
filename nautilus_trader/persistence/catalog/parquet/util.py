@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import re
 from typing import Any, Optional
 
@@ -133,7 +132,8 @@ def class_to_filename(cls: type) -> str:
     """
     Convert the given class to a filename.
     """
-    name = f"{camel_to_snake_case(cls.__name__)}"
+    filename_mappings = {"OrderBookDeltas": "OrderBookDelta"}
+    name = f"{camel_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
     if not is_nautilus_class(cls):
-        name = f"{GENERIC_DATA_PREFIX}{camel_to_snake_case(cls.__name__)}"
+        name = f"{GENERIC_DATA_PREFIX}{name}"
     return name

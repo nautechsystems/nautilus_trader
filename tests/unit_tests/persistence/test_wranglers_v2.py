@@ -35,7 +35,7 @@ def test_quote_tick_data_wrangler() -> None:
     df: pd.DataFrame = pd.read_csv(path)
 
     # Act
-    wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
+    wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
     ticks = wrangler.from_pandas(df)
 
     cython_ticks = QuoteTick.from_pyo3(ticks)
@@ -54,7 +54,7 @@ def test_trade_tick_data_wrangler() -> None:
     df: pd.DataFrame = pd.read_csv(path)
 
     # Act
-    wrangler = TradeTickDataWrangler(ETHUSDT_BINANCE)
+    wrangler = TradeTickDataWrangler.from_instrument(ETHUSDT_BINANCE)
     ticks = wrangler.from_pandas(df)
 
     cython_ticks = TradeTick.from_pyo3(ticks)

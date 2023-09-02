@@ -12,8 +12,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import copy
+import pickle
 
 import msgspec
 import pandas as pd
@@ -94,7 +94,7 @@ class TestOrderBook:
         updates = [OrderBookDelta.from_dict(upd) for upd in raw_updates]
 
         # Act, Assert
-        for update in updates[:2]:
+        for update in updates:
             book.apply_delta(update)
             copy.deepcopy(book)
 
@@ -644,3 +644,54 @@ class TestOrderBook:
         expected_bid = Price(0.990099, 6)
         expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
         assert book.best_bid_price() == expected_bid
+
+    def test_book_order_pickle_round_trip(self):
+        # Arrange
+        book = TestDataStubs.make_book(
+            instrument=self.instrument,
+            book_type=BookType.L2_MBP,
+            bids=[(0.0040000, 100.0)],
+            asks=[(0.0010000, 55.81)],
+        )
+        # Act
+        pickled = pickle.dumps(book)
+        unpickled = pickle.loads(pickled)  # noqa
+
+        # Assert
+        assert str(book) == str(unpickled)
+        assert book.bids()[0].orders()[0].price == Price.from_str("0.00400")
+
+    def test_orderbook_deep_copy(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR")
+        book = OrderBook(instrument_id, BookType.L2_MBP)
+
+        def make_delta(side: OrderSide, price: float, size: float):
+            order = BookOrder(
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                side=side,
+                order_id=0,
+            )
+            return TestDataStubs.order_book_delta(
+                instrument_id=instrument_id,
+                order=order,
+            )
+
+        updates = [
+            TestDataStubs.order_book_delta_clear(instrument_id=instrument_id),
+            make_delta(OrderSide.BUY, price=2.0, size=77.0),
+            make_delta(OrderSide.BUY, price=1.0, size=2.0),
+            make_delta(OrderSide.BUY, price=1.0, size=40.0),
+            make_delta(OrderSide.BUY, price=1.0, size=331.0),
+        ]
+
+        # Act
+        for update in updates:
+            print(update)
+            book.apply_delta(update)
+            book.check_integrity()
+            copy.deepcopy(book)
+
+        # Assert
+        # assert str(book) == str(new)

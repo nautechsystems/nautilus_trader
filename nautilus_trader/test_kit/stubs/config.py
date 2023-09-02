@@ -32,7 +32,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-AAPL_US = TestInstrumentProvider.aapl_equity()
+AAPL_US = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
 
 
 class TestConfigStubs:
