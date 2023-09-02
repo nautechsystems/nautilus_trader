@@ -559,8 +559,6 @@ class TestPersistenceBatching:
             "data_cls": OrderBookDelta,
         }
 
-        raise NotImplementedError("_config_to_buffer no longer has get_files")
-
         engine = StreamingEngine(
             data_configs=[
                 BacktestDataConfig(**shared_kw, instrument_id=instrument_ids[0]),
@@ -591,7 +589,7 @@ class TestPersistenceBatching:
             data_cls=NewsEventData,
             client_id="NewsClient",
         )
-        raise NotImplementedError("_config_to_buffer no longer has get_files")
+
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
         )

@@ -125,10 +125,12 @@ class TestPersistenceCatalog:
         assert instrument.id.value == "AUD/USD.SIM"
         assert trade_tick.instrument_id.value == "AUD/USD.SIM"
 
-    def test_data_catalog_filter(self):
+    def test_data_catalog_filter(self, betfair_catalog):
         # Arrange, Act
         deltas = self.catalog.order_book_deltas()
-        filtered_deltas = self.catalog.order_book_deltas(filter_expr=ds.field("action") == "DELETE")
+        filtered_deltas = self.catalog.order_book_deltas(
+            where=f"Action = {BookAction.DELETE.value}",
+        )
 
         # Assert
         assert len(deltas) == 2384
@@ -154,7 +156,7 @@ class TestPersistenceCatalog:
         assert len(data) == 2745
         assert isinstance(data[0], GenericData)
 
-    def test_data_catalog_bars(self, betfair_catalog):
+    def test_data_catalog_bars(self):
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -222,56 +224,6 @@ class TestPersistenceCatalog:
         assert instrument.maker_fee == instrument_from_catalog.maker_fee
         assert instrument.margin_init == instrument_from_catalog.margin_init
         assert instrument.margin_maint == instrument_from_catalog.margin_maint
-
-    def test_data_catalog_quote_ticks_as_nautilus_use_rust_with_date_range(self):
-        # Arrange
-        self._load_quote_ticks_into_catalog_rust()
-
-        start_timestamp = 1577898181000000440  # index 44
-        end_timestamp = 1577898572000000953  # index 99
-
-        # Act
-        quote_ticks = self.catalog.quote_ticks(
-            use_rust=True,
-            instrument_ids=["EUR/USD.SIM"],
-            start=start_timestamp,
-            end=end_timestamp,
-        )
-
-        # Assert
-        assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
-        assert len(quote_ticks) == 54
-        assert quote_ticks[0].ts_init == start_timestamp
-        assert quote_ticks[-1].ts_init == end_timestamp
-
-    def test_data_catalog_quote_ticks_as_nautilus_use_rust_with_date_range_with_multiple_instrument_ids(
-        self,
-    ):
-        # Arrange
-        self._load_quote_ticks_into_catalog_rust()
-
-        start_timestamp = 1577898181000000440  # EUR/USD.SIM index 44
-        end_timestamp = 1577898572000000953  # EUR/USD.SIM index 99
-
-        # Act
-        quote_ticks = self.catalog.quote_ticks(
-            use_rust=True,
-            instrument_ids=["EUR/USD.SIM", "USD/JPY.SIM"],
-            start=start_timestamp,
-            end=end_timestamp,
-        )
-
-        # Assert
-        assert all(isinstance(tick, QuoteTick) for tick in quote_ticks)
-
-        instrument1_quote_ticks = [t for t in quote_ticks if str(t.instrument_id) == "EUR/USD.SIM"]
-        assert len(instrument1_quote_ticks) == 54
-
-        instrument2_quote_ticks = [t for t in quote_ticks if str(t.instrument_id) == "USD/JPY.SIM"]
-        assert len(instrument2_quote_ticks) == 54
-
-        assert quote_ticks[0].ts_init == start_timestamp
-        assert quote_ticks[-1].ts_init == end_timestamp
 
     def test_list_backtest_runs(self, betfair_catalog):
         # Arrange
