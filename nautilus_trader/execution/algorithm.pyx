@@ -240,7 +240,7 @@ cdef class ExecAlgorithm(Actor):
         Raises
         ------
         ValueError
-            If `command.exec_algorithm_id` is not equal to `self.id`
+            If `command.exec_algorithm_id` is not equal to `self.id`.
 
         """
         Condition.not_none(command, "command")
