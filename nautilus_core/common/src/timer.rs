@@ -19,7 +19,7 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness,
+    correctness::check_valid_string,
     time::{TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
@@ -44,7 +44,7 @@ pub struct TimeEvent {
 impl TimeEvent {
     #[must_use]
     pub fn new(name: String, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
-        correctness::valid_string(&name, "`TimeEvent` name");
+        check_valid_string(&name, "`TimeEvent` name").unwrap();
 
         TimeEvent {
             name: Ustr::from(&name),
@@ -113,6 +113,7 @@ pub trait Timer {
     fn cancel(&mut self);
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
     v
@@ -136,7 +137,7 @@ impl TestTimer {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
     ) -> Self {
-        correctness::valid_string(&name, "`TestTimer` name");
+        check_valid_string(&name, "`TestTimer` name").unwrap();
 
         TestTimer {
             name,
@@ -208,6 +209,8 @@ impl Iterator for TestTimer {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::*;
+
     use super::{TestTimer, TimeEvent};
 
     #[test]
@@ -221,7 +224,7 @@ mod tests {
         assert!(timer.next().is_none());
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_within_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 5, 0, None);
@@ -233,7 +236,7 @@ mod tests {
         assert!(!timer.is_expired)
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_up_to_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, None);
@@ -241,7 +244,7 @@ mod tests {
         assert!(!timer.is_expired);
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_up_to_next_time_ns_with_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(2));
@@ -249,7 +252,7 @@ mod tests {
         assert!(timer.is_expired);
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_beyond_next_time_ns() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));
@@ -257,7 +260,7 @@ mod tests {
         assert!(timer.is_expired);
     }
 
-    #[test]
+    #[rstest]
     fn test_advance_beyond_stop_time() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 1, 0, Some(5));

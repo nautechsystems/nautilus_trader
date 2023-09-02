@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct OrderListId {
 }
 
 impl OrderListId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`OrderListId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`OrderListId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -53,6 +53,12 @@ impl Display for OrderListId {
     }
 }
 
+impl From<&str> for OrderListId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,15 +67,32 @@ impl Display for OrderListId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn order_list_id_new(ptr: *const c_char) -> OrderListId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    OrderListId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    OrderListId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn order_list_id_hash(id: &OrderListId) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::order_list_id::OrderListId;
+
+    #[fixture]
+    pub fn test_order_list_id() -> OrderListId {
+        OrderListId::from("001")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,12 +100,13 @@ pub extern "C" fn order_list_id_hash(id: &OrderListId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::OrderListId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let id = OrderListId::new("001");
-        assert_eq!(id.to_string(), "001");
-        assert_eq!(format!("{id}"), "001");
+    use super::{stubs::*, OrderListId};
+
+    #[rstest]
+    fn test_string_reprs(test_order_list_id: OrderListId) {
+        assert_eq!(test_order_list_id.to_string(), "001");
+        assert_eq!(format!("{test_order_list_id}"), "001");
     }
 }

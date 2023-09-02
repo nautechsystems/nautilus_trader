@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.177.0"
+version = "1.178.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -32,9 +32,9 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.6.1",
+    "poetry-core>=1.7.0",
     "numpy>=1.25.2",
-    "Cython==3.0.0",
+    "Cython==3.0.2",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -44,13 +44,13 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.0"
-click = "^8.1.5"
+cython = "==3.0.2"
+click = "^8.1.7"
 frozendict = "^2.3.8"
 fsspec = ">=2022.5.0"
-msgspec = "^0.18.1"
+msgspec = "^0.18.2"
 numpy = "^1.25.2"
-pandas = "^2.0.3"
+pandas = "^2.1.0"
 psutil = "^5.9.5"
 pyarrow = "^12.0.1"
 pytz = "^2023.3.0"
@@ -61,13 +61,12 @@ hiredis = {version = "^2.2.3", optional = true}
 redis = {version = "^4.6.0", optional = true}
 docker = {version = "^6.1.3", optional = true}
 nautilus_ibapi = {version = "==1019.1", optional = true}
-ib_insync = {version = "^0.9.86", optional = true}
 betfair_parser = {version = "==0.4.6", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
 docker = ["docker"]
-ib = ["nautilus_ibapi", "ib_insync"]
+ib = ["nautilus_ibapi"]
 redis = ["hiredis", "redis"]
 
 [tool.poetry.group.dev]
@@ -78,12 +77,11 @@ black = "^23.7.0"
 docformatter = "^1.7.5"
 mypy = "^1.5.1"
 pre-commit = "^3.3.3"
-ruff = "^0.0.285"
+ruff = "^0.0.287"
 types-pytz = "^2023.3"
 types-redis = "^4.6"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
-urllib3 = "==1.26.16"  # Temp pin for poetry compatibility
 
 [tool.poetry.group.test]
 optional = true

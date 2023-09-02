@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`Symbol` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`Symbol` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -61,6 +61,12 @@ impl Display for Symbol {
     }
 }
 
+impl From<&str> for Symbol {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,15 +75,37 @@ impl Display for Symbol {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Symbol::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    Symbol::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::symbol::Symbol;
+
+    #[fixture]
+    pub fn eth_perp() -> Symbol {
+        Symbol::from("ETH-PERP")
+    }
+
+    #[fixture]
+    pub fn aud_usd() -> Symbol {
+        Symbol::from("AUDUSD")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -85,12 +113,13 @@ pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::Symbol;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let symbol = Symbol::new("ETH-PERP");
-        assert_eq!(symbol.to_string(), "ETH-PERP");
-        assert_eq!(format!("{symbol}"), "ETH-PERP");
+    use super::{stubs::*, Symbol};
+
+    #[rstest]
+    fn test_string_reprs(eth_perp: Symbol) {
+        assert_eq!(eth_perp.to_string(), "ETH-PERP");
+        assert_eq!(format!("{eth_perp}"), "ETH-PERP");
     }
 }

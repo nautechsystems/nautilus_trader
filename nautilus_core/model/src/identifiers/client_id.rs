@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct ClientId {
 }
 
 impl ClientId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ClientId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`ClientId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -53,6 +53,12 @@ impl Display for ClientId {
     }
 }
 
+impl From<&str> for ClientId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,15 +67,37 @@ impl Display for ClientId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn client_id_new(ptr: *const c_char) -> ClientId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ClientId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ClientId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn client_id_hash(id: &ClientId) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::client_id::ClientId;
+
+    #[fixture]
+    pub fn client_binance() -> ClientId {
+        ClientId::from("BINANCE")
+    }
+
+    #[fixture]
+    pub fn client_dydx() -> ClientId {
+        ClientId::from("COINBASE")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,28 +105,29 @@ pub extern "C" fn client_id_hash(id: &ClientId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let id = ClientId::new("BINANCE");
-        assert_eq!(id.to_string(), "BINANCE");
-        assert_eq!(format!("{id}"), "BINANCE");
+    use super::{stubs::*, *};
+
+    #[rstest]
+    fn test_string_reprs(client_binance: ClientId) {
+        assert_eq!(client_binance.to_string(), "BINANCE");
+        assert_eq!(format!("{client_binance}"), "BINANCE");
     }
 
-    #[test]
+    #[rstest]
     fn test_client_id_to_cstr_c() {
-        let id = ClientId::new("BINANCE");
+        let id = ClientId::from("BINANCE");
         let c_string = id.value.as_char_ptr();
         let rust_string = unsafe { CStr::from_ptr(c_string) }.to_str().unwrap();
         assert_eq!(rust_string, "BINANCE");
     }
 
-    #[test]
+    #[rstest]
     fn test_client_id_hash_c() {
-        let id1 = ClientId::new("BINANCE");
-        let id2 = ClientId::new("BINANCE");
-        let id3 = ClientId::new("DYDX");
+        let id1 = client_binance();
+        let id2 = client_binance();
+        let id3 = client_dydx();
         assert_eq!(client_id_hash(&id1), client_id_hash(&id2));
         assert_ne!(client_id_hash(&id1), client_id_hash(&id3));
     }

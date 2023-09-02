@@ -16,8 +16,9 @@
 use std::{collections::HashMap, io::Cursor, str::FromStr};
 
 use datafusion::arrow::ipc::reader::StreamReader;
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{data::quote::QuoteTick, identifiers::instrument_id::InstrumentId};
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::prelude::*;
 
 use crate::arrow::DecodeFromRecordBatch;
 
@@ -29,13 +30,12 @@ pub struct QuoteTickDataWrangler {
     metadata: HashMap<String, String>,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl QuoteTickDataWrangler {
     #[new]
     fn py_new(instrument_id: &str, price_precision: u8, size_precision: u8) -> PyResult<Self> {
-        let instrument_id = InstrumentId::from_str(instrument_id)
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
-
+        let instrument_id = InstrumentId::from_str(instrument_id).map_err(to_pyvalue_err)?;
         let metadata = QuoteTick::get_metadata(&instrument_id, price_precision, size_precision);
 
         Ok(Self {
@@ -66,7 +66,7 @@ impl QuoteTickDataWrangler {
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {
             Ok(reader) => reader,
-            Err(e) => return Err(PyValueError::new_err(e.to_string())),
+            Err(e) => return Err(to_pyvalue_err(e)),
         };
 
         let mut quotes = Vec::new();
@@ -75,7 +75,7 @@ impl QuoteTickDataWrangler {
         for maybe_batch in reader {
             let record_batch = match maybe_batch {
                 Ok(record_batch) => record_batch,
-                Err(e) => return Err(PyValueError::new_err(e.to_string())),
+                Err(e) => return Err(to_pyvalue_err(e)),
             };
 
             let batch_deltas = QuoteTick::decode_batch(&self.metadata, record_batch);

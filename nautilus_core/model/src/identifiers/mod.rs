@@ -15,6 +15,8 @@
 
 use std::str::FromStr;
 
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[macro_use]
@@ -63,6 +65,20 @@ impl_serialization_for_identifier!(trader_id::TraderId);
 impl_serialization_for_identifier!(venue::Venue);
 impl_serialization_for_identifier!(venue_order_id::VenueOrderId);
 
+identifier_for_python!(account_id::AccountId);
+identifier_for_python!(client_id::ClientId);
+identifier_for_python!(client_order_id::ClientOrderId);
+identifier_for_python!(component_id::ComponentId);
+identifier_for_python!(exec_algorithm_id::ExecAlgorithmId);
+identifier_for_python!(order_list_id::OrderListId);
+identifier_for_python!(position_id::PositionId);
+identifier_for_python!(strategy_id::StrategyId);
+identifier_for_python!(symbol::Symbol);
+identifier_for_python!(trade_id::TradeId);
+identifier_for_python!(trader_id::TraderId);
+identifier_for_python!(venue::Venue);
+identifier_for_python!(venue_order_id::VenueOrderId);
+
 #[no_mangle]
 pub extern "C" fn interned_string_stats() {
     dbg!(ustr::total_allocated());
@@ -70,3 +86,13 @@ pub extern "C" fn interned_string_stats() {
 
     ustr::string_cache_iter().for_each(|s| println!("{}", s));
 }
+
+// #[cfg(test)]
+// pub mod stubs {
+//     use crate::identifiers::{
+//         account_id::stubs::*, client_id::stubs::*, client_order_id::stubs::*,
+//         component_id::stubs::*, exec_algorithm_id::stubs::*, instrument_id::stubs::*,
+//         order_list_id::stubs::*, position_id::stubs::*, strategy_id::stubs::*, symbol::stubs::*,
+//         trade_id::stubs::*, trader_id::stubs::*, venue::stubs::*, venue_order_id::stubs::*,
+//     };
+// }

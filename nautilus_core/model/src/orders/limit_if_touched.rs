@@ -19,6 +19,7 @@ use std::{
 };
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use ustr::Ustr;
 
 use super::base::{Order, OrderCore, OrderError};
@@ -37,6 +38,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+#[pyclass]
 pub struct LimitIfTouchedOrder {
     core: OrderCore,
     pub price: Price,
@@ -116,41 +118,6 @@ impl LimitIfTouchedOrder {
             is_triggered: false,
             ts_triggered: None,
         }
-    }
-}
-
-/// Provides a default [`LimitIfTouchedOrder`] used for testing.
-impl Default for LimitIfTouchedOrder {
-    fn default() -> Self {
-        LimitIfTouchedOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            InstrumentId::default(),
-            ClientOrderId::default(),
-            OrderSide::Buy,
-            Quantity::new(100_000.0, 0),
-            Price::new(1.0, 5),
-            Price::new(1.0, 5),
-            TriggerType::BidAsk,
-            TimeInForce::Gtc,
-            None,
-            false,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            UUID4::default(),
-            0,
-        )
     }
 }
 

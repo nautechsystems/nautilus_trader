@@ -78,7 +78,7 @@ pub unsafe extern "C" fn logger_new(
     is_bypassed: u8,
 ) -> Logger_API {
     Logger_API(Box::new(Logger::new(
-        TraderId::new(&cstr_to_string(trader_id_ptr)),
+        TraderId::from(cstr_to_string(trader_id_ptr).as_str()),
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,

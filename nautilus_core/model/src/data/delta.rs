@@ -20,8 +20,8 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{serialization::Serializable, time::UnixNanos};
-use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp, types::PyDict};
+use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
 use super::order::{BookOrder, NULL_ORDER};
@@ -94,7 +94,7 @@ impl OrderBookDelta {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id = InstrumentId::from_str(instrument_id_str)
-            .map_err(|e| PyValueError::new_err(format!("{}", e)))
+            .map_err(to_pyvalue_err)
             .unwrap();
 
         let action_obj: &PyAny = obj.getattr("action")?.extract()?;
@@ -163,6 +163,7 @@ impl Display for OrderBookDelta {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl OrderBookDelta {
     #[new]
@@ -246,8 +247,7 @@ impl OrderBookDelta {
     /// Return a dictionary representation of the object.
     pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
         // Serialize object to JSON bytes
-        let json_str =
-            serde_json::to_string(self).map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
         let py_dict: Py<PyDict> = PyModule::import(py, "json")?
             .call_method("loads", (json_str,), None)?
@@ -264,19 +264,18 @@ impl OrderBookDelta {
             .extract()?;
 
         // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes())
-            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
     }
 
     #[staticmethod]
     fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(|e| PyValueError::new_err(e.to_string()))
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.
@@ -298,7 +297,7 @@ impl OrderBookDelta {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use rstest::rstest;
 
     use super::*;
     use crate::{
@@ -307,7 +306,7 @@ mod tests {
     };
 
     fn create_stub_delta() -> OrderBookDelta {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let action = BookAction::Add;
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -330,9 +329,9 @@ mod tests {
         )
     }
 
-    #[test]
+    #[rstest]
     fn test_new() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let action = BookAction::Add;
         let price = Price::from("100.00");
         let size = Quantity::from("10");
@@ -367,7 +366,7 @@ mod tests {
         assert_eq!(delta.ts_init, ts_init);
     }
 
-    #[test]
+    #[rstest]
     fn test_display() {
         let delta = create_stub_delta();
         assert_eq!(
@@ -376,7 +375,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_as_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -389,7 +388,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_from_dict() {
         pyo3::prepare_freethreaded_python();
 
@@ -402,7 +401,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_from_pyobject() {
         pyo3::prepare_freethreaded_python();
         let delta = create_stub_delta();
@@ -414,7 +413,7 @@ mod tests {
         });
     }
 
-    #[test]
+    #[rstest]
     fn test_json_serialization() {
         let delta = create_stub_delta();
         let serialized = delta.as_json_bytes().unwrap();
@@ -422,7 +421,7 @@ mod tests {
         assert_eq!(deserialized, delta);
     }
 
-    #[test]
+    #[rstest]
     fn test_msgpack_serialization() {
         let delta = create_stub_delta();
         let serialized = delta.as_msgpack_bytes().unwrap();

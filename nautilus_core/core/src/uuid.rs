@@ -21,11 +21,15 @@ use std::{
     str::FromStr,
 };
 
+use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
+use crate::python::to_pyvalue_err;
+
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
+#[pyclass]
 pub struct UUID4 {
     value: [u8; 37],
 }
@@ -102,8 +106,33 @@ impl<'de> Deserialize<'de> for UUID4 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
+#[pymethods]
+impl UUID4 {
+    #[new]
+    fn py_new() -> Self {
+        UUID4::new()
+    }
+
+    #[getter]
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> String {
+        self.to_string()
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<UUID4> {
+        UUID4::from_str(value).map_err(to_pyvalue_err)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_new() -> UUID4 {
     UUID4::new()
@@ -118,6 +147,7 @@ pub extern "C" fn uuid4_new() -> UUID4 {
 /// # Panics
 ///
 /// - If `ptr` cannot be cast to a valid C string.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
@@ -128,16 +158,19 @@ pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
     )
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
     uuid.to_cstr().as_ptr()
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
     u8::from(lhs == rhs)
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
     let mut h = DefaultHasher::new();
@@ -152,11 +185,12 @@ pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
 mod tests {
     use std::ffi::CString;
 
+    use rstest::*;
     use uuid;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_uuid4_new() {
         let uuid = UUID4::new();
         let uuid_string = uuid.to_string();
@@ -165,7 +199,7 @@ mod tests {
         assert_eq!(uuid_parsed.to_string().len(), 36);
     }
 
-    #[test]
+    #[rstest]
     fn test_uuid4_default() {
         let uuid: UUID4 = UUID4::default();
         let uuid_string = uuid.to_string();
@@ -173,7 +207,7 @@ mod tests {
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
     }
 
-    #[test]
+    #[rstest]
     fn test_uuid4_from_str() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
@@ -183,7 +217,7 @@ mod tests {
         assert_eq!(result_parsed, expected_parsed);
     }
 
-    #[test]
+    #[rstest]
     fn test_equality() {
         let uuid1 = UUID4::from("2d89666b-1a1e-4a75-b193-4eb3b454c757");
         let uuid2 = UUID4::from("46922ecb-4324-4e40-a56c-841e0d774cef");
@@ -191,7 +225,7 @@ mod tests {
         assert_ne!(uuid1, uuid2);
     }
 
-    #[test]
+    #[rstest]
     fn test_uuid4_display() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
@@ -199,7 +233,7 @@ mod tests {
         assert_eq!(result_string, uuid_string);
     }
 
-    #[test]
+    #[rstest]
     fn test_c_api_uuid4_new() {
         let uuid = uuid4_new();
         let uuid_string = uuid.to_string();
@@ -207,7 +241,7 @@ mod tests {
         assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
     }
 
-    #[test]
+    #[rstest]
     fn test_c_api_uuid4_from_cstr() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid_cstring = CString::new(uuid_string).expect("CString::new failed");
@@ -216,7 +250,7 @@ mod tests {
         assert_eq!(uuid_string, uuid.to_string());
     }
 
-    #[test]
+    #[rstest]
     fn test_c_api_uuid4_to_cstr() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
@@ -226,7 +260,7 @@ mod tests {
         assert_eq!(uuid_string, uuid_result_string);
     }
 
-    #[test]
+    #[rstest]
     fn test_c_api_uuid4_eq() {
         let uuid1 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         let uuid2 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
@@ -235,7 +269,7 @@ mod tests {
         assert_eq!(uuid4_eq(&uuid1, &uuid3), 0);
     }
 
-    #[test]
+    #[rstest]
     fn test_c_api_uuid4_hash() {
         let uuid1 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         let uuid2 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");

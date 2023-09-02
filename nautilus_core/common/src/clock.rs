@@ -16,7 +16,7 @@
 use std::{collections::HashMap, time::Duration};
 
 use nautilus_core::{
-    correctness,
+    correctness::check_valid_string,
     datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs},
     time::{duration_since_unix_epoch, UnixNanos},
 };
@@ -261,7 +261,7 @@ impl Clock for TestClock {
         alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -289,7 +289,7 @@ impl Clock for TestClock {
         stop_time_ns: Option<UnixNanos>,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -394,7 +394,7 @@ impl Clock for LiveClock {
         mut alert_time_ns: UnixNanos,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -424,7 +424,7 @@ impl Clock for LiveClock {
         stop_time_ns: Option<UnixNanos>,
         callback_py: Option<PyObject>,
     ) {
-        correctness::valid_string(&name, "`Timer` name");
+        check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
             callback_py.is_some() | self.default_callback_py.is_some(),
             "All Python callbacks were `None`"
@@ -464,150 +464,162 @@ impl Clock for LiveClock {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use super::*;
+
+    #[fixture]
+    pub fn monotonic_clock() -> MonotonicClock {
+        MonotonicClock::new()
+    }
+
+    #[fixture]
+    pub fn test_clock() -> TestClock {
+        TestClock::new()
+    }
+}
+////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use pyo3::types::PyList;
+    use rstest::*;
+    use stubs::*;
 
     use super::*;
 
-    #[test]
-    fn test_monotonic_clock_increasing() {
-        let mut clock = MonotonicClock::new();
-        let secs1 = clock.unix_timestamp_secs();
-        let secs2 = clock.unix_timestamp_secs();
+    #[rstest]
+    fn test_monotonic_clock_increasing(mut monotonic_clock: MonotonicClock) {
+        let secs1 = monotonic_clock.unix_timestamp_secs();
+        let secs2 = monotonic_clock.unix_timestamp_secs();
         assert!(secs2 >= secs1);
 
-        let millis1 = clock.unix_timestamp_millis();
-        let millis2 = clock.unix_timestamp_millis();
+        let millis1 = monotonic_clock.unix_timestamp_millis();
+        let millis2 = monotonic_clock.unix_timestamp_millis();
         assert!(millis2 >= millis1);
 
-        let micros1 = clock.unix_timestamp_micros();
-        let micros2 = clock.unix_timestamp_micros();
+        let micros1 = monotonic_clock.unix_timestamp_micros();
+        let micros2 = monotonic_clock.unix_timestamp_micros();
         assert!(micros2 >= micros1);
 
-        let nanos1 = clock.unix_timestamp_nanos();
-        let nanos2 = clock.unix_timestamp_nanos();
+        let nanos1 = monotonic_clock.unix_timestamp_nanos();
+        let nanos2 = monotonic_clock.unix_timestamp_nanos();
         assert!(nanos2 >= nanos1);
     }
 
-    #[test]
-    fn test_monotonic_clock_beyond_unix_epoch() {
-        let mut clock = MonotonicClock::new();
-
-        assert!(clock.unix_timestamp_secs() > 1_650_000_000.0);
-        assert!(clock.unix_timestamp_millis() > 1_650_000_000_000);
-        assert!(clock.unix_timestamp_micros() > 1_650_000_000_000_000);
-        assert!(clock.unix_timestamp_nanos() > 1_650_000_000_000_000_000);
+    #[rstest]
+    fn test_monotonic_clock_beyond_unix_epoch(mut monotonic_clock: MonotonicClock) {
+        assert!(monotonic_clock.unix_timestamp_secs() > 1_650_000_000.0);
+        assert!(monotonic_clock.unix_timestamp_millis() > 1_650_000_000_000);
+        assert!(monotonic_clock.unix_timestamp_micros() > 1_650_000_000_000_000);
+        assert!(monotonic_clock.unix_timestamp_nanos() > 1_650_000_000_000_000_000);
     }
 
-    #[test]
-    fn test_set_timer_ns_py() {
+    #[rstest]
+    fn test_set_timer_ns_py(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let mut clock = TestClock::new();
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            clock.register_default_handler_py(py_append);
+            test_clock.register_default_handler_py(py_append);
 
-            clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
+            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
 
-            assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
-            assert_eq!(clock.timer_count(), 1);
+            assert_eq!(test_clock.timer_names(), ["TEST_TIME1"]);
+            assert_eq!(test_clock.timer_count(), 1);
         });
     }
 
-    #[test]
-    fn test_cancel_timer() {
+    #[rstest]
+    fn test_cancel_timer(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let mut clock = TestClock::new();
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            clock.register_default_handler_py(py_append);
+            test_clock.register_default_handler_py(py_append);
 
-            clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
-            clock.cancel_timer(String::from("TEST_TIME1").as_str());
+            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
+            test_clock.cancel_timer(String::from("TEST_TIME1").as_str());
 
-            assert!(clock.timer_names().is_empty());
-            assert_eq!(clock.timer_count(), 0);
+            assert!(test_clock.timer_names().is_empty());
+            assert_eq!(test_clock.timer_count(), 0);
         });
     }
 
-    #[test]
-    fn test_cancel_timers() {
+    #[rstest]
+    fn test_cancel_timers(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let mut clock = TestClock::new();
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            clock.register_default_handler_py(py_append);
+            test_clock.register_default_handler_py(py_append);
 
-            clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
-            clock.cancel_timers();
+            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
+            test_clock.cancel_timers();
 
-            assert!(clock.timer_names().is_empty());
-            assert_eq!(clock.timer_count(), 0);
+            assert!(test_clock.timer_names().is_empty());
+            assert_eq!(test_clock.timer_count(), 0);
         });
     }
 
-    #[test]
-    fn test_advance_within_stop_time_py() {
+    #[rstest]
+    fn test_advance_within_stop_time_py(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let mut clock = TestClock::new();
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            clock.register_default_handler_py(py_append);
+            test_clock.register_default_handler_py(py_append);
 
-            clock.set_timer_ns_py(String::from("TEST_TIME1"), 1, 1, Some(3), None);
-            clock.advance_time(2, true);
+            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 1, 1, Some(3), None);
+            test_clock.advance_time(2, true);
 
-            assert_eq!(clock.timer_names(), ["TEST_TIME1"]);
-            assert_eq!(clock.timer_count(), 1);
+            assert_eq!(test_clock.timer_names(), ["TEST_TIME1"]);
+            assert_eq!(test_clock.timer_count(), 1);
         });
     }
 
-    #[test]
-    fn test_advance_time_to_stop_time_with_set_time_true() {
+    #[rstest]
+    fn test_advance_time_to_stop_time_with_set_time_true(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let mut clock = TestClock::new();
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            clock.register_default_handler_py(py_append);
+            test_clock.register_default_handler_py(py_append);
 
-            clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
-            clock.advance_time(3, true);
+            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+            test_clock.advance_time(3, true);
 
-            assert_eq!(clock.timer_names().len(), 1);
-            assert_eq!(clock.timer_count(), 1);
-            assert_eq!(clock.time_ns, 3);
+            assert_eq!(test_clock.timer_names().len(), 1);
+            assert_eq!(test_clock.timer_count(), 1);
+            assert_eq!(test_clock.time_ns, 3);
         });
     }
 
-    #[test]
-    fn test_advance_time_to_stop_time_with_set_time_false() {
+    #[rstest]
+    fn test_advance_time_to_stop_time_with_set_time_false(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let mut clock = TestClock::new();
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            clock.register_default_handler_py(py_append);
+            test_clock.register_default_handler_py(py_append);
 
-            clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
-            clock.advance_time(3, false);
+            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+            test_clock.advance_time(3, false);
 
-            assert_eq!(clock.timer_names().len(), 1);
-            assert_eq!(clock.timer_count(), 1);
-            assert_eq!(clock.time_ns, 0);
+            assert_eq!(test_clock.timer_names().len(), 1);
+            assert_eq!(test_clock.timer_count(), 1);
+            assert_eq!(test_clock.time_ns, 0);
         });
     }
 }

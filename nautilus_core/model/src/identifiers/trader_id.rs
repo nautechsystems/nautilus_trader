@@ -18,7 +18,8 @@ use std::{
     fmt::{Debug, Display, Formatter},
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -30,14 +31,13 @@ pub struct TraderId {
 }
 
 impl TraderId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`TraderId` value");
-        correctness::string_contains(s, "-", "`TraderId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`TraderId` value")?;
+        check_string_contains(s, "-", "`TraderId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -61,6 +61,12 @@ impl Display for TraderId {
     }
 }
 
+impl From<&str> for TraderId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -69,15 +75,32 @@ impl Display for TraderId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    TraderId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    TraderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn trader_id_hash(id: &TraderId) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::trader_id::TraderId;
+
+    #[fixture]
+    pub fn test_trader() -> TraderId {
+        TraderId::from("TRADER-001")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -85,12 +108,13 @@ pub extern "C" fn trader_id_hash(id: &TraderId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TraderId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let trader_id = TraderId::new("TRADER-001");
-        assert_eq!(trader_id.to_string(), "TRADER-001");
-        assert_eq!(format!("{trader_id}"), "TRADER-001");
+    use super::{stubs::*, TraderId};
+
+    #[rstest]
+    fn test_string_reprs(test_trader: TraderId) {
+        assert_eq!(test_trader.to_string(), "TRADER-001");
+        assert_eq!(format!("{test_trader}"), "TRADER-001");
     }
 }

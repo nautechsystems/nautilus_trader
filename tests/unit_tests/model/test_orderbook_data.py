@@ -132,6 +132,21 @@ class TestOrderBookDelta:
             == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
 
+    def test_clear_delta(self):
+        # Arrange, Act
+        delta = OrderBookDelta.clear(
+            instrument_id=AUDUSD,
+            ts_event=0,
+            ts_init=1_000_000_000,
+            sequence=42,
+        )
+
+        # Assert
+        assert delta.action == BookAction.CLEAR
+        assert delta.sequence == 42
+        assert delta.ts_event == 0
+        assert delta.ts_init == 1_000_000_000
+
     def test_to_dict_with_order_returns_expected_dict(self):
         # Arrange
         order = BookOrder(

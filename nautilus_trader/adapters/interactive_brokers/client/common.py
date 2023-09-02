@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from decimal import Decimal
 from typing import Annotated, Any, Callable, NamedTuple, Optional, Union
 
 import msgspec
 
 # fmt: off
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
 
@@ -26,11 +28,16 @@ from nautilus_trader.model.identifiers import InstrumentId
 # fmt: on
 
 
+class AccountOrderRef(NamedTuple):
+    account: str
+    order_id: str
+
+
 class IBPosition(NamedTuple):
-    account: Any  # TODO: More specific type
-    contract: Any  # TODO: More specific type
-    quantity: Any  # TODO: More specific type
-    avg_cost: Any  # TODO: More specific type
+    account: str
+    contract: IBContract
+    quantity: Decimal
+    avg_cost: float
 
 
 class Request(msgspec.Struct, frozen=True):

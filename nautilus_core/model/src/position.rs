@@ -166,7 +166,7 @@ impl Position {
         }
 
         // Set quantities
-        self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision);
+        self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision).unwrap();
         if self.quantity > self.peak_qty {
             self.peak_qty.raw = self.quantity.raw;
         }

@@ -19,14 +19,16 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::Result;
 use nautilus_core::{
-    correctness,
+    correctness::check_valid_string,
     string::{cstr_to_string, str_to_cstr},
 };
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
+use super::fixed::check_fixed_precision;
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
@@ -41,25 +43,24 @@ pub struct Currency {
 }
 
 impl Currency {
-    #[must_use]
     pub fn new(
         code: &str,
         precision: u8,
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> Self {
-        correctness::valid_string(code, "`Currency` code");
-        correctness::valid_string(name, "`Currency` name");
-        correctness::u8_in_range_inclusive(precision, 0, 9, "`Currency` precision");
+    ) -> Result<Self> {
+        check_valid_string(code, "`Currency` code")?;
+        check_valid_string(name, "`Currency` name")?;
+        check_fixed_precision(precision).unwrap();
 
-        Self {
+        Ok(Self {
             code: Ustr::from(code),
             precision,
             iso4217,
             name: Ustr::from(name),
             currency_type,
-        }
+        })
     }
 }
 
@@ -122,6 +123,7 @@ impl<'de> Deserialize<'de> for Currency {
 ///
 /// - Assumes `code_ptr` is a valid C string pointer.
 /// - Assumes `name_ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn currency_from_py(
     code_ptr: *const c_char,
@@ -144,6 +146,7 @@ pub unsafe extern "C" fn currency_from_py(
             .expect("CStr::from_ptr failed for `name_ptr`"),
         currency_type,
     )
+    .unwrap()
 }
 
 #[no_mangle]
@@ -198,6 +201,7 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 #[cfg(test)]
 mod tests {
     use nautilus_core::string::str_to_cstr;
+    use rstest::rstest;
 
     use super::currency_register;
     use crate::{
@@ -205,22 +209,23 @@ mod tests {
         types::currency::{currency_exists, Currency},
     };
 
-    #[test]
+    #[rstest]
     #[should_panic(expected = "`Currency` code")]
     fn test_invalid_currency_code() {
-        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
-    #[test]
-    #[should_panic(expected = "`Currency` precision")]
-    fn test_invalid_currency_precision() {
+    #[rstest]
+    #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
+    fn test_invalid_precision() {
         // Precision out of range for fixed
-        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
+        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat).unwrap();
     }
 
-    #[test]
-    fn test_currency_new_for_fiat() {
-        let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
+    #[rstest]
+    fn test_new_for_fiat() {
+        let currency =
+            Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat).unwrap();
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);
@@ -229,9 +234,9 @@ mod tests {
         assert_eq!(currency.currency_type, CurrencyType::Fiat);
     }
 
-    #[test]
-    fn test_currency_new_for_crypto() {
-        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
+    #[rstest]
+    fn test_new_for_crypto() {
+        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto).unwrap();
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "ETH");
         assert_eq!(currency.precision, 8);
@@ -240,24 +245,27 @@ mod tests {
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
     }
 
-    #[test]
-    fn test_currency_equality() {
-        let currency1 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
-        let currency2 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+    #[rstest]
+    fn test_equality() {
+        let currency1 =
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let currency2 =
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
         assert_eq!(currency1, currency2);
     }
 
-    #[test]
-    fn test_currency_serialization_deserialization() {
-        let currency = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+    #[rstest]
+    fn test_serialization_deserialization() {
+        let currency =
+            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
     }
 
-    #[test]
-    fn test_currency_registration() {
-        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto);
+    #[rstest]
+    fn test_registration() {
+        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto).unwrap();
         currency_register(currency);
         unsafe {
             assert_eq!(currency_exists(str_to_cstr("MYC")), 1);

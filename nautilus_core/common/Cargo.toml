@@ -14,15 +14,16 @@ proc-macro = true
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
-chrono.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-pyo3.workspace = true
-strum.workspace = true
-ustr.workspace = true
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+strum = { workspace = true }
+ustr = { workspace = true }
 
 [dev-dependencies]
-tempfile.workspace = true
+tempfile = { workspace = true }
+rstest = { workspace = true }
 
 [features]
 extension-module = [
@@ -30,7 +31,9 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-default = []
+ffi = ["cbindgen"]
+python = ["pyo3"]
+default = ["ffi", "python"]
 
 [build-dependencies]
-cbindgen.workspace = true
+cbindgen = { workspace = true, optional = true }

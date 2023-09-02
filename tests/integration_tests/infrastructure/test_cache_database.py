@@ -38,6 +38,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
@@ -569,6 +570,26 @@ class TestRedisCacheDatabase:
 
         # Assert
         assert result == order
+
+    def test_load_order_with_exec_algorithm_params(self):
+        # Arrange
+        exec_algorithm_params = {"horizon_secs": 20, "interval_secs": 2.5}
+        order = self.strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            exec_algorithm_id=ExecAlgorithmId("TWAP"),
+            exec_algorithm_params=exec_algorithm_params,
+        )
+
+        self.database.add_order(order)
+
+        # Act
+        result = self.database.load_order(order.client_order_id)
+
+        # Assert
+        assert result == order
+        assert result.exec_algorithm_params
 
     def test_load_order_when_limit_order_in_database_returns_order(self):
         # Arrange

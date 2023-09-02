@@ -18,13 +18,13 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.user import BinanceListenKey
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BinanceListenKeyHttp(BinanceHttpEndpoint):
@@ -64,9 +64,9 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         url_path: str,
     ):
         methods = {
-            BinanceMethodType.POST: BinanceSecurityType.USER_STREAM,
-            BinanceMethodType.PUT: BinanceSecurityType.USER_STREAM,
-            BinanceMethodType.DELETE: BinanceSecurityType.USER_STREAM,
+            HttpMethod.POST: BinanceSecurityType.USER_STREAM,
+            HttpMethod.PUT: BinanceSecurityType.USER_STREAM,
+            HttpMethod.DELETE: BinanceSecurityType.USER_STREAM,
         }
         super().__init__(
             client,
@@ -107,17 +107,17 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
         listenKey: Optional[str] = None  # SPOT/MARGIN only, mandatory
 
     async def _post(self, parameters: Optional[PostParameters] = None) -> BinanceListenKey:
-        method_type = BinanceMethodType.POST
+        method_type = HttpMethod.POST
         raw = await self._method(method_type, parameters)
         return self._post_resp_decoder.decode(raw)
 
     async def _put(self, parameters: Optional[PutDeleteParameters] = None) -> dict:
-        method_type = BinanceMethodType.PUT
+        method_type = HttpMethod.PUT
         raw = await self._method(method_type, parameters)
         return self._put_resp_decoder.decode(raw)
 
     async def _delete(self, parameters: Optional[PutDeleteParameters] = None) -> dict:
-        method_type = BinanceMethodType.DELETE
+        method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._delete_resp_decoder.decode(raw)
 

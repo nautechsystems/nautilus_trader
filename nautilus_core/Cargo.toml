@@ -13,8 +13,8 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.71.1"
-version = "0.8.0"
+rust-version = "1.72.0"
+version = "0.9.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -22,15 +22,15 @@ documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
 anyhow = "1.0.75"
-chrono = "0.4.26"
+chrono = "0.4.28"
 futures = "0.3.28"
-pyo3 = "0.19.2"
+pyo3 = { version = "0.19.2", features = ["rust_decimal"] }
 pyo3-asyncio = { version = "0.19.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
 rmp-serde = "1.1.2"
 rust_decimal = "1.32.0"
 rust_decimal_macros = "1.32.0"
-serde = { version = "1.0.186", features = ["derive"] }
+serde = { version = "1.0.187", features = ["derive"] }
 serde_json = "1.0.105"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.47"

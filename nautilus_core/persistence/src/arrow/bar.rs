@@ -170,10 +170,11 @@ mod tests {
     use std::sync::Arc;
 
     use datafusion::arrow::record_batch::RecordBatch;
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_get_schema() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
@@ -191,7 +192,7 @@ mod tests {
         assert_eq!(schema, expected_schema);
     }
 
-    #[test]
+    #[rstest]
     fn test_get_schema_map() {
         let schema_map = Bar::get_schema_map();
         let mut expected_map = HashMap::new();
@@ -205,28 +206,28 @@ mod tests {
         assert_eq!(schema_map, expected_map);
     }
 
-    #[test]
+    #[rstest]
     fn test_encode_batch() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
         let bar1 = Bar::new(
             bar_type,
-            Price::new(100.10, 2),
-            Price::new(102.00, 2),
-            Price::new(100.00, 2),
-            Price::new(101.00, 2),
-            Quantity::new(1100.0, 0),
+            Price::from("100.10"),
+            Price::from("102.00"),
+            Price::from("100.00"),
+            Price::from("101.00"),
+            Quantity::from(1100),
             1,
             3,
         );
         let bar2 = Bar::new(
             bar_type,
-            Price::new(100.00, 2),
-            Price::new(100.00, 2),
-            Price::new(100.00, 2),
-            Price::new(100.10, 2),
-            Quantity::new(1110.0, 0),
+            Price::from("100.00"),
+            Price::from("100.00"),
+            Price::from("100.00"),
+            Price::from("100.10"),
+            Quantity::from(1110),
             2,
             4,
         );
@@ -267,7 +268,7 @@ mod tests {
         assert_eq!(ts_init_values.value(1), 4);
     }
 
-    #[test]
+    #[rstest]
     fn test_decode_batch() {
         let bar_type = BarType::from_str("AAPL.NASDAQ-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);

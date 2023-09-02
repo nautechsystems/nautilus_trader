@@ -18,7 +18,8 @@ use std::{
     fmt::{Debug, Display, Formatter},
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -30,16 +31,15 @@ pub struct StrategyId {
 }
 
 impl StrategyId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`StrategyId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`StrategyId` value")?;
         if s != "EXTERNAL" {
-            correctness::string_contains(s, "-", "`StrategyId` value");
+            check_string_contains(s, "-", "`StrategyId` value")?;
         }
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -63,6 +63,12 @@ impl Display for StrategyId {
     }
 }
 
+impl From<&str> for StrategyId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -72,15 +78,32 @@ impl Display for StrategyId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    StrategyId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    StrategyId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::strategy_id::StrategyId;
+
+    #[fixture]
+    pub fn strategy_id_ema_cross() -> StrategyId {
+        StrategyId::from("EMACross-001")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -88,12 +111,14 @@ pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::StrategyId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let id = StrategyId::new("EMACross-001");
-        assert_eq!(id.to_string(), "EMACross-001");
-        assert_eq!(format!("{id}"), "EMACross-001");
+    use super::StrategyId;
+    use crate::identifiers::strategy_id::stubs::strategy_id_ema_cross;
+
+    #[rstest]
+    fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
+        assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
+        assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
     }
 }

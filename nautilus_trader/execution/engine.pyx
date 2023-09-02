@@ -1053,7 +1053,7 @@ cdef class ExecutionEngine(Component):
                 if contingent_order is not None and contingent_order.position_id is None:
                     contingent_order.position_id = position.id
                     self._cache.add_position_id(
-                        order.position_id,
+                        position.id,
                         contingent_order.instrument_id.venue,
                         contingent_order.client_order_id,
                         contingent_order.strategy_id,

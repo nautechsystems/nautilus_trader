@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct TradeId {
 }
 
 impl TradeId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`TradeId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`TradeId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -61,11 +61,9 @@ impl Display for TradeId {
     }
 }
 
-#[pymethods]
-impl TradeId {
-    #[getter]
-    fn value(&self) -> String {
-        self.value.to_string()
+impl From<&str> for TradeId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
     }
 }
 
@@ -77,15 +75,32 @@ impl TradeId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    TradeId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    TradeId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::trade_id::TradeId;
+
+    #[fixture]
+    pub fn test_trade_id() -> TradeId {
+        TradeId::from("1234567890")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -93,12 +108,13 @@ pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::TradeId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let trade_id = TradeId::new("1234567890");
-        assert_eq!(trade_id.to_string(), "1234567890");
-        assert_eq!(format!("{trade_id}"), "1234567890");
+    use super::{stubs::*, TradeId};
+
+    #[rstest]
+    fn test_string_reprs(test_trade_id: TradeId) {
+        assert_eq!(test_trade_id.to_string(), "1234567890");
+        assert_eq!(format!("{test_trade_id}"), "1234567890");
     }
 }

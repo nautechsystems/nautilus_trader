@@ -19,7 +19,8 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness;
+use anyhow::Result;
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
@@ -31,13 +32,12 @@ pub struct ComponentId {
 }
 
 impl ComponentId {
-    #[must_use]
-    pub fn new(s: &str) -> Self {
-        correctness::valid_string(s, "`ComponentId` value");
+    pub fn new(s: &str) -> Result<Self> {
+        check_valid_string(s, "`ComponentId` value")?;
 
-        Self {
+        Ok(Self {
             value: Ustr::from(s),
-        }
+        })
     }
 }
 
@@ -53,6 +53,12 @@ impl Display for ComponentId {
     }
 }
 
+impl From<&str> for ComponentId {
+    fn from(input: &str) -> Self {
+        Self::new(input).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
@@ -61,15 +67,32 @@ impl Display for ComponentId {
 /// # Safety
 ///
 /// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    ComponentId::new(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ComponentId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
     id.value.precomputed_hash()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
+
+    use crate::identifiers::component_id::ComponentId;
+
+    #[fixture]
+    pub fn component_risk_engine() -> ComponentId {
+        ComponentId::from("RiskEngine")
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -77,12 +100,13 @@ pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::ComponentId;
+    use rstest::rstest;
 
-    #[test]
-    fn test_string_reprs() {
-        let id = ComponentId::new("RiskEngine");
-        assert_eq!(id.to_string(), "RiskEngine");
-        assert_eq!(format!("{id}"), "RiskEngine");
+    use super::{stubs::*, ComponentId};
+
+    #[rstest]
+    fn test_string_reprs(component_risk_engine: ComponentId) {
+        assert_eq!(component_risk_engine.to_string(), "RiskEngine");
+        assert_eq!(format!("{component_risk_engine}"), "RiskEngine");
     }
 }

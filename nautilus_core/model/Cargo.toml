@@ -12,33 +12,39 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
-anyhow.workspace = true
-pyo3.workspace = true
-rmp-serde.workspace = true
-rust_decimal.workspace = true
-rust_decimal_macros.workspace = true
-serde.workspace = true
-serde_json.workspace = true
-strum.workspace = true
-thiserror.workspace = true
-ustr.workspace = true
+anyhow = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rmp-serde = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+ustr = { workspace = true }
 derive_builder = "0.12.0"
 evalexpr = "11.1.0"
 lazy_static = "1.4.0"
 tabled = "0.12.2"
+thousands = "0.2.0"
 
 [features]
-extension-module = ["pyo3/extension-module", "nautilus-core/extension-module"]
-default = []
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+ffi = ["cbindgen"]
+python = ["pyo3"]
+default = ["ffi", "python"]
 
 [dev-dependencies]
-criterion.workspace = true
-float-cmp.workspace = true
-iai.workspace = true
-rstest.workspace = true
+criterion = { workspace = true }
+float-cmp = { workspace = true }
+iai = { workspace = true }
+rstest = { workspace = true }
 
 [build-dependencies]
-cbindgen.workspace = true
+cbindgen = { workspace = true, optional = true }
 
 [[bench]]
 name = "criterion_fixed_precision_benchmark"

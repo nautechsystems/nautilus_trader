@@ -18,7 +18,6 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
@@ -28,6 +27,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotAvgPrice
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
@@ -48,7 +48,7 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "exchangeInfo"
         super().__init__(
@@ -78,7 +78,7 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
         permissions: Optional[BinanceSpotPermissions] = None
 
     async def _get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotExchangeInfo:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -101,7 +101,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "avgPrice"
         super().__init__(
@@ -125,7 +125,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol = None
 
     async def _get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 

@@ -49,6 +49,7 @@ impl ArrowSchemaProvider for TradeTick {
 }
 
 fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
+    // TODO: Properly handle errors
     let instrument_id =
         InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
     let price_precision = metadata
@@ -138,7 +139,7 @@ impl DecodeFromRecordBatch for TradeTick {
                     size: Quantity::from_raw(size.unwrap(), size_precision),
                     aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)
                         .expect("cannot parse enum value"),
-                    trade_id: TradeId::new(trade_id.unwrap()),
+                    trade_id: TradeId::new(trade_id.unwrap()).unwrap(),
                     ts_event: ts_event.unwrap(),
                     ts_init: ts_init.unwrap(),
                 },
@@ -169,12 +170,13 @@ mod tests {
         array::{Int64Array, StringArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
+    use rstest::rstest;
 
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_get_schema() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
         let schema = TradeTick::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
@@ -189,7 +191,7 @@ mod tests {
         assert_eq!(schema, expected_schema);
     }
 
-    #[test]
+    #[rstest]
     fn test_get_schema_map() {
         let schema_map = TradeTick::get_schema_map();
         let mut expected_map = HashMap::new();
@@ -202,28 +204,28 @@ mod tests {
         assert_eq!(schema_map, expected_map);
     }
 
-    #[test]
+    #[rstest]
     fn test_encode_trade_tick() {
         // Create test data
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let tick1 = TradeTick {
             instrument_id,
-            price: Price::new(100.10, 2),
-            size: Quantity::new(1000.0, 0),
+            price: Price::from("100.10"),
+            size: Quantity::from(1000),
             aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("1"),
+            trade_id: TradeId::new("1").unwrap(),
             ts_event: 1,
             ts_init: 3,
         };
 
         let tick2 = TradeTick {
             instrument_id,
-            price: Price::new(100.50, 2),
-            size: Quantity::new(500.0, 0),
+            price: Price::from("100.50"),
+            size: Quantity::from(500),
             aggressor_side: AggressorSide::Seller,
-            trade_id: TradeId::new("2"),
+            trade_id: TradeId::new("2").unwrap(),
             ts_event: 2,
             ts_init: 4,
         };
@@ -261,9 +263,9 @@ mod tests {
         assert_eq!(ts_init_values.value(1), 4);
     }
 
-    #[test]
+    #[rstest]
     fn test_decode_batch() {
-        let instrument_id = InstrumentId::from_str("AAPL.NASDAQ").unwrap();
+        let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
         let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);

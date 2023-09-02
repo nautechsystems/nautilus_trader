@@ -522,7 +522,14 @@ cdef class OrderBookDelta(Data):
         uint64_t ts_init,
         uint64_t sequence=0,
     ):
-        return OrderBookDelta(instrument_id, BookAction.CLEAR, None, ts_event, ts_init, sequence)
+        return OrderBookDelta(
+            instrument_id=instrument_id,
+            action=BookAction.CLEAR,
+            order=None,
+            ts_event=ts_event,
+            ts_init=ts_init,
+            sequence=sequence,
+        )
 
     @staticmethod
     def from_dict(dict values) -> OrderBookDelta:
@@ -608,8 +615,8 @@ cdef class OrderBookDelta(Data):
                 book_order,
                 pyo3_delta.ts_event,
                 pyo3_delta.ts_init,
-                pyo3_delta.sequence,
                 pyo3_delta.flags,
+                pyo3_delta.sequence,
             )
             output.append(delta)
 
@@ -643,6 +650,7 @@ cdef class OrderBookDeltas(Data):
         self.instrument_id = instrument_id
         self.deltas = deltas
         self.is_snapshot = deltas[0].is_clear
+        self.sequence = deltas[-1].sequence
         self.ts_event = deltas[-1].ts_event
         self.ts_init = deltas[-1].ts_init
 
@@ -658,6 +666,7 @@ cdef class OrderBookDeltas(Data):
             f"instrument_id={self.instrument_id}, "
             f"{self.deltas}, "
             f"is_snapshot={self.is_snapshot}, "
+            f"sequence={self.sequence}, "
             f"ts_event={self.ts_event}, "
             f"ts_init={self.ts_init})"
         )

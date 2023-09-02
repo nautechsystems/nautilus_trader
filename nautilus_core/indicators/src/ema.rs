@@ -84,6 +84,7 @@ impl ExponentialMovingAverage {
     }
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl ExponentialMovingAverage {
     #[new]
@@ -146,16 +147,18 @@ impl ExponentialMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use rstest::rstest;
+
     use super::*;
 
-    #[test]
+    #[rstest]
     fn test_ema_initialized() {
         let ema = ExponentialMovingAverage::new(20, Some(PriceType::Mid));
         let display_str = format!("{ema:?}");
         assert_eq!(display_str, "ExponentialMovingAverage { period: 20, price_type: Mid, alpha: 0.09523809523809523, value: 0.0, count: 0, has_inputs: false, is_initialized: false }");
     }
 
-    #[test]
+    #[rstest]
     fn test_ema_update_raw() {
         let mut ema = ExponentialMovingAverage::new(3, Some(PriceType::Mid));
         ema.py_update_raw(1.0);
@@ -168,7 +171,7 @@ mod tests {
         assert_eq!(ema.value, 2.25);
     }
 
-    #[test]
+    #[rstest]
     fn test_ema_reset() {
         let mut ema = ExponentialMovingAverage::new(3, Some(PriceType::Mid));
         ema.py_update_raw(1.0);

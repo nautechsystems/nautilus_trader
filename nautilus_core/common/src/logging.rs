@@ -427,22 +427,20 @@ impl Logger {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
+pub mod stubs {
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::trader_id::TraderId;
-    use tempfile::tempdir;
+    use rstest::fixture;
 
-    use super::*;
-    use crate::testing::wait_until;
+    use crate::{enums::LogLevel, logging::Logger};
 
-    fn create_logger() -> Logger {
+    #[fixture]
+    pub fn logger() -> Logger {
         Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -454,8 +452,24 @@ mod tests {
             false,
         )
     }
+}
 
-    #[test]
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use nautilus_core::uuid::UUID4;
+    use nautilus_model::identifiers::trader_id::TraderId;
+    use rstest::*;
+    use tempfile::tempdir;
+
+    use super::{stubs::*, *};
+    use crate::testing::wait_until;
+
+    #[rstest]
     fn log_message_serialization() {
         let log_message = LogEvent {
             timestamp: 1_000_000_000,
@@ -474,20 +488,16 @@ mod tests {
         assert_eq!(deserialized_value["message"], "This is a log message");
     }
 
-    #[test]
-    fn test_new_logger() {
-        let logger = create_logger();
-
-        assert_eq!(logger.trader_id, TraderId::new("TRADER-001"));
+    #[rstest]
+    fn test_new_logger(logger: Logger) {
+        assert_eq!(logger.trader_id, TraderId::from("TRADER-001"));
         assert_eq!(logger.level_stdout, LogLevel::Info);
         assert_eq!(logger.level_file, None);
         assert!(!logger.is_bypassed);
     }
 
-    #[test]
-    fn test_logger_debug() {
-        let mut logger = create_logger();
-
+    #[rstest]
+    fn test_logger_debug(mut logger: Logger) {
         logger.debug(
             1_650_000_000_000_000,
             LogColor::Normal,
@@ -496,10 +506,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_logger_info() {
-        let mut logger = create_logger();
-
+    #[rstest]
+    fn test_logger_info(mut logger: Logger) {
         logger.info(
             1_650_000_000_000_000,
             LogColor::Normal,
@@ -508,10 +516,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_logger_error() {
-        let mut logger = create_logger();
-
+    #[rstest]
+    fn test_logger_error(mut logger: Logger) {
         logger.error(
             1_650_000_000_000_000,
             LogColor::Normal,
@@ -520,10 +526,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_logger_critical() {
-        let mut logger = create_logger();
-
+    #[rstest]
+    fn test_logger_critical(mut logger: Logger) {
         logger.critical(
             1_650_000_000_000_000,
             LogColor::Normal,
@@ -532,12 +536,12 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logging_to_file() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -594,12 +598,12 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_log_component_level_filtering() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,
@@ -651,12 +655,12 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test_logging_to_file_in_json_format() {
         let temp_dir = tempdir().expect("Failed to create temporary directory");
 
         let mut logger = Logger::new(
-            TraderId::new("TRADER-001"),
+            TraderId::from("TRADER-001"),
             String::from("user-01"),
             UUID4::new(),
             LogLevel::Info,

@@ -90,6 +90,7 @@ impl Display for CVec {
 ////////////////////////////////////////////////////////////////////////////////
 // C API
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn cvec_drop(cvec: CVec) {
     let CVec { ptr, len, cap } = cvec;
@@ -97,6 +98,7 @@ pub extern "C" fn cvec_drop(cvec: CVec) {
     drop(data); // Memory freed here
 }
 
+#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn cvec_new() -> CVec {
     CVec::empty()
@@ -106,10 +108,12 @@ pub extern "C" fn cvec_new() -> CVec {
 mod tests {
     use std::ptr::null;
 
+    use rstest::*;
+
     use super::CVec;
 
     /// Access values from a vector converted into a [`CVec`].
-    #[test]
+    #[rstest]
     #[allow(unused_assignments)]
     fn access_values_test() {
         let test_data = vec![1_u64, 2, 3];
@@ -142,7 +146,7 @@ mod tests {
     /// After deallocating the vector the block of memory may not
     /// contain the same values.
     /// NOTE: This test maybe flaky depending on the platform
-    #[test]
+    #[rstest]
     #[ignore] // TODO(cs): Flaky one some platforms
     fn drop_test() {
         let test_data = vec![1, 2, 3];
@@ -167,7 +171,7 @@ mod tests {
     }
 
     /// An empty vector gets converted to a null pointer wrapped in a [`CVec`].
-    #[test]
+    #[rstest]
     fn empty_vec_should_give_null_ptr() {
         let data: Vec<u64> = vec![];
         let cvec: CVec = data.into();
