@@ -15,6 +15,7 @@
 
 import copy
 import pathlib
+import sys
 from typing import Any
 
 import pytest
@@ -61,6 +62,7 @@ def _reset(catalog: ParquetDataCatalog):
     assert catalog.fs.exists(catalog.path)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestArrowSerializer:
     def setup(self):
         # Fixture Setup

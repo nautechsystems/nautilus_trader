@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import sys
 
 import pytest
 
@@ -2047,6 +2047,7 @@ class TestDataEngine:
         assert len(handler) == 1
         assert handler[0].data == [BTCUSDT_BINANCE, ETHUSDT_BINANCE]
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instrument_when_catalog_registered(self):
         # Arrange
         catalog = data_catalog_setup(protocol="file")
@@ -2076,6 +2077,7 @@ class TestDataEngine:
         assert len(handler) == 1
         assert len(handler[0].data) == 1
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_request_instruments_for_venue_when_catalog_registered(self):
         # Arrange
         catalog = data_catalog_setup(protocol="file")

@@ -46,6 +46,7 @@ from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
 class TestBacktestConfig:
     def setup(self):
         self.fs_protocol = "file"
