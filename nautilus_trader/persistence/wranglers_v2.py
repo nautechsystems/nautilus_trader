@@ -37,6 +37,8 @@ from nautilus_trader.model.instruments import Instrument
 
 
 class WranglerBase(abc.ABC):
+    IGNORE_KEYS = {b"class", b"pandas"}
+
     @classmethod
     def from_instrument(cls, instrument: Instrument, **kwargs):
         return cls(  # type: ignore
@@ -55,10 +57,8 @@ class WranglerBase(abc.ABC):
                 return v.decode()
 
         metadata = schema.metadata
-        ignore_keys = {b"class", b"pandas"}
-
         return cls(
-            **{k.decode(): decode(k, v) for k, v in metadata.items() if k not in ignore_keys},
+            **{k.decode(): decode(k, v) for k, v in metadata.items() if k not in cls.IGNORE_KEYS},
         )
 
 
@@ -402,6 +402,7 @@ def _map_aggressor_side(val: bool) -> int:
 
 
 class BarDataWrangler(WranglerBase):
+    IGNORE_KEYS = {b"class", b"pandas", b"instrument_id"}
     """
     Provides a means of building lists of Nautilus `Bar` objects.
 

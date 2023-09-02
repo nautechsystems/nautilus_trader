@@ -120,8 +120,7 @@ class TestArrowSerializer:
         [
             TestDataStubs.quote_tick(),
             TestDataStubs.trade_tick(),
-            # TODO (cs)
-            # TestDataStubs.bar_5decimal(),
+            TestDataStubs.bar_5decimal(),
         ],
     )
     def test_serialize_and_deserialize_tick(self, tick):

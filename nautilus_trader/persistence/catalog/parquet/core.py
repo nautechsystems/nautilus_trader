@@ -208,7 +208,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
-                instrument_ids=None,
+                # instrument_ids=None, # Filtering by filename for now.
                 start=start,
                 end=end,
                 where=where,
@@ -322,7 +322,6 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _build_query(
         self,
         table: str,
-        instrument_ids=None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
         where: Optional[str] = None,
@@ -332,10 +331,10 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         q = f"SELECT * FROM {table}"  # noqa
         conditions: list[str] = [] + ([where] if where else [])
-        if len(instrument_ids or []) == 1:
-            conditions.append(f"instrument_id = '{instrument_ids[0]}'")
-        elif instrument_ids:
-            conditions.append(f"instrument_id in {tuple(instrument_ids)}")
+        # if len(instrument_ids or []) == 1:
+        #     conditions.append(f"instrument_id = '{instrument_ids[0]}'")
+        # elif instrument_ids:
+        #     conditions.append(f"instrument_id in {tuple(instrument_ids)}")
         if start:
             start_ts = dt_to_unix_nanos(pd.Timestamp(start))
             conditions.append(f"ts_init >= {start_ts}")

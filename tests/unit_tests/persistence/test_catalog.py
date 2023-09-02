@@ -170,7 +170,7 @@ class TestPersistenceCatalog:
         self.catalog.write_data(bars)
 
         # Assert
-        bars = self.catalog.bars()
+        bars = self.catalog.bars(instrument_ids=[instrument.id.value])
         assert len(bars) == 21
 
     def test_catalog_bar_query_instrument_id(self, betfair_catalog):

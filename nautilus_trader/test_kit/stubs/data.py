@@ -418,6 +418,7 @@ class TestDataStubs:
                             price=Price(row[side], precision=6),
                             size=Quantity(1e9, precision=2),
                             side=order_side,
+                            order_id=0,
                         ),
                     },
                 )
@@ -459,7 +460,7 @@ class TestDataStubs:
                     size=Quantity(abs(order_like["volume"]), precision=4),
                     # Betting sides are reversed
                     side={2: OrderSide.BUY, 1: OrderSide.SELL}[order_like["side"]],
-                    order_id=str(order_like["order_id"]),
+                    order_id=0,
                 ),
             }
 
@@ -492,7 +493,7 @@ class TestDataStubs:
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
-                            order_id=str(data["order_id"]),
+                            order_id=data["order_id"],
                         ),
                     }
                 else:
@@ -502,7 +503,7 @@ class TestDataStubs:
                             price=Price(data["price"], precision=9),
                             size=Quantity(abs(data["size"]), precision=9),
                             side=side,
-                            order_id=str(data["order_id"]),
+                            order_id=data["order_id"],
                         ),
                     }
 
