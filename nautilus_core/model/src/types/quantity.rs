@@ -26,12 +26,12 @@ use anyhow::Result;
 use nautilus_core::{
     correctness::check_f64_in_range_inclusive,
     parsing::precision_from_str,
-    python::{to_pytype_err, to_pyvalue_err},
+    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
 };
 use pyo3::{
     prelude::*,
     pyclass::CompareOp,
-    types::{PyLong, PyTuple},
+    types::{PyFloat, PyLong, PyTuple},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -45,7 +45,6 @@ pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
-// #[pyclass]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -323,34 +322,201 @@ impl Quantity {
         Ok(Quantity::zero(0)) // Safe default
     }
 
-    fn __add__(&self, other: PyObject, py: Python<'_>) -> PyResult<PyObject> {
-        if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() + other_quantity.as_decimal()).into_py(py))
+    fn __add__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((self.as_f64() + other_float).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() + other_qty.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((self.as_decimal() + other_dec).into_py(py))
-        } else if let Ok(other_float) = other.extract::<f64>(py) {
-            Ok((self.as_f64() + other_float).into_py(py))
         } else {
+            let pytype_name = get_pytype_name(&other, py)?;
             Err(to_pytype_err(format!(
-                "Unsupported type for addition, was {other}"
+                "Unsupported type for __add__, was `{pytype_name}`"
             )))
         }
     }
 
-    fn __radd__(&self, other: PyObject, py: Python<'_>) -> PyResult<PyObject> {
-        if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() + self.as_decimal()).into_py(py))
+    fn __radd__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((other_float + self.as_f64()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() + self.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((other_dec + self.as_decimal()).into_py(py))
-        } else if let Ok(other_float) = other.extract::<f64>(py) {
-            Ok((other_float + self.as_f64()).into_py(py))
         } else {
+            let pytype_name = get_pytype_name(&other, py)?;
             Err(to_pytype_err(format!(
-                "Unsupported type for reversed addition, was {other}"
+                "Unsupported type for __radd__, was `{pytype_name}`"
             )))
         }
     }
 
+    fn __sub__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((self.as_f64() - other_float).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() - other_qty.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((self.as_decimal() - other_dec).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __sub__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __rsub__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((other_float - self.as_f64()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() - self.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((other_dec - self.as_decimal()).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __rsub__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __mul__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((self.as_f64() * other_float).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() * other_qty.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((self.as_decimal() * other_dec).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __mul__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __rmul__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((other_float * self.as_f64()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() * self.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((other_dec * self.as_decimal()).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __rmul__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __truediv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((self.as_f64() / other_float).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() / other_qty.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((self.as_decimal() / other_dec).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __truediv__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __rtruediv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((other_float / self.as_f64()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() / self.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((other_dec / self.as_decimal()).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __rtruediv__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __floordiv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((self.as_f64() / other_float).floor().into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() / other_qty.as_decimal())
+                .floor()
+                .into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((self.as_decimal() / other_dec).floor().into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __floordiv__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __rfloordiv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((other_float / self.as_f64()).floor().into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() / self.as_decimal())
+                .floor()
+                .into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((other_dec / self.as_decimal()).floor().into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __rfloordiv__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __mod__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((self.as_f64() % other_float).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() % other_qty.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((self.as_decimal() % other_dec).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __mod__, was `{pytype_name}`"
+            )))
+        }
+    }
+
+    fn __rmod__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
+        if other.as_ref(py).is_instance_of::<PyFloat>() {
+            let other_float: f64 = other.extract(py)?;
+            Ok((other_float % self.as_f64()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() % self.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((other_dec % self.as_decimal()).into_py(py))
+        } else {
+            let pytype_name = get_pytype_name(&other, py)?;
+            Err(to_pytype_err(format!(
+                "Unsupported type for __rmod__, was `{pytype_name}`"
+            )))
+        }
+    }
     fn __neg__(&self) -> Decimal {
         self.as_decimal().neg()
     }
@@ -413,7 +579,7 @@ impl Quantity {
     }
 
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        format!("Quantity('{self:?}')")
     }
 
     #[getter]

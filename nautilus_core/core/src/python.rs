@@ -20,14 +20,17 @@ use pyo3::{
     prelude::*,
 };
 
-/// A helper function for converting any type that implements `Debug` to a Python
-/// `ValueError`.
+/// Gets the type name for the given Python `obj`.
+pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p str> {
+    obj.as_ref(py).get_type().name()
+}
+
+/// Converts any type that implements `Debug` to a Python `ValueError`.
 pub fn to_pyvalue_err(e: impl fmt::Debug) -> PyErr {
     PyValueError::new_err(format!("{e:?}"))
 }
 
-/// A helper function for converting any type that implements `Debug` to a Python
-/// `ValueError`.
+/// Converts any type that implements `Debug` to a Python `TypeError`.
 pub fn to_pytype_err(e: impl fmt::Debug) -> PyErr {
     PyTypeError::new_err(format!("{e:?}"))
 }

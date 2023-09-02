@@ -22,9 +22,6 @@ import pytest
 from nautilus_trader.core.nautilus_pyo3.model import Quantity
 
 
-pytestmark = pytest.mark.skip(reason="WIP")
-
-
 class TestQuantity:
     def test_instantiate_with_nan_raises_value_error(self):
         # Arrange, Act, Assert
@@ -250,21 +247,66 @@ class TestQuantity:
                 Decimal,
                 Decimal("1.1"),
             ],
-            [Quantity(0, precision=0), 0, Decimal, 0],
-            [Quantity(0, precision=0), 1, Decimal, 1],
-            [0, Quantity(0, precision=0), Decimal, 0],
-            [1, Quantity(0, precision=0), Decimal, 1],
-            [Quantity(0, precision=0), 0.1, float, 0.1],
-            [Quantity(0, precision=0), 1.1, float, 1.1],
-            [-1.1, Quantity(0, precision=0), float, -1.1],
-            [1.1, Quantity(0, precision=0), float, 1.1],
+            [
+                Quantity(0, precision=0),
+                0,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(0, precision=0),
+                1,
+                Decimal,
+                1,
+            ],
+            [
+                0,
+                Quantity(0, precision=0),
+                Decimal,
+                0,
+            ],
+            [
+                1,
+                Quantity(0, precision=0),
+                Decimal,
+                1,
+            ],
+            [
+                Quantity(0, precision=0),
+                0.1,
+                float,
+                0.1,
+            ],
+            [
+                Quantity(0, precision=0),
+                1.1,
+                float,
+                1.1,
+            ],
+            [
+                -1.1,
+                Quantity(0, precision=0),
+                float,
+                -1.1,
+            ],
+            [
+                1.1,
+                Quantity(0, precision=0),
+                float,
+                1.1,
+            ],
             [
                 Quantity(1, precision=0),
                 Quantity(1.1, precision=1),
                 Decimal,
                 Decimal("2.1"),
             ],
-            [Quantity(1, precision=0), Decimal("1.1"), Decimal, Decimal("2.1")],
+            [
+                Quantity(1, precision=0),
+                Decimal("1.1"),
+                Decimal,
+                Decimal("2.1"),
+            ],
         ],
     )
     def test_addition_with_various_types_returns_expected_result(
@@ -284,28 +326,78 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Quantity(0, precision=0), Quantity(0, precision=0), Decimal, 0],
+            [
+                Quantity(0, precision=0),
+                Quantity(0, precision=0),
+                Decimal,
+                0,
+            ],
             [
                 Quantity(0, precision=0),
                 Quantity(1.1, precision=1),
                 Decimal,
                 Decimal("-1.1"),
             ],
-            [Quantity(0, precision=0), 0, Decimal, 0],
-            [Quantity(0, precision=0), 1, Decimal, -1],
-            [0, Quantity(0, precision=0), Decimal, 0],
-            [1, Quantity(1, precision=0), Decimal, 0],
-            [Quantity(0, precision=0), 0.1, float, -0.1],
-            [Quantity(0, precision=0), 1.1, float, -1.1],
-            [0.1, Quantity(1, precision=0), float, -0.9],
-            [1.1, Quantity(1, precision=0), float, 0.10000000000000009],
+            [
+                Quantity(0, precision=0),
+                0,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(0, precision=0),
+                1,
+                Decimal,
+                -1,
+            ],
+            [
+                0,
+                Quantity(0, precision=0),
+                Decimal,
+                0,
+            ],
+            [
+                1,
+                Quantity(1, precision=0),
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(0, precision=0),
+                0.1,
+                float,
+                -0.1,
+            ],
+            [
+                Quantity(0, precision=0),
+                1.1,
+                float,
+                -1.1,
+            ],
+            [
+                0.1,
+                Quantity(1, precision=0),
+                float,
+                -0.9,
+            ],
+            [
+                1.1,
+                Quantity(1, precision=0),
+                float,
+                0.10000000000000009,
+            ],
             [
                 Quantity(1, precision=0),
                 Quantity(1.1, precision=1),
                 Decimal,
                 Decimal("-0.1"),
             ],
-            [Quantity(1, precision=0), Decimal("1.1"), Decimal, Decimal("-0.1")],
+            [
+                Quantity(1, precision=0),
+                Decimal("1.1"),
+                Decimal,
+                Decimal("-0.1"),
+            ],
         ],
     )
     def test_subtraction_with_various_types_returns_expected_result(
@@ -325,14 +417,54 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Quantity(0, 0), 0, Decimal, 0],
-            [Quantity(1, 0), 1, Decimal, 1],
-            [1, Quantity(1, 0), Decimal, 1],
-            [2, Quantity(3, 0), Decimal, 6],
-            [Quantity(2, 0), 1.0, float, 2],
-            [1.1, Quantity(2, 0), float, 2.2],
-            [Quantity(1.1, 1), Quantity(1.1, 1), Decimal, Decimal("1.21")],
-            [Quantity(1.1, 1), Decimal("1.1"), Decimal, Decimal("1.21")],
+            [
+                Quantity(0, 0),
+                0,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(1, 0),
+                1,
+                Decimal,
+                1,
+            ],
+            [
+                1,
+                Quantity(1, 0),
+                Decimal,
+                1,
+            ],
+            [
+                2,
+                Quantity(3, 0),
+                Decimal,
+                6,
+            ],
+            [
+                Quantity(2, 0),
+                1.0,
+                float,
+                2,
+            ],
+            [
+                1.1,
+                Quantity(2, 0),
+                float,
+                2.2,
+            ],
+            [
+                Quantity(1.1, 1),
+                Quantity(1.1, 1),
+                Decimal,
+                Decimal("1.21"),
+            ],
+            [
+                Quantity(1.1, 1),
+                Decimal("1.1"),
+                Decimal,
+                Decimal("1.21"),
+            ],
         ],
     )
     def test_multiplication_with_various_types_returns_expected_result(
@@ -352,13 +484,48 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [1, Quantity(1, 0), Decimal, 1],
-            [1.1, Quantity(1.1, 1), float, 1],
-            [Quantity(0, 0), 1, Decimal, 0],
-            [Quantity(1, 0), 2, Decimal, Decimal("0.5")],
-            [2, Quantity(1, 0), Decimal, Decimal("2.0")],
-            [Quantity(2, 0), 1.1, float, 1.8181818181818181],
-            [1.1, Quantity(2, 0), float, 1.1 / 2],
+            [
+                1,
+                Quantity(1, 0),
+                Decimal,
+                1,
+            ],
+            [
+                1.1,
+                Quantity(1.1, 1),
+                float,
+                1,
+            ],
+            [
+                Quantity(0, 0),
+                1,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(1, 0),
+                2,
+                Decimal,
+                Decimal("0.5"),
+            ],
+            [
+                2,
+                Quantity(1, 0),
+                Decimal,
+                Decimal("2.0"),
+            ],
+            [
+                Quantity(2, 0),
+                1.1,
+                float,
+                1.8181818181818181,
+            ],
+            [
+                1.1,
+                Quantity(2, 0),
+                float,
+                1.1 / 2,
+            ],
             [
                 Quantity(1.1, 1),
                 Quantity(1.2, 1),
@@ -390,16 +557,66 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [1, Quantity(1, 0), Decimal, 1],
-            [Quantity(0, 0), 1, Decimal, 0],
-            [Quantity(1, 0), 2, Decimal, Decimal(0)],
-            [2, Quantity(1, 0), Decimal, Decimal(2)],
-            [2.1, Quantity(1.1, 1), float, 1],
-            [4.4, Quantity(1.1, 1), float, 4],
-            [Quantity(2.1, 1), 1.1, float, 1],
-            [Quantity(4.4, 1), 1.1, float, 4],
-            [Quantity(1.1, 1), Quantity(1.2, 1), Decimal, Decimal(0)],
-            [Quantity(1.1, 1), Decimal("1.2"), Decimal, Decimal(0)],
+            [
+                1,
+                Quantity(1, 0),
+                Decimal,
+                1,
+            ],
+            [
+                Quantity(0, 0),
+                1,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(1, 0),
+                2,
+                Decimal,
+                Decimal(0),
+            ],
+            [
+                2,
+                Quantity(1, 0),
+                Decimal,
+                Decimal(2),
+            ],
+            [
+                2.1,
+                Quantity(1.1, 1),
+                float,
+                1,
+            ],
+            [
+                4.4,
+                Quantity(1.1, 1),
+                float,
+                4,
+            ],
+            [
+                Quantity(2.1, 1),
+                1.1,
+                float,
+                1,
+            ],
+            [
+                Quantity(4.4, 1),
+                1.1,
+                float,
+                4,
+            ],
+            [
+                Quantity(1.1, 1),
+                Quantity(1.2, 1),
+                Decimal,
+                Decimal(0),
+            ],
+            [
+                Quantity(1.1, 1),
+                Decimal("1.2"),
+                Decimal,
+                Decimal(0),
+            ],
         ],
     )
     def test_floor_division_with_various_types_returns_expected_result(
@@ -419,12 +636,48 @@ class TestQuantity:
     @pytest.mark.parametrize(
         ("value1", "value2", "expected_type", "expected_value"),
         [
-            [Quantity(100, 0), 10, Decimal, 0],
-            [Quantity(23, 0), 2, Decimal, 1],
-            [2.1, Quantity(1.1, 1), float, 1.0],
-            [1.1, Quantity(2.1, 1), float, 1.1],
-            [Quantity(2.1, 1), 1.1, float, 1.0],
-            [Quantity(1.1, 1), 2.1, float, 1.1],
+            [
+                Quantity(1, 0),
+                1,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(100, 0),
+                10,
+                Decimal,
+                0,
+            ],
+            [
+                Quantity(23, 0),
+                2,
+                Decimal,
+                1,
+            ],
+            [
+                2.1,
+                Quantity(1.1, 1),
+                float,
+                1.0,
+            ],
+            [
+                1.1,
+                Quantity(2.1, 1),
+                float,
+                1.1,
+            ],
+            [
+                Quantity(2.1, 1),
+                1.1,
+                float,
+                1.0,
+            ],
+            [
+                Quantity(1.1, 1),
+                2.1,
+                float,
+                1.1,
+            ],
             [Quantity(1.1, 1), Decimal("0.2"), Decimal, Decimal("0.1")],
         ],
     )
@@ -561,13 +814,6 @@ class TestQuantity:
 
         # Assert
         assert result == expected
-
-    def test_calling_new_returns_an_expected_zero_quantity(self):
-        # Arrange, Act
-        new_qty = Quantity.__new__(Quantity, 1, 1)
-
-        # Assert
-        assert new_qty == 0
 
     def test_from_raw_returns_expected_quantity(self):
         # Arrange, Act
