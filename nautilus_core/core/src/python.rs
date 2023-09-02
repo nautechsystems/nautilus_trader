@@ -15,10 +15,19 @@
 
 use std::fmt;
 
-use pyo3::{exceptions::PyValueError, prelude::*};
+use pyo3::{
+    exceptions::{PyTypeError, PyValueError},
+    prelude::*,
+};
 
 /// A helper function for converting any type that implements `Debug` to a Python
 /// `ValueError`.
 pub fn to_pyvalue_err(e: impl fmt::Debug) -> PyErr {
     PyValueError::new_err(format!("{e:?}"))
+}
+
+/// A helper function for converting any type that implements `Debug` to a Python
+/// `ValueError`.
+pub fn to_pytype_err(e: impl fmt::Debug) -> PyErr {
+    PyTypeError::new_err(format!("{e:?}"))
 }

@@ -24,7 +24,9 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::{
-    correctness::check_f64_in_range_inclusive, parsing::precision_from_str, python::to_pyvalue_err,
+    correctness::check_f64_in_range_inclusive,
+    parsing::precision_from_str,
+    python::{to_pytype_err, to_pyvalue_err},
 };
 use pyo3::{
     prelude::*,
@@ -321,6 +323,34 @@ impl Quantity {
         Ok(Quantity::zero(0)) // Safe default
     }
 
+    fn __add__(&self, other: PyObject, py: Python<'_>) -> PyResult<PyObject> {
+        if let Ok(other_quantity) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() + other_quantity.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((self.as_decimal() + other_dec).into_py(py))
+        } else if let Ok(other_float) = other.extract::<f64>(py) {
+            Ok((self.as_f64() + other_float).into_py(py))
+        } else {
+            Err(to_pytype_err(format!(
+                "Unsupported type for addition, was {other}"
+            )))
+        }
+    }
+
+    fn __radd__(&self, other: PyObject, py: Python<'_>) -> PyResult<PyObject> {
+        if let Ok(other_quantity) = other.extract::<Quantity>(py) {
+            Ok((other_quantity.as_decimal() + self.as_decimal()).into_py(py))
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            Ok((other_dec + self.as_decimal()).into_py(py))
+        } else if let Ok(other_float) = other.extract::<f64>(py) {
+            Ok((other_float + self.as_f64()).into_py(py))
+        } else {
+            Err(to_pytype_err(format!(
+                "Unsupported type for reversed addition, was {other}"
+            )))
+        }
+    }
+
     fn __neg__(&self) -> Decimal {
         self.as_decimal().neg()
     }
@@ -335,6 +365,10 @@ impl Quantity {
         self.as_decimal().abs()
     }
 
+    fn __int__(&self) -> u64 {
+        self.as_f64() as u64
+    }
+
     fn __float__(&self) -> f64 {
         self.as_f64()
     }
@@ -344,14 +378,27 @@ impl Quantity {
             .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)
     }
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            CompareOp::Ge => self.ge(other).into_py(py),
-            CompareOp::Gt => self.gt(other).into_py(py),
-            CompareOp::Le => self.le(other).into_py(py),
-            CompareOp::Lt => self.lt(other).into_py(py),
+    fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            match op {
+                CompareOp::Eq => self.eq(&other_qty).into_py(py),
+                CompareOp::Ne => self.ne(&other_qty).into_py(py),
+                CompareOp::Ge => self.ge(&other_qty).into_py(py),
+                CompareOp::Gt => self.gt(&other_qty).into_py(py),
+                CompareOp::Le => self.le(&other_qty).into_py(py),
+                CompareOp::Lt => self.lt(&other_qty).into_py(py),
+            }
+        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
+            match op {
+                CompareOp::Eq => (self.as_decimal() == other_dec).into_py(py),
+                CompareOp::Ne => (self.as_decimal() != other_dec).into_py(py),
+                CompareOp::Ge => (self.as_decimal() >= other_dec).into_py(py),
+                CompareOp::Gt => (self.as_decimal() > other_dec).into_py(py),
+                CompareOp::Le => (self.as_decimal() <= other_dec).into_py(py),
+                CompareOp::Lt => (self.as_decimal() < other_dec).into_py(py),
+            }
+        } else {
+            py.NotImplemented()
         }
     }
 
@@ -369,13 +416,6 @@ impl Quantity {
         format!("{self:?}")
     }
 
-    #[staticmethod]
-    #[pyo3(name = "zero")]
-    #[pyo3(signature = (precision = 0))]
-    fn py_zero(precision: u8) -> PyResult<Quantity> {
-        Quantity::new(0.0, precision).map_err(to_pyvalue_err)
-    }
-
     #[getter]
     fn raw(&self) -> u64 {
         self.raw
@@ -384,6 +424,20 @@ impl Quantity {
     #[getter]
     fn precision(&self) -> u8 {
         self.precision
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_raw")]
+    fn py_from_raw(raw: u64, precision: u8) -> PyResult<Quantity> {
+        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
+        Ok(Quantity::from_raw(raw, precision))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "zero")]
+    #[pyo3(signature = (precision = 0))]
+    fn py_zero(precision: u8) -> PyResult<Quantity> {
+        Quantity::new(0.0, precision).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -396,6 +450,16 @@ impl Quantity {
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Quantity> {
         Quantity::from_str(value).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "is_zero")]
+    fn py_is_zero(&self) -> bool {
+        self.is_zero()
+    }
+
+    #[pyo3(name = "is_positive")]
+    fn py_is_positive(&self) -> bool {
+        self.is_positive()
     }
 
     #[pyo3(name = "to_str")]
