@@ -1858,9 +1858,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.6.2"
+version = "2.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5486aed0026218e61b8a01d5fbd5a0a134649abb71a0e53b7bc088529dced86e"
+checksum = "8f232d6ef707e1956a43342693d2a31e72989554d58299d7a88738cc95b0d35c"
 
 [[package]]
 name = "memoffset"
@@ -1911,7 +1911,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -1924,7 +1924,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "cbindgen",
  "chrono",
@@ -1941,7 +1941,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -1959,7 +1959,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "nautilus-core",
  "nautilus-model",
@@ -1969,7 +1969,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -1996,7 +1996,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2019,7 +2019,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "binary-heap-plus",
  "chrono",
@@ -2040,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "nautilus-core",
  "nautilus-indicators",
@@ -2694,13 +2694,13 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.9.4"
+version = "1.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "12de2eff854e5fa4b1295edd650e227e9d8fb0c9e90b12e7f36d6a6811791a29"
+checksum = "697061221ea1b4a94a624f67d0ae2bfe4e22b8a17b6a192afb11046542cc8c47"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.3.7",
+ "regex-automata 0.3.8",
  "regex-syntax 0.7.5",
 ]
 
@@ -2715,9 +2715,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.3.7"
+version = "0.3.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49530408a136e16e5b486e883fbb6ba058e8e4e8ae6621a77b048b314336e629"
+checksum = "c2f401f4955220693b56f8ec66ee9c78abffd8d1c4f23dc41a23839eb88f0795"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -3342,18 +3342,18 @@ checksum = "222a222a5bfe1bba4a77b45ec488a741b3cb8872e5e499451fd7d0129c9c7c3d"
 
 [[package]]
 name = "thiserror"
-version = "1.0.47"
+version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97a802ec30afc17eee47b2855fc72e0c4cd62be9b4efe6591edde0ec5bd68d8f"
+checksum = "9d6d7a740b8a666a7e828dd00da9c0dc290dff53154ea77ac109281de90589b7"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.47"
+version = "1.0.48"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bb623b56e39ab7dcd4b1b98bb6c8f8d907ed255b18de254088016b27a8ee19b"
+checksum = "49922ecae66cc8a249b77e68d1d0623c1b2c514f0060c27cdc68bd62a1219d35"
 dependencies = [
  "proc-macro2",
  "quote",
