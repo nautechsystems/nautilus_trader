@@ -16,7 +16,6 @@
 import sys
 
 import pandas as pd
-import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.clock import TestClock
@@ -1000,7 +999,6 @@ class TestDataEngine:
         # Assert
         assert len(handler) == 0
 
-    @pytest.mark.skip(reason="Snapshots returning eventually")
     def test_process_order_book_snapshot_when_one_subscriber_then_sends_to_registered_handler(
         self,
     ):
@@ -1034,7 +1032,7 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
-        snapshot = TestDataStubs.order_book_snapshot(ETHUSDT_BINANCE.id)
+        snapshot = TestDataStubs.order_book_snapshot(ETHUSDT_BINANCE.id, ts_event=1)
 
         # Act
         self.data_engine.process(snapshot)
@@ -1081,7 +1079,6 @@ class TestDataEngine:
         assert handler[0].instrument_id == ETHUSDT_BINANCE.id
         assert isinstance(handler[0], OrderBookDeltas)
 
-    @pytest.mark.skip(reason="Snapshots returning eventually")
     def test_process_order_book_snapshots_when_multiple_subscribers_then_sends_to_registered_handlers(
         self,
     ):
@@ -1139,6 +1136,7 @@ class TestDataEngine:
 
         snapshot = TestDataStubs.order_book_snapshot(
             instrument_id=ETHUSDT_BINANCE.id,
+            ts_event=1,
         )
 
         self.data_engine.process(snapshot)
