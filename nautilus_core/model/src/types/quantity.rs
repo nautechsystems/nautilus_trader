@@ -45,7 +45,6 @@ pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
-// #[pyclass]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -327,8 +326,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((self.as_f64() + other_float).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() + other_quantity.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() + other_qty.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((self.as_decimal() + other_dec).into_py(py))
         } else {
@@ -343,8 +342,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((other_float + self.as_f64()).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() + self.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() + self.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((other_dec + self.as_decimal()).into_py(py))
         } else {
@@ -359,8 +358,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((self.as_f64() - other_float).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() - other_quantity.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() - other_qty.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((self.as_decimal() - other_dec).into_py(py))
         } else {
@@ -375,8 +374,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((other_float - self.as_f64()).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() - self.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() - self.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((other_dec - self.as_decimal()).into_py(py))
         } else {
@@ -391,8 +390,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((self.as_f64() * other_float).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() * other_quantity.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() * other_qty.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((self.as_decimal() * other_dec).into_py(py))
         } else {
@@ -407,8 +406,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((other_float * self.as_f64()).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() * self.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() * self.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((other_dec * self.as_decimal()).into_py(py))
         } else {
@@ -423,8 +422,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((self.as_f64() / other_float).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() / other_quantity.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() / other_qty.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((self.as_decimal() / other_dec).into_py(py))
         } else {
@@ -439,8 +438,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((other_float / self.as_f64()).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() / self.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() / self.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((other_dec / self.as_decimal()).into_py(py))
         } else {
@@ -455,8 +454,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((self.as_f64() / other_float).floor().into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() / other_quantity.as_decimal())
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() / other_qty.as_decimal())
                 .floor()
                 .into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
@@ -473,8 +472,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((other_float / self.as_f64()).floor().into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() / self.as_decimal())
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() / self.as_decimal())
                 .floor()
                 .into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
@@ -491,8 +490,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((self.as_f64() % other_float).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() % other_quantity.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((self.as_decimal() % other_qty.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((self.as_decimal() % other_dec).into_py(py))
         } else {
@@ -507,8 +506,8 @@ impl Quantity {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
             Ok((other_float % self.as_f64()).into_py(py))
-        } else if let Ok(other_quantity) = other.extract::<Quantity>(py) {
-            Ok((other_quantity.as_decimal() % self.as_decimal()).into_py(py))
+        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
+            Ok((other_qty.as_decimal() % self.as_decimal()).into_py(py))
         } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
             Ok((other_dec % self.as_decimal()).into_py(py))
         } else {
