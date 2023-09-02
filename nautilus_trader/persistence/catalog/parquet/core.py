@@ -21,7 +21,7 @@ from collections import namedtuple
 from collections.abc import Generator
 from itertools import groupby
 from pathlib import Path
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import fsspec
 import pandas as pd
@@ -141,8 +141,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         data: list[Data],
         cls: type[Data],
         instrument_id: Optional[str] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         table = self._objects_to_table(data, cls=cls)
         path = self._make_path(cls=cls, instrument_id=instrument_id)
         kw = dict(**self.dataset_kwargs, **kwargs)
@@ -160,12 +160,17 @@ class ParquetDataCatalog(BaseDataCatalog):
                 **kwargs,
             )
 
-    def _fast_write(self, table: pa.Table, path: str, fs: fsspec.AbstractFileSystem):
+    def _fast_write(
+        self,
+        table: pa.Table,
+        path: str,
+        fs: fsspec.AbstractFileSystem,
+    ) -> None:
         fs.mkdirs(path, exist_ok=True)
         pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs)
 
-    def write_data(self, data: list[Union[Data, Event]], **kwargs):
-        def key(obj) -> tuple[str, Optional[str]]:
+    def write_data(self, data: list[Union[Data, Event]], **kwargs: Any) -> None:
+        def key(obj: Any) -> tuple[str, Optional[str]]:
             name = type(obj).__name__
             if isinstance(obj, Instrument):
                 return name, obj.id.value
@@ -188,13 +193,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query_rust(
         self,
-        cls,
-        instrument_ids=None,
+        cls: type,
+        instrument_ids: Optional[list[str]] = None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
         where: Optional[str] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> list[Data]:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
         name = cls.__name__
         file_prefix = class_to_filename(cls)
@@ -225,8 +230,8 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query_pyarrow(
         self,
-        cls,
-        instrument_ids=None,
+        cls: type,
+        instrument_ids: Optional[list[str]] = None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
         filter_expr: Optional[str] = None,
@@ -274,9 +279,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         filters: list[pds.Expression] = [filter_expr] if filter_expr is not None else []
         if start is not None:
-            filters.append(pds.field(ts_column) >= int(pd.Timestamp(start).to_datetime64()))
+            filters.append(pds.field(ts_column) >= pd.Timestamp(start).value)
         if end is not None:
-            filters.append(pds.field(ts_column) <= int(pd.Timestamp(end).to_datetime64()))
+            filters.append(pds.field(ts_column) <= pd.Timestamp(end).value)
         if filters:
             filter_ = combine_filters(*filters)
         else:
@@ -285,13 +290,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query(
         self,
-        cls,
-        instrument_ids=None,
+        cls: type,
+        instrument_ids: Optional[list[str]] = None,
         start: Optional[timestamp_like] = None,
         end: Optional[timestamp_like] = None,
         where: Optional[str] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> list[Union[Data, GenericData]]:
         if cls in (QuoteTick, TradeTick, Bar, OrderBookDelta):
             data = self.query_rust(
                 cls=cls,
@@ -372,8 +377,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         base_cls: type,
         instrument_ids: Optional[list[str]] = None,
         filter_expr: Optional[Callable] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> list[Data]:
         subclasses = [base_cls, *base_cls.__subclasses__()]
 
         dfs = []
@@ -408,8 +413,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         instrument_type: Optional[type] = None,
         instrument_ids: Optional[list[str]] = None,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> list[Instrument]:
         return super().instruments(
             instrument_type=instrument_type,
             instrument_ids=instrument_ids,

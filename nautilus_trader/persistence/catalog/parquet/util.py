@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import re
 from typing import Any, Optional
 
@@ -29,9 +30,9 @@ def list_dicts_to_dict_lists(dicts: list[dict], keys: Optional[Any] = None) -> d
     Convert a list of dictionaries into a dictionary of lists.
     """
     result = {}
-    keys = keys or tuple(dicts[0])
+    keys_iter = keys or tuple(dicts[0])
     for d in dicts:
-        for k in keys:
+        for k in keys_iter:
             if k not in result:
                 result[k] = [d.get(k)]
             else:
@@ -97,7 +98,10 @@ def check_partition_columns(
     return mappings
 
 
-def clean_partition_cols(df: pd.DataFrame, mappings: dict[str, dict[str, str]]):
+def clean_partition_cols(
+    df: pd.DataFrame,
+    mappings: dict[str, dict[str, str]],
+) -> pd.DataFrame:
     """
     Clean partition columns.
 
@@ -111,7 +115,7 @@ def clean_partition_cols(df: pd.DataFrame, mappings: dict[str, dict[str, str]]):
     return df
 
 
-def clean_key(s: str):
+def clean_key(s: str) -> str:
     """
     Clean characters that are illegal on Windows from the string `s`.
     """
@@ -121,7 +125,7 @@ def clean_key(s: str):
     return s
 
 
-def camel_to_snake_case(s: str):
+def camel_to_snake_case(s: str) -> str:
     """
     Convert the given string from camel to snake case.
     """
