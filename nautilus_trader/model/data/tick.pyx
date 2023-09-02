@@ -13,12 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
+from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
 from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
+
 
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
+from libc.stdio cimport printf
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -37,6 +44,7 @@ from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport aggressor_side_from_str

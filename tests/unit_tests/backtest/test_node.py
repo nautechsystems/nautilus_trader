@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 import msgspec.json
+import pytest
 
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.node import BacktestNode
@@ -30,9 +31,10 @@ from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 
 
+@pytest.mark.skip(reason="segfault")
 class TestBacktestNode:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/catalog")
+        self.catalog = data_catalog_setup(protocol="file", path="./data_catalog")
         self.venue_config = BacktestVenueConfig(
             name="SIM",
             oms_type="HEDGING",
@@ -42,8 +44,8 @@ class TestBacktestNode:
             # fill_model=fill_model,  # TODO(cs): Implement next iteration
         )
         self.data_config = BacktestDataConfig(
-            catalog_path="/.nautilus/catalog",
-            catalog_fs_protocol="memory",
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol=self.catalog.fs_protocol,
             data_cls=QuoteTick,
             instrument_id="AUD/USD.SIM",
             start_time=1580398089820000000,

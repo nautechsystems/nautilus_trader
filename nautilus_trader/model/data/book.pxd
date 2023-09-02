@@ -20,6 +20,7 @@ from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 

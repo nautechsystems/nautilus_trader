@@ -27,10 +27,13 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
+from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
 @pytest.fixture()
@@ -159,3 +162,10 @@ def exec_client(
     )
 
     return exec_client
+
+
+@pytest.fixture()
+def data_catalog() -> ParquetDataCatalog:
+    catalog: ParquetDataCatalog = data_catalog_setup(protocol="memory", path="/")
+    load_betfair_data(catalog)
+    return catalog

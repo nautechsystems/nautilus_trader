@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-from typing import Any, BinaryIO, Optional
+from typing import Any, BinaryIO, Optional, Union
 
 import fsspec
 import pyarrow as pa
@@ -23,16 +23,19 @@ from pyarrow import RecordBatchStreamWriter
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
-from nautilus_trader.serialization.arrow.serializer import get_cls_table
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.persistence.catalog.parquet.core import uri_instrument_id
+from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.serializer import register_parquet
-from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
-from nautilus_trader.serialization.arrow.util import list_dicts_to_dict_lists
+from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 class StreamingFeatherWriter:
@@ -81,15 +84,18 @@ class StreamingFeatherWriter:
         self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
 
         self._schemas = list_schemas()
-        self._schemas.update(
-            {
-                OrderBookDelta: self._schemas[OrderBookDelta],
-                OrderBookDeltas: self._schemas[OrderBookDelta],
-            },
-        )
         self.logger = logger
-        self._files: dict[type, BinaryIO] = {}
-        self._writers: dict[type, RecordBatchStreamWriter] = {}
+        self._files: dict[object, BinaryIO] = {}
+        self._writers: dict[str, RecordBatchStreamWriter] = {}
+        self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
+        self._per_instrument_writers = {
+            "trade_tick",
+            "quote_tick",
+            "bar",
+            "order_book_delta",
+            "ticker",
+        }
+        self._instruments: dict[InstrumentId, Instrument] = {}
         self._create_writers()
 
         self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
@@ -99,28 +105,74 @@ class StreamingFeatherWriter:
     def _create_writer(self, cls):
         if self.include_types is not None and cls.__name__ not in self.include_types:
             return
-        table_name = get_cls_table(cls).__name__
+        table_name = class_to_filename(cls)
         if table_name in self._writers:
             return
-        prefix = GENERIC_DATA_PREFIX if not is_nautilus_class(cls) else ""
+        if table_name in self._per_instrument_writers:
+            return
         schema = self._schemas[cls]
-        full_path = f"{self.path}/{prefix}{table_name}.feather"
+        full_path = f"{self.path}/{table_name}.feather"
 
         self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
         f = self.fs.open(full_path, "wb")
-        self._files[cls] = f
-
+        self._files[table_name] = f
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
     def _create_writers(self):
         for cls in self._schemas:
             self._create_writer(cls=cls)
 
+    def _create_instrument_writer(self, cls, obj):
+        """
+        Create an arrow writer with instrument specific metadata in the schema.
+        """
+        metadata = self._extract_obj_metadata(obj)
+        mapped_cls = {OrderBookDeltas: OrderBookDelta}.get(cls, cls)
+        schema = self._schemas[mapped_cls].with_metadata(metadata)
+        table_name = class_to_filename(cls)
+        folder = f"{self.path}/{table_name}"
+        key = (table_name, obj.instrument_id.value)
+        self.fs.makedirs(folder, exist_ok=True)
+        full_path = f"{folder}/{uri_instrument_id(obj.instrument_id.value)}.feather"
+        f = self.fs.open(full_path, "wb")
+        self._files[key] = f
+        self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
+
+    def _extract_obj_metadata(self, obj: Union[TradeTick, QuoteTick, Bar, OrderBookDelta]):
+        instrument = self._instruments[obj.instrument_id]
+        metadata = {b"instrument_id": obj.instrument_id.value.encode()}
+        if isinstance(obj, (TradeTick, QuoteTick)):
+            metadata.update(
+                {
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDelta):
+            metadata.update(
+                {
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
+                },
+            )
+        elif isinstance(obj, OrderBookDeltas):
+            obj.deltas[0]
+            metadata.update(
+                {
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
+                },
+            )
+        else:
+            raise NotImplementedError
+
+        return metadata
+
     @property
     def closed(self) -> bool:
-        return all(self._files[cls].closed for cls in self._files)
+        return all(self._files[table_name].closed for table_name in self._files)
 
-    def write(self, obj: object) -> None:
+    def write(self, obj: object) -> None:  # noqa: C901
         """
         Write the object to the stream.
 
@@ -140,35 +192,37 @@ class StreamingFeatherWriter:
         cls = obj.__class__
         if isinstance(obj, GenericData):
             cls = obj.data_type.type
-        table = get_cls_table(cls).__name__
+        elif isinstance(obj, Instrument):
+            if obj.id not in self._instruments:
+                self._instruments[obj.id] = obj
+        table = class_to_filename(cls)
         if table not in self._writers:
-            if table.startswith("Signal"):
+            if table.startswith("genericdata_signal"):
                 self._create_writer(cls=cls)
+            elif table in self._per_instrument_writers:
+                key = (table, obj.instrument_id.value)  # type: ignore
+                if key not in self._instrument_writers:
+                    self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
                 self.missing_writers.add(cls)
                 return
             else:
                 return
-        writer: RecordBatchStreamWriter = self._writers[table]
-        serialized = ParquetSerializer.serialize(obj)
+        if table in self._per_instrument_writers:
+            writer: RecordBatchStreamWriter = self._instrument_writers[(table, obj.instrument_id.value)]  # type: ignore
+        else:
+            writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
+        serialized = ArrowSerializer.serialize_batch([obj], cls=cls)
         if not serialized:
             return
-        if isinstance(serialized, dict):
-            serialized = [serialized]
-        original = list_dicts_to_dict_lists(
-            serialized,
-            keys=self._schemas[cls].names,
-        )
-        data = list(original.values())
         try:
-            batch = pa.record_batch(data, schema=self._schemas[cls])
-            writer.write_batch(batch)
+            writer.write_table(serialized)
             self.check_flush()
         except Exception as e:
             self.logger.error(f"Failed to serialize {cls=}")
             self.logger.error(f"ERROR = `{e}`")
-            self.logger.debug(f"data = {original}")
+            self.logger.debug(f"data = {obj}")
 
     def check_flush(self) -> None:
         """
@@ -192,11 +246,11 @@ class StreamingFeatherWriter:
         Flush and close all stream writers.
         """
         self.flush()
-        for cls in tuple(self._writers):
-            self._writers[cls].close()
-            del self._writers[cls]
-        for cls in self._files:
-            self._files[cls].close()
+        for wcls in tuple(self._writers):
+            self._writers[wcls].close()
+            del self._writers[wcls]
+        for fcls in self._files:
+            self._files[fcls].close()
 
 
 def generate_signal_class(name: str, value_type: type) -> type:
@@ -253,15 +307,20 @@ def generate_signal_class(name: str, value_type: type) -> type:
     SignalData.__name__ = f"Signal{name.title()}"
 
     # Parquet serialization
-    def serialize_signal(self):
-        return {
-            "ts_init": self.ts_init,
-            "ts_event": self.ts_event,
-            "value": self.value,
-        }
+    def serialize_signal(data: SignalData) -> pa.RecordBatch:
+        return pa.RecordBatch.from_pylist(
+            [
+                {
+                    "ts_init": data.ts_init,
+                    "ts_event": data.ts_event,
+                    "value": data.value,
+                },
+            ],
+            schema=schema,
+        )
 
-    def deserialize_signal(data):
-        return SignalData(**data)
+    def deserialize_signal(table: pa.Table):
+        return [SignalData(**d) for d in table.to_pylist()]
 
     schema = pa.schema(
         {
@@ -270,7 +329,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
             "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[value_type],
         },
     )
-    register_parquet(
+    register_arrow(
         cls=SignalData,
         serializer=serialize_signal,
         deserializer=deserialize_signal,
@@ -278,3 +337,18 @@ def generate_signal_class(name: str, value_type: type) -> type:
     )
 
     return SignalData
+
+
+def read_feather_file(
+    path: str,
+    fs: Optional[fsspec.AbstractFileSystem] = None,
+) -> Optional[pa.Table]:
+    fs = fs or fsspec.filesystem("file")
+    if not fs.exists(path):
+        return None
+    try:
+        with fs.open(path) as f:
+            reader = pa.ipc.open_stream(f)
+            return reader.read_all()
+    except (pa.ArrowInvalid, OSError):
+        return None

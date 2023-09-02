@@ -28,8 +28,10 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.persistence.external.util import Singleton
-from nautilus_trader.serialization.arrow.util import GENERIC_DATA_PREFIX
+from nautilus_trader.persistence.catalog.singleton import Singleton
+
+
+GENERIC_DATA_PREFIX = "genericdata_"
 
 
 class _CombinedMeta(Singleton, ABCMeta):
@@ -98,77 +100,49 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=InstrumentStatusUpdate,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=InstrumentStatusUpdate, instrument_ids=instrument_ids, **kwargs)
 
     def instrument_closes(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=InstrumentClose,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=InstrumentClose, instrument_ids=instrument_ids, **kwargs)
 
     def trade_ticks(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=TradeTick,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=TradeTick, instrument_ids=instrument_ids, **kwargs)
 
     def quote_ticks(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=QuoteTick,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=QuoteTick, instrument_ids=instrument_ids, **kwargs)
 
     def tickers(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self._query_subclasses(
-            base_cls=Ticker,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self._query_subclasses(base_cls=Ticker, instrument_ids=instrument_ids, **kwargs)
 
     def bars(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=Bar,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=Bar, instrument_ids=instrument_ids, **kwargs)
 
     def order_book_deltas(
         self,
         instrument_ids: Optional[list[str]] = None,
         **kwargs,
     ):
-        return self.query(
-            cls=OrderBookDelta,
-            instrument_ids=instrument_ids,
-            **kwargs,
-        )
+        return self.query(cls=OrderBookDelta, instrument_ids=instrument_ids, **kwargs)
 
     def generic_data(
         self,
@@ -197,7 +171,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         ]
 
     @abstractmethod
-    def list_backtests(self) -> list[str]:
+    def list_backtest_runs(self) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod
@@ -205,9 +179,9 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def read_live_run(self, live_run_id: str, **kwargs):
+    def read_live_run(self, instance_id: str, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
-    def read_backtest(self, backtest_run_id: str, **kwargs):
+    def read_backtest(self, instance_id: str, **kwargs):
         raise NotImplementedError

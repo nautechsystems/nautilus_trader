@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from typing import Optional
 
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -415,7 +416,7 @@ cdef class OrderBookDelta(Data):
         return <BookAction>self._mem.action == BookAction.CLEAR
 
     @property
-    def order(self) -> BookOrder:
+    def order(self) -> Optional[BookOrder]:
         """
         Return the deltas book order for the action.
 
@@ -424,7 +425,10 @@ cdef class OrderBookDelta(Data):
         BookOrder
 
         """
-        return BookOrder.from_mem_c(self._mem.order)
+        order = self._mem.order
+        if order is None:
+            return None
+        return BookOrder.from_mem_c(order)
 
     @property
     def flags(self) -> uint8_t:
@@ -683,7 +687,7 @@ cdef class OrderBookDeltas(Data):
     cdef dict to_dict_c(OrderBookDeltas obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "OrderBookDeltas",
+            "type": obj.__class__.__name__,
             "instrument_id": obj.instrument_id.to_str(),
             "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
         }
