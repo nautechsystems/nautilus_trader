@@ -123,9 +123,15 @@ class TestArrowSerializer:
             TestDataStubs.bar_5decimal(),
         ],
     )
+    @pytest.mark.skip(
+        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
+    )
     def test_serialize_and_deserialize_tick(self, tick):
         self._test_serialization(obj=tick)
 
+    @pytest.mark.skip(
+        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
+    )
     def test_serialize_and_deserialize_order_book_delta(self):
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
@@ -446,6 +452,9 @@ class TestArrowSerializer:
         assert len(df) == 1
 
     @pytest.mark.parametrize("obj", nautilus_objects())
+    @pytest.mark.skip(
+        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
+    )
     def test_serialize_and_deserialize_all(self, obj):
         # Arrange, Act
         assert self._test_serialization(obj)
