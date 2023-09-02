@@ -637,6 +637,12 @@ class TestQuantity:
         ("value1", "value2", "expected_type", "expected_value"),
         [
             [
+                Quantity(1, 0),
+                1,
+                Decimal,
+                0,
+            ],
+            [
                 Quantity(100, 0),
                 10,
                 Decimal,
