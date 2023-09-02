@@ -27,6 +27,7 @@ from nautilus_trader.model.events import OrderPendingUpdate
 from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
@@ -97,9 +98,8 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
     assert updated.price == Price.from_str("0.01")
 
 
-@pytest.mark.skip(reason="WIP and lets not use capfd for tests")
 @pytest.mark.asyncio()
-async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument, events, capfd):
+async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument):
     # Arrange
     exec_client.connect()
     order = TestExecStubs.limit_order(
@@ -110,9 +110,10 @@ async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument,
     exec_client.on_data(_make_quote_tick(instrument))
 
     # Act
+    client_order_id = ClientOrderId("NOT-AN-ID")
     command = TestCommandStubs.modify_order_command(
         instrument_id=order.instrument_id,
-        client_order_id=ClientOrderId("NOT-AN-ID"),
+        client_order_id=client_order_id,
         price=Price.from_str("0.01"),
         quantity=Quantity.from_int(200),
     )
@@ -120,8 +121,8 @@ async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument,
     exec_client.on_data(_make_quote_tick(instrument))
 
     # Assert
-    out, err = capfd.readouterr()
-    assert "ClientOrderId('NOT-AN-ID') not found" in err
+    order_client_ids = [o.client_order_id for o in strategy.cache.orders()]
+    assert client_order_id not in order_client_ids
 
 
 @pytest.mark.asyncio()
@@ -145,9 +146,8 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
     assert isinstance(cancelled, OrderCanceled)
 
 
-@pytest.mark.skip(reason="WIP and lets not use capfd for tests")
 @pytest.mark.asyncio()
-async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events, capfd):
+async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
     order = TestExecStubs.limit_order(
@@ -157,16 +157,17 @@ async def test_cancel_order_fail(exec_client, cache, strategy, instrument, event
     strategy.submit_order(order)
 
     # Act
+    client_order_id = ClientOrderId("111")
+    venue_order_id = VenueOrderId("1")
     command = TestCommandStubs.cancel_order_command(
         instrument_id=order.instrument_id,
-        client_order_id=ClientOrderId("111"),
+        client_order_id=client_order_id,
     )
     exec_client.cancel_order(command)
     exec_client.on_data(_make_quote_tick(instrument))
 
     # Assert
-    out, err = capfd.readouterr()
-    assert (
-        "Cannot apply event to any order: ClientOrderId('111') and VenueOrderId('1') not found in the cache."
-        in err
-    )
+    client_order_ids = [o.client_order_id for o in strategy.cache.orders()]
+    assert client_order_id not in client_order_ids
+    venue_order_ids = [o.venue_order_id for o in strategy.cache.orders()]
+    assert venue_order_id not in venue_order_ids
