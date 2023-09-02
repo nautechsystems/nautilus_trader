@@ -16,12 +16,12 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesExchangeInfo
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
@@ -44,7 +44,7 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.NONE,
+            HttpMethod.GET: BinanceSecurityType.NONE,
         }
         url_path = base_endpoint + "exchangeInfo"
         super().__init__(
@@ -55,7 +55,7 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
         self._get_resp_decoder = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
 
     async def _get(self) -> BinanceFuturesExchangeInfo:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
 
