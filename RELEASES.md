@@ -9,7 +9,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
 
 ---
 

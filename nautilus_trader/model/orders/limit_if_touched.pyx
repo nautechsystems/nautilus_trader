@@ -390,6 +390,7 @@ cdef class LimitIfTouchedOrder(Order):
             linked_order_ids=init.linked_order_ids,
             parent_order_id=init.parent_order_id,
             exec_algorithm_id=init.exec_algorithm_id,
+            exec_algorithm_params=init.exec_algorithm_params,
             exec_spawn_id=init.exec_spawn_id,
             tags=init.tags,
         )
