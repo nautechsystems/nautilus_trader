@@ -14,11 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod http;
+#[allow(dead_code)]
+mod ratelimiter;
 pub mod socket;
 pub mod websocket;
 
-use http::{HttpClient, HttpResponse};
+use http::{HttpClient, HttpMethod, HttpResponse};
 use pyo3::prelude::*;
+use ratelimiter::quota::Quota;
 use socket::SocketClient;
 use websocket::WebSocketClient;
 
@@ -26,6 +29,8 @@ use websocket::WebSocketClient;
 #[pymodule]
 pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<HttpClient>()?;
+    m.add_class::<HttpMethod>()?;
+    m.add_class::<Quota>()?;
     m.add_class::<HttpResponse>()?;
     m.add_class::<WebSocketClient>()?;
     m.add_class::<SocketClient>()?;

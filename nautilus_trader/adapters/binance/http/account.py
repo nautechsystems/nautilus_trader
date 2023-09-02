@@ -18,7 +18,6 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceNewOrderRespType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
@@ -31,6 +30,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BinanceOrderHttp(BinanceHttpEndpoint):
@@ -74,10 +74,10 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         testing_endpoint: Optional[bool] = False,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
-            BinanceMethodType.POST: BinanceSecurityType.TRADE,
-            BinanceMethodType.DELETE: BinanceSecurityType.TRADE,
-            BinanceMethodType.PUT: BinanceSecurityType.TRADE,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.POST: BinanceSecurityType.TRADE,
+            HttpMethod.DELETE: BinanceSecurityType.TRADE,
+            HttpMethod.PUT: BinanceSecurityType.TRADE,
         }
         url_path = base_endpoint + "order"
 
@@ -265,22 +265,22 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetDeleteParameters) -> BinanceOrder:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
     async def _delete(self, parameters: GetDeleteParameters) -> BinanceOrder:
-        method_type = BinanceMethodType.DELETE
+        method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
     async def _post(self, parameters: PostParameters) -> BinanceOrder:
-        method_type = BinanceMethodType.POST
+        method_type = HttpMethod.POST
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
     async def _put(self, parameters: PutParameters) -> BinanceOrder:
-        method_type = BinanceMethodType.PUT
+        method_type = HttpMethod.PUT
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
@@ -307,7 +307,7 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
         url_path = base_endpoint + "allOrders"
         super().__init__(
@@ -351,7 +351,7 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceOrder]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -381,11 +381,11 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
-        methods: Optional[dict[BinanceMethodType, BinanceSecurityType]] = None,
+        methods: Optional[dict[HttpMethod, BinanceSecurityType]] = None,
     ):
         if methods is None:
             methods = {
-                BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+                HttpMethod.GET: BinanceSecurityType.USER_DATA,
             }
         url_path = base_endpoint + "openOrders"
         super().__init__(
@@ -415,7 +415,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceOrder]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
@@ -442,7 +442,7 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
         url_path: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
         super().__init__(
             client,
@@ -488,7 +488,7 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceUserTrade]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 

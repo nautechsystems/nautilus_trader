@@ -2000,11 +2000,13 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "criterion",
+ "dashmap",
  "futures",
  "futures-util",
  "hyper",
  "hyper-tls",
  "nautilus-core",
+ "nonzero_ext",
  "pyo3",
  "pyo3-asyncio",
  "rstest",
@@ -2050,6 +2052,12 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "nonzero_ext"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
 name = "nu-ansi-term"

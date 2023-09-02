@@ -13,11 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr};
+use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
+    hash::{Hash, Hasher},
+    sync::Arc,
+};
 
+use futures_util::{stream, StreamExt};
 use hyper::{Body, Client, Method, Request, Response};
 use hyper_tls::HttpsConnector;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+
+use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
 /// Provides a high-performance HttpClient for HTTP requests.
 ///
@@ -27,11 +34,48 @@ use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 ///
 /// The client returns an [HttpResponse]. The client filters only the key value
 /// for the give `header_keys`.
-#[pyclass]
 #[derive(Clone)]
-pub struct HttpClient {
+pub struct InnerHttpClient {
     client: Client<HttpsConnector<hyper::client::HttpConnector>>,
     header_keys: Vec<String>,
+}
+
+#[pyclass]
+pub struct HttpClient {
+    rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    client: InnerHttpClient,
+}
+
+#[pyclass]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HttpMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<Method> for HttpMethod {
+    fn into(self) -> Method {
+        match self {
+            HttpMethod::GET => Method::GET,
+            HttpMethod::POST => Method::POST,
+            HttpMethod::PUT => Method::PUT,
+            HttpMethod::DELETE => Method::DELETE,
+            HttpMethod::PATCH => Method::PATCH,
+        }
+    }
+}
+
+#[pymethods]
+impl HttpMethod {
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
 }
 
 /// HttpResponse contains relevant data from a HTTP request.
@@ -45,7 +89,7 @@ pub struct HttpResponse {
     body: Vec<u8>,
 }
 
-impl Default for HttpClient {
+impl Default for InnerHttpClient {
     fn default() -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
@@ -66,131 +110,75 @@ impl HttpResponse {
 
 #[pymethods]
 impl HttpClient {
+    /// Create a new HttpClient
+    ///
+    /// * `header_keys` - key value pairs for the given `header_keys` are retained from the responses.
+    /// * `keyed_quota` - list of string quota pairs that gives quota for specific key values
+    /// * `default_quota` - the default rate limiting quota for any request.
+    ///   Default quota is optional and no quota is passthrough.
     #[new]
-    #[pyo3(signature=(header_keys=[].to_vec()))]
-    pub fn py_new(header_keys: Vec<String>) -> Self {
+    #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
+    pub fn py_new(
+        header_keys: Vec<String>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+    ) -> Self {
         let https = HttpsConnector::new();
         let client = Client::builder().build::<_, hyper::Body>(https);
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
-        Self {
+        let client = InnerHttpClient {
             client,
             header_keys,
+        };
+
+        Self {
+            rate_limiter,
+            client,
         }
     }
 
+    /// Send an HTTP request
+    ///
+    /// * `method` - the HTTP method to call
+    /// * `url` - the request is sent to this url
+    /// * `headers` - the header key value pairs in the request
+    /// * `body` - the bytes sent in the body of request
+    /// * `keys` - the keys used for rate limiting the request
     pub fn request<'py>(
-        slf: PyRef<'_, Self>,
-        method_str: String,
+        &self,
+        method: HttpMethod,
         url: String,
-        headers: HashMap<String, String>,
+        headers: Option<HashMap<String, String>>,
         body: Option<&'py PyBytes>,
+        keys: Option<Vec<String>>,
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
-        let method: Method = Method::from_str(&method_str.to_uppercase())
-            .unwrap_or_else(|_| panic!("Invalid HTTP method {method_str}"));
-
+        let headers = headers.unwrap_or_default();
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
+        let keys = keys.unwrap_or_default();
+        let client = self.client.clone();
+        let rate_limiter = self.rate_limiter.clone();
+        let method = method.into();
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            // Check keys for rate limiting quota
+            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
+            stream::iter(tasks)
+                .for_each(|key| async move {
+                    key.await;
+                })
+                .await;
             match client.send_request(method, url, headers, body_vec).await {
                 Ok(res) => Ok(res),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn get<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            match client
-                .send_request(Method::GET, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn post<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            match client
-                .send_request(Method::POST, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn patch<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            match client
-                .send_request(Method::PATCH, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
-                ))),
-            }
-        })
-    }
-
-    pub fn delete<'py>(
-        slf: PyRef<'_, Self>,
-        url: String,
-        headers: HashMap<String, String>,
-        body: Option<&'py PyBytes>,
-        py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let client = slf.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            match client
-                .send_request(Method::DELETE, url, headers, body_vec)
-                .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling repsonse: {e}"
+                    "Error handling response: {e}"
                 ))),
             }
         })
     }
 }
 
-impl HttpClient {
+impl InnerHttpClient {
     pub async fn send_request(
         &self,
         method: Method,
@@ -331,7 +319,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(Method::GET, format!("{url}/get"), HashMap::new(), None)
             .await
@@ -346,7 +334,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(Method::POST, format!("{url}/post"), HashMap::new(), None)
             .await
@@ -360,7 +348,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
 
         let mut body = HashMap::new();
         body.insert(
@@ -393,7 +381,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(Method::PATCH, format!("{url}/patch"), HashMap::new(), None)
             .await
@@ -407,7 +395,7 @@ mod tests {
         let (addr, _shutdown_tx) = start_test_server();
         let url = format!("http://{}:{}", addr.ip(), addr.port());
 
-        let client = HttpClient::default();
+        let client = InnerHttpClient::default();
         let response = client
             .send_request(
                 Method::DELETE,

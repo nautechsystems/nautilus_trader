@@ -29,6 +29,7 @@ from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumen
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -261,7 +262,7 @@ class TestBinanceSpotExecutionClient:
 
         # Assert
         request = mock_send_request.call_args
-        assert request[0][0] == "POST"
+        assert request[0][0] == HttpMethod.POST
         assert request[0][1] == "/api/v3/order"
         assert request[1]["payload"]["symbol"] == "ETHUSDT"
         assert request[1]["payload"]["type"] == "MARKET"
@@ -300,7 +301,7 @@ class TestBinanceSpotExecutionClient:
 
         # Assert
         request = mock_send_request.call_args
-        assert request[0][0] == "POST"
+        assert request[0][0] == HttpMethod.POST
         assert request[0][1] == "/api/v3/order"
         assert request[1]["payload"]["symbol"] == "ETHUSDT"
         assert request[1]["payload"]["side"] == "BUY"
@@ -341,7 +342,7 @@ class TestBinanceSpotExecutionClient:
 
         # Assert
         request = mock_send_request.call_args
-        assert request[0][0] == "POST"
+        assert request[0][0] == HttpMethod.POST
         assert request[0][1] == "/api/v3/order"
         assert request[1]["payload"]["symbol"] == "ETHUSDT"
         assert request[1]["payload"]["side"] == "BUY"
@@ -385,7 +386,7 @@ class TestBinanceSpotExecutionClient:
 
         # Assert
         request = mock_send_request.call_args
-        assert request[0][0] == "POST"
+        assert request[0][0] == HttpMethod.POST
         assert request[0][1] == "/api/v3/order"
         assert request[1]["payload"]["symbol"] == "ETHUSDT"
         assert request[1]["payload"]["side"] == "SELL"
