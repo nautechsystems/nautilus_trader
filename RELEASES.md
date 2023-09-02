@@ -1,6 +1,6 @@
 # NautilusTrader 1.178.0 Beta
 
-Released on TBD (UTC).
+Released on 2nd September 2023 (UTC).
 
 ### Enhancements
 None
