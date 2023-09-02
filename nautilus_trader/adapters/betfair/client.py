@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Literal, Optional
+from typing import Optional
 
 from betfair_parser.endpoints import ENDPOINTS
 from betfair_parser.spec.accounts.operations import GetAccountDetails
@@ -65,6 +65,7 @@ from betfair_parser.spec.navigation import Navigation
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 from nautilus_trader.core.rust.common import LogColor
 
@@ -92,7 +93,7 @@ class BetfairHttpClient:
         self._log = LoggerAdapter(type(self).__name__, logger)
         self.reset_headers()
 
-    async def _request(self, method: Literal["GET", "POST"], request: Request) -> HttpResponse:
+    async def _request(self, method: HttpMethod, request: Request) -> HttpResponse:
         url = ENDPOINTS.url_for_request(request)
         headers = self._headers
         body = request.body()
@@ -107,11 +108,11 @@ class BetfairHttpClient:
         return response
 
     async def _post(self, request: Request) -> Request.return_type:
-        response: HttpResponse = await self._request("POST", request)
+        response: HttpResponse = await self._request(HttpMethod.POST, request)
         return request.parse_response(response.body, raise_errors=True)
 
     async def _get(self, request: Request) -> Request.return_type:
-        response: HttpResponse = await self._request("GET", request)
+        response: HttpResponse = await self._request(HttpMethod.GET, request)
         return request.parse_response(response.body, raise_errors=True)
 
     @property

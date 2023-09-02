@@ -16,7 +16,8 @@
 import asyncio
 import time
 
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient as RustClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 CONCURRENCY = 256
@@ -24,7 +25,7 @@ REQS = 1_000_00
 
 
 def perf_pyo3_client() -> None:
-    client = RustClient()
+    client = HttpClient()
     url = "http://127.0.0.1:3000"
 
     start_time = time.perf_counter()
@@ -36,9 +37,9 @@ def perf_pyo3_client() -> None:
     print(f"The execution time is: {execution_time}")
 
 
-async def send_million_requests_pyo3(client: RustClient, url: str) -> None:
+async def send_million_requests_pyo3(client: HttpClient, url: str) -> None:
     for _ in range(int(REQS / CONCURRENCY)):
-        reqs = [client.get(url, headers={}) for _ in range(CONCURRENCY)]
+        reqs = [client.request(HttpMethod.GET, url, headers={}) for _ in range(CONCURRENCY)]
         tasks = asyncio.gather(*reqs)
         responses = await tasks
         for resp in responses:

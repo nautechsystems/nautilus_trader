@@ -22,6 +22,7 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 
@@ -50,7 +51,7 @@ async def test_client_get(test_server: Coroutine) -> None:
     url = f"http://{server.host}:{server.port}/get"
 
     # Act
-    response: HttpResponse = await client.get(url, headers={})
+    response: HttpResponse = await client.request(HttpMethod.GET, url, headers={})
 
     # Assert
     assert response.status == 200
@@ -65,7 +66,7 @@ async def test_client_post(test_server: Coroutine) -> None:
     url = f"http://{server.host}:{server.port}/post"
 
     # Act
-    response: HttpResponse = await client.post(url, headers={})
+    response: HttpResponse = await client.request(HttpMethod.POST, url, headers={})
 
     # Assert
     assert response.status == 200
@@ -82,7 +83,7 @@ async def test_client_post_with_body(test_server: Coroutine) -> None:
     body_bytes = msgspec.json.encode(body)
 
     # Act
-    response: HttpResponse = await client.post(url, headers={}, body=body_bytes)
+    response: HttpResponse = await client.request(HttpMethod.POST, url, headers={}, body=body_bytes)
 
     # Assert
     assert response.status == 200
@@ -97,7 +98,7 @@ async def test_client_patch(test_server: Coroutine) -> None:
     url = f"http://{server.host}:{server.port}/patch"
 
     # Act
-    response: HttpResponse = await client.patch(url, headers={})
+    response: HttpResponse = await client.request(HttpMethod.PATCH, url, headers={})
 
     # Assert
     assert response.status == 200
@@ -112,7 +113,7 @@ async def test_client_delete(test_server: Coroutine) -> None:
     url = f"http://{server.host}:{server.port}/delete"
 
     # Act
-    response: HttpResponse = await client.delete(url, headers={})
+    response: HttpResponse = await client.request(HttpMethod.DELETE, url, headers={})
 
     # Assert
     assert response.status == 200

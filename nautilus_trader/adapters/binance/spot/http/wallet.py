@@ -18,13 +18,13 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
@@ -45,7 +45,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
         super().__init__(
             client,
@@ -75,7 +75,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
             return [self._get_obj_resp_decoder.decode(raw)]

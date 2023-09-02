@@ -18,7 +18,6 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.enums import BinanceMethodType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceStatusCode
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
@@ -29,6 +28,7 @@ from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
@@ -54,8 +54,8 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
-            BinanceMethodType.POST: BinanceSecurityType.TRADE,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.POST: BinanceSecurityType.TRADE,
         }
         url_path = base_endpoint + "positionSide/dual"
         super().__init__(
@@ -103,12 +103,12 @@ class BinanceFuturesPositionModeHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> BinanceFuturesDualSidePosition:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
     async def _post(self, parameters: PostParameters) -> BinanceStatusCode:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._post_resp_decoder.decode(raw)
 
@@ -133,7 +133,7 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.DELETE: BinanceSecurityType.TRADE,
+            HttpMethod.DELETE: BinanceSecurityType.TRADE,
         }
         url_path = base_endpoint + "allOpenOrders"
         super().__init__(
@@ -163,7 +163,7 @@ class BinanceFuturesAllOpenOrdersHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _delete(self, parameters: DeleteParameters) -> BinanceStatusCode:
-        method_type = BinanceMethodType.DELETE
+        method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._delete_resp_decoder.decode(raw)
 
@@ -188,7 +188,7 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
         url_path = base_endpoint + "account"
         super().__init__(
@@ -215,7 +215,7 @@ class BinanceFuturesAccountHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> BinanceFuturesAccountInfo:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
@@ -240,7 +240,7 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
         base_endpoint: str,
     ):
         methods = {
-            BinanceMethodType.GET: BinanceSecurityType.USER_DATA,
+            HttpMethod.GET: BinanceSecurityType.USER_DATA,
         }
         url_path = base_endpoint + "positionRisk"
         super().__init__(
@@ -270,7 +270,7 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
         recvWindow: Optional[str] = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceFuturesPositionRisk]:
-        method_type = BinanceMethodType.GET
+        method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
 
