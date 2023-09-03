@@ -217,25 +217,25 @@ impl DataBackendSession {
             NautilusDataType::OrderBookDelta => {
                 match block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
                 {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
             NautilusDataType::QuoteTick => {
                 match block_on(slf.add_file_default_query::<QuoteTick>(table_name, file_path)) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
             NautilusDataType::TradeTick => {
                 match block_on(slf.add_file_default_query::<TradeTick>(table_name, file_path)) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
             NautilusDataType::Bar => {
                 match block_on(slf.add_file_default_query::<Bar>(table_name, file_path)) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
@@ -259,7 +259,7 @@ impl DataBackendSession {
                         table_name, file_path, sql_query,
                     ),
                 ) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
@@ -267,7 +267,7 @@ impl DataBackendSession {
                 match block_on(
                     slf.add_file_with_custom_query::<QuoteTick>(table_name, file_path, sql_query),
                 ) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
@@ -275,7 +275,7 @@ impl DataBackendSession {
                 match block_on(
                     slf.add_file_with_custom_query::<TradeTick>(table_name, file_path, sql_query),
                 ) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }
@@ -283,7 +283,7 @@ impl DataBackendSession {
                 match block_on(
                     slf.add_file_with_custom_query::<Bar>(table_name, file_path, sql_query),
                 ) {
-                    Ok(_) => (),
+                    Ok(()) => (),
                     Err(err) => panic!("Failed new_query with error {err}"),
                 }
             }

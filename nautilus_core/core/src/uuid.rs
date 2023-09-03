@@ -113,7 +113,7 @@ impl<'de> Deserialize<'de> for UUID4 {
 impl UUID4 {
     #[new]
     fn py_new() -> Self {
-        UUID4::new()
+        Self::new()
     }
 
     #[getter]
@@ -124,8 +124,8 @@ impl UUID4 {
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<UUID4> {
-        UUID4::from_str(value).map_err(to_pyvalue_err)
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        Self::from_str(value).map_err(to_pyvalue_err)
     }
 }
 

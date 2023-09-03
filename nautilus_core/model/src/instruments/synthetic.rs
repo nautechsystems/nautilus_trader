@@ -160,7 +160,7 @@ mod tests {
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),
             2,
-            vec![btc_binance.clone(), ltc_binance],
+            vec![btc_binance, ltc_binance],
             formula.clone(),
             0,
             0,
@@ -185,7 +185,7 @@ mod tests {
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),
             2,
-            vec![btc_binance.clone(), ltc_binance],
+            vec![btc_binance, ltc_binance],
             formula.clone(),
             0,
             0,

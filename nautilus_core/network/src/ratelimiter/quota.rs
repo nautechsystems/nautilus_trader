@@ -39,7 +39,7 @@ impl Quota {
     #[staticmethod]
     pub fn rate_per_second(max_burst: u32) -> PyResult<Self> {
         match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Quota::per_second(max_burst)),
+            Some(max_burst) => Ok(Self::per_second(max_burst)),
             None => Err(PyErr::new::<PyException, _>(
                 "Max burst capacity should be a non-zero integer",
             )),
@@ -49,7 +49,7 @@ impl Quota {
     #[staticmethod]
     pub fn rate_per_minute(max_burst: u32) -> PyResult<Self> {
         match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Quota::per_minute(max_burst)),
+            Some(max_burst) => Ok(Self::per_minute(max_burst)),
             None => Err(PyErr::new::<PyException, _>(
                 "Max burst capacity should be a non-zero integer",
             )),
@@ -59,7 +59,7 @@ impl Quota {
     #[staticmethod]
     pub fn rate_per_hour(max_burst: u32) -> PyResult<Self> {
         match NonZeroU32::new(max_burst) {
-            Some(max_burst) => Ok(Quota::per_hour(max_burst)),
+            Some(max_burst) => Ok(Self::per_hour(max_burst)),
             None => Err(PyErr::new::<PyException, _>(
                 "Max burst capacity should be a non-zero integer",
             )),
@@ -71,9 +71,9 @@ impl Quota {
 impl Quota {
     /// Construct a quota for a number of cells per second. The given number of cells is also
     /// assumed to be the maximum burst size.
-    pub const fn per_second(max_burst: NonZeroU32) -> Quota {
+    pub const fn per_second(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_secs(1).as_nanos() / (max_burst.get() as u128);
-        Quota {
+        Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
         }
@@ -81,9 +81,9 @@ impl Quota {
 
     /// Construct a quota for a number of cells per 60-second period. The given number of cells is
     /// also assumed to be the maximum burst size.
-    pub const fn per_minute(max_burst: NonZeroU32) -> Quota {
+    pub const fn per_minute(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns = Duration::from_secs(60).as_nanos() / (max_burst.get() as u128);
-        Quota {
+        Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
         }
@@ -91,10 +91,10 @@ impl Quota {
 
     /// Construct a quota for a number of cells per 60-minute (3600-second) period. The given number
     /// of cells is also assumed to be the maximum burst size.
-    pub const fn per_hour(max_burst: NonZeroU32) -> Quota {
+    pub const fn per_hour(max_burst: NonZeroU32) -> Self {
         let replenish_interval_ns =
             Duration::from_secs(60 * 60).as_nanos() / (max_burst.get() as u128);
-        Quota {
+        Self {
             max_burst,
             replenish_1_per: Duration::from_nanos(replenish_interval_ns as u64),
         }
@@ -108,11 +108,11 @@ impl Quota {
     /// necessary.
     ///
     /// If the time interval is zero, returns `None`.
-    pub fn with_period(replenish_1_per: Duration) -> Option<Quota> {
+    pub fn with_period(replenish_1_per: Duration) -> Option<Self> {
         if replenish_1_per.as_nanos() == 0 {
             None
         } else {
-            Some(Quota {
+            Some(Self {
                 max_burst: nonzero!(1u32),
                 replenish_1_per,
             })
@@ -121,8 +121,8 @@ impl Quota {
 
     /// Adjusts the maximum burst size for a quota to construct a rate limiter with a capacity
     /// for at most the given number of cells.
-    pub const fn allow_burst(self, max_burst: NonZeroU32) -> Quota {
-        Quota { max_burst, ..self }
+    pub const fn allow_burst(self, max_burst: NonZeroU32) -> Self {
+        Self { max_burst, ..self }
     }
 
     /// Construct a quota for a given burst size, replenishing the entire burst size in that
@@ -143,11 +143,11 @@ impl Quota {
         note = "This constructor is often confusing and non-intuitive. \
     Use the `per_(interval)` / `with_period` and `max_burst` constructors instead."
     )]
-    pub fn new(max_burst: NonZeroU32, replenish_all_per: Duration) -> Option<Quota> {
+    pub fn new(max_burst: NonZeroU32, replenish_all_per: Duration) -> Option<Self> {
         if replenish_all_per.as_nanos() == 0 {
             None
         } else {
-            Some(Quota {
+            Some(Self {
                 max_burst,
                 replenish_1_per: replenish_all_per / max_burst.get(),
             })
@@ -181,7 +181,7 @@ impl Quota {
     /// This is useful mainly for [`crate::middleware::RateLimitingMiddleware`]
     /// where custom code may want to construct information based on
     /// the amount of burst balance remaining.
-    pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Quota {
+    pub(crate) fn from_gcra_parameters(t: Nanos, tau: Nanos) -> Self {
         // Safety assurance: As we're calling this from this crate
         // only, and we do not allow creating a Gcra from 0
         // parameters, this is, in fact, safe.
@@ -191,7 +191,7 @@ impl Quota {
         // exactly like that.
         let max_burst = unsafe { NonZeroU32::new_unchecked((tau.as_u64() / t.as_u64()) as u32) };
         let replenish_1_per = t.into();
-        Quota {
+        Self {
             max_burst,
             replenish_1_per,
         }

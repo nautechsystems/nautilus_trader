@@ -110,7 +110,7 @@ impl MessageBus {
 
     fn send(&self, endpoint: &String, msg: &Message) {
         if let Some(handler) = self.endpoints.get(endpoint) {
-            handler(msg)
+            handler(msg);
         }
     }
 
@@ -123,7 +123,7 @@ impl MessageBus {
                 } else {
                     self.correlation_index.insert(*id, callback);
                     if let Some(handler) = self.endpoints.get(endpoint) {
-                        handler(request)
+                        handler(request);
                     } else {
                         // TODO: log error
                     }
@@ -144,7 +144,7 @@ impl MessageBus {
                 correlation_id,
             } => {
                 if let Some(callback) = self.correlation_index.get(correlation_id) {
-                    callback(response)
+                    callback(response);
                 } else {
                     // TODO: log error
                 }
@@ -192,7 +192,7 @@ impl MessageBus {
         let handlers = entry.or_insert_with(matching_handlers);
 
         // call matched handlers
-        handlers.iter().for_each(|handler| handler(msg))
+        handlers.iter().for_each(|handler| handler(msg));
     }
 }
 
@@ -221,7 +221,7 @@ fn is_matching(topic: &String, pattern: &String) -> bool {
             } else if pc == '?' || tc == pc {
                 table[i + 1][j + 1] = table[i][j];
             }
-        })
+        });
     });
 
     table[n][m]

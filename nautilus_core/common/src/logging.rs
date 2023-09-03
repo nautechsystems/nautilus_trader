@@ -78,6 +78,7 @@ impl fmt::Display for LogEvent {
 
 #[allow(clippy::too_many_arguments)]
 impl Logger {
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         machine_id: String,
@@ -101,7 +102,7 @@ impl Logger {
                     }
                     Err(e) => {
                         // Handle the error, e.g. log a warning or ignore the entry
-                        eprintln!("Error parsing log level: {:?}", e);
+                        eprintln!("Error parsing log level: {e:?}");
                     }
                 }
             }
@@ -121,17 +122,17 @@ impl Logger {
                 file_format,
                 level_filters,
                 rx,
-            )
+            );
         });
 
-        Logger {
+        Self {
+            tx,
             trader_id,
             machine_id,
             instance_id,
             level_stdout,
             level_file,
             is_bypassed,
-            tx,
         }
     }
 
@@ -156,8 +157,7 @@ impl Logger {
             None => false,
             Some(ref unrecognized) => {
                 eprintln!(
-                    "Unrecognized log file format: {}. Using plain text format as default.",
-                    unrecognized
+                    "Unrecognized log file format: {unrecognized}. Using plain text format as default."
                 );
                 false
             }
@@ -278,7 +278,7 @@ impl Logger {
 
     fn default_log_file_basename(trader_id: &str, instance_id: &str) -> String {
         let current_date_utc = Utc::now().format("%Y-%m-%d");
-        format!("{}_{}_{}", trader_id, current_date_utc, instance_id)
+        format!("{trader_id}_{current_date_utc}_{instance_id}")
     }
 
     fn create_log_file_path(
@@ -289,7 +289,7 @@ impl Logger {
         is_json_format: bool,
     ) -> PathBuf {
         let basename = if let Some(file_name) = file_name {
-            file_name.to_owned()
+            file_name.clone()
         } else {
             Self::default_log_file_basename(trader_id, instance_id)
         };
@@ -326,7 +326,7 @@ impl Logger {
         if is_json_format {
             let json_string =
                 serde_json::to_string(event).expect("Error serializing log event to string");
-            format!("{}\n", json_string)
+            format!("{json_string}\n")
         } else {
             template
                 .replace("{ts}", &unix_nanos_to_iso8601(event.timestamp))
@@ -339,42 +339,42 @@ impl Logger {
 
     fn write_stdout(out_buf: &mut BufWriter<Stdout>, line: &str) {
         match out_buf.write_all(line.as_bytes()) {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
     fn flush_stdout(out_buf: &mut BufWriter<Stdout>) {
         match out_buf.flush() {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
     }
 
     fn write_stderr(err_buf: &mut BufWriter<Stderr>, line: &str) {
         match err_buf.write_all(line.as_bytes()) {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) => eprintln!("Error writing to stderr: {e:?}"),
         }
     }
 
     fn flush_stderr(err_buf: &mut BufWriter<Stderr>) {
         match err_buf.flush() {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
     }
 
     fn write_file(file_buf: &mut BufWriter<File>, line: &str) {
         match file_buf.write_all(line.as_bytes()) {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) => eprintln!("Error writing to file: {e:?}"),
         }
     }
 
     fn flush_file(file_buf: &mut BufWriter<File>) {
         match file_buf.flush() {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(e) => eprintln!("Error writing to file: {e:?}"),
         }
     }
@@ -395,24 +395,24 @@ impl Logger {
             message,
         };
         if let Err(SendError(e)) = self.tx.send(event) {
-            eprintln!("Error sending log event: {}", e);
+            eprintln!("Error sending log event: {e}");
         }
     }
 
     pub fn debug(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Debug, color, component, message)
+        self.send(timestamp, LogLevel::Debug, color, component, message);
     }
 
     pub fn info(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Info, color, component, message)
+        self.send(timestamp, LogLevel::Info, color, component, message);
     }
 
     pub fn warn(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Warning, color, component, message)
+        self.send(timestamp, LogLevel::Warning, color, component, message);
     }
 
     pub fn error(&mut self, timestamp: u64, color: LogColor, component: String, message: String) {
-        self.send(timestamp, LogLevel::Error, color, component, message)
+        self.send(timestamp, LogLevel::Error, color, component, message);
     }
 
     pub fn critical(
@@ -422,7 +422,7 @@ impl Logger {
         component: String,
         message: String,
     ) {
-        self.send(timestamp, LogLevel::Critical, color, component, message)
+        self.send(timestamp, LogLevel::Critical, color, component, message);
     }
 }
 
@@ -564,14 +564,10 @@ mod tests {
 
         wait_until(
             || {
-                let log_file_exists = std::fs::read_dir(&temp_dir)
+                std::fs::read_dir(&temp_dir)
                     .expect("Failed to read directory")
                     .filter_map(Result::ok)
-                    .filter(|entry| entry.path().is_file())
-                    .next()
-                    .is_some();
-
-                log_file_exists
+                    .any(|entry| entry.path().is_file())
             },
             Duration::from_secs(2),
         );
@@ -581,12 +577,11 @@ mod tests {
                 let log_file_path = std::fs::read_dir(&temp_dir)
                     .expect("Failed to read directory")
                     .filter_map(Result::ok)
-                    .filter(|entry| entry.path().is_file())
-                    .next()
+                    .find(|entry| entry.path().is_file())
                     .expect("No files found in directory")
                     .path();
                 log_contents =
-                    std::fs::read_to_string(&log_file_path).expect("Error while reading log file");
+                    std::fs::read_to_string(log_file_path).expect("Error while reading log file");
                 !log_contents.is_empty()
             },
             Duration::from_secs(2),
@@ -630,11 +625,10 @@ mod tests {
                 if let Some(log_file) = std::fs::read_dir(&temp_dir)
                     .expect("Failed to read directory")
                     .filter_map(Result::ok)
-                    .filter(|entry| entry.path().is_file())
-                    .next()
+                    .find(|entry| entry.path().is_file())
                 {
                     let log_file_path = log_file.path();
-                    let log_contents = std::fs::read_to_string(&log_file_path)
+                    let log_contents = std::fs::read_to_string(log_file_path)
                         .expect("Error while reading log file");
                     !log_contents.contains("RiskEngine")
                 } else {
@@ -648,9 +642,7 @@ mod tests {
             std::fs::read_dir(&temp_dir)
                 .expect("Failed to read directory")
                 .filter_map(Result::ok)
-                .filter(|entry| entry.path().is_file())
-                .next()
-                .is_some(),
+                .any(|entry| entry.path().is_file()),
             "Log file exists"
         );
     }
@@ -686,11 +678,10 @@ mod tests {
                 if let Some(log_file) = std::fs::read_dir(&temp_dir)
                     .expect("Failed to read directory")
                     .filter_map(Result::ok)
-                    .filter(|entry| entry.path().is_file())
-                    .next()
+                    .find(|entry| entry.path().is_file())
                 {
                     let log_file_path = log_file.path();
-                    log_contents = std::fs::read_to_string(&log_file_path)
+                    log_contents = std::fs::read_to_string(log_file_path)
                         .expect("Error while reading log file");
                     !log_contents.is_empty()
                 } else {

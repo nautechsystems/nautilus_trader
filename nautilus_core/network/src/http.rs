@@ -26,13 +26,13 @@ use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
-/// Provides a high-performance HttpClient for HTTP requests.
+/// Provides a high-performance `HttpClient` for HTTP requests.
 ///
 /// The client is backed by a hyper Client which keeps connections alive and
 /// can be cloned cheaply. The client also has a list of header fields to
 /// extract from the response.
 ///
-/// The client returns an [HttpResponse]. The client filters only the key value
+/// The client returns an [`HttpResponse`]. The client filters only the key value
 /// for the give `header_keys`.
 #[derive(Clone)]
 pub struct InnerHttpClient {
@@ -60,11 +60,11 @@ pub enum HttpMethod {
 impl Into<Method> for HttpMethod {
     fn into(self) -> Method {
         match self {
-            HttpMethod::GET => Method::GET,
-            HttpMethod::POST => Method::POST,
-            HttpMethod::PUT => Method::PUT,
-            HttpMethod::DELETE => Method::DELETE,
-            HttpMethod::PATCH => Method::PATCH,
+            Self::GET => Method::GET,
+            Self::POST => Method::POST,
+            Self::PUT => Method::PUT,
+            Self::DELETE => Method::DELETE,
+            Self::PATCH => Method::PATCH,
         }
     }
 }
@@ -118,6 +118,7 @@ impl HttpClient {
     ///   Default quota is optional and no quota is passthrough.
     #[new]
     #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
+    #[must_use]
     pub fn py_new(
         header_keys: Vec<String>,
         keyed_quotas: Vec<(String, Quota)>,
