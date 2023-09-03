@@ -64,7 +64,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     max_trade_size: Decimal
     trigger_min_size: float = 100.0
     trigger_imbalance_ratio: float = 0.20
-    min_seconds_between_triggers: float = 20.0
+    min_seconds_between_triggers: float = 0.0
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = False
     subscribe_ticker: bool = False

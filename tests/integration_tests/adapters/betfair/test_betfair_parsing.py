@@ -21,9 +21,9 @@ import msgspec
 import pytest
 from betfair_parser.spec.betting.enums import PersistenceType
 from betfair_parser.spec.betting.enums import Side
-from betfair_parser.spec.betting.orders import _CancelOrdersParams
-from betfair_parser.spec.betting.orders import _PlaceOrdersParams
-from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
+from betfair_parser.spec.betting.orders import CancelOrders
+from betfair_parser.spec.betting.orders import PlaceOrders
+from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CancelInstruction
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
@@ -288,7 +288,7 @@ class TestBetfairParsing:
             ),
         )
         result = order_submit_to_place_order_params(command=command, instrument=self.instrument)
-        expected = _PlaceOrdersParams(
+        expected = PlaceOrders.with_params(
             market_id="1.179082386",
             instructions=[
                 PlaceInstruction(
@@ -312,7 +312,7 @@ class TestBetfairParsing:
             async_=False,
         )
         assert result == expected
-        assert msgspec.json.decode(msgspec.json.encode(result), type=_PlaceOrdersParams) == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceOrders) == expected
 
     def test_order_update_to_betfair(self):
         modify = TestCommandStubs.modify_order_command(
@@ -327,7 +327,7 @@ class TestBetfairParsing:
             venue_order_id=VenueOrderId("1"),
             instrument=self.instrument,
         )
-        expected = _ReplaceOrdersParams(
+        expected = ReplaceOrders.with_params(
             market_id="1.179082386",
             instructions=[ReplaceInstruction(bet_id="1", new_price=1.35)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
@@ -336,9 +336,7 @@ class TestBetfairParsing:
         )
 
         assert result == expected
-        assert (
-            msgspec.json.decode(msgspec.json.encode(result), type=_ReplaceOrdersParams) == expected
-        )
+        assert msgspec.json.decode(msgspec.json.encode(result), type=ReplaceOrders) == expected
 
     def test_order_cancel_to_betfair(self):
         result = order_cancel_to_cancel_order_params(
@@ -347,15 +345,13 @@ class TestBetfairParsing:
             ),
             instrument=self.instrument,
         )
-        expected = _CancelOrdersParams(
+        expected = CancelOrders.with_params(
             market_id="1.179082386",
             instructions=[CancelInstruction(bet_id="228302937743", size_reduction=None)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
         )
         assert result == expected
-        assert (
-            msgspec.json.decode(msgspec.json.encode(result), type=_CancelOrdersParams) == expected
-        )
+        assert msgspec.json.decode(msgspec.json.encode(result), type=CancelOrders) == expected
 
     @pytest.mark.asyncio()
     async def test_account_statement(self, betfair_client):
