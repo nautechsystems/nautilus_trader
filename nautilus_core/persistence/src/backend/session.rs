@@ -162,7 +162,9 @@ impl DataBackendSession {
         T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let transform = stream.map(|result| match result {
-            Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch).into_iter(),
+            Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch)
+                .unwrap()
+                .into_iter(),
             Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
         });
 

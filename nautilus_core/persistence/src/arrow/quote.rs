@@ -26,7 +26,10 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use super::DecodeDataFromRecordBatch;
+use super::{
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION,
+};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for QuoteTick {
@@ -47,22 +50,28 @@ impl ArrowSchemaProvider for QuoteTick {
     }
 }
 
-fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
-    // TODO: Properly handle errors
-    let instrument_id =
-        InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
-    let price_precision = metadata
-        .get("price_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
-    let size_precision = metadata
-        .get("size_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+fn parse_metadata(
+    metadata: &HashMap<String, String>,
+) -> Result<(InstrumentId, u8, u8), EncodingError> {
+    let instrument_id_str = metadata
+        .get(KEY_INSTRUMENT_ID)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
+    let instrument_id = InstrumentId::from_str(instrument_id_str)
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
 
-    (instrument_id, price_precision, size_precision)
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+
+    Ok((instrument_id, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for QuoteTick {
@@ -110,9 +119,12 @@ impl EncodeToRecordBatch for QuoteTick {
 }
 
 impl DecodeFromRecordBatch for QuoteTick {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
         // Parse and validate metadata
-        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
 
         // Extract field value arrays
         let cols = record_batch.columns();
@@ -143,7 +155,7 @@ impl DecodeFromRecordBatch for QuoteTick {
                 },
             );
 
-        values.collect()
+        Ok(values.collect())
     }
 }
 
@@ -151,9 +163,9 @@ impl DecodeDataFromRecordBatch for QuoteTick {
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data> {
-        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch);
-        ticks.into_iter().map(Data::from).collect()
+    ) -> Result<Vec<Data>, EncodingError> {
+        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch)?;
+        Ok(ticks.into_iter().map(Data::from).collect())
     }
 }
 
@@ -282,7 +294,7 @@ mod tests {
         )
         .unwrap();
 
-        let decoded_data = QuoteTick::decode_batch(&metadata, record_batch);
+        let decoded_data = QuoteTick::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
     }
 }
