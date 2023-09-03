@@ -24,6 +24,7 @@ use std::{
 };
 
 use datafusion::arrow::{
+    array::{Array, ArrayRef},
     datatypes::{DataType, Schema},
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
@@ -125,4 +126,26 @@ impl<T: EncodeToRecordBatch + Write> WriteStream for T {
         writer.finish()?;
         Ok(())
     }
+}
+
+pub fn extract_column<'a, T: Array + 'static>(
+    cols: &'a [ArrayRef],
+    column_key: &'static str,
+    column_index: usize,
+    expected_type: DataType,
+) -> Result<&'a T, EncodingError> {
+    let column_values = cols
+        .get(column_index)
+        .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
+    let downcasted_values =
+        column_values
+            .as_any()
+            .downcast_ref::<T>()
+            .ok_or(EncodingError::InvalidColumnType(
+                column_key,
+                column_index,
+                expected_type,
+                column_values.data_type().clone(),
+            ))?;
+    Ok(downcasted_values)
 }
