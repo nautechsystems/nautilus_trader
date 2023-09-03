@@ -86,7 +86,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
@@ -294,7 +293,7 @@ class TestBetfairParsing:
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
-                    selection_id="50214",
+                    selection_id=50214,
                     handicap=None,
                     side=Side.BACK,
                     limit_order=LimitOrder(
@@ -313,6 +312,7 @@ class TestBetfairParsing:
             async_=False,
         )
         assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=_PlaceOrdersParams) == expected
 
     def test_order_update_to_betfair(self):
         modify = TestCommandStubs.modify_order_command(
@@ -336,6 +336,9 @@ class TestBetfairParsing:
         )
 
         assert result == expected
+        assert (
+            msgspec.json.decode(msgspec.json.encode(result), type=_ReplaceOrdersParams) == expected
+        )
 
     def test_order_cancel_to_betfair(self):
         result = order_cancel_to_cancel_order_params(
@@ -350,6 +353,9 @@ class TestBetfairParsing:
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
         )
         assert result == expected
+        assert (
+            msgspec.json.decode(msgspec.json.encode(result), type=_CancelOrdersParams) == expected
+        )
 
     @pytest.mark.asyncio()
     async def test_account_statement(self, betfair_client):
@@ -430,7 +436,7 @@ class TestBetfairParsing:
         # Assert
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
-            selection_id="50214",
+            selection_id=50214,
             handicap=None,
             side=Side.BACK,
             limit_order=LimitOrder(
@@ -447,6 +453,7 @@ class TestBetfairParsing:
             customer_order_ref="O-20210410-022422-001",
         )
         assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
 
     def test_make_order_limit_on_close(self):
         order = TestExecStubs.limit_order(
@@ -459,7 +466,7 @@ class TestBetfairParsing:
         result = nautilus_limit_on_close_to_place_instructions(command, instrument=self.instrument)
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT_ON_CLOSE,
-            selection_id="50214",
+            selection_id=50214,
             handicap=None,
             side=Side.BACK,
             limit_order=None,
@@ -468,6 +475,7 @@ class TestBetfairParsing:
             customer_order_ref="O-20210410-022422-001",
         )
         assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
 
     def test_make_order_market_buy(self):
         order = TestExecStubs.market_order(order_side=OrderSide.BUY)
@@ -475,12 +483,12 @@ class TestBetfairParsing:
         result = nautilus_market_to_place_instructions(command, instrument=self.instrument)
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
-            selection_id="50214",
+            selection_id=50214,
             handicap=None,
             side=Side.BACK,
             limit_order=LimitOrder(
                 size=100.0,
-                price=Price.from_str("1.01"),
+                price=1.01,
                 persistence_type=PersistenceType.PERSIST,
                 time_in_force=None,
                 min_fill_size=None,
@@ -492,6 +500,7 @@ class TestBetfairParsing:
             customer_order_ref="O-20210410-022422-001",
         )
         assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
 
     def test_make_order_market_sell(self):
         order = TestExecStubs.market_order(order_side=OrderSide.SELL)
@@ -499,12 +508,12 @@ class TestBetfairParsing:
         result = nautilus_market_to_place_instructions(command, instrument=self.instrument)
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
-            selection_id="50214",
+            selection_id=50214,
             handicap=None,
             side=Side.LAY,
             limit_order=LimitOrder(
                 size=100.0,
-                price=Price.from_str("1000"),
+                price=1000,
                 persistence_type=PersistenceType.PERSIST,
                 time_in_force=None,
                 min_fill_size=None,
@@ -516,6 +525,7 @@ class TestBetfairParsing:
             customer_order_ref="O-20210410-022422-001",
         )
         assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=PlaceInstruction) == expected
 
     @pytest.mark.parametrize(
         ("side", "liability"),
@@ -534,6 +544,7 @@ class TestBetfairParsing:
         result = place_instructions.market_on_close_order
         expected = MarketOnCloseOrder(liability=liability)
         assert result == expected
+        assert msgspec.json.decode(msgspec.json.encode(result), type=MarketOnCloseOrder) == expected
 
     @pytest.mark.parametrize(
         ("status", "size", "matched", "cancelled", "expected"),

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import datetime
 from decimal import Decimal
 from typing import Optional
 
@@ -64,6 +64,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     max_trade_size: Decimal
     trigger_min_size: float = 100.0
     trigger_imbalance_ratio: float = 0.20
+    min_seconds_between_triggers: float = 20.0
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = False
     subscribe_ticker: bool = False
@@ -92,6 +93,8 @@ class OrderBookImbalance(Strategy):
         self.max_trade_size = Decimal(config.max_trade_size)
         self.trigger_min_size = config.trigger_min_size
         self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
+        self.min_seconds_between_triggers = config.min_seconds_between_triggers
+        self._last_trigger_timestamp: Optional[datetime.datetime] = None
         self.instrument: Optional[Instrument] = None
         if self.config.use_quote_ticks:
             assert self.config.book_type == "L1_TBBO"
@@ -120,6 +123,7 @@ class OrderBookImbalance(Strategy):
             instrument_id=self.instrument.id,
             book_type=book_type,
         )
+        self._last_trigger_timestamp = self.clock.utc_now()
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
         """
@@ -185,9 +189,14 @@ class OrderBookImbalance(Strategy):
         self.log.info(
             f"Book: {self._book.best_bid_price()} @ {self._book.best_ask_price()} ({ratio=:0.2f})",
         )
+        seconds_since_last_trigger = (
+            self.clock.utc_now() - self._last_trigger_timestamp
+        ).total_seconds()
         if larger > self.trigger_min_size and ratio < self.trigger_imbalance_ratio:
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
-                pass
+                self.log.info("Already have orders in flight. Skipping")
+            elif seconds_since_last_trigger < self.min_seconds_between_triggers:
+                self.log.info("Time since last order < min_seconds_between_triggers. Skipping")
             elif bid_size > ask_size:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
@@ -197,7 +206,9 @@ class OrderBookImbalance(Strategy):
                     post_only=False,
                     time_in_force=TimeInForce.FOK,
                 )
+                self._last_trigger_timestamp = self.clock.utc_now()
                 self.submit_order(order)
+
             else:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
@@ -207,6 +218,7 @@ class OrderBookImbalance(Strategy):
                     post_only=False,
                     time_in_force=TimeInForce.FOK,
                 )
+                self._last_trigger_timestamp = self.clock.utc_now()
                 self.submit_order(order)
 
     def on_stop(self) -> None:

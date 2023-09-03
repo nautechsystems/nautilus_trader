@@ -40,7 +40,6 @@ INSTRUMENT_PROVIDER = None
 
 @lru_cache(1)
 def get_cached_betfair_client(
-    loop: asyncio.AbstractEventLoop,
     logger: Logger,
     username: Optional[str] = None,
     password: Optional[str] = None,
@@ -54,8 +53,6 @@ def get_cached_betfair_client(
 
     Parameters
     ----------
-    loop : asyncio.AbstractEventLoop
-        The event loop for the client.
     logger : Logger
         The logger for the client.
     username : str, optional
@@ -180,7 +177,6 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             password=config.password,
             app_key=config.app_key,
             logger=logger,
-            loop=loop,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,
@@ -244,7 +240,6 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         market_filter: tuple = config.market_filter or ()
 
         client = get_cached_betfair_client(
-            loop=loop,
             username=config.username,
             password=config.password,
             app_key=config.app_key,

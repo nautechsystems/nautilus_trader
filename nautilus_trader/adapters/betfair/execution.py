@@ -25,6 +25,7 @@ from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
 from betfair_parser.spec.betting.enums import InstructionReportStatus
 from betfair_parser.spec.betting.orders import PlaceOrders
+from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
 from betfair_parser.spec.streaming import stream_decode
@@ -194,7 +195,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
-        if "INVALID_SESSION_INFORMATION" in error.message:
+        if "INVALID_SESSION_INFORMATION" in error.args[0]:
             # Session is invalid, need to reconnect
             self._log.warning("Invalid session error, reconnecting..")
             await self._client.disconnect()
@@ -306,12 +307,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
         client_order_id = command.order.client_order_id
 
-        place_order_params: PlaceOrders.params = order_submit_to_place_order_params(
+        place_orders: PlaceOrders = order_submit_to_place_order_params(
             command=command,
             instrument=instrument,
         )
         try:
-            result: PlaceExecutionReport = await self._client.place_orders(place_order_params)
+            result: PlaceExecutionReport = await self._client.place_orders(place_orders)
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
@@ -390,7 +391,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             return
 
         # Send order to client
-        replace_order_params = order_update_to_replace_order_params(
+        replace_orders: ReplaceOrders = order_update_to_replace_order_params(
             command=command,
             venue_order_id=existing_order.venue_order_id,
             instrument=instrument,
@@ -399,7 +400,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             (command.client_order_id, existing_order.venue_order_id),
         )
         try:
-            result = await self._client.replace_orders(replace_order_params)
+            result = await self._client.replace_orders(replace_orders)
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
@@ -456,15 +457,15 @@ class BetfairExecutionClient(LiveExecutionClient):
         PyCondition.not_none(instrument, "instrument")
 
         # Format
-        cancel_order_params = order_cancel_to_cancel_order_params(
+        cancel_orders = order_cancel_to_cancel_order_params(
             command=command,
             instrument=instrument,
         )
-        self._log.debug(f"cancel_order {cancel_order_params}")
+        self._log.debug(f"cancel_order {cancel_orders}")
 
         # Send to client
         try:
-            result = await self._client.cancel_orders(cancel_order_params)
+            result = await self._client.cancel_orders(cancel_orders)
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
@@ -661,7 +662,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                         )
                     else:
                         self._log.warning(f"Unknown order state: {unmatched_order}")
-                if selection.fullImage:
+                if selection.full_image:
                     self.check_cache_against_order_image(order_change_message)
                     continue
 
