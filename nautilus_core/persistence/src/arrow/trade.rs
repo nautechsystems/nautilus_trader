@@ -27,7 +27,10 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use super::DecodeDataFromRecordBatch;
+use super::{
+    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION,
+};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for TradeTick {
@@ -48,22 +51,28 @@ impl ArrowSchemaProvider for TradeTick {
     }
 }
 
-fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
-    // TODO: Properly handle errors
-    let instrument_id =
-        InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
-    let price_precision = metadata
-        .get("price_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
-    let size_precision = metadata
-        .get("size_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+fn parse_metadata(
+    metadata: &HashMap<String, String>,
+) -> Result<(InstrumentId, u8, u8), EncodingError> {
+    let instrument_id_str = metadata
+        .get(KEY_INSTRUMENT_ID)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
+    let instrument_id = InstrumentId::from_str(instrument_id_str)
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
 
-    (instrument_id, price_precision, size_precision)
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+
+    Ok((instrument_id, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for TradeTick {
@@ -111,25 +120,119 @@ impl EncodeToRecordBatch for TradeTick {
 }
 
 impl DecodeFromRecordBatch for TradeTick {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
         // Parse and validate metadata
-        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let size_values = cols[1].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let aggressor_side_values = cols[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values_values = cols[3].as_any().downcast_ref::<StringArray>().unwrap();
-        let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let price_key = "price";
+        let price_index = 0;
+        let price_type = DataType::Int64;
+        let price_values = cols
+            .get(price_index)
+            .ok_or(EncodingError::MissingColumn(price_key, price_index))?;
+        let price_values = price_values.as_any().downcast_ref::<Int64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                price_key,
+                price_index,
+                price_type,
+                price_values.data_type().clone(),
+            ),
+        )?;
+
+        let size_key = "size";
+        let size_index = 1;
+        let size_type = DataType::UInt64;
+        let size_values = cols
+            .get(size_index)
+            .ok_or(EncodingError::MissingColumn(size_key, size_index))?;
+        let size_values = size_values.as_any().downcast_ref::<UInt64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                size_key,
+                size_index,
+                size_type,
+                size_values.data_type().clone(),
+            ),
+        )?;
+
+        let aggressor_side_key = "aggressor_side";
+        let aggressor_side_index = 2;
+        let aggressor_side_type = DataType::UInt8;
+        let aggressor_side_values =
+            cols.get(aggressor_side_index)
+                .ok_or(EncodingError::MissingColumn(
+                    aggressor_side_key,
+                    aggressor_side_index,
+                ))?;
+        let aggressor_side_values = aggressor_side_values
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                aggressor_side_key,
+                aggressor_side_index,
+                aggressor_side_type,
+                aggressor_side_values.data_type().clone(),
+            ))?;
+
+        let trade_id = "trade_id";
+        let trade_id_index = 3;
+        let trade_id_type = DataType::Utf8;
+        let trade_id_values = cols
+            .get(trade_id_index)
+            .ok_or(EncodingError::MissingColumn(trade_id, trade_id_index))?;
+        let trade_id_values = trade_id_values
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .ok_or(EncodingError::InvalidColumnType(
+                trade_id,
+                trade_id_index,
+                trade_id_type,
+                trade_id_values.data_type().clone(),
+            ))?;
+
+        let ts_event = "ts_event";
+        let ts_event_index = 4;
+        let ts_event_type = DataType::UInt64;
+        let ts_event_values = cols
+            .get(ts_event_index)
+            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
+        let ts_event_values = ts_event_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_event,
+                ts_event_index,
+                ts_event_type,
+                ts_event_values.data_type().clone(),
+            ))?;
+
+        let ts_init = "ts_init";
+        let ts_init_index = 5;
+        let ts_inir_type = DataType::UInt64;
+        let ts_init_values = cols
+            .get(ts_init_index)
+            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
+        let ts_init_values = ts_init_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_init,
+                ts_init_index,
+                ts_inir_type,
+                ts_init_values.data_type().clone(),
+            ))?;
 
         // Construct iterator of values from arrays
         let values = price_values
             .into_iter()
             .zip(size_values)
             .zip(aggressor_side_values)
-            .zip(trade_id_values_values)
+            .zip(trade_id_values)
             .zip(ts_event_values)
             .zip(ts_init_values)
             .map(
@@ -145,7 +248,7 @@ impl DecodeFromRecordBatch for TradeTick {
                 },
             );
 
-        values.collect()
+        Ok(values.collect())
     }
 }
 
@@ -153,9 +256,9 @@ impl DecodeDataFromRecordBatch for TradeTick {
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data> {
-        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch);
-        ticks.into_iter().map(Data::from).collect()
+    ) -> Result<Vec<Data>, EncodingError> {
+        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch)?;
+        Ok(ticks.into_iter().map(Data::from).collect())
     }
 }
 
@@ -288,7 +391,7 @@ mod tests {
         )
         .unwrap();
 
-        let decoded_data = TradeTick::decode_batch(&metadata, record_batch);
+        let decoded_data = TradeTick::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
     }
 }

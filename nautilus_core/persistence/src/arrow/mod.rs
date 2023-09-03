@@ -23,10 +23,20 @@ use std::{
     io::{self, Write},
 };
 
-use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
+use datafusion::arrow::{
+    datatypes::{DataType, Schema},
+    ipc::writer::StreamWriter,
+    record_batch::RecordBatch,
+};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
 use thiserror;
+
+// Define metadata key constants constants
+const KEY_BAR_TYPE: &str = "bar_type";
+const KEY_INSTRUMENT_ID: &str = "instrument_id";
+const KEY_PRICE_PRECISION: &str = "price_precision";
+const KEY_SIZE_PRECISION: &str = "size_precision";
 
 #[repr(C)]
 #[pyclass]
@@ -47,6 +57,20 @@ pub enum DataStreamingError {
     IoError(#[from] io::Error),
     #[error("Python error: {0}")]
     PythonError(#[from] PyErr),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum EncodingError {
+    #[error("Missing metadata key: `{0}`")]
+    MissingMetadata(&'static str),
+    #[error("Missing data column: `{0}` at index {1}")]
+    MissingColumn(&'static str, usize),
+    #[error("Error parsing `{0}`: {1}")]
+    ParseError(&'static str, String),
+    #[error("Invalid column type `{0}` at index {1}: expected {2}, found {3}")]
+    InvalidColumnType(&'static str, usize, DataType, DataType),
+    #[error("Arrow error: {0}")]
+    ArrowError(#[from] datafusion::arrow::error::ArrowError),
 }
 
 pub trait ArrowSchemaProvider {
@@ -74,7 +98,10 @@ pub trait DecodeFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
 {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self>;
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError>;
 }
 
 pub trait DecodeDataFromRecordBatch
@@ -84,7 +111,7 @@ where
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data>;
+    ) -> Result<Vec<Data>, EncodingError>;
 }
 
 pub trait WriteStream {

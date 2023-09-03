@@ -77,7 +77,8 @@ impl BarDataWrangler {
                 Err(e) => return Err(to_pyvalue_err(e)),
             };
 
-            let batch_bars = Bar::decode_batch(&self.metadata, record_batch);
+            let batch_bars =
+                Bar::decode_batch(&self.metadata, record_batch).map_err(to_pyvalue_err)?;
             bars.extend(batch_bars);
         }
 

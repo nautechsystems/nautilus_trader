@@ -25,7 +25,9 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use super::DecodeDataFromRecordBatch;
+use super::{
+    DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
@@ -47,20 +49,26 @@ impl ArrowSchemaProvider for Bar {
     }
 }
 
-fn parse_metadata(metadata: &HashMap<String, String>) -> (BarType, u8, u8) {
-    let bar_type = BarType::from_str(metadata.get("bar_type").unwrap().as_str()).unwrap();
-    let price_precision = metadata
-        .get("price_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
-    let size_precision = metadata
-        .get("size_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(BarType, u8, u8), EncodingError> {
+    let bar_type_str = metadata
+        .get(KEY_BAR_TYPE)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_BAR_TYPE))?;
+    let bar_type = BarType::from_str(bar_type_str)
+        .map_err(|e| EncodingError::ParseError(KEY_BAR_TYPE, e.to_string()))?;
 
-    (bar_type, price_precision, size_precision)
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+
+    Ok((bar_type, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for Bar {
@@ -112,9 +120,12 @@ impl EncodeToRecordBatch for Bar {
 }
 
 impl DecodeFromRecordBatch for Bar {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
         // Parse and validate metadata
-        let (bar_type, price_precision, size_precision) = parse_metadata(metadata);
+        let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
 
         // Extract field value arrays
         let cols = record_batch.columns();
@@ -148,7 +159,7 @@ impl DecodeFromRecordBatch for Bar {
                 },
             );
 
-        values.collect()
+        Ok(values.collect())
     }
 }
 
@@ -156,9 +167,9 @@ impl DecodeDataFromRecordBatch for Bar {
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data> {
-        let bars: Vec<Self> = Self::decode_batch(metadata, record_batch);
-        bars.into_iter().map(Data::from).collect()
+    ) -> Result<Vec<Data>, EncodingError> {
+        let bars: Vec<Self> = Self::decode_batch(metadata, record_batch)?;
+        Ok(bars.into_iter().map(Data::from).collect())
     }
 }
 
@@ -295,7 +306,7 @@ mod tests {
         )
         .unwrap();
 
-        let decoded_data = Bar::decode_batch(&metadata, record_batch);
+        let decoded_data = Bar::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
     }
 }
