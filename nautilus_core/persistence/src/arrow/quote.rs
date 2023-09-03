@@ -57,7 +57,7 @@ fn parse_metadata(
         .get(KEY_INSTRUMENT_ID)
         .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
     let instrument_id = InstrumentId::from_str(instrument_id_str)
-        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
 
     let price_precision = metadata
         .get(KEY_PRICE_PRECISION)
