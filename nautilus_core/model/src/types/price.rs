@@ -579,6 +579,7 @@ impl Price {
     fn __repr__(&self) -> String {
         format!("Price('{self:?}')")
     }
+
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
         Ok(Price::zero(0)) // Safe default
