@@ -19,6 +19,7 @@ import traceback
 from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
@@ -39,15 +40,12 @@ from nautilus_trader.live.node import TradingNode
 
 async def main(market_id: str):
     # Connect to Betfair client early to load instruments and account currency
-    loop = asyncio.get_event_loop()
     logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
         app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
-        cert_dir=None,  # Pass here or will source from the `BETFAIR_CERT_DIR` env var
         logger=logger,
-        loop=loop,
     )
     await client.connect()
 
@@ -63,12 +61,12 @@ async def main(market_id: str):
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
     # Determine account currency - used in execution client
-    # account = await client.get_account_details()
+    account = await client.get_account_details()
 
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        logging=LoggingConfig(log_level="INFO"),
+        logging=LoggingConfig(log_level="DEBUG"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
@@ -81,21 +79,22 @@ async def main(market_id: str):
         },
         exec_clients={
             # # UNCOMMENT TO SEND ORDERS
-            # "BETFAIR": BetfairExecClientConfig(
-            #     base_currency=account["currencyCode"],
-            #     # "username": "YOUR_BETFAIR_USERNAME",
-            #     # "password": "YOUR_BETFAIR_PASSWORD",
-            #     # "app_key": "YOUR_BETFAIR_APP_KEY",
-            #     # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
-            #     market_filter=market_filter,
-            # ),
+            "BETFAIR": BetfairExecClientConfig(
+                base_currency=account.currency_code,
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+                market_filter=market_filter,
+            ),
         },
     )
     strategies = [
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id.value,
-                max_trade_size=Decimal(5),
+                max_trade_size=Decimal(10),
+                trigger_min_size=10,
                 order_id_tag=instrument.selection_id,
                 subscribe_ticker=True,
             ),
