@@ -128,23 +128,113 @@ impl DecodeFromRecordBatch for QuoteTick {
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let bid_price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_size_values = cols[2].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_values = cols[3].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let bid_price_key = "bid_price";
+        let bid_price_index = 0;
+        let bid_price_type = DataType::Int64;
+        let bid_price_values = cols
+            .get(bid_price_index)
+            .ok_or(EncodingError::MissingColumn(bid_price_key, bid_price_index))?;
+        let bid_price_values = bid_price_values
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                bid_price_key,
+                bid_price_index,
+                bid_price_type,
+                bid_price_values.data_type().clone(),
+            ))?;
+
+        let ask_price_key = "ask_price";
+        let ask_price_index = 1;
+        let ask_price_type = DataType::Int64;
+        let ask_price_values = cols
+            .get(ask_price_index)
+            .ok_or(EncodingError::MissingColumn(ask_price_key, ask_price_index))?;
+        let ask_price_values = ask_price_values
+            .as_any()
+            .downcast_ref::<Int64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ask_price_key,
+                ask_price_index,
+                ask_price_type,
+                ask_price_values.data_type().clone(),
+            ))?;
+
+        let bid_size_key = "bid_size";
+        let bid_size_index = 2;
+        let bid_size_type = DataType::UInt64;
+        let bid_size_values = cols
+            .get(bid_size_index)
+            .ok_or(EncodingError::MissingColumn(bid_size_key, bid_size_index))?;
+        let bid_size_values = bid_size_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                bid_size_key,
+                bid_size_index,
+                bid_size_type,
+                bid_size_values.data_type().clone(),
+            ))?;
+
+        let ask_size_key = "ask_size";
+        let ask_size_index = 3;
+        let ask_size_type = DataType::UInt64;
+        let ask_size_values = cols
+            .get(ask_size_index)
+            .ok_or(EncodingError::MissingColumn(ask_size_key, ask_size_index))?;
+        let ask_size_values = ask_size_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ask_size_key,
+                ask_size_index,
+                ask_size_type,
+                ask_size_values.data_type().clone(),
+            ))?;
+
+        let ts_event = "ts_event";
+        let ts_event_index = 4;
+        let ts_event_type = DataType::UInt64;
+        let ts_event_values = cols
+            .get(ts_event_index)
+            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
+        let ts_event_values = ts_event_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_event,
+                ts_event_index,
+                ts_event_type,
+                ts_event_values.data_type().clone(),
+            ))?;
+
+        let ts_init = "ts_init";
+        let ts_init_index = 5;
+        let ts_inir_type = DataType::UInt64;
+        let ts_init_values = cols
+            .get(ts_init_index)
+            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
+        let ts_init_values = ts_init_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_init,
+                ts_init_index,
+                ts_inir_type,
+                ts_init_values.data_type().clone(),
+            ))?;
 
         // Construct iterator of values from arrays
         let values = bid_price_values
             .into_iter()
             .zip(ask_price_values.iter())
-            .zip(ask_size_values.iter())
             .zip(bid_size_values.iter())
+            .zip(ask_size_values.iter())
             .zip(ts_event_values.iter())
             .zip(ts_init_values.iter())
             .map(
-                |(((((bid_price, ask_price), ask_size), bid_size), ts_event), ts_init)| Self {
+                |(((((bid_price, ask_price), bid_size), ask_size), ts_event), ts_init)| Self {
                     instrument_id,
                     bid_price: Price::from_raw(bid_price.unwrap(), price_precision),
                     ask_price: Price::from_raw(ask_price.unwrap(), price_precision),
