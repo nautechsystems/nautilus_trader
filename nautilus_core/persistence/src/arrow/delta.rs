@@ -144,15 +144,145 @@ impl DecodeFromRecordBatch for OrderBookDelta {
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let action_values = cols[0].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let side_values = cols[1].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let price_values = cols[2].as_any().downcast_ref::<Int64Array>().unwrap();
-        let size_values = cols[3].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let order_id_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let flags_values = cols[5].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let sequence_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = cols[7].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[8].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let action_key = "action";
+        let action_index = 0;
+        let action_type = DataType::UInt8;
+        let action_values = cols
+            .get(action_index)
+            .ok_or(EncodingError::MissingColumn(action_key, action_index))?;
+        let action_values = action_values.as_any().downcast_ref::<UInt8Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                action_key,
+                action_index,
+                action_type,
+                action_values.data_type().clone(),
+            ),
+        )?;
+
+        let side_key = "side";
+        let side_index = 1;
+        let side_type = DataType::UInt8;
+        let side_values = cols
+            .get(side_index)
+            .ok_or(EncodingError::MissingColumn(side_key, side_index))?;
+        let side_values = side_values.as_any().downcast_ref::<UInt8Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                side_key,
+                side_index,
+                side_type,
+                side_values.data_type().clone(),
+            ),
+        )?;
+
+        let price_key = "price";
+        let price_index = 2;
+        let price_type = DataType::Int64;
+        let size_values = cols
+            .get(price_index)
+            .ok_or(EncodingError::MissingColumn(price_key, price_index))?;
+        let price_values = size_values.as_any().downcast_ref::<Int64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                price_key,
+                price_index,
+                price_type,
+                size_values.data_type().clone(),
+            ),
+        )?;
+
+        let size_key = "size";
+        let size_index = 3;
+        let size_type = DataType::UInt8;
+        let size_values = cols
+            .get(size_index)
+            .ok_or(EncodingError::MissingColumn(size_key, size_index))?;
+        let size_values = size_values.as_any().downcast_ref::<UInt64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                size_key,
+                size_index,
+                size_type,
+                size_values.data_type().clone(),
+            ),
+        )?;
+
+        let order_id_key = "order_id";
+        let order_id_index = 4;
+        let order_id_type = DataType::UInt64;
+        let order_id_values = cols
+            .get(order_id_index)
+            .ok_or(EncodingError::MissingColumn(order_id_key, order_id_index))?;
+        let order_id_values = order_id_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                order_id_key,
+                order_id_index,
+                order_id_type,
+                order_id_values.data_type().clone(),
+            ))?;
+
+        let flags_key = "flags";
+        let flags_index = 5;
+        let flags_type = DataType::UInt8;
+        let flags_values = cols
+            .get(flags_index)
+            .ok_or(EncodingError::MissingColumn(flags_key, flags_index))?;
+        let flags_values = flags_values.as_any().downcast_ref::<UInt8Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                flags_key,
+                flags_index,
+                flags_type,
+                flags_values.data_type().clone(),
+            ),
+        )?;
+
+        let sequence_key = "sequence";
+        let sequence_index = 6;
+        let sequence_type = DataType::UInt64;
+        let sequence_values = cols
+            .get(sequence_index)
+            .ok_or(EncodingError::MissingColumn(sequence_key, sequence_index))?;
+        let sequence_values = sequence_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                sequence_key,
+                sequence_index,
+                sequence_type,
+                sequence_values.data_type().clone(),
+            ))?;
+
+        let ts_event = "ts_event";
+        let ts_event_index = 7;
+        let ts_event_type = DataType::UInt64;
+        let ts_event_values = cols
+            .get(ts_event_index)
+            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
+        let ts_event_values = ts_event_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_event,
+                ts_event_index,
+                ts_event_type,
+                ts_event_values.data_type().clone(),
+            ))?;
+
+        let ts_init = "ts_init";
+        let ts_init_index = 8;
+        let ts_inir_type = DataType::UInt64;
+        let ts_init_values = cols
+            .get(ts_init_index)
+            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
+        let ts_init_values = ts_init_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_init,
+                ts_init_index,
+                ts_inir_type,
+                ts_init_values.data_type().clone(),
+            ))?;
 
         // Construct iterator of values from arrays
         let values = action_values

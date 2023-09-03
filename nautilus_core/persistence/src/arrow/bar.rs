@@ -129,13 +129,113 @@ impl DecodeFromRecordBatch for Bar {
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let open_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let high_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let low_values = cols[2].as_any().downcast_ref::<Int64Array>().unwrap();
-        let close_values = cols[3].as_any().downcast_ref::<Int64Array>().unwrap();
-        let volume_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
+
+        let open_key = "open";
+        let open_index = 0;
+        let open_type = DataType::Int64;
+        let open_values = cols
+            .get(open_index)
+            .ok_or(EncodingError::MissingColumn(open_key, open_index))?;
+        let open_values = open_values.as_any().downcast_ref::<Int64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                open_key,
+                open_index,
+                open_type,
+                open_values.data_type().clone(),
+            ),
+        )?;
+
+        let high_key = "high";
+        let high_index = 1;
+        let high_type = DataType::Int64;
+        let high_values = cols
+            .get(high_index)
+            .ok_or(EncodingError::MissingColumn(high_key, high_index))?;
+        let high_values = high_values.as_any().downcast_ref::<Int64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                high_key,
+                high_index,
+                high_type,
+                high_values.data_type().clone(),
+            ),
+        )?;
+
+        let low_key = "low";
+        let low_index = 2;
+        let low_type = DataType::Int64;
+        let low_values = cols
+            .get(low_index)
+            .ok_or(EncodingError::MissingColumn(low_key, low_index))?;
+        let low_values = low_values.as_any().downcast_ref::<Int64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                low_key,
+                low_index,
+                low_type,
+                low_values.data_type().clone(),
+            ),
+        )?;
+
+        let close_key = "close";
+        let close_index = 3;
+        let close_type = DataType::Int64;
+        let close_values = cols
+            .get(close_index)
+            .ok_or(EncodingError::MissingColumn(close_key, close_index))?;
+        let close_values = close_values.as_any().downcast_ref::<Int64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                close_key,
+                close_index,
+                close_type,
+                close_values.data_type().clone(),
+            ),
+        )?;
+
+        let volume_key = "volume";
+        let volume_index = 4;
+        let volume_type = DataType::UInt64;
+        let volume_values = cols
+            .get(volume_index)
+            .ok_or(EncodingError::MissingColumn(volume_key, volume_index))?;
+        let volume_values = volume_values.as_any().downcast_ref::<UInt64Array>().ok_or(
+            EncodingError::InvalidColumnType(
+                volume_key,
+                volume_index,
+                volume_type,
+                volume_values.data_type().clone(),
+            ),
+        )?;
+
+        let ts_event = "ts_event";
+        let ts_event_index = 5;
+        let ts_event_type = DataType::UInt64;
+        let ts_event_values = cols
+            .get(ts_event_index)
+            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
+        let ts_event_values = ts_event_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_event,
+                ts_event_index,
+                ts_event_type,
+                ts_event_values.data_type().clone(),
+            ))?;
+
+        let ts_init = "ts_init";
+        let ts_init_index = 6;
+        let ts_inir_type = DataType::UInt64;
+        let ts_init_values = cols
+            .get(ts_init_index)
+            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
+        let ts_init_values = ts_init_values
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .ok_or(EncodingError::InvalidColumnType(
+                ts_init,
+                ts_init_index,
+                ts_inir_type,
+                ts_init_values.data_type().clone(),
+            ))?;
 
         // Construct iterator of values from arrays
         let values = open_values
