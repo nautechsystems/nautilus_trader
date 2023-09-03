@@ -44,10 +44,8 @@ cdef class UUID4:
 
     def __init__(self, str value = None):
         if value is None:
-            # Create a new UUID4 from Rust
-            self._mem = uuid4_new()  # `UUID4_t` owned from Rust
+            self._mem = uuid4_new()
         else:
-            # `value` borrowed by Rust, `UUID4_t` owned from Rust
             self._mem = uuid4_from_cstr(pystr_to_cstr(value))
 
     def __getstate__(self):

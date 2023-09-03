@@ -21,15 +21,24 @@ use std::{
     str::FromStr,
 };
 
-use pyo3::prelude::*;
+use pyo3::{
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyBytes, PyTuple},
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use crate::python::to_pyvalue_err;
 
+/// Represents a pseudo-random UUID (universally unique identifier)
+/// version 4 based on a 128-bit label as specified in RFC 4122.
 #[repr(C)]
 #[derive(Copy, Clone, Hash, PartialEq, Eq, Debug)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
+)]
 pub struct UUID4 {
     value: [u8; 37],
 }
@@ -112,8 +121,60 @@ impl<'de> Deserialize<'de> for UUID4 {
 #[pymethods]
 impl UUID4 {
     #[new]
-    fn py_new() -> Self {
-        Self::new()
+    fn py_new(value: Option<&str>) -> PyResult<Self> {
+        match value {
+            Some(val) => Self::from_str(val).map_err(to_pyvalue_err),
+            None => Ok(Self::new()),
+        }
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let bytes: &PyBytes = state.extract(py)?;
+        let slice = bytes.as_bytes();
+
+        if slice.len() != 37 {
+            panic!("Invalid state for deserialzing, incorrect bytes length")
+        }
+
+        self.value.copy_from_slice(slice);
+        Ok(())
+    }
+
+    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new(_py, &self.value).to_object(_py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("UUID4('{self}')")
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(Self::new()) // Safe default
     }
 
     #[getter]
