@@ -34,9 +34,9 @@ async fn test_quote_ticks() {
     let ticks: Vec<Data> = query_result.flatten().collect();
 
     if let Data::Quote(q) = &ticks[0] {
-        assert_eq!("EUR/USD.SIM", q.instrument_id.to_string())
+        assert_eq!("EUR/USD.SIM", q.instrument_id.to_string());
     } else {
-        assert!(false)
+        assert!(false);
     }
 
     assert_eq!(ticks.len(), length);

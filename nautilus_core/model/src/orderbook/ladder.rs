@@ -227,7 +227,7 @@ mod tests {
 
     #[rstest]
     fn test_book_price_bid_sorting() {
-        let mut bid_prices = vec![
+        let mut bid_prices = [
             BookPrice::new(Price::from("2.0"), OrderSide::Buy),
             BookPrice::new(Price::from("4.0"), OrderSide::Buy),
             BookPrice::new(Price::from("1.0"), OrderSide::Buy),
@@ -239,7 +239,7 @@ mod tests {
 
     #[rstest]
     fn test_book_price_ask_sorting() {
-        let mut ask_prices = vec![
+        let mut ask_prices = [
             BookPrice::new(Price::from("2.0"), OrderSide::Sell),
             BookPrice::new(Price::from("4.0"), OrderSide::Sell),
             BookPrice::new(Price::from("1.0"), OrderSide::Sell),

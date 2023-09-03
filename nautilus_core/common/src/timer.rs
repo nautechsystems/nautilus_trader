@@ -46,7 +46,7 @@ impl TimeEvent {
     pub fn new(name: String, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         check_valid_string(&name, "`TimeEvent` name").unwrap();
 
-        TimeEvent {
+        Self {
             name: Ustr::from(&name),
             event_id,
             ts_event,
@@ -139,7 +139,7 @@ impl TestTimer {
     ) -> Self {
         check_valid_string(&name, "`TestTimer` name").unwrap();
 
-        TestTimer {
+        Self {
             name,
             interval_ns,
             start_time_ns,
@@ -149,6 +149,7 @@ impl TestTimer {
         }
     }
 
+    #[must_use]
     pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
             name: Ustr::from(&self.name),
@@ -159,7 +160,7 @@ impl TestTimer {
     }
 
     /// Advance the test timer forward to the given time, generating a sequence
-    /// of events. A [TimeEvent] is appended for each time a next event is
+    /// of events. A [`TimeEvent`] is appended for each time a next event is
     /// <= the given `to_time_ns`.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         let advances =
@@ -233,7 +234,7 @@ mod tests {
         let _: Vec<TimeEvent> = timer.advance(3).collect();
         assert_eq!(timer.advance(4).count(), 0);
         assert_eq!(timer.next_time_ns, 5);
-        assert!(!timer.is_expired)
+        assert!(!timer.is_expired);
     }
 
     #[rstest]

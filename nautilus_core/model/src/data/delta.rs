@@ -317,9 +317,9 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
         OrderBookDelta::new(
-            instrument_id.clone(),
+            instrument_id,
             action,
             order,
             flags,
@@ -342,12 +342,12 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
 
         let delta = OrderBookDelta::new(
-            instrument_id.clone(),
+            instrument_id,
             action,
-            order.clone(),
+            order,
             flags,
             sequence,
             ts_event,

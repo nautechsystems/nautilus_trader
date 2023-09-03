@@ -769,7 +769,7 @@ mod tests {
         assert_eq!(order.avg_px(), Some(1.0));
         assert!(!order.is_open());
         assert!(order.is_closed());
-        assert_eq!(order.commission(&*USD), None);
+        assert_eq!(order.commission(&USD), None);
         assert_eq!(order.commissions(), HashMap::new());
     }
 }

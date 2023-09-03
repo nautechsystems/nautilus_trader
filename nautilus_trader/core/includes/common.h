@@ -290,7 +290,7 @@ void test_clock_drop(struct TestClock_API clock);
 
 /**
  * # Safety
- * - Assumes `callback_ptr` is a valid PyCallable pointer.
+ * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
  */
 void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
 
@@ -312,7 +312,7 @@ uintptr_t test_clock_timer_count(struct TestClock_API *clock);
  * # Safety
  *
  * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid PyCallable pointer.
+ * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
  */
 void test_clock_set_time_alert_ns(struct TestClock_API *clock,
                                   const char *name_ptr,
@@ -323,7 +323,7 @@ void test_clock_set_time_alert_ns(struct TestClock_API *clock,
  * # Safety
  *
  * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid PyCallable pointer.
+ * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
  */
 void test_clock_set_timer_ns(struct TestClock_API *clock,
                              const char *name_ptr,

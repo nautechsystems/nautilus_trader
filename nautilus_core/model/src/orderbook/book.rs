@@ -484,7 +484,7 @@ mod tests {
     #[rstest]
     fn test_orderbook_creation() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let book = OrderBook::new(instrument_id.clone(), BookType::L2_MBP);
+        let book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
         assert_eq!(book.instrument_id, instrument_id);
         assert_eq!(book.book_type, BookType::L2_MBP);
@@ -515,8 +515,8 @@ mod tests {
         assert_eq!(book.best_ask_price(), None);
         assert_eq!(book.best_bid_size(), None);
         assert_eq!(book.best_ask_size(), None);
-        assert_eq!(book.has_bid(), false);
-        assert_eq!(book.has_ask(), false);
+        assert!(!book.has_bid());
+        assert!(!book.has_ask());
     }
 
     #[rstest]
@@ -532,7 +532,7 @@ mod tests {
 
         assert_eq!(book.best_bid_price(), Some(Price::from("1.000")));
         assert_eq!(book.best_bid_size(), Some(Quantity::from("1.0")));
-        assert_eq!(book.has_bid(), true);
+        assert!(book.has_bid());
     }
 
     #[rstest]
@@ -548,7 +548,7 @@ mod tests {
 
         assert_eq!(book.best_ask_price(), Some(Price::from("2.000")));
         assert_eq!(book.best_ask_size(), Some(Quantity::from("2.0")));
-        assert_eq!(book.has_ask(), true);
+        assert!(book.has_ask());
     }
     #[rstest]
     fn test_spread_with_no_bids_or_asks() {
@@ -571,8 +571,8 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(bid1.clone(), 100, 1);
-        book.add(ask1.clone(), 200, 2);
+        book.add(bid1, 100, 1);
+        book.add(ask1, 200, 2);
 
         assert_eq!(book.spread(), Some(1.0));
     }
@@ -600,8 +600,8 @@ mod tests {
             Quantity::from("2.0"),
             2,
         );
-        book.add(bid1.clone(), 100, 1);
-        book.add(ask1.clone(), 200, 2);
+        book.add(bid1, 100, 1);
+        book.add(ask1, 200, 2);
 
         assert_eq!(book.midpoint(), Some(1.5));
     }
@@ -644,10 +644,10 @@ mod tests {
             Quantity::from("2.0"),
             0, // order_id not applicable
         );
-        book.add(bid1.clone(), 0, 1);
-        book.add(bid2.clone(), 0, 1);
-        book.add(ask1.clone(), 0, 1);
-        book.add(ask2.clone(), 0, 1);
+        book.add(bid1, 0, 1);
+        book.add(bid2, 0, 1);
+        book.add(ask1, 0, 1);
+        book.add(ask2, 0, 1);
 
         let qty = Quantity::from("1.5");
 
@@ -664,7 +664,7 @@ mod tests {
     #[rstest]
     fn test_update_quote_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id, BookType::L1_TBBO);
         let tick = QuoteTick::new(
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             Price::from("5000.000"),
@@ -690,7 +690,7 @@ mod tests {
     #[rstest]
     fn test_update_trade_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBook::new(instrument_id.clone(), BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id, BookType::L1_TBBO);
 
         let price = Price::from("15000.000");
         let size = Quantity::from("10.00000000");

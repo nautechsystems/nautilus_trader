@@ -43,7 +43,7 @@ fn single_stream_bench(c: &mut Criterion) {
                 assert_eq!(count, 9_689_614);
             },
             BatchSize::SmallInput,
-        )
+        );
     });
 }
 
@@ -92,7 +92,7 @@ fn multi_stream_bench(c: &mut Criterion) {
                 assert_eq!(count, 72_536_038);
             },
             BatchSize::SmallInput,
-        )
+        );
     });
 }
 

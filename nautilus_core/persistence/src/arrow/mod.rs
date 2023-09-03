@@ -76,6 +76,8 @@ pub enum EncodingError {
 
 pub trait ArrowSchemaProvider {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
+
+    #[must_use]
     fn get_schema_map() -> HashMap<String, String> {
         let schema = Self::get_schema(None);
         let mut map = HashMap::new();

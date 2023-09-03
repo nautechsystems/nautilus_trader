@@ -151,7 +151,7 @@ impl SocketClient {
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
                     match guard.write_all(&message).await {
-                        Ok(_) => debug!("Sent heartbeat"),
+                        Ok(()) => debug!("Sent heartbeat"),
                         Err(err) => error!("Failed to send heartbeat: {}", err),
                     }
                 }

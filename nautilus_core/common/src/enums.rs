@@ -172,11 +172,11 @@ pub enum LogLevel {
 impl std::fmt::Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let display = match self {
-            LogLevel::Debug => "DBG",
-            LogLevel::Info => "INF",
-            LogLevel::Warning => "WRN",
-            LogLevel::Error => "ERR",
-            LogLevel::Critical => "CRT",
+            Self::Debug => "DBG",
+            Self::Info => "INF",
+            Self::Warning => "WRN",
+            Self::Error => "ERR",
+            Self::Critical => "CRT",
         };
         write!(f, "{display}")
     }

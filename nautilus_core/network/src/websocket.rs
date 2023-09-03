@@ -102,7 +102,7 @@ impl WebSocketClientInner {
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
                     match guard.send(Message::Ping(vec![])).await {
-                        Ok(_) => debug!("Sent heartbeat"),
+                        Ok(()) => debug!("Sent heartbeat"),
                         Err(err) => error!("Failed to send heartbeat: {}", err),
                     }
                 }
@@ -290,7 +290,7 @@ impl WebSocketClient {
     pub async fn send_close_message(&self) {
         let mut guard = self.writer.lock().await;
         match guard.send(Message::Close(None)).await {
-            Ok(_) => debug!("Sent close message"),
+            Ok(()) => debug!("Sent close message"),
             Err(err) => error!("Failed to send message: {}", err),
         }
     }
@@ -313,7 +313,7 @@ impl WebSocketClient {
 
                 match (disconnect_flag, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
-                        Ok(_) => {
+                        Ok(()) => {
                             debug!("Reconnected successfully");
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
