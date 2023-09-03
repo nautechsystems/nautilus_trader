@@ -320,6 +320,11 @@ impl Price {
         Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
     }
 
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(Price::zero(0)) // Safe default
+    }
+
     fn __add__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
         if other.as_ref(py).is_instance_of::<PyFloat>() {
             let other_float: f64 = other.extract(py)?;
@@ -578,11 +583,6 @@ impl Price {
 
     fn __repr__(&self) -> String {
         format!("Price('{self:?}')")
-    }
-
-    #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Price::zero(0)) // Safe default
     }
 
     #[getter]
