@@ -22,18 +22,29 @@ use std::{
 use anyhow::Result;
 use nautilus_core::{
     correctness::check_valid_string,
+    python::to_pyvalue_err,
     string::{cstr_to_string, str_to_cstr},
 };
-use pyo3::prelude::*;
+use pyo3::{
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyLong, PyString, PyTuple},
+};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
 use super::fixed::check_fixed_precision;
-use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
+use crate::{
+    currencies::{AUD, CURRENCY_MAP},
+    enums::CurrencyType,
+};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Currency {
     pub code: Ustr,
     pub precision: u8,
@@ -111,6 +122,106 @@ impl<'de> Deserialize<'de> for Currency {
     {
         let currency_str: &str = Deserialize::deserialize(deserializer)?;
         Currency::from_str(currency_str).map_err(serde::de::Error::custom)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
+#[pymethods]
+impl Currency {
+    #[new]
+    fn py_new(
+        code: &str,
+        precision: u8,
+        iso4217: u16,
+        name: &str,
+        currency_type: CurrencyType,
+    ) -> PyResult<Self> {
+        Self::new(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let tuple: (&PyString, &PyLong, &PyLong, &PyString, &PyString) = state.extract(py)?;
+        self.code = Ustr::from(tuple.0.extract()?);
+        self.precision = tuple.1.extract::<u8>()?;
+        self.iso4217 = tuple.2.extract::<u16>()?;
+        self.name = Ustr::from(tuple.3.extract()?);
+        self.currency_type = tuple.4.extract()?;
+        Ok(())
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok((
+            self.code.to_string(),
+            self.precision,
+            self.iso4217,
+            self.name.to_string(),
+            self.currency_type.to_string(),
+        )
+            .to_object(py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(*AUD) // Safe default
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        self.code.precomputed_hash() as isize
+    }
+
+    fn __str__(&self) -> &'static str {
+        self.code.as_str()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{}('{:?}')", stringify!(Currency), self)
+    }
+
+    #[getter]
+    #[pyo3(name = "code")]
+    fn py_code(&self) -> &'static str {
+        self.code.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "precision")]
+    fn py_precision(&self) -> u8 {
+        self.precision
+    }
+
+    #[getter]
+    #[pyo3(name = "iso4217")]
+    fn py_iso4217(&self) -> u16 {
+        self.iso4217
+    }
+
+    #[pyo3(name = "name")]
+    #[getter]
+    fn py_name(&self) -> &'static str {
+        self.name.as_str()
+    }
+
+    #[pyo3(name = "currency_type")]
+    #[getter]
+    fn py_currency_type(&self) -> CurrencyType {
+        self.currency_type
     }
 }
 
