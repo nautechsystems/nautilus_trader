@@ -10,6 +10,7 @@ None
 
 ### Fixes
 - Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
+- Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
 
 ---
 

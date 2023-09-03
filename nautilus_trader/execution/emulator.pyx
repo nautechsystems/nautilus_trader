@@ -215,7 +215,8 @@ cdef class OrderEmulator(Actor):
                 if parent_order is None:
                     self._log.error("Cannot handle order: parent {order.parent_order_id!r} not found.")
                     continue
-                if parent_order.is_closed_c():
+                position_id = parent_order.position_id
+                if parent_order.is_closed_c() and (position_id is None or self.cache.is_position_closed(position_id)):
                     self._manager.cancel_order(order=order)
                     continue  # Parent already closed
                 if parent_order.contingency_type == ContingencyType.OTO and parent_order.is_emulated_c():
