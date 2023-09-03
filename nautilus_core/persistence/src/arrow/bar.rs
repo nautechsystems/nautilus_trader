@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, UInt64Array},
+    array::{Int64Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -26,7 +26,8 @@ use nautilus_model::{
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -130,136 +131,39 @@ impl DecodeFromRecordBatch for Bar {
         // Extract field value arrays
         let cols = record_batch.columns();
 
-        let open_key = "open";
-        let open_index = 0;
-        let open_type = DataType::Int64;
-        let open_values = cols
-            .get(open_index)
-            .ok_or(EncodingError::MissingColumn(open_key, open_index))?;
-        let open_values = open_values.as_any().downcast_ref::<Int64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                open_key,
-                open_index,
-                open_type,
-                open_values.data_type().clone(),
-            ),
-        )?;
+        let open_values = extract_column::<Int64Array>(cols, "open", 0, DataType::Int64)?;
+        let high_values = extract_column::<Int64Array>(cols, "high", 1, DataType::Int64)?;
+        let low_values = extract_column::<Int64Array>(cols, "low", 2, DataType::Int64)?;
+        let close_values = extract_column::<Int64Array>(cols, "close", 3, DataType::Int64)?;
+        let volume_values = extract_column::<UInt64Array>(cols, "volume", 4, DataType::UInt64)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 6, DataType::UInt64)?;
 
-        let high_key = "high";
-        let high_index = 1;
-        let high_type = DataType::Int64;
-        let high_values = cols
-            .get(high_index)
-            .ok_or(EncodingError::MissingColumn(high_key, high_index))?;
-        let high_values = high_values.as_any().downcast_ref::<Int64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                high_key,
-                high_index,
-                high_type,
-                high_values.data_type().clone(),
-            ),
-        )?;
+        // Map record batch rows to vector of objects
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let open = Price::from_raw(open_values.value(i), price_precision);
+                let high = Price::from_raw(high_values.value(i), price_precision);
+                let low = Price::from_raw(low_values.value(i), price_precision);
+                let close = Price::from_raw(close_values.value(i), price_precision);
+                let volume = Quantity::from_raw(volume_values.value(i), size_precision);
+                let ts_event = ts_event_values.value(i);
+                let ts_init = ts_init_values.value(i);
 
-        let low_key = "low";
-        let low_index = 2;
-        let low_type = DataType::Int64;
-        let low_values = cols
-            .get(low_index)
-            .ok_or(EncodingError::MissingColumn(low_key, low_index))?;
-        let low_values = low_values.as_any().downcast_ref::<Int64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                low_key,
-                low_index,
-                low_type,
-                low_values.data_type().clone(),
-            ),
-        )?;
-
-        let close_key = "close";
-        let close_index = 3;
-        let close_type = DataType::Int64;
-        let close_values = cols
-            .get(close_index)
-            .ok_or(EncodingError::MissingColumn(close_key, close_index))?;
-        let close_values = close_values.as_any().downcast_ref::<Int64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                close_key,
-                close_index,
-                close_type,
-                close_values.data_type().clone(),
-            ),
-        )?;
-
-        let volume_key = "volume";
-        let volume_index = 4;
-        let volume_type = DataType::UInt64;
-        let volume_values = cols
-            .get(volume_index)
-            .ok_or(EncodingError::MissingColumn(volume_key, volume_index))?;
-        let volume_values = volume_values.as_any().downcast_ref::<UInt64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                volume_key,
-                volume_index,
-                volume_type,
-                volume_values.data_type().clone(),
-            ),
-        )?;
-
-        let ts_event = "ts_event";
-        let ts_event_index = 5;
-        let ts_event_type = DataType::UInt64;
-        let ts_event_values = cols
-            .get(ts_event_index)
-            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
-        let ts_event_values = ts_event_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_event,
-                ts_event_index,
-                ts_event_type,
-                ts_event_values.data_type().clone(),
-            ))?;
-
-        let ts_init = "ts_init";
-        let ts_init_index = 6;
-        let ts_inir_type = DataType::UInt64;
-        let ts_init_values = cols
-            .get(ts_init_index)
-            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
-        let ts_init_values = ts_init_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_init,
-                ts_init_index,
-                ts_inir_type,
-                ts_init_values.data_type().clone(),
-            ))?;
-
-        // Construct iterator of values from arrays
-        let values = open_values
-            .into_iter()
-            .zip(high_values.iter())
-            .zip(low_values.iter())
-            .zip(close_values.iter())
-            .zip(volume_values.iter())
-            .zip(ts_event_values.iter())
-            .zip(ts_init_values.iter())
-            .map(
-                |((((((open, high), low), close), volume), ts_event), ts_init)| Self {
+                Ok(Self {
                     bar_type,
-                    open: Price::from_raw(open.unwrap(), price_precision),
-                    high: Price::from_raw(high.unwrap(), price_precision),
-                    low: Price::from_raw(low.unwrap(), price_precision),
-                    close: Price::from_raw(close.unwrap(), price_precision),
-                    volume: Quantity::from_raw(volume.unwrap(), size_precision),
-                    ts_event: ts_event.unwrap(),
-                    ts_init: ts_init.unwrap(),
-                },
-            );
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    ts_event,
+                    ts_init,
+                })
+            })
+            .collect();
 
-        Ok(values.collect())
+        result
     }
 }
 

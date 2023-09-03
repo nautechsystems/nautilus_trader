@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, UInt64Array},
+    array::{Int64Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -27,8 +27,8 @@ use nautilus_model::{
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION,
+    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -129,123 +129,36 @@ impl DecodeFromRecordBatch for QuoteTick {
         // Extract field value arrays
         let cols = record_batch.columns();
 
-        let bid_price_key = "bid_price";
-        let bid_price_index = 0;
-        let bid_price_type = DataType::Int64;
-        let bid_price_values = cols
-            .get(bid_price_index)
-            .ok_or(EncodingError::MissingColumn(bid_price_key, bid_price_index))?;
-        let bid_price_values = bid_price_values
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                bid_price_key,
-                bid_price_index,
-                bid_price_type,
-                bid_price_values.data_type().clone(),
-            ))?;
+        let bid_price_values = extract_column::<Int64Array>(cols, "bid_price", 0, DataType::Int64)?;
+        let ask_price_values = extract_column::<Int64Array>(cols, "ask_price", 1, DataType::Int64)?;
+        let bid_size_values = extract_column::<UInt64Array>(cols, "bid_size", 2, DataType::UInt64)?;
+        let ask_size_values = extract_column::<UInt64Array>(cols, "ask_size", 3, DataType::UInt64)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        let ask_price_key = "ask_price";
-        let ask_price_index = 1;
-        let ask_price_type = DataType::Int64;
-        let ask_price_values = cols
-            .get(ask_price_index)
-            .ok_or(EncodingError::MissingColumn(ask_price_key, ask_price_index))?;
-        let ask_price_values = ask_price_values
-            .as_any()
-            .downcast_ref::<Int64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ask_price_key,
-                ask_price_index,
-                ask_price_type,
-                ask_price_values.data_type().clone(),
-            ))?;
+        // Map record batch rows to vector of objects
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let bid_price = Price::from_raw(bid_price_values.value(i), price_precision);
+                let ask_price = Price::from_raw(ask_price_values.value(i), price_precision);
+                let bid_size = Quantity::from_raw(bid_size_values.value(i), size_precision);
+                let ask_size = Quantity::from_raw(ask_size_values.value(i), size_precision);
+                let ts_event = ts_event_values.value(i);
+                let ts_init = ts_init_values.value(i);
 
-        let bid_size_key = "bid_size";
-        let bid_size_index = 2;
-        let bid_size_type = DataType::UInt64;
-        let bid_size_values = cols
-            .get(bid_size_index)
-            .ok_or(EncodingError::MissingColumn(bid_size_key, bid_size_index))?;
-        let bid_size_values = bid_size_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                bid_size_key,
-                bid_size_index,
-                bid_size_type,
-                bid_size_values.data_type().clone(),
-            ))?;
-
-        let ask_size_key = "ask_size";
-        let ask_size_index = 3;
-        let ask_size_type = DataType::UInt64;
-        let ask_size_values = cols
-            .get(ask_size_index)
-            .ok_or(EncodingError::MissingColumn(ask_size_key, ask_size_index))?;
-        let ask_size_values = ask_size_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ask_size_key,
-                ask_size_index,
-                ask_size_type,
-                ask_size_values.data_type().clone(),
-            ))?;
-
-        let ts_event = "ts_event";
-        let ts_event_index = 4;
-        let ts_event_type = DataType::UInt64;
-        let ts_event_values = cols
-            .get(ts_event_index)
-            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
-        let ts_event_values = ts_event_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_event,
-                ts_event_index,
-                ts_event_type,
-                ts_event_values.data_type().clone(),
-            ))?;
-
-        let ts_init = "ts_init";
-        let ts_init_index = 5;
-        let ts_inir_type = DataType::UInt64;
-        let ts_init_values = cols
-            .get(ts_init_index)
-            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
-        let ts_init_values = ts_init_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_init,
-                ts_init_index,
-                ts_inir_type,
-                ts_init_values.data_type().clone(),
-            ))?;
-
-        // Construct iterator of values from arrays
-        let values = bid_price_values
-            .into_iter()
-            .zip(ask_price_values.iter())
-            .zip(bid_size_values.iter())
-            .zip(ask_size_values.iter())
-            .zip(ts_event_values.iter())
-            .zip(ts_init_values.iter())
-            .map(
-                |(((((bid_price, ask_price), bid_size), ask_size), ts_event), ts_init)| Self {
+                Ok(Self {
                     instrument_id,
-                    bid_price: Price::from_raw(bid_price.unwrap(), price_precision),
-                    ask_price: Price::from_raw(ask_price.unwrap(), price_precision),
-                    bid_size: Quantity::from_raw(bid_size.unwrap(), size_precision),
-                    ask_size: Quantity::from_raw(ask_size.unwrap(), size_precision),
-                    ts_event: ts_event.unwrap(),
-                    ts_init: ts_init.unwrap(),
-                },
-            );
+                    bid_price,
+                    ask_price,
+                    bid_size,
+                    ask_size,
+                    ts_event,
+                    ts_init,
+                })
+            })
+            .collect();
 
-        Ok(values.collect())
+        result
     }
 }
 

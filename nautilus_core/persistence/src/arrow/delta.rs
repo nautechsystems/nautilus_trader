@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, UInt64Array, UInt8Array},
+    array::{Int64Array, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -28,8 +28,8 @@ use nautilus_model::{
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION,
+    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -145,179 +145,59 @@ impl DecodeFromRecordBatch for OrderBookDelta {
         // Extract field value arrays
         let cols = record_batch.columns();
 
-        let action_key = "action";
-        let action_index = 0;
-        let action_type = DataType::UInt8;
-        let action_values = cols
-            .get(action_index)
-            .ok_or(EncodingError::MissingColumn(action_key, action_index))?;
-        let action_values = action_values.as_any().downcast_ref::<UInt8Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                action_key,
-                action_index,
-                action_type,
-                action_values.data_type().clone(),
-            ),
-        )?;
+        let action_values = extract_column::<UInt8Array>(cols, "action", 0, DataType::UInt8)?;
+        let side_values = extract_column::<UInt8Array>(cols, "side", 1, DataType::UInt8)?;
+        let price_values = extract_column::<Int64Array>(cols, "price", 2, DataType::Int64)?;
+        let size_values = extract_column::<UInt64Array>(cols, "size", 3, DataType::UInt64)?;
+        let order_id_values = extract_column::<UInt64Array>(cols, "order_id", 4, DataType::UInt64)?;
+        let flags_values = extract_column::<UInt8Array>(cols, "flags", 5, DataType::UInt8)?;
+        let sequence_values = extract_column::<UInt64Array>(cols, "sequence", 6, DataType::UInt64)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 7, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 8, DataType::UInt64)?;
 
-        let side_key = "side";
-        let side_index = 1;
-        let side_type = DataType::UInt8;
-        let side_values = cols
-            .get(side_index)
-            .ok_or(EncodingError::MissingColumn(side_key, side_index))?;
-        let side_values = side_values.as_any().downcast_ref::<UInt8Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                side_key,
-                side_index,
-                side_type,
-                side_values.data_type().clone(),
-            ),
-        )?;
+        // Map record batch rows to vector of objects
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let action_value = action_values.value(i);
+                let action = BookAction::from_u8(action_value).ok_or_else(|| {
+                    EncodingError::ParseError(
+                        stringify!(BookAction),
+                        format!("Invalid enum value, was {action_value}"),
+                    )
+                })?;
+                let side_value = side_values.value(i);
+                let side = OrderSide::from_u8(side_value).ok_or_else(|| {
+                    EncodingError::ParseError(
+                        stringify!(OrderSide),
+                        format!("Invalid enum value, was {side_value}"),
+                    )
+                })?;
+                let price = Price::from_raw(price_values.value(i), price_precision);
+                let size = Quantity::from_raw(size_values.value(i), size_precision);
+                let order_id = order_id_values.value(i);
+                let flags = flags_values.value(i);
+                let sequence = sequence_values.value(i);
+                let ts_event = ts_event_values.value(i);
+                let ts_init = ts_init_values.value(i);
 
-        let price_key = "price";
-        let price_index = 2;
-        let price_type = DataType::Int64;
-        let size_values = cols
-            .get(price_index)
-            .ok_or(EncodingError::MissingColumn(price_key, price_index))?;
-        let price_values = size_values.as_any().downcast_ref::<Int64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                price_key,
-                price_index,
-                price_type,
-                size_values.data_type().clone(),
-            ),
-        )?;
-
-        let size_key = "size";
-        let size_index = 3;
-        let size_type = DataType::UInt8;
-        let size_values = cols
-            .get(size_index)
-            .ok_or(EncodingError::MissingColumn(size_key, size_index))?;
-        let size_values = size_values.as_any().downcast_ref::<UInt64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                size_key,
-                size_index,
-                size_type,
-                size_values.data_type().clone(),
-            ),
-        )?;
-
-        let order_id_key = "order_id";
-        let order_id_index = 4;
-        let order_id_type = DataType::UInt64;
-        let order_id_values = cols
-            .get(order_id_index)
-            .ok_or(EncodingError::MissingColumn(order_id_key, order_id_index))?;
-        let order_id_values = order_id_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                order_id_key,
-                order_id_index,
-                order_id_type,
-                order_id_values.data_type().clone(),
-            ))?;
-
-        let flags_key = "flags";
-        let flags_index = 5;
-        let flags_type = DataType::UInt8;
-        let flags_values = cols
-            .get(flags_index)
-            .ok_or(EncodingError::MissingColumn(flags_key, flags_index))?;
-        let flags_values = flags_values.as_any().downcast_ref::<UInt8Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                flags_key,
-                flags_index,
-                flags_type,
-                flags_values.data_type().clone(),
-            ),
-        )?;
-
-        let sequence_key = "sequence";
-        let sequence_index = 6;
-        let sequence_type = DataType::UInt64;
-        let sequence_values = cols
-            .get(sequence_index)
-            .ok_or(EncodingError::MissingColumn(sequence_key, sequence_index))?;
-        let sequence_values = sequence_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                sequence_key,
-                sequence_index,
-                sequence_type,
-                sequence_values.data_type().clone(),
-            ))?;
-
-        let ts_event = "ts_event";
-        let ts_event_index = 7;
-        let ts_event_type = DataType::UInt64;
-        let ts_event_values = cols
-            .get(ts_event_index)
-            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
-        let ts_event_values = ts_event_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_event,
-                ts_event_index,
-                ts_event_type,
-                ts_event_values.data_type().clone(),
-            ))?;
-
-        let ts_init = "ts_init";
-        let ts_init_index = 8;
-        let ts_inir_type = DataType::UInt64;
-        let ts_init_values = cols
-            .get(ts_init_index)
-            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
-        let ts_init_values = ts_init_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_init,
-                ts_init_index,
-                ts_inir_type,
-                ts_init_values.data_type().clone(),
-            ))?;
-
-        // Construct iterator of values from arrays
-        let values = action_values
-            .into_iter()
-            .zip(side_values.iter())
-            .zip(price_values.iter())
-            .zip(size_values.iter())
-            .zip(order_id_values.iter())
-            .zip(flags_values.iter())
-            .zip(sequence_values.iter())
-            .zip(ts_event_values.iter())
-            .zip(ts_init_values.iter())
-            .map(
-                |(
-                    (((((((action, side), price), size), order_id), flags), sequence), ts_event),
+                Ok(Self {
+                    instrument_id,
+                    action,
+                    order: BookOrder {
+                        side,
+                        price,
+                        size,
+                        order_id,
+                    },
+                    flags,
+                    sequence,
+                    ts_event,
                     ts_init,
-                )| {
-                    Self {
-                        instrument_id,
-                        action: BookAction::from_u8(action.unwrap()).unwrap(),
-                        order: BookOrder {
-                            side: OrderSide::from_u8(side.unwrap()).unwrap(),
-                            price: Price::from_raw(price.unwrap(), price_precision),
-                            size: Quantity::from_raw(size.unwrap(), size_precision),
-                            order_id: order_id.unwrap(),
-                        },
-                        flags: flags.unwrap(),
-                        sequence: sequence.unwrap(),
-                        ts_event: ts_event.unwrap(),
-                        ts_init: ts_init.unwrap(),
-                    }
-                },
-            );
+                })
+            })
+            .collect();
 
-        Ok(values.collect())
+        result
     }
 }
 

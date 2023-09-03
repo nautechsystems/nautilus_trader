@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
+    array::{Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     record_batch::RecordBatch,
 };
@@ -28,8 +28,8 @@ use nautilus_model::{
 };
 
 use super::{
-    DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-    KEY_SIZE_PRECISION,
+    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -130,125 +130,44 @@ impl DecodeFromRecordBatch for TradeTick {
         // Extract field value arrays
         let cols = record_batch.columns();
 
-        let price_key = "price";
-        let price_index = 0;
-        let price_type = DataType::Int64;
-        let price_values = cols
-            .get(price_index)
-            .ok_or(EncodingError::MissingColumn(price_key, price_index))?;
-        let price_values = price_values.as_any().downcast_ref::<Int64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                price_key,
-                price_index,
-                price_type,
-                price_values.data_type().clone(),
-            ),
-        )?;
-
-        let size_key = "size";
-        let size_index = 1;
-        let size_type = DataType::UInt64;
-        let size_values = cols
-            .get(size_index)
-            .ok_or(EncodingError::MissingColumn(size_key, size_index))?;
-        let size_values = size_values.as_any().downcast_ref::<UInt64Array>().ok_or(
-            EncodingError::InvalidColumnType(
-                size_key,
-                size_index,
-                size_type,
-                size_values.data_type().clone(),
-            ),
-        )?;
-
-        let aggressor_side_key = "aggressor_side";
-        let aggressor_side_index = 2;
-        let aggressor_side_type = DataType::UInt8;
+        let price_values = extract_column::<Int64Array>(cols, "price", 0, DataType::Int64)?;
+        let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
         let aggressor_side_values =
-            cols.get(aggressor_side_index)
-                .ok_or(EncodingError::MissingColumn(
-                    aggressor_side_key,
-                    aggressor_side_index,
-                ))?;
-        let aggressor_side_values = aggressor_side_values
-            .as_any()
-            .downcast_ref::<UInt8Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                aggressor_side_key,
-                aggressor_side_index,
-                aggressor_side_type,
-                aggressor_side_values.data_type().clone(),
-            ))?;
+            extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
+        let trade_id_values = extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
-        let trade_id = "trade_id";
-        let trade_id_index = 3;
-        let trade_id_type = DataType::Utf8;
-        let trade_id_values = cols
-            .get(trade_id_index)
-            .ok_or(EncodingError::MissingColumn(trade_id, trade_id_index))?;
-        let trade_id_values = trade_id_values
-            .as_any()
-            .downcast_ref::<StringArray>()
-            .ok_or(EncodingError::InvalidColumnType(
-                trade_id,
-                trade_id_index,
-                trade_id_type,
-                trade_id_values.data_type().clone(),
-            ))?;
+        // Map record batch rows to vector of objects
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let price = Price::from_raw(price_values.value(i), price_precision);
+                let size = Quantity::from_raw(size_values.value(i), size_precision);
+                let aggressor_side_value = aggressor_side_values.value(i);
+                let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
+                    .ok_or_else(|| {
+                        EncodingError::ParseError(
+                            stringify!(AggressorSide),
+                            format!("Invalid enum value, was {aggressor_side_value}"),
+                        )
+                    })?;
+                let trade_id = TradeId::from(trade_id_values.value(i));
+                let ts_event = ts_event_values.value(i);
+                let ts_init = ts_init_values.value(i);
 
-        let ts_event = "ts_event";
-        let ts_event_index = 4;
-        let ts_event_type = DataType::UInt64;
-        let ts_event_values = cols
-            .get(ts_event_index)
-            .ok_or(EncodingError::MissingColumn(ts_event, ts_event_index))?;
-        let ts_event_values = ts_event_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_event,
-                ts_event_index,
-                ts_event_type,
-                ts_event_values.data_type().clone(),
-            ))?;
-
-        let ts_init = "ts_init";
-        let ts_init_index = 5;
-        let ts_inir_type = DataType::UInt64;
-        let ts_init_values = cols
-            .get(ts_init_index)
-            .ok_or(EncodingError::MissingColumn(ts_init, ts_init_index))?;
-        let ts_init_values = ts_init_values
-            .as_any()
-            .downcast_ref::<UInt64Array>()
-            .ok_or(EncodingError::InvalidColumnType(
-                ts_init,
-                ts_init_index,
-                ts_inir_type,
-                ts_init_values.data_type().clone(),
-            ))?;
-
-        // Construct iterator of values from arrays
-        let values = price_values
-            .into_iter()
-            .zip(size_values)
-            .zip(aggressor_side_values)
-            .zip(trade_id_values)
-            .zip(ts_event_values)
-            .zip(ts_init_values)
-            .map(
-                |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| Self {
+                Ok(Self {
                     instrument_id,
-                    price: Price::from_raw(price.unwrap(), price_precision),
-                    size: Quantity::from_raw(size.unwrap(), size_precision),
-                    aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)
-                        .expect("cannot parse enum value"),
-                    trade_id: TradeId::new(trade_id.unwrap()).unwrap(),
-                    ts_event: ts_event.unwrap(),
-                    ts_init: ts_init.unwrap(),
-                },
-            );
+                    price,
+                    size,
+                    aggressor_side,
+                    trade_id,
+                    ts_event,
+                    ts_init,
+                })
+            })
+            .collect();
 
-        Ok(values.collect())
+        result
     }
 }
 
@@ -270,7 +189,7 @@ mod tests {
     use std::sync::Arc;
 
     use datafusion::arrow::{
-        array::{Int64Array, StringArray, UInt64Array, UInt8Array},
+        array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
     use rstest::rstest;
