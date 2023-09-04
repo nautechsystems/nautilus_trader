@@ -112,10 +112,10 @@ impl HttpResponse {
 impl HttpClient {
     /// Create a new HttpClient
     ///
-    /// * `header_keys` - key value pairs for the given `header_keys` are retained from the responses.
-    /// * `keyed_quota` - list of string quota pairs that gives quota for specific key values
-    /// * `default_quota` - the default rate limiting quota for any request.
-    ///   Default quota is optional and no quota is passthrough.
+    /// * `header_keys` - The key value pairs for the given `header_keys` are retained from the responses.
+    /// * `keyed_quota` - A list of string quota pairs that gives quota for specific key values.
+    /// * `default_quota` - The default rate limiting quota for any request.
+    /// Default quota is optional and no quota is passthrough.
     #[new]
     #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
     #[must_use]
@@ -139,13 +139,13 @@ impl HttpClient {
         }
     }
 
-    /// Send an HTTP request
+    /// Send an HTTP request.
     ///
-    /// * `method` - the HTTP method to call
-    /// * `url` - the request is sent to this url
-    /// * `headers` - the header key value pairs in the request
-    /// * `body` - the bytes sent in the body of request
-    /// * `keys` - the keys used for rate limiting the request
+    /// * `method` - The HTTP method to call.
+    /// * `url` - The request is sent to this url.
+    /// * `headers` - The header key value pairs in the request.
+    /// * `body` - The bytes sent in the body of request.
+    /// * `keys` - The keys used for rate limiting the request.
     pub fn request<'py>(
         &self,
         method: HttpMethod,
