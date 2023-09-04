@@ -13,11 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import itertools
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Optional, Union
 
 import fsspec
 import numpy as np
@@ -36,8 +37,8 @@ from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 
 def _generate_batches_within_time_range(
     batches: Generator[list[Data], None, None],
-    start_nanos: Optional[int] = None,
-    end_nanos: Optional[int] = None,
+    start_nanos: int | None = None,
+    end_nanos: int | None = None,
 ) -> Generator[list[Data], None, None]:
     if start_nanos is None and end_nanos is None:
         yield from batches
@@ -81,16 +82,16 @@ def _generate_batches_rust(
     files: list[str],
     cls: type,
     batch_size: int = 10_000,
-) -> Generator[list[Union[QuoteTick, TradeTick]], None, None]:
+) -> Generator[list[QuoteTick | TradeTick], None, None]:
     files = sorted(files, key=lambda x: Path(x).stem)
 
     assert cls in (QuoteTick, TradeTick)
 
     session = DataBackendSession(chunk_size=batch_size)
     data_type = {
+        "OrderBookDelta": NautilusDataType.OrderBookDelta,
         "QuoteTick": NautilusDataType.QuoteTick,
         "TradeTick": NautilusDataType.TradeTick,
-        "OrderBookDelta": NautilusDataType.OrderBookDelta,
         "Bar": NautilusDataType.Bar,
     }[cls.__name__]
 
@@ -111,8 +112,8 @@ def generate_batches_rust(
     files: list[str],
     cls: type,
     batch_size: int = 10_000,
-    start_nanos: Optional[int] = None,
-    end_nanos: Optional[int] = None,
+    start_nanos: int | None = None,
+    end_nanos: int | None = None,
 ) -> Generator[list[Data], None, None]:
     batches = _generate_batches_rust(files=files, cls=cls, batch_size=batch_size)
     yield from _generate_batches_within_time_range(batches, start_nanos, end_nanos)
@@ -122,7 +123,7 @@ def _generate_batches(
     files: list[str],
     cls: type,
     fs: fsspec.AbstractFileSystem,
-    instrument_id: Optional[InstrumentId] = None,  # Should be stored in metadata of parquet file?
+    instrument_id: InstrumentId | None = None,  # Should be stored in metadata of parquet file?
     batch_size: int = 10_000,
 ) -> Generator[list[Data], None, None]:
     files = sorted(files, key=lambda x: Path(x).stem)
@@ -146,10 +147,10 @@ def generate_batches(
     files: list[str],
     cls: type,
     fs: fsspec.AbstractFileSystem,
-    instrument_id: Optional[InstrumentId] = None,
+    instrument_id: InstrumentId | None = None,
     batch_size: int = 10_000,
-    start_nanos: Optional[int] = None,
-    end_nanos: Optional[int] = None,
+    start_nanos: int | None = None,
+    end_nanos: int | None = None,
 ) -> Generator[list[Data], None, None]:
     batches = _generate_batches(
         files=files,

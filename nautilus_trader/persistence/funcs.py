@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Union
+from __future__ import annotations
 
 
 # Taken from https://github.com/dask/dask/blob/261bf174931580230717abca93fe172e166cc1e8/dask/utils.py
@@ -36,7 +36,7 @@ byte_sizes.update({k[0]: v for k, v in byte_sizes.items() if k and "i" not in k}
 byte_sizes.update({k[:-1]: v for k, v in byte_sizes.items() if k and "i" in k})
 
 
-def parse_bytes(s: Union[float, str]) -> int:
+def parse_bytes(s: float | str) -> int:
     if isinstance(s, (int, float)):
         return int(s)
     s = s.replace(" ", "")

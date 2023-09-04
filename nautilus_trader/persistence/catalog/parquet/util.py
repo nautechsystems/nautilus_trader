@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import re
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -25,7 +27,7 @@ INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 GENERIC_DATA_PREFIX = "genericdata_"
 
 
-def list_dicts_to_dict_lists(dicts: list[dict], keys: Optional[Any] = None) -> dict[Any, list]:
+def list_dicts_to_dict_lists(dicts: list[dict], keys: Any | None = None) -> dict[Any, list]:
     """
     Convert a list of dictionaries into a dictionary of lists.
     """
@@ -59,7 +61,7 @@ def maybe_list(obj):
 
 def check_partition_columns(
     df: pd.DataFrame,
-    partition_columns: Optional[list[str]] = None,
+    partition_columns: list[str] | None = None,
 ) -> dict[str, dict[str, str]]:
     """
     Check partition columns.
