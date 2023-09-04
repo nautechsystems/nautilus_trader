@@ -1010,6 +1010,7 @@ pub static CURRENCY_MAP: Lazy<Mutex<HashMap<String, Currency>>> = Lazy::new(|| {
     map.insert(Currency::USD().code.to_string(), Currency::USD());
     map.insert(Currency::XAG().code.to_string(), Currency::XAG());
     map.insert(Currency::XAU().code.to_string(), Currency::XAU());
+    map.insert(Currency::XPT().code.to_string(), Currency::XPT());
     map.insert(Currency::ZAR().code.to_string(), Currency::ZAR());
     // Crypto currencies
     map.insert(Currency::AAVE().code.to_string(), Currency::AAVE());

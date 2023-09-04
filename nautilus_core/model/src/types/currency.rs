@@ -60,7 +60,7 @@ impl Currency {
     ) -> Result<Self> {
         check_valid_string(code, "`Currency` code")?;
         check_valid_string(name, "`Currency` name")?;
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision)?;
 
         Ok(Self {
             code: Ustr::from(code),
@@ -313,7 +313,7 @@ mod tests {
     use nautilus_core::string::str_to_cstr;
     use rstest::rstest;
 
-    use super::currency_register;
+    use super::*;
     use crate::{
         enums::CurrencyType,
         types::currency::{currency_exists, Currency},
@@ -396,7 +396,7 @@ mod tests {
     #[rstest]
     fn test_currency_to_cstr() {
         let currency = Currency::USD();
-        let cstr = unsafe { CStr::from_ptr(super::currency_to_cstr(&currency)) };
+        let cstr = unsafe { CStr::from_ptr(currency_to_cstr(&currency)) };
         let expected_output = format!("{:?}", currency);
         assert_eq!(cstr.to_str().unwrap(), expected_output);
     }
@@ -404,14 +404,14 @@ mod tests {
     #[rstest]
     fn test_currency_code_to_cstr() {
         let currency = Currency::USD();
-        let cstr = unsafe { CStr::from_ptr(super::currency_code_to_cstr(&currency)) };
+        let cstr = unsafe { CStr::from_ptr(currency_code_to_cstr(&currency)) };
         assert_eq!(cstr.to_str().unwrap(), "USD");
     }
 
     #[rstest]
     fn test_currency_name_to_cstr() {
         let currency = Currency::USD();
-        let cstr = unsafe { CStr::from_ptr(super::currency_name_to_cstr(&currency)) };
+        let cstr = unsafe { CStr::from_ptr(currency_name_to_cstr(&currency)) };
         assert_eq!(cstr.to_str().unwrap(), "United States dollar");
     }
 
@@ -419,13 +419,13 @@ mod tests {
     fn test_currency_hash() {
         let currency = Currency::USD();
         let hash = super::currency_hash(&currency);
-        assert_eq!(hash, currency.code.precomputed_hash()); // Assuming your Currency type has a `precomputed_hash` method on its own.
+        assert_eq!(hash, currency.code.precomputed_hash());
     }
 
     #[rstest]
     fn test_currency_from_cstr() {
         let code = CString::new("USD").unwrap();
-        let currency = unsafe { super::currency_from_cstr(code.as_ptr()) };
+        let currency = unsafe { currency_from_cstr(code.as_ptr()) };
         assert_eq!(currency, Currency::USD());
     }
 
@@ -434,7 +434,7 @@ mod tests {
     fn test_currency_from_py_null_code_ptr() {
         let name = CString::new("My Currency").unwrap();
         let _ = unsafe {
-            super::currency_from_py(std::ptr::null(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
+            currency_from_py(std::ptr::null(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
         };
     }
 
@@ -443,7 +443,7 @@ mod tests {
     fn test_currency_from_py_null_name_ptr() {
         let code = CString::new("MYC").unwrap();
         let _ = unsafe {
-            super::currency_from_py(code.as_ptr(), 4, 0, std::ptr::null(), CurrencyType::Crypto)
+            currency_from_py(code.as_ptr(), 4, 0, std::ptr::null(), CurrencyType::Crypto)
         };
     }
 }
