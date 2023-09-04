@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![recursion_limit = "256"]
-#[macro_use]
-extern crate lazy_static;
-
 use pyo3::{prelude::*, PyResult, Python};
 
 pub mod currencies;

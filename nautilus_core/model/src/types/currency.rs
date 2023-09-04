@@ -34,10 +34,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
 use super::fixed::check_fixed_precision;
-use crate::{
-    currencies::{AUD, CURRENCY_MAP},
-    enums::CurrencyType,
-};
+use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq)]
@@ -95,7 +92,7 @@ impl FromStr for Currency {
             .lock()
             .unwrap()
             .get(s)
-            .cloned()
+            .copied()
             .ok_or_else(|| format!("Unknown currency: {}", s))
     }
 }
@@ -171,7 +168,7 @@ impl Currency {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(*AUD) // Safe default
+        Ok(Currency::AUD()) // Safe default
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -311,6 +308,8 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::ffi::{CStr, CString};
+
     use nautilus_core::string::str_to_cstr;
     use rstest::rstest;
 
@@ -367,8 +366,7 @@ mod tests {
 
     #[rstest]
     fn test_serialization_deserialization() {
-        let currency =
-            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let currency = Currency::USD();
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
@@ -381,5 +379,71 @@ mod tests {
         unsafe {
             assert_eq!(currency_exists(str_to_cstr("MYC")), 1);
         }
+    }
+
+    #[rstest]
+    fn test_currency_from_py() {
+        let code = CString::new("MYC").unwrap();
+        let name = CString::new("My Currency").unwrap();
+        let currency = unsafe {
+            super::currency_from_py(code.as_ptr(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
+        };
+        assert_eq!(currency.code.as_str(), "MYC");
+        assert_eq!(currency.name.as_str(), "My Currency");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_currency_to_cstr() {
+        let currency = Currency::USD();
+        let cstr = unsafe { CStr::from_ptr(super::currency_to_cstr(&currency)) };
+        let expected_output = format!("{:?}", currency);
+        assert_eq!(cstr.to_str().unwrap(), expected_output);
+    }
+
+    #[rstest]
+    fn test_currency_code_to_cstr() {
+        let currency = Currency::USD();
+        let cstr = unsafe { CStr::from_ptr(super::currency_code_to_cstr(&currency)) };
+        assert_eq!(cstr.to_str().unwrap(), "USD");
+    }
+
+    #[rstest]
+    fn test_currency_name_to_cstr() {
+        let currency = Currency::USD();
+        let cstr = unsafe { CStr::from_ptr(super::currency_name_to_cstr(&currency)) };
+        assert_eq!(cstr.to_str().unwrap(), "United States dollar");
+    }
+
+    #[rstest]
+    fn test_currency_hash() {
+        let currency = Currency::USD();
+        let hash = super::currency_hash(&currency);
+        assert_eq!(hash, currency.code.precomputed_hash()); // Assuming your Currency type has a `precomputed_hash` method on its own.
+    }
+
+    #[rstest]
+    fn test_currency_from_cstr() {
+        let code = CString::new("USD").unwrap();
+        let currency = unsafe { super::currency_from_cstr(code.as_ptr()) };
+        assert_eq!(currency, Currency::USD());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`code_ptr` was NULL")]
+    fn test_currency_from_py_null_code_ptr() {
+        let name = CString::new("My Currency").unwrap();
+        let _ = unsafe {
+            super::currency_from_py(std::ptr::null(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
+        };
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`name_ptr` was NULL")]
+    fn test_currency_from_py_null_name_ptr() {
+        let code = CString::new("MYC").unwrap();
+        let _ = unsafe {
+            super::currency_from_py(code.as_ptr(), 4, 0, std::ptr::null(), CurrencyType::Crypto)
+        };
     }
 }

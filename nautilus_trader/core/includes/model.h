@@ -223,6 +223,10 @@ typedef enum CurrencyType {
      * A type of currency issued by governments which is not backed by a commodity.
      */
     FIAT = 2,
+    /**
+     * A type of currency that is based on the value of an underlying commodity.
+     */
+    COMMODITY_BACKED = 3,
 } CurrencyType;
 
 /**

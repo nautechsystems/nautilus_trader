@@ -123,6 +123,8 @@ cdef extern from "../includes/model.h":
         CRYPTO # = 1,
         # A type of currency issued by governments which is not backed by a commodity.
         FIAT # = 2,
+        # A type of currency that is based on the value of an underlying commodity.
+        COMMODITY_BACKED # = 3,
 
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
