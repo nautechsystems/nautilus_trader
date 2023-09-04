@@ -26,6 +26,7 @@ use std::{
 use datafusion::arrow::{
     array::{Array, ArrayRef},
     datatypes::{DataType, Schema},
+    error::ArrowError,
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
@@ -94,7 +95,10 @@ pub trait EncodeToRecordBatch
 where
     Self: Sized + ArrowSchemaProvider,
 {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch;
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError>;
 }
 
 pub trait DecodeFromRecordBatch

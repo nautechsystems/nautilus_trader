@@ -18,6 +18,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use datafusion::arrow::{
     array::{Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
+    error::ArrowError,
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -76,7 +77,10 @@ fn parse_metadata(
 }
 
 impl EncodeToRecordBatch for TradeTick {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError> {
         // Create array builders
         let mut price_builder = Int64Array::builder(data.len());
         let mut size_builder = UInt64Array::builder(data.len());
@@ -115,7 +119,6 @@ impl EncodeToRecordBatch for TradeTick {
                 Arc::new(ts_init_array),
             ],
         )
-        .unwrap()
     }
 }
 
@@ -253,7 +256,7 @@ mod tests {
         };
 
         let data = vec![tick1, tick2];
-        let record_batch = TradeTick::encode_batch(&metadata, &data);
+        let record_batch = TradeTick::encode_batch(&metadata, &data).unwrap();
 
         // Verify the encoded data
         let columns = record_batch.columns();

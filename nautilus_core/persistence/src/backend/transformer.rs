@@ -15,7 +15,10 @@
 
 use std::io::Cursor;
 
-use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
+use datafusion::arrow::{
+    datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
+};
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
@@ -128,12 +131,12 @@ impl DataTransformer {
         data: Vec<PyObject>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
+            return Err(to_pyvalue_err(ERROR_EMPTY_DATA));
         }
 
         let data_type: String = data
             .first()
-            .unwrap() // Safety: already checked that `data` not empty above
+            .unwrap() // SAFETY: already checked that `data` not empty above
             .as_ref(py)
             .getattr("__class__")?
             .getattr("__name__")?
@@ -172,6 +175,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
+        // SAFETY: already checked that `data` not empty above
         let first = data.first().unwrap();
         let metadata = OrderBookDelta::get_metadata(
             &first.instrument_id,
@@ -180,13 +184,18 @@ impl DataTransformer {
         );
 
         // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
+        let batches: Result<Vec<RecordBatch>, ArrowError> = data
             .into_iter()
-            .map(|delta| OrderBookDelta::encode_batch(&metadata, &[delta]))
+            .map(|d| OrderBookDelta::encode_batch(&metadata, &[d]))
             .collect();
 
-        let schema = OrderBookDelta::get_schema(Some(metadata));
-        Self::record_batches_to_pybytes(py, batches, schema)
+        match batches {
+            Ok(batches) => {
+                let schema = OrderBookDelta::get_schema(Some(metadata));
+                Self::record_batches_to_pybytes(py, batches, schema)
+            }
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
     }
 
     #[staticmethod]
@@ -195,10 +204,11 @@ impl DataTransformer {
         data: Vec<QuoteTick>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
+            return Err(to_pyvalue_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
+        // SAFETY: already checked that `data` not empty above
         let first = data.first().unwrap();
         let metadata = QuoteTick::get_metadata(
             &first.instrument_id,
@@ -207,13 +217,18 @@ impl DataTransformer {
         );
 
         // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
+        let batches: Result<Vec<RecordBatch>, ArrowError> = data
             .into_iter()
-            .map(|quote| QuoteTick::encode_batch(&metadata, &[quote]))
+            .map(|q| QuoteTick::encode_batch(&metadata, &[q]))
             .collect();
 
-        let schema = QuoteTick::get_schema(Some(metadata));
-        Self::record_batches_to_pybytes(py, batches, schema)
+        match batches {
+            Ok(batches) => {
+                let schema = QuoteTick::get_schema(Some(metadata));
+                Self::record_batches_to_pybytes(py, batches, schema)
+            }
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
     }
 
     #[staticmethod]
@@ -222,10 +237,11 @@ impl DataTransformer {
         data: Vec<TradeTick>,
     ) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
+            return Err(to_pyvalue_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
+        // SAFETY: already checked that `data` not empty above
         let first = data.first().unwrap();
         let metadata = TradeTick::get_metadata(
             &first.instrument_id,
@@ -234,22 +250,28 @@ impl DataTransformer {
         );
 
         // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
+        let batches: Result<Vec<RecordBatch>, ArrowError> = data
             .into_iter()
-            .map(|trade| TradeTick::encode_batch(&metadata, &[trade]))
+            .map(|t| TradeTick::encode_batch(&metadata, &[t]))
             .collect();
 
-        let schema = TradeTick::get_schema(Some(metadata));
-        Self::record_batches_to_pybytes(py, batches, schema)
+        match batches {
+            Ok(batches) => {
+                let schema = TradeTick::get_schema(Some(metadata));
+                Self::record_batches_to_pybytes(py, batches, schema)
+            }
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
     }
 
     #[staticmethod]
     pub fn pyo3_bars_to_batches_bytes(py: Python<'_>, data: Vec<Bar>) -> PyResult<Py<PyBytes>> {
         if data.is_empty() {
-            return Err(PyValueError::new_err(ERROR_EMPTY_DATA));
+            return Err(to_pyvalue_err(ERROR_EMPTY_DATA));
         }
 
         // Take first element and extract metadata
+        // SAFETY: already checked that `data` not empty above
         let first = data.first().unwrap();
         let metadata = Bar::get_metadata(
             &first.bar_type,
@@ -258,12 +280,17 @@ impl DataTransformer {
         );
 
         // Encode data to record batches
-        let batches: Vec<RecordBatch> = data
+        let batches: Result<Vec<RecordBatch>, ArrowError> = data
             .into_iter()
-            .map(|bar| Bar::encode_batch(&metadata, &[bar]))
+            .map(|b| Bar::encode_batch(&metadata, &[b]))
             .collect();
 
-        let schema = Bar::get_schema(Some(metadata));
-        Self::record_batches_to_pybytes(py, batches, schema)
+        match batches {
+            Ok(batches) => {
+                let schema = Bar::get_schema(Some(metadata));
+                Self::record_batches_to_pybytes(py, batches, schema)
+            }
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
     }
 }

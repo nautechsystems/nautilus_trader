@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use nautilus_core::cvec::CVec;
 use nautilus_model::data::{delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data};
 use nautilus_persistence::{

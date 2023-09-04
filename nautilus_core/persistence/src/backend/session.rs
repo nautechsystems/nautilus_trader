@@ -89,7 +89,7 @@ impl DataBackendSession {
         metadata: &HashMap<String, String>,
         stream: &mut dyn WriteStream,
     ) -> Result<(), DataStreamingError> {
-        let record_batch = T::encode_batch(metadata, data);
+        let record_batch = T::encode_batch(metadata, data)?;
         stream.write(&record_batch)?;
         Ok(())
     }
