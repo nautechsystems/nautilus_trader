@@ -18,6 +18,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use datafusion::arrow::{
     array::{Int64Array, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
+    error::ArrowError,
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -79,7 +80,10 @@ fn parse_metadata(
 }
 
 impl EncodeToRecordBatch for OrderBookDelta {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError> {
         // Create array builders
         let mut action_builder = UInt8Array::builder(data.len());
         let mut side_builder = UInt8Array::builder(data.len());
@@ -130,7 +134,6 @@ impl EncodeToRecordBatch for OrderBookDelta {
                 Arc::new(ts_init_array),
             ],
         )
-        .unwrap()
     }
 }
 
@@ -295,7 +298,7 @@ mod tests {
         };
 
         let data = vec![delta1, delta2];
-        let record_batch = OrderBookDelta::encode_batch(&metadata, &data);
+        let record_batch = OrderBookDelta::encode_batch(&metadata, &data).unwrap();
 
         let columns = record_batch.columns();
         let action_values = columns[0].as_any().downcast_ref::<UInt8Array>().unwrap();

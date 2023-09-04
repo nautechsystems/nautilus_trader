@@ -18,6 +18,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use datafusion::arrow::{
     array::{Int64Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
+    error::ArrowError,
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -75,7 +76,10 @@ fn parse_metadata(
 }
 
 impl EncodeToRecordBatch for QuoteTick {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError> {
         // Create array builders
         let mut bid_price_builder = Int64Array::builder(data.len());
         let mut ask_price_builder = Int64Array::builder(data.len());
@@ -114,7 +118,6 @@ impl EncodeToRecordBatch for QuoteTick {
                 Arc::new(ts_init_array),
             ],
         )
-        .unwrap()
     }
 }
 
@@ -240,7 +243,7 @@ mod tests {
 
         let data = vec![tick1, tick2];
         let metadata: HashMap<String, String> = HashMap::new();
-        let record_batch = QuoteTick::encode_batch(&metadata, &data);
+        let record_batch = QuoteTick::encode_batch(&metadata, &data).unwrap();
 
         // Verify the encoded data
         let columns = record_batch.columns();
