@@ -56,7 +56,7 @@ class BinanceHttpClient:
         key: str,
         secret: str,
         base_url: str,
-    ):
+    ) -> None:
         self._clock: LiveClock = clock
         self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
         self._key: str = key
