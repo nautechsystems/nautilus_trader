@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import heapq
 import itertools
 import sys
@@ -32,7 +34,7 @@ from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 
 
 class _StreamingBuffer:
-    def __init__(self, batches: Generator):
+    def __init__(self, batches: Generator) -> None:
         self._data: list = []
         self._is_complete = False
         self._batches = batches
@@ -81,8 +83,8 @@ class _BufferIterator:
     def __init__(
         self,
         buffers: list[_StreamingBuffer],
-        target_batch_size_bytes: int = parse_bytes("100mb"),  # ,
-    ):
+        target_batch_size_bytes: int = parse_bytes("100mb"),
+    ) -> None:
         self._buffers = buffers
         self._target_batch_size_bytes = target_batch_size_bytes
 
@@ -212,7 +214,7 @@ class StreamingEngine(_BufferIterator):
         return _StreamingBuffer(batches=batches)
 
 
-def extract_generic_data_client_ids(data_configs: list["BacktestDataConfig"]) -> dict:
+def extract_generic_data_client_ids(data_configs: list[BacktestDataConfig]) -> dict:
     """
     Extract a mapping of data_type : client_id from the list of `data_configs`.
     In the process of merging the streaming data, we lose the `client_id` for

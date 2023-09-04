@@ -13,8 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import datetime
-from typing import Any, BinaryIO, Optional, Union
+from typing import Any, BinaryIO
 
 import fsspec
 import pyarrow as pa
@@ -61,15 +63,13 @@ class StreamingFeatherWriter:
         self,
         path: str,
         logger: LoggerAdapter,
-        fs_protocol: Optional[str] = "file",
-        flush_interval_ms: Optional[int] = None,
+        fs_protocol: str | None = "file",
+        flush_interval_ms: int | None = None,
         replace: bool = False,
-        include_types: Optional[tuple[type]] = None,
-    ):
-        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
-
+        include_types: tuple[type] | None = None,
+    ) -> None:
         self.path = path
-
+        self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
 
         err_dir_empty = "Path must be directory or empty"
@@ -118,11 +118,11 @@ class StreamingFeatherWriter:
         self._files[table_name] = f
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
 
-    def _create_writers(self):
+    def _create_writers(self) -> None:
         for cls in self._schemas:
             self._create_writer(cls=cls)
 
-    def _create_instrument_writer(self, cls, obj):
+    def _create_instrument_writer(self, cls, obj) -> None:
         """
         Create an arrow writer with instrument specific metadata in the schema.
         """
@@ -138,7 +138,7 @@ class StreamingFeatherWriter:
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
 
-    def _extract_obj_metadata(self, obj: Union[TradeTick, QuoteTick, Bar, OrderBookDelta]):
+    def _extract_obj_metadata(self, obj: TradeTick | QuoteTick | Bar | OrderBookDelta):
         instrument = self._instruments[obj.instrument_id]
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
         if isinstance(obj, (TradeTick, QuoteTick)):
@@ -341,8 +341,8 @@ def generate_signal_class(name: str, value_type: type) -> type:
 
 def read_feather_file(
     path: str,
-    fs: Optional[fsspec.AbstractFileSystem] = None,
-) -> Optional[pa.Table]:
+    fs: fsspec.AbstractFileSystem | None = None,
+) -> pa.Table | None:
     fs = fs or fsspec.filesystem("file")
     if not fs.exists(path):
         return None

@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from datetime import datetime
+from os import PathLike
 
 import pandas as pd
 
@@ -24,7 +27,7 @@ class CSVTickDataLoader:
     """
 
     @staticmethod
-    def load(file_path) -> pd.DataFrame:
+    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
         Return the tick pandas.DataFrame loaded from the given csv file.
 
@@ -53,7 +56,7 @@ class CSVBarDataLoader:
     """
 
     @staticmethod
-    def load(file_path) -> pd.DataFrame:
+    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
         Return the bar pandas.DataFrame loaded from the given csv file.
 
@@ -86,7 +89,7 @@ class TardisTradeDataLoader:
     """
 
     @staticmethod
-    def load(file_path) -> pd.DataFrame:
+    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
         Return the trade pandas.DataFrame loaded from the given csv file.
 
@@ -119,7 +122,7 @@ class TardisQuoteDataLoader:
     """
 
     @staticmethod
-    def load(file_path) -> pd.DataFrame:
+    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
         Return the quote pandas.DataFrame loaded from the given csv file.
 
@@ -155,7 +158,10 @@ class ParquetTickDataLoader:
     """
 
     @staticmethod
-    def load(file_path, timestamp_column: str = "timestamp") -> pd.DataFrame:
+    def load(
+        file_path: PathLike[str] | str,
+        timestamp_column: str = "timestamp",
+    ) -> pd.DataFrame:
         """
         Return the tick pandas.DataFrame loaded from the given parquet file.
 
@@ -182,7 +188,7 @@ class ParquetBarDataLoader:
     """
 
     @staticmethod
-    def load(file_path) -> pd.DataFrame:
+    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
         Return the bar pandas.DataFrame loaded from the given parquet file.
 

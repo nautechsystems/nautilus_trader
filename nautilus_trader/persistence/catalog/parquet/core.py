@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import os
 import pathlib
 import platform
@@ -21,7 +23,7 @@ from collections import namedtuple
 from collections.abc import Generator
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Union
 
 import fsspec
 import pandas as pd
@@ -53,7 +55,7 @@ from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
-timestamp_like = Union[int, str, float]
+TimestampLike = Union[int, str, float]
 FeatherFile = namedtuple("FeatherFile", ["path", "class_name"])  # noqa
 
 
@@ -79,9 +81,9 @@ class ParquetDataCatalog(BaseDataCatalog):
     def __init__(
         self,
         path: str,
-        fs_protocol: Optional[str] = "file",
-        fs_storage_options: Optional[dict] = None,
-        dataset_kwargs: Optional[dict] = None,
+        fs_protocol: str | None = "file",
+        fs_storage_options: dict | None = None,
+        dataset_kwargs: dict | None = None,
     ):
         self.fs_protocol = fs_protocol
         self.fs_storage_options = fs_storage_options or {}
@@ -128,7 +130,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             table = pa.Table.from_batches([table])
         return table
 
-    def _make_path(self, cls: type[Data], instrument_id: Optional[str] = None) -> str:
+    def _make_path(self, cls: type[Data], instrument_id: str | None = None) -> str:
         if instrument_id is not None:
             assert isinstance(instrument_id, str), "instrument_id must be a string"
             clean_instrument_id = uri_instrument_id(instrument_id)
@@ -140,7 +142,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         data: list[Data],
         cls: type[Data],
-        instrument_id: Optional[str] = None,
+        instrument_id: str | None = None,
         **kwargs: Any,
     ) -> None:
         table = self._objects_to_table(data, cls=cls)
@@ -169,8 +171,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs.mkdirs(path, exist_ok=True)
         pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs)
 
-    def write_data(self, data: list[Union[Data, Event]], **kwargs: Any) -> None:
-        def key(obj: Any) -> tuple[str, Optional[str]]:
+    def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
+        def key(obj: Any) -> tuple[str, str | None]:
             name = type(obj).__name__
             if isinstance(obj, Instrument):
                 return name, obj.id.value
@@ -194,10 +196,10 @@ class ParquetDataCatalog(BaseDataCatalog):
     def query_rust(
         self,
         cls: type,
-        instrument_ids: Optional[list[str]] = None,
-        start: Optional[timestamp_like] = None,
-        end: Optional[timestamp_like] = None,
-        where: Optional[str] = None,
+        instrument_ids: list[str] | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
@@ -231,10 +233,10 @@ class ParquetDataCatalog(BaseDataCatalog):
     def query_pyarrow(
         self,
         cls: type,
-        instrument_ids: Optional[list[str]] = None,
-        start: Optional[timestamp_like] = None,
-        end: Optional[timestamp_like] = None,
-        filter_expr: Optional[str] = None,
+        instrument_ids: list[str] | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        filter_expr: str | None = None,
         **kwargs,
     ):
         file_prefix = class_to_filename(cls)
@@ -257,12 +259,12 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _load_pyarrow_table(
         self,
         path: str,
-        filter_expr: Optional[str] = None,
-        instrument_ids: Optional[list[str]] = None,
-        start: Optional[timestamp_like] = None,
-        end: Optional[timestamp_like] = None,
+        filter_expr: str | None = None,
+        instrument_ids: list[str] | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
         ts_column: str = "ts_init",
-    ) -> Optional[pds.Dataset]:
+    ) -> pds.Dataset | None:
         # Original dataset
         dataset = pds.dataset(path, filesystem=self.fs)
 
@@ -291,12 +293,12 @@ class ParquetDataCatalog(BaseDataCatalog):
     def query(
         self,
         cls: type,
-        instrument_ids: Optional[list[str]] = None,
-        start: Optional[timestamp_like] = None,
-        end: Optional[timestamp_like] = None,
-        where: Optional[str] = None,
+        instrument_ids: list[str] | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
         **kwargs: Any,
-    ) -> list[Union[Data, GenericData]]:
+    ) -> list[Data | GenericData]:
         if cls in (QuoteTick, TradeTick, Bar, OrderBookDelta):
             data = self.query_rust(
                 cls=cls,
@@ -327,9 +329,9 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _build_query(
         self,
         table: str,
-        start: Optional[timestamp_like] = None,
-        end: Optional[timestamp_like] = None,
-        where: Optional[str] = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
     ) -> str:
         """
         Build datafusion sql query.
@@ -353,7 +355,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @staticmethod
     def _handle_table_nautilus(
-        table: Union[pa.Table, pd.DataFrame],
+        table: pa.Table | pd.DataFrame,
         cls: type,
     ):
         if isinstance(table, pd.DataFrame):
@@ -375,8 +377,8 @@ class ParquetDataCatalog(BaseDataCatalog):
     def _query_subclasses(
         self,
         base_cls: type,
-        instrument_ids: Optional[list[str]] = None,
-        filter_expr: Optional[Callable] = None,
+        instrument_ids: list[str] | None = None,
+        filter_expr: Callable | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         subclasses = [base_cls, *base_cls.__subclasses__()]
@@ -411,8 +413,8 @@ class ParquetDataCatalog(BaseDataCatalog):
     # ---  OVERLOADED BASE METHODS ------------------------------------------------
     def instruments(
         self,
-        instrument_type: Optional[type] = None,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_type: type | None = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Instrument]:
         return super().instruments(

@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from abc import ABC
 from abc import ABCMeta
 from abc import abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
@@ -57,7 +59,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def query(
         self,
         cls: type,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         raise NotImplementedError
@@ -65,7 +67,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def _query_subclasses(
         self,
         base_cls: type,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         objects = []
@@ -79,8 +81,8 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def instruments(
         self,
-        instrument_type: Optional[type] = None,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_type: type | None = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Instrument]:
         if instrument_type is not None:
@@ -98,49 +100,49 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def instrument_status_updates(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[InstrumentStatusUpdate]:
         return self.query(cls=InstrumentStatusUpdate, instrument_ids=instrument_ids, **kwargs)
 
     def instrument_closes(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[InstrumentClose]:
         return self.query(cls=InstrumentClose, instrument_ids=instrument_ids, **kwargs)
 
     def trade_ticks(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[TradeTick]:
         return self.query(cls=TradeTick, instrument_ids=instrument_ids, **kwargs)
 
     def quote_ticks(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[QuoteTick]:
         return self.query(cls=QuoteTick, instrument_ids=instrument_ids, **kwargs)
 
     def tickers(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Ticker]:
         return self._query_subclasses(base_cls=Ticker, instrument_ids=instrument_ids, **kwargs)
 
     def bars(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Bar]:
         return self.query(cls=Bar, instrument_ids=instrument_ids, **kwargs)
 
     def order_book_deltas(
         self,
-        instrument_ids: Optional[list[str]] = None,
+        instrument_ids: list[str] | None = None,
         **kwargs: Any,
     ) -> list[OrderBookDelta]:
         return self.query(cls=OrderBookDelta, instrument_ids=instrument_ids, **kwargs)
@@ -149,7 +151,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         as_nautilus: bool = False,
-        metadata: Optional[dict] = None,
+        metadata: dict | None = None,
         **kwargs: Any,
     ) -> list[GenericData]:
         data = self.query(cls=cls, **kwargs)
