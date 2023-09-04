@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use nautilus_core::{
     correctness::check_valid_string,
     python::to_pyvalue_err,
@@ -85,21 +85,22 @@ impl Hash for Currency {
 }
 
 impl FromStr for Currency {
-    type Err = String;
+    type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        CURRENCY_MAP
+    fn from_str(s: &str) -> Result<Self> {
+        let map_guard = CURRENCY_MAP
             .lock()
-            .unwrap()
+            .map_err(|e| anyhow!("Failed to acquire lock on `CURRENCY_MAP`: {e}"))?;
+        map_guard
             .get(s)
             .copied()
-            .ok_or_else(|| format!("Unknown currency: {}", s))
+            .ok_or_else(|| anyhow!("Unknown currency: {s}"))
     }
 }
 
 impl From<&str> for Currency {
     fn from(input: &str) -> Self {
-        input.parse().unwrap_or_else(|err| panic!("{}", err))
+        input.parse().unwrap()
     }
 }
 
