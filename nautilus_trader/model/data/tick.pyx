@@ -306,7 +306,7 @@ cdef class QuoteTick(Data):
         quote_tick._mem = mem
         return quote_tick
 
-    # Safety: Do NOT deallocate the capsule here
+    # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_quote_tick_list(object capsule):
@@ -755,7 +755,7 @@ cdef class TradeTick(Data):
         trade_tick._mem = mem
         return trade_tick
 
-    # Safety: Do NOT deallocate the capsule here
+    # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_trade_tick_list(object capsule):
