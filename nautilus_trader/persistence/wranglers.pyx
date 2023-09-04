@@ -43,7 +43,7 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-# Safety: Do NOT deallocate the capsule here
+# SAFETY: Do NOT deallocate the capsule here
 cdef inline list capsule_to_data_list(object capsule):
     cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
     cdef Data_t* ptr = <Data_t*>data.ptr
