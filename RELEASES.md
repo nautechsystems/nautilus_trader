@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
+- Added `BinanceTimeInForce.GTD` enum member (futures only)
 
 ### Breaking Changes
 None
