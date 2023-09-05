@@ -94,6 +94,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_orders_closed
     cdef set _index_orders_emulated
     cdef set _index_orders_inflight
+    cdef set _index_orders_pending_cancel
     cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed
@@ -167,6 +168,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
+    cpdef void update_order_pending_cancel_local(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)
     cpdef void delete_actor(self, Actor actor)

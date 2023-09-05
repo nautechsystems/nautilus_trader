@@ -294,6 +294,9 @@ cdef class ExecAlgorithm(Actor):
             )
             return
 
+        if self.cache.is_order_pending_cancel_local(command.client_order_id):
+            return  # Already pending cancel locally
+
         if order.is_closed_c():
             self._log.warning(f"Order already canceled for {command}.")
             return
