@@ -83,7 +83,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orders.base cimport LOCAL_ACTIVE_ORDER_STATUS
 from nautilus_trader.model.orders.base cimport VALID_LIMIT_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport VALID_STOP_ORDER_TYPES
 from nautilus_trader.model.orders.base cimport Order
@@ -767,7 +766,7 @@ cdef class Strategy(Actor):
         cdef OrderStatus order_status = order.status_c()
 
         cdef OrderPendingCancel event
-        if order_status not in LOCAL_ACTIVE_ORDER_STATUS:
+        if not order.is_active_local_c():
             # Generate and apply event
             event = self._generate_order_pending_cancel(order)
             try:
