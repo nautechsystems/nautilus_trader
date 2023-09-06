@@ -178,6 +178,10 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("Closing streaming socket...")
         await self.stream.disconnect()
 
+        # Wait for `watch_stream` to close
+        self._log.info("Waiting for watch_stream to close...")
+        await asyncio.sleep(1)
+
         # Ensure client closed
         self._log.info("Closing BetfairHttpClient...")
         await self._client.disconnect()

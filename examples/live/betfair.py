@@ -66,6 +66,8 @@ async def main(market_id: str):
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
+        timeout_disconnection=30.0,
+        timeout_post_stop=30.0,
         logging=LoggingConfig(log_level="DEBUG"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
@@ -112,8 +114,8 @@ async def main(market_id: str):
     node.build()
 
     try:
-        node.run()
-        await asyncio.gather(*asyncio.all_tasks())
+        await node.run_async()
+        await node.stop_async()
     except Exception as e:
         print(e)
         print(traceback.format_exc())
