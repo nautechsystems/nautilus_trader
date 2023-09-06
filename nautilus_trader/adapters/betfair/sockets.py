@@ -57,6 +57,7 @@ class BetfairStreamClient:
         self._client: Optional[SocketClient] = None
         self.unique_id = next(UNIQUE_ID)
         self.is_connected: bool = False
+        self.disconnecting: bool = False
 
     async def connect(self):
         if not self._http_client.session_token:
@@ -87,6 +88,7 @@ class BetfairStreamClient:
 
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
+        self.disconnecting = True
         self._client.close()
         await self.post_disconnection()
         self.is_connected = False
