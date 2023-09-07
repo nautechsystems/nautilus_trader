@@ -179,6 +179,7 @@ impl Ladder {
         let mut fills = Vec::new();
         let mut cumulative_denominator = Quantity::zero(order.size.precision);
         let target = order.size;
+        let mut pre_book_qty = order.pre_book_qty;
 
         for level in self.levels.values() {
             if (is_reversed && level.price.value < order.price)
@@ -188,7 +189,22 @@ impl Ladder {
             }
 
             for book_order in &level.orders {
-                let current = book_order.size;
+                let mut current = book_order.size;
+
+                if pre_book_qty.is_positive() {
+                    if pre_book_qty >= current {
+                        pre_book_qty -= current;
+
+                        order.pre_book_qty = pre_book_qty;
+                        continue;
+                    } else {
+                        current -= pre_book_qty;
+                        pre_book_qty = Quantity::zero(order.size.precision);
+
+                        order.pre_book_qty = pre_book_qty;
+                    }
+                }
+
                 if cumulative_denominator + current >= target {
                     // This order has filled us, add fill and return
                     let remainder = target - cumulative_denominator;
