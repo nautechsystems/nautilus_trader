@@ -668,7 +668,7 @@ cdef class RiskEngine(Component):
                 notional = Money(order.quantity.as_f64_c() * xrate, instrument.base_currency)
                 max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
             else:
-                notional = instrument.notional_value(order.quantity, last_px)
+                notional = instrument.notional_value(order.quantity, last_px, order.side)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(

@@ -790,6 +790,7 @@ cdef class Portfolio(PortfolioFacade):
             net_exposure = instrument.notional_value(
                 position.quantity,
                 last,
+                OrderSide.BUY if position.is_long_c() else OrderSide.SELL,
             ).as_f64_c()
             net_exposure = round(net_exposure * xrate, settlement_currency._mem.precision)
 

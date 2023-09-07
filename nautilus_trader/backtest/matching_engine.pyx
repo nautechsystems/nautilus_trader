@@ -1636,6 +1636,7 @@ cdef class OrderMatchingEngine:
             quantity=last_qty,
             price=last_px,
             use_quote_for_inverse=False,
+            order_side=order.side,
         ).as_f64_c()
 
         cdef double commission_f64

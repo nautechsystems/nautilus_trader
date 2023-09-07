@@ -311,6 +311,7 @@ class TestEventStubs:
             last_qty=order.quantity,
             last_px=last_px,
             liquidity_side=liquidity_side,
+            order_side=order.side,
         )
 
         return OrderFilled(

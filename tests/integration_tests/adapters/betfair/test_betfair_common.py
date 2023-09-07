@@ -47,10 +47,9 @@ class TestBettingInstrument:
         notional = self.instrument.notional_value(
             quantity=Quantity.from_int(100),
             price=Price.from_str("0.5"),
-            use_quote_for_inverse=False,
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
-        assert notional == Decimal("200.0")
+        assert notional == Decimal("50.0")
 
     @pytest.mark.parametrize(
         ("value", "n", "expected"),

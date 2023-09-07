@@ -143,6 +143,7 @@ cdef class CashAccount(Account):
         Price last_px,
         LiquiditySide liquidity_side,
         bint use_quote_for_inverse=False,
+        OrderSide order_side=OrderSide.NO_ORDER_SIDE,
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -163,6 +164,8 @@ cdef class CashAccount(Account):
             The liquidity side for the transaction.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        order_side : OrderSide
+            Optional OrderSide for Betting and Options instruments where side may affect notional value.
 
         Returns
         -------
@@ -182,6 +185,7 @@ cdef class CashAccount(Account):
             quantity=last_qty,
             price=last_px,
             use_quote_for_inverse=use_quote_for_inverse,
+            order_side=order_side,
         ).as_f64_c()
 
         cdef double commission
@@ -245,6 +249,7 @@ cdef class CashAccount(Account):
                 quantity=quantity,
                 price=price,
                 use_quote_for_inverse=use_quote_for_inverse,
+                order_side=side,
             ).as_f64_c()
         elif side == OrderSide.SELL:
             if base_currency is not None:

@@ -25,6 +25,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport asset_class_from_str
 from nautilus_trader.model.enums_c cimport asset_class_to_str
 from nautilus_trader.model.enums_c cimport asset_type_from_str
@@ -497,6 +498,7 @@ cdef class Instrument(Data):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        OrderSide order_side=OrderSide.NO_ORDER_SIDE,
     ):
         """
         Calculate the notional value.
@@ -512,6 +514,8 @@ cdef class Instrument(Data):
             The price for the calculation.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        order_side : OrderSide
+            Optional OrderSide for Betting and Options instruments where side may affect notional value.
 
         Returns
         -------

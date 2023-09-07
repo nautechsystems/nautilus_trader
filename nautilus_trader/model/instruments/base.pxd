@@ -19,6 +19,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AssetClass
 from nautilus_trader.model.enums_c cimport AssetType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.objects cimport Money
@@ -95,5 +96,5 @@ cdef class Instrument(Data):
     cpdef Price next_bid_price(self, double value, int num_ticks=*)
     cpdef Price next_ask_price(self, double value, int num_ticks=*)
     cpdef Quantity make_qty(self, value)
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*)
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=*, OrderSide order_side=*)
     cpdef Quantity calculate_base_quantity(self, Quantity quantity, Price last_px)

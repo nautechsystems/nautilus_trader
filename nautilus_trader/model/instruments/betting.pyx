@@ -25,6 +25,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.model.currency cimport Currency
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
@@ -197,11 +198,16 @@ cdef class BettingInstrument(Instrument):
         """
         return BettingInstrument.to_dict_c(obj)
 
-    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
+    cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False, OrderSide order_side=OrderSide.BUY):
         Condition.not_none(quantity, "quantity")
-        cdef double bet_price = 1.0 / price.as_f64_c()
-        return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)
+        cdef double bet_price = price.as_f64_c()
+        cdef double bet_quantity = quantity.as_f64_c()
+        cdef double bet_multiplier = self.multiplier.as_f64_c()
 
+        if order_side == OrderSide.BUY:
+            return Money(bet_quantity * bet_multiplier, self.quote_currency)
+        else:
+            return Money(bet_quantity * bet_multiplier * (bet_price - 1), self.quote_currency)
 
 def make_symbol(
     market_id: str,

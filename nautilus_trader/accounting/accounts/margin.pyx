@@ -22,6 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport liquidity_side_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -452,6 +453,7 @@ cdef class MarginAccount(Account):
         Price last_px,
         LiquiditySide liquidity_side,
         bint use_quote_for_inverse=False,
+        OrderSide order_side=OrderSide.NO_ORDER_SIDE
     ):
         """
         Calculate the commission generated from a transaction with the given
@@ -472,6 +474,8 @@ cdef class MarginAccount(Account):
             The liquidity side for the transaction.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        order_side : OrderSide
+            Optional OrderSide for Betting and Options instruments where side may affect notional value.
 
         Returns
         -------
@@ -492,6 +496,7 @@ cdef class MarginAccount(Account):
             quantity=last_qty,
             price=last_px,
             use_quote_for_inverse=use_quote_for_inverse,
+            order_side=order_side,
         ).as_f64_c()
 
         cdef double commission
@@ -515,6 +520,7 @@ cdef class MarginAccount(Account):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        OrderSide order_side=OrderSide.NO_ORDER_SIDE
     ):
         """
         Calculate the initial (order) margin.
@@ -532,6 +538,8 @@ cdef class MarginAccount(Account):
             The order price.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        order_side : OrderSide
+            Optional OrderSide for Betting and Options instruments where side may affect notional value.
 
         Returns
         -------
@@ -569,6 +577,7 @@ cdef class MarginAccount(Account):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=False,
+        OrderSide order_side=OrderSide.NO_ORDER_SIDE
     ):
         """
         Calculate the maintenance (position) margin.
@@ -588,6 +597,8 @@ cdef class MarginAccount(Account):
             The positions current price.
         use_quote_for_inverse : bool
             If inverse instrument calculations use quote currency (instead of base).
+        order_side : OrderSide
+            Optional OrderSide for Betting and Options instruments where side may affect notional value.
 
         Returns
         -------
