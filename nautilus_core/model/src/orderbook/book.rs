@@ -246,6 +246,25 @@ impl OrderBook {
         }
     }
 
+    pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
+            _ => panic!("Invalid `OrderSide` {}", order_side),
+        };
+
+        let mut matched_volume: f64 = 0.0;
+
+        for (book_price, level) in levels {
+            if book_price == &BookPrice::Limit(price) {
+                matched = true;
+                matched_volume += level.volume();
+            }
+        }
+
+        matched_volume
+    }
+
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
         self.update_bid(BookOrder::from_quote_tick(tick, OrderSide::Buy));
         self.update_ask(BookOrder::from_quote_tick(tick, OrderSide::Sell));

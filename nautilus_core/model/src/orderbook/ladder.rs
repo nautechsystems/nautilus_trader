@@ -413,6 +413,7 @@ mod tests {
             size: Quantity::from(500),
             side,
             order_id: 2,
+            pre_book_qty: Quantity::from(0),
         };
 
         let fills = ladder.simulate_fills(&order);
@@ -435,6 +436,7 @@ mod tests {
             size: Quantity::from(100),
             side: ladder_side,
             order_id: 1,
+            pre_book_qty: Quantity::from(0),
         });
 
         let order = BookOrder {
@@ -442,6 +444,7 @@ mod tests {
             size: Quantity::from(500),
             side: order_side,
             order_id: 2,
+            pre_book_qty: Quantity::from(0),
         };
 
         let fills = ladder.simulate_fills(&order);

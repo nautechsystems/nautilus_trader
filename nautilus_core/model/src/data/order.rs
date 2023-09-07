@@ -41,6 +41,10 @@ pub const NULL_ORDER: BookOrder = BookOrder {
         precision: 0,
     },
     order_id: 0,
+    pre_book_qty: Quantity {
+        raw: 0,
+        precision: 0,
+    },
 };
 
 /// Represents an order in a book.
@@ -68,7 +72,7 @@ impl BookOrder {
             price,
             size,
             order_id,
-            Quantity::zero(size.precision),
+            pre_book_qty: Quantity::zero(size.precision),
         }
     }
 
