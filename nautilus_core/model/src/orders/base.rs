@@ -393,6 +393,8 @@ pub struct OrderCore {
     pub init_id: UUID4,
     pub ts_init: UnixNanos,
     pub ts_last: UnixNanos,
+    pub pre_book_qty: Quantity,
+    pub post_book_qty: Quantity,
 }
 
 impl OrderCore {
@@ -459,6 +461,8 @@ impl OrderCore {
             init_id,
             ts_init,
             ts_last: ts_init,
+            pre_book_qty: Quantity::zero(quantity.precision),
+            post_book_qty: Quantity::zero(quantity.precision),
         }
     }
 

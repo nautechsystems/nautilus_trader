@@ -56,6 +56,8 @@ pub struct BookOrder {
     pub size: Quantity,
     /// The order ID.
     pub order_id: u64,
+    /// The order book quantity at the time of order acceptance.
+    pub pre_book_qty: Quantity, // For more accurate backtesting
 }
 
 impl BookOrder {
@@ -66,6 +68,7 @@ impl BookOrder {
             price,
             size,
             order_id,
+            Quantity::zero(size.precision),
         }
     }
 
@@ -121,6 +124,10 @@ impl BookOrder {
             ),
             _ => panic!("{}", BookIntegrityError::NoOrderSide),
         }
+    }
+
+    fn update_pre_book_qty(&mut self, new_qty: Quantity) {
+        self.pre_book_qty = new_qty;
     }
 }
 
