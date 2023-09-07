@@ -16,6 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.base cimport Account
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -62,6 +63,7 @@ cdef class MarginAccount(Account):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=*,
+        OrderSide order_side=*,
     )
 
     cpdef Money calculate_margin_maint(
@@ -71,4 +73,5 @@ cdef class MarginAccount(Account):
         Quantity quantity,
         Price price,
         bint use_quote_for_inverse=*,
+        OrderSide order_side=*,
     )

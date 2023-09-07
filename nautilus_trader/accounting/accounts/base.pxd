@@ -16,6 +16,7 @@
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.identifiers cimport AccountId
@@ -84,6 +85,7 @@ cdef class Account:
         Price last_px,
         LiquiditySide liquidity_side,
         bint use_quote_for_inverse=*,
+        OrderSide order_side=*
     )
 
     cpdef list calculate_pnls(

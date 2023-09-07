@@ -469,6 +469,7 @@ cdef class Account:
         Price last_px,
         LiquiditySide liquidity_side,
         bint use_quote_for_inverse=False,
+        OrderSide order_side=OrderSide.NO_ORDER_SIDE,
     ):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 

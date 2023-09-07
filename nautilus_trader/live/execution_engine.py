@@ -783,7 +783,7 @@ class LiveExecutionEngine(ExecutionEngine):
             filled_cost = order.avg_px * float(order.filled_qty)
             last_px = instrument.make_price((report_cost - filled_cost) / float(last_qty))
 
-        notional_value: Money = instrument.notional_value(last_qty, last_px)
+        notional_value: Money = instrument.notional_value(last_qty, last_px, order_side=order.side)
         commission: Money = Money(notional_value * instrument.taker_fee, instrument.quote_currency)
 
         filled = OrderFilled(
