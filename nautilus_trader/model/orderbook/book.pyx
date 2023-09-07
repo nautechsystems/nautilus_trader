@@ -55,6 +55,7 @@ from nautilus_trader.core.rust.model cimport orderbook_clear_bids
 from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
+from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_instrument_id
@@ -515,6 +516,33 @@ cdef class OrderBook(Data):
         Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
 
         return orderbook_get_avg_px_for_quantity(&self._mem, quantity._mem, order_side)
+
+    cpdef double get_quantity_for_price(self, Price price, OrderSide order_side):
+        """
+        Return the current qtys for the given `price` based on the current state
+        of the order book.
+
+        Parameters
+        ----------
+        price : Price
+            The quantity for the calculation.
+        order_side : OrderSide
+            The order side for the calculation.
+
+        Returns
+        -------
+        double
+
+        Raises
+        ------
+        ValueError
+            If `order_side` is equal to ``NO_ORDER_SIDE``
+
+        """
+        Condition.not_none(price, "price")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+
+        return orderbook_get_quantity_for_price(&self._mem, price._mem, order_side)
 
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive):
         """
