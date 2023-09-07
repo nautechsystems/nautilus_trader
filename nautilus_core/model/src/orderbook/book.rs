@@ -256,7 +256,7 @@ impl OrderBook {
         let mut matched_volume: f64 = 0.0;
 
         for (book_price, level) in levels {
-            if book_price == price {
+            if book_price.value == price {
                 matched_volume += level.volume();
             }
         }
