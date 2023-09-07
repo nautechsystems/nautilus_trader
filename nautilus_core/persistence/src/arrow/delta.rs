@@ -191,6 +191,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                         price,
                         size,
                         order_id,
+                        pre_book_qty: Quantity::zero(size.precision),
                     },
                     flags,
                     sequence,
