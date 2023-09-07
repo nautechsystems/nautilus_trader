@@ -1279,6 +1279,10 @@ cdef extern from "../includes/model.h":
                                              Quantity_t qty,
                                              OrderSide order_side);
 
+    double orderbook_get_quantity_for_price(OrderBook_API *book,
+                                            Price_t price,
+                                            OrderSide order_side);
+
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *tick);
 
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);

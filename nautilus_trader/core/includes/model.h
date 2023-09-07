@@ -1838,6 +1838,10 @@ double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
                                          struct Quantity_t qty,
                                          enum OrderSide order_side);
 
+double orderbook_get_quantity_for_price(struct OrderBook_API *book,
+                                        struct Price_t price,
+                                        enum OrderSide order_side);
+
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
 
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);

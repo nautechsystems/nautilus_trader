@@ -33,6 +33,7 @@ from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
+from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
 from nautilus_trader.core.rust.model cimport price_new
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.string cimport pystr_to_cstr
@@ -1808,6 +1809,11 @@ cdef class OrderMatchingEngine:
             ):
                 if order.trigger_price is None:
                     self._update_trailing_stop_order(order)
+
+        # initialize pre_book_qty
+        if order.order_type == OrderType.LIMIT:
+            price = order.price
+            order.pre_book_qty = Quantity(orderbook_get_avg_px_for_quantity(&self._mem, price._mem, order.side), precision=5)
 
         self._core.add_order(order)
 

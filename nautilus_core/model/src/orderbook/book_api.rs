@@ -218,6 +218,15 @@ pub extern "C" fn orderbook_get_avg_px_for_quantity(
 }
 
 #[no_mangle]
+pub extern "C" fn orderbook_get_quantity_for_price(
+    book: &mut OrderBook_API,
+    price: Price,
+    order_side: OrderSide,
+) -> f64 {
+    book.get_quantity_for_price(price, order_side)
+}
+
+#[no_mangle]
 pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, tick: &QuoteTick) {
     book.update_quote_tick(tick);
 }
