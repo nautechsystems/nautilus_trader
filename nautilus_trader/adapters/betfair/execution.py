@@ -146,7 +146,6 @@ class BetfairExecutionClient(LiveExecutionClient):
             logger=logger,
             message_handler=self.handle_order_stream_update,
         )
-        self._watch_stream_task: Optional[asyncio.Task] = None
         self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
         self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
@@ -171,32 +170,15 @@ class BetfairExecutionClient(LiveExecutionClient):
             self.check_account_currency(),
         ]
         await asyncio.gather(*aws)
-        self._watch_stream_task = self.create_task(self.watch_stream())
 
     async def _disconnect(self) -> None:
         # Close socket
         self._log.info("Closing streaming socket...")
         await self.stream.disconnect()
 
-        # Wait for `watch_stream` to close
-        self._log.info("Waiting for watch_stream to close...")
-        await asyncio.sleep(1)
-
         # Ensure client closed
         self._log.info("Closing BetfairHttpClient...")
         await self._client.disconnect()
-
-    # TODO - remove when we get socket reconnect in rust.
-    async def watch_stream(self) -> None:
-        """
-        Ensure socket stream is connected.
-        """
-        while True:
-            if self.stream.disconnecting:
-                return
-            if not self.stream.is_connected:
-                await self.stream.connect()
-            await asyncio.sleep(1)
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:

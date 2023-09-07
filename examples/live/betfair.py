@@ -115,16 +115,18 @@ async def main(market_id: str):
 
     try:
         await node.run_async()
-        await node.stop_async()
     except Exception as e:
         print(e)
         print(traceback.format_exc())
     finally:
-        node.dispose()
+        await node.stop_async()
+        await asyncio.sleep(1)
+        return node
 
 
 if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.207188674"))
+    node = asyncio.run(main(market_id="1.217955063"))
+    node.dispose()

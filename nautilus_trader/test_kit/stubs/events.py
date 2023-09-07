@@ -23,6 +23,7 @@ from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import TradingState
@@ -132,7 +133,11 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def betting_account_state(account_id: Optional[AccountId] = None) -> AccountState:
+    def betting_account_state(
+        balance: float = 1_000,
+        currency: Currency = GBP,
+        account_id: Optional[AccountId] = None,
+    ) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.BETTING,
@@ -140,9 +145,9 @@ class TestEventStubs:
             reported=False,  # reported
             balances=[
                 AccountBalance(
-                    Money(1_000, GBP),
-                    Money(0, GBP),
-                    Money(1_000, GBP),
+                    Money(balance, currency),
+                    Money(0, currency),
+                    Money(balance, currency),
                 ),
             ],
             margins=[],
