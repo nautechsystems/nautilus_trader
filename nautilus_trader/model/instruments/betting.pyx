@@ -32,6 +32,8 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
+from nautilus_trader.model.tick_scheme.implementations.tiered cimport TieredTickScheme
 
 
 cdef class BettingInstrument(Instrument):
@@ -197,18 +199,8 @@ cdef class BettingInstrument(Instrument):
 
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
         Condition.not_none(quantity, "quantity")
-        cdef double bet_price = price.as_f64_c()
+        cdef double bet_price = 1.0 / price.as_f64_c()
         return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)
-
-    cpdef Money notional_value_buy(self, Quantity quantity, Price price):
-        Condition.not_none(quantity, "quantity")
-        cdef double bet_price = price.as_f64_c()
-        return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
-
-    cpdef Money notional_value_sell(self, Quantity quantity, Price price):
-        Condition.not_none(quantity, "quantity")
-        cdef double bet_price = price.as_f64_c()
-        return Money(quantity.as_f64_c() * float(self.multiplier) * (bet_price - 1), self.quote_currency)
 
 
 def make_symbol(

@@ -44,7 +44,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -465,31 +464,6 @@ class TestInstrumentProvider:
                 TestInstrumentProvider.ethusdt_binance().id,
             ],
             formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
-            ts_event=0,
-            ts_init=0,
-        )
-
-    @staticmethod
-    def betting_instrument(venue: Optional[str] = None) -> BettingInstrument:
-        return BettingInstrument(
-            venue_name=venue or "BETFAIR",
-            betting_type="ODDS",
-            competition_id="12282733",
-            competition_name="NFL",
-            event_country_code="GB",
-            event_id="29678534",
-            event_name="NFL",
-            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
-            event_type_name="American Football",
-            market_id="1.123456789",
-            market_name="AFC Conference Winner",
-            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            market_type="SPECIAL",
-            selection_handicap=None,
-            selection_id="50214",
-            selection_name="Kansas City Chiefs",
-            currency="GBP",
             ts_event=0,
             ts_init=0,
         )

@@ -16,9 +16,6 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class BettingInstrument(Instrument):
@@ -44,5 +41,3 @@ cdef class BettingInstrument(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj)
-    cpdef Money notional_value_buy(self, Quantity quantity, Price price)
-    cpdef Money notional_value_sell(self, Quantity quantity, Price price)

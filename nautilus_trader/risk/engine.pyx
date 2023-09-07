@@ -18,7 +18,6 @@ from typing import Optional
 
 import pandas as pd
 
-from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.config import RiskEngineConfig
 
 from libc.stdint cimport uint64_t
@@ -668,11 +667,6 @@ cdef class RiskEngine(Component):
                 xrate = 1.0 / last_px.as_f64_c()
                 notional = Money(order.quantity.as_f64_c() * xrate, instrument.base_currency)
                 max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
-            elif isinstance(account, BettingAccount):
-                if order.side == OrderSide.BUY:
-                    notional = instrument.notional_value_buy(order.quantity, last_px)
-                else:
-                    notional = instrument.notional_value_sell(order.quantity, last_px)
             else:
                 notional = instrument.notional_value(order.quantity, last_px)
 

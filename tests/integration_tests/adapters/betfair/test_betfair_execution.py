@@ -875,7 +875,3 @@ def test_check_cache_against_order_image(exec_client, venue_order_id):
     # Act, Assert
     with pytest.raises(RuntimeError):
         exec_client.check_cache_against_order_image(ocm)
-
-
-def test_exec_risk_engine(exec_client):
-    pass

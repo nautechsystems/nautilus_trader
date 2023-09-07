@@ -16,8 +16,6 @@
 from datetime import timedelta
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
@@ -32,7 +30,6 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.messages import TradingCommand
-from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import AccountType
@@ -1716,143 +1713,3 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.trigger_price == new_trigger_price
-
-
-class TestRiskEngineWithBettingAccount:
-    def setup(self):
-        # Fixture Setup
-        self.clock = TestClock()
-        self.logger = Logger(
-            clock=self.clock,
-            level_stdout=LogLevel.DEBUG,
-            bypass=False,
-        )
-
-        self.trader_id = TestIdStubs.trader_id()
-        self.account_id = TestIdStubs.account_id()
-        self.venue = Venue("SIM")
-        self.instrument = TestInstrumentProvider.betting_instrument(venue=self.venue.value)
-
-        self.msgbus = MessageBus(
-            trader_id=self.trader_id,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.cache = TestComponentStubs.cache()
-
-        self.portfolio = Portfolio(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine = ExecutionEngine(
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-            config=ExecEngineConfig(debug=True),
-        )
-
-        self.risk_engine = RiskEngine(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-            config=RiskEngineConfig(debug=True),
-        )
-
-        self.emulator = OrderEmulator(
-            trader_id=self.trader_id,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_client = MockExecutionClient(
-            client_id=ClientId(self.venue.value),
-            venue=self.venue,
-            account_type=AccountType.BETTING,
-            base_currency=GBP,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine.register_client(self.exec_client)
-
-        # Set account balance
-        self.account_state = TestEventStubs.betting_account_state(
-            balance=1000,
-            account_id=self.account_id,
-        )
-        self.portfolio.update_account(self.account_state)
-
-        # Prepare data
-        self.cache.add_instrument(self.instrument)
-        self.quote_tick = TestDataStubs.quote_tick(
-            self.instrument,
-            bid_price=2.0,
-            ask_price=3.0,
-            bid_size=50,
-            ask_size=50,
-        )
-        self.cache.add_quote_tick(self.quote_tick)
-
-        # Strategy
-        self.strategy = Strategy()
-        self.strategy.register(
-            trader_id=self.trader_id,
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-            logger=self.logger,
-        )
-
-        self.exec_engine.start()
-
-    @pytest.mark.parametrize(
-        "side,quantity,price,expected_status",
-        [
-            (OrderSide.BUY, 500, 2.0, OrderStatus.INITIALIZED),
-            (OrderSide.BUY, 999, 2.0, OrderStatus.INITIALIZED),
-            (OrderSide.BUY, 1100, 2.0, OrderStatus.DENIED),
-            (OrderSide.SELL, 100, 5.0, OrderStatus.INITIALIZED),
-            (OrderSide.SELL, 150, 5.0, OrderStatus.INITIALIZED),
-            (OrderSide.SELL, 300, 5.0, OrderStatus.DENIED),
-        ],
-    )
-    def test_submit_order_when_market_order_and_over_free_balance_then_denies(
-        self,
-        side,
-        quantity,
-        price,
-        expected_status,
-    ):
-        # Arrange
-        order = self.strategy.order_factory.limit(
-            self.instrument.id,
-            side,
-            Quantity.from_int(quantity),
-            Price.from_str(str(price)),
-        )
-        submit_order = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy.id,
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.risk_engine.execute(submit_order)
-
-        # Assert
-        assert order.status == expected_status
