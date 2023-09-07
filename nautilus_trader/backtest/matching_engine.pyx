@@ -402,6 +402,9 @@ cdef class OrderMatchingEngine:
         if self.book_type == BookType.L1_TBBO:
             self._book.update_quote_tick(tick)
 
+        if self.book_type == BookType.L2_MBP:
+            self._book.update_quote_tick(tick)
+
         self.iterate(tick.ts_init)
 
     cpdef void process_trade_tick(self, TradeTick tick):
@@ -422,6 +425,9 @@ cdef class OrderMatchingEngine:
             self._log.debug(f"Processing {repr(tick)}...")
 
         if self.book_type == BookType.L1_TBBO:
+            self._book.update_trade_tick(tick)
+
+        if self.book_type == BookType.L2_MBP:
             self._book.update_trade_tick(tick)
 
         self._core.set_last_raw(tick._mem.price.raw)
