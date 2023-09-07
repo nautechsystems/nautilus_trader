@@ -1813,7 +1813,7 @@ cdef class OrderMatchingEngine:
         # initialize pre_book_qty
         if order.order_type == OrderType.LIMIT:
             price = order.price
-            order.pre_book_qty = Quantity(orderbook_get_avg_px_for_quantity(&self._mem, price._mem, order.side), precision=5)
+            order.pre_book_qty = Quantity(orderbook_get_quantity_for_price(&self._mem, price._mem, order.side), precision=5)
 
         self._core.add_order(order)
 

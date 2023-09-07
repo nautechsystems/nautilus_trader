@@ -545,7 +545,7 @@ cdef class OrderBook(Data):
             0,
         )
 
-        cdef CVec raw_fills_vec = orderbook_simulate_fills(&self._mem, submit_order)
+        cdef CVec raw_fills_vec = orderbook_simulate_fills(&self._mem, &submit_order)
         cdef (Price_t, Quantity_t)* raw_fills = <(Price_t, Quantity_t)*>raw_fills_vec.ptr
         cdef list fills = []
 
