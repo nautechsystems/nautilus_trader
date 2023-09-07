@@ -16,7 +16,7 @@
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True):
+class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True, kw_only=True):
     """
     Configuration for ``SandboxExecClient`` instances.
 
@@ -31,6 +31,6 @@ class SandboxExecutionClientConfig(LiveExecClientConfig, frozen=True):
 
     """
 
-    venue: str  # type: ignore
-    currency: str  # type: ignore
-    balance: int  # type: ignore
+    venue: str
+    currency: str
+    balance: int
