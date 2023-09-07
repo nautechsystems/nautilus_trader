@@ -1283,7 +1283,7 @@ cdef extern from "../includes/model.h":
 
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
 
-    CVec orderbook_simulate_fills(const OrderBook_API *book, BookOrder_t order);
+    CVec orderbook_simulate_fills(const OrderBook_API *book, BookOrder_t *order);
 
     void orderbook_check_integrity(const OrderBook_API *book);
 

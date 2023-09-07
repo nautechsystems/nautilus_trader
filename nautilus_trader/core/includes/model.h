@@ -1842,7 +1842,7 @@ void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteT
 
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
 
-CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
+CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t *order);
 
 void orderbook_check_integrity(const struct OrderBook_API *book);
 

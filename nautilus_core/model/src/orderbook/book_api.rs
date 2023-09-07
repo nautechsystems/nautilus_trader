@@ -228,8 +228,8 @@ pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, tick: &T
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: BookOrder) -> CVec {
-    book.simulate_fills(&order).into()
+pub extern "C" fn orderbook_simulate_fills(book: &OrderBook_API, order: &mut BookOrder) -> CVec {
+    book.simulate_fills(order).into()
 }
 
 #[no_mangle]

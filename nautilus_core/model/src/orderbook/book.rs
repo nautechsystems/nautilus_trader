@@ -274,7 +274,7 @@ impl OrderBook {
         self.update_ask(BookOrder::from_trade_tick(tick, OrderSide::Sell));
     }
 
-    pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
+    pub fn simulate_fills(&self, order: &mut BookOrder) -> Vec<(Price, Quantity)> {
         match order.side {
             OrderSide::Buy => self.asks.simulate_fills(order),
             OrderSide::Sell => self.bids.simulate_fills(order),

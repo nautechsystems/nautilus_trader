@@ -130,7 +130,7 @@ impl BookOrder {
         }
     }
 
-    fn update_pre_book_qty(&mut self, new_qty: Quantity) {
+    pub fn update_pre_book_qty(&mut self, new_qty: Quantity) {
         self.pre_book_qty = new_qty;
     }
 }

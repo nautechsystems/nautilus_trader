@@ -173,7 +173,7 @@ impl Ladder {
         }
     }
 
-    pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
+    pub fn simulate_fills(&self, order: &mut BookOrder) -> Vec<(Price, Quantity)> {
         let is_reversed = self.side == OrderSide::Buy;
 
         let mut fills = Vec::new();
@@ -195,13 +195,13 @@ impl Ladder {
                     if pre_book_qty >= current {
                         pre_book_qty -= current;
 
-                        order.pre_book_qty = pre_book_qty;
+                        order.update_pre_book_qty(pre_book_qty);
                         continue;
                     } else {
                         current -= pre_book_qty;
                         pre_book_qty = Quantity::zero(order.size.precision);
 
-                        order.pre_book_qty = pre_book_qty;
+                        order.update_pre_book_qty(pre_book_qty);
                     }
                 }
 
@@ -424,7 +424,7 @@ mod tests {
         #[case] ladder_side: OrderSide,
     ) {
         let ladder = Ladder::new(ladder_side);
-        let order = BookOrder {
+        let mut order = BookOrder {
             price, // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side,
@@ -432,7 +432,7 @@ mod tests {
             pre_book_qty: Quantity::from(0),
         };
 
-        let fills = ladder.simulate_fills(&order);
+        let fills = ladder.simulate_fills(&mut order);
 
         assert!(fills.is_empty());
     }
@@ -455,7 +455,7 @@ mod tests {
             pre_book_qty: Quantity::from(0),
         });
 
-        let order = BookOrder {
+        let mut order = BookOrder {
             price: Price::from("50.00"),
             size: Quantity::from(500),
             side: order_side,
@@ -463,7 +463,7 @@ mod tests {
             pre_book_qty: Quantity::from(0),
         };
 
-        let fills = ladder.simulate_fills(&order);
+        let fills = ladder.simulate_fills(&mut order);
 
         assert!(fills.is_empty());
     }
