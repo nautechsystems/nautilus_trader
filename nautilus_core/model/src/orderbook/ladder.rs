@@ -461,6 +461,7 @@ mod tests {
             size: Quantity::from(100),
             side: OrderSide::Buy,
             order_id: 1,
+            pre_book_qty: Quantity::from(0),
         });
 
         let order = BookOrder {
@@ -468,6 +469,7 @@ mod tests {
             size: Quantity::from(500),
             side: OrderSide::Buy,
             order_id: 2,
+            pre_book_qty: Quantity::from(0),
         };
 
         let fills = ladder.simulate_fills(&order);
@@ -485,18 +487,21 @@ mod tests {
                 size: Quantity::from(100),
                 side: OrderSide::Sell,
                 order_id: 1,
+                pre_book_qty: Quantity::from(0),
             },
             BookOrder {
                 price: Price::from("101.00"),
                 size: Quantity::from(200),
                 side: OrderSide::Sell,
                 order_id: 2,
+                pre_book_qty: Quantity::from(0),
             },
             BookOrder {
                 price: Price::from("102.00"),
                 size: Quantity::from(400),
                 side: OrderSide::Sell,
                 order_id: 3,
+                pre_book_qty: Quantity::from(0),
             },
         ]);
 
@@ -505,6 +510,7 @@ mod tests {
             size: Quantity::from(500),
             side: OrderSide::Buy,
             order_id: 4,
+            pre_book_qty: Quantity::from(0),
         };
 
         let fills = ladder.simulate_fills(&order);
@@ -534,18 +540,21 @@ mod tests {
                 size: Quantity::from(100),
                 side: OrderSide::Buy,
                 order_id: 1,
+                pre_book_qty: Quantity::from(0),
             },
             BookOrder {
                 price: Price::from("101.00"),
                 size: Quantity::from(200),
                 side: OrderSide::Buy,
                 order_id: 2,
+                pre_book_qty: Quantity::from(0),
             },
             BookOrder {
                 price: Price::from("100.00"),
                 size: Quantity::from(400),
                 side: OrderSide::Buy,
                 order_id: 3,
+                pre_book_qty: Quantity::from(0),
             },
         ]);
 
@@ -554,6 +563,7 @@ mod tests {
             size: Quantity::from(500),
             side: OrderSide::Sell,
             order_id: 4,
+            pre_book_qty: Quantity::from(0),
         };
 
         let fills = ladder.simulate_fills(&order);
@@ -583,18 +593,21 @@ mod tests {
                 size: Quantity::from("100.000000000"),
                 side: OrderSide::Buy,
                 order_id: 1,
+                pre_book_qty: Quantity::from(0),
             },
             BookOrder {
                 price: Price::from("101.00"),
                 size: Quantity::from("200.000000000"),
                 side: OrderSide::Buy,
                 order_id: 2,
+                pre_book_qty: Quantity::from(0),
             },
             BookOrder {
                 price: Price::from("100.00"),
                 size: Quantity::from("400.000000000"),
                 side: OrderSide::Buy,
                 order_id: 3,
+                pre_book_qty: Quantity::from(0),
             },
         ]);
 
@@ -603,6 +616,7 @@ mod tests {
             size: Quantity::from("699.999999999"), // <-- Size slightly less than total size in ladder
             side: OrderSide::Sell,
             order_id: 4,
+            pre_book_qty: Quantity::from(0),
         };
 
         let fills = ladder.simulate_fills(&order);
