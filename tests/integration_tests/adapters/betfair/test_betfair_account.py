@@ -12,37 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import pytest
 
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 
 
-@pytest.mark.parametrize(
-    "price, quantity, expected",
-    [
-        (5.0, 100.0, 100),
-        (1.50, 100.0, 100),
-    ],
-)
-def test_betting_instrument_notional_value_buy(instrument, price, quantity, expected):
-    notional = instrument.notional_value_buy(
-        price=betfair_float_to_price(price),
-        quantity=betfair_float_to_quantity(quantity),
+def test_betting_instrument_notional_value(instrument):
+    notional = instrument.notional_value(
+        price=betfair_float_to_price(2.0),
+        quantity=betfair_float_to_quantity(100.0),
     ).as_double()
-    assert notional == expected
-
-
-@pytest.mark.parametrize(
-    "price, quantity, expected",
-    [
-        (5.0, 100.0, 400),
-        (1.5, 100.0, 50),
-    ],
-)
-def test_betting_instrument_notional_value_sell(instrument, price, quantity, expected):
-    notional = instrument.notional_value_sell(
-        price=betfair_float_to_price(price),
-        quantity=betfair_float_to_quantity(quantity),
-    ).as_double()
-    assert notional == expected
+    assert notional == 50
