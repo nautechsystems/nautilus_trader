@@ -683,6 +683,10 @@ typedef struct BookOrder_t {
      * The order ID.
      */
     uint64_t order_id;
+    /**
+     * The order book quantity at the time of order acceptance.
+     */
+    struct Quantity_t pre_book_qty;
 } BookOrder_t;
 
 /**
@@ -1075,7 +1079,7 @@ typedef struct Money_t {
     struct Currency_t currency;
 } Money_t;
 
-#define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0 }
+#define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0, .pre_book_qty = (Quantity_t){ .raw = 0, .precision = 0 } }
 
 /**
  * Sentinel Price for errors.

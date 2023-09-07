@@ -257,7 +257,6 @@ impl OrderBook {
 
         for (book_price, level) in levels {
             if book_price == &BookPrice::Limit(price) {
-                matched = true;
                 matched_volume += level.volume();
             }
         }

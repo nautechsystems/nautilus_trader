@@ -376,6 +376,8 @@ cdef extern from "../includes/model.h":
         Quantity_t size;
         # The order ID.
         uint64_t order_id;
+        # The order book quantity at the time of order acceptance.
+        Quantity_t pre_book_qty;
 
     # Represents a single change/delta in an order book.
     cdef struct OrderBookDelta_t:
@@ -630,7 +632,7 @@ cdef extern from "../includes/model.h":
         int64_t raw;
         Currency_t currency;
 
-    const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }
+    const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0, <Quantity_t>{ 0, 0 } }
 
     # Sentinel Price for errors.
     const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }

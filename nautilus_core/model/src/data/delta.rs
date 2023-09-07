@@ -130,6 +130,7 @@ impl OrderBookDelta {
                 price,
                 size,
                 order_id,
+                pre_book_qty: Quantity::zero(size_prec),
             }
         };
 
