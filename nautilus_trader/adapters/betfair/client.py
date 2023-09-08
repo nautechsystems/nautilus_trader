@@ -146,7 +146,7 @@ class BetfairHttpClient:
     async def disconnect(self):
         self._log.info("Disconnecting..")
         self.reset_headers()
-        self._log.info("Disconnected.")
+        self._log.info("Disconnected.", color=LogColor.GREEN)
 
     async def keep_alive(self):
         """
