@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.178.0"
+version = "10.178.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -276,3 +276,8 @@ omit = [
 [tool.coverage.report]
 fail_under = 0
 show_missing = true
+
+[[tool.poetry.source]]
+name = "artifact"
+url = "https://a23r-622371988550.d.codeartifact.ap-northeast-1.amazonaws.com/pypi/a23r-repo/"
+secondary = true
