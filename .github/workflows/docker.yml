@@ -1,91 +1,91 @@
-name: docker
-
-# Build NautilusTrader docker images
-
-on:
-  push:
-    branches: [master, develop]
-
-jobs:
-  build-docker-images:
-    name: build-docker-images
-    runs-on: ubuntu-latest
-    env:
-      BUILD_MODE: release
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-
-      - name: Login to GHCR
-        uses: docker/login-action@v1
-        with:
-          registry: ghcr.io
-          username: ${{ github.repository_owner }}
-          password: ${{ secrets.PACKAGES_TOKEN }}
-
-      - name: Get branch name
-        id: branch-name
-        uses: tj-actions/branch-names@v6
-
-      - name: Build nautilus_trader image (develop)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        id: docker_build_trader_develop
-        uses: docker/build-push-action@v2
-        with:
-          file: ".docker/nautilus_trader.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:develop
-          cache-from: type=gha
-          cache-to: type=gha
-      - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_develop.outputs.digest }}
-
-      - name: Build nautilus_trader image (latest)
-        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
-        id: docker_build_trader_latest
-        uses: docker/build-push-action@v2
-        with:
-          file: ".docker/nautilus_trader.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest
-          cache-from: type=gha
-          cache-to: type=gha
-      - name: Digest nautilus_trader image
-        run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
-
-      - name: Build jupyterlab image (develop)
-        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
-        id: docker_build_jupyterlab_develop
-        uses: docker/build-push-action@v2
-        with:
-          file: ".docker/jupyterlab.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:develop
-          cache-from: type=gha
-          cache-to: type=gha
-          build-args: |
-            GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
-      - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_develop.outputs.digest }}
-
-      - name: Build jupyterlab image (latest)
-        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
-        id: docker_build_jupyterlab_latest
-        uses: docker/build-push-action@v2
-        with:
-          file: ".docker/jupyterlab.dockerfile"
-          push: true
-          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:latest
-          cache-from: type=gha
-          cache-to: type=gha
-          build-args: |
-            GIT_TAG=latest
-      - name: Digest jupyterlab image
-        run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
+#name: docker
+#
+## Build NautilusTrader docker images
+#
+#on:
+#  push:
+#    branches: [master, develop]
+#
+#jobs:
+#  build-docker-images:
+#    name: build-docker-images
+#    runs-on: ubuntu-latest
+#    env:
+#      BUILD_MODE: release
+#
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v3
+#
+#      - name: Set up QEMU
+#        uses: docker/setup-qemu-action@v1
+#
+#      - name: Set up Docker Buildx
+#        uses: docker/setup-buildx-action@v1
+#
+#      - name: Login to GHCR
+#        uses: docker/login-action@v1
+#        with:
+#          registry: ghcr.io
+#          username: ${{ github.repository_owner }}
+#          password: ${{ secrets.PACKAGES_TOKEN }}
+#
+#      - name: Get branch name
+#        id: branch-name
+#        uses: tj-actions/branch-names@v6
+#
+#      - name: Build nautilus_trader image (develop)
+#        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+#        id: docker_build_trader_develop
+#        uses: docker/build-push-action@v2
+#        with:
+#          file: ".docker/nautilus_trader.dockerfile"
+#          push: true
+#          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:develop
+#          cache-from: type=gha
+#          cache-to: type=gha
+#      - name: Digest nautilus_trader image
+#        run: echo ${{ steps.docker_build_trader_develop.outputs.digest }}
+#
+#      - name: Build nautilus_trader image (latest)
+#        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+#        id: docker_build_trader_latest
+#        uses: docker/build-push-action@v2
+#        with:
+#          file: ".docker/nautilus_trader.dockerfile"
+#          push: true
+#          tags: ghcr.io/${{ github.repository_owner }}/nautilus_trader:latest
+#          cache-from: type=gha
+#          cache-to: type=gha
+#      - name: Digest nautilus_trader image
+#        run: echo ${{ steps.docker_build_trader_latest.outputs.digest }}
+#
+#      - name: Build jupyterlab image (develop)
+#        if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
+#        id: docker_build_jupyterlab_develop
+#        uses: docker/build-push-action@v2
+#        with:
+#          file: ".docker/jupyterlab.dockerfile"
+#          push: true
+#          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:develop
+#          cache-from: type=gha
+#          cache-to: type=gha
+#          build-args: |
+#            GIT_TAG=${{ steps.branch-name.outputs.current_branch }}
+#      - name: Digest jupyterlab image
+#        run: echo ${{ steps.docker_build_jupyterlab_develop.outputs.digest }}
+#
+#      - name: Build jupyterlab image (latest)
+#        if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
+#        id: docker_build_jupyterlab_latest
+#        uses: docker/build-push-action@v2
+#        with:
+#          file: ".docker/jupyterlab.dockerfile"
+#          push: true
+#          tags: ghcr.io/${{ github.repository_owner }}/jupyterlab:latest
+#          cache-from: type=gha
+#          cache-to: type=gha
+#          build-args: |
+#            GIT_TAG=latest
+#      - name: Digest jupyterlab image
+#        run: echo ${{ steps.docker_build_jupyterlab_latest.outputs.digest }}
