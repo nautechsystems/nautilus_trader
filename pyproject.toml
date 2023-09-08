@@ -87,8 +87,8 @@ types-toml = "^0.10.2"
 optional = true
 
 [tool.poetry.group.test.dependencies]
-coverage = "^7.3.0"
-pytest = "^7.4.1"
+coverage = "^7.3.1"
+pytest = "^7.4.2"
 pytest-aiohttp = "^1.0.4"
 pytest-asyncio = "^0.21.1"
 pytest-benchmark = "^4.0.0"
