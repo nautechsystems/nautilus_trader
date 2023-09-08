@@ -681,7 +681,6 @@ cdef class RiskEngine(Component):
                 return False  # Denied
 
             order_balance_impact = account.balance_impact(instrument, order.quantity, last_px, order.side)
-            print(order_balance_impact, type(order_balance_impact))
 
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
