@@ -77,13 +77,13 @@ cdef class BettingAccount(CashAccount):
         Price price,
         OrderSide order_side,
     ):
-        cdef object notional
+        cdef Money notional
         if order_side == OrderSide.BUY:
             notional = instrument.notional_value(quantity, price)
-            return Money(-notional, notional.currency)
+            return Money(-notional.as_f64_c(), notional.currency)
         elif order_side == OrderSide.SELL:
             notional = instrument.notional_value(quantity, price)
-            return Money(-notional * (price - 1), notional.currency)
+            return Money(-notional.as_f64_c() * (price.as_f64_c() - 1.0), notional.currency)
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)
 

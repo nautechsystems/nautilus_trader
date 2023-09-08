@@ -93,6 +93,7 @@ cdef class Account:
         OrderFilled fill,
         Position position=*,
     )
+
     cpdef Money balance_impact(
         self,
         Instrument instrument,
