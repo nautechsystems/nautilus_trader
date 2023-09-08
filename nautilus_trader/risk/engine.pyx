@@ -680,7 +680,8 @@ cdef class RiskEngine(Component):
                 )
                 return False  # Denied
 
-            order_balance_impact = account.balance_impact(instrument, order.quantity, order.price, order.side)
+            order_balance_impact = account.balance_impact(instrument, order.quantity, last_px, order.side)
+            print(order_balance_impact, type(order_balance_impact))
 
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
@@ -691,9 +692,9 @@ cdef class RiskEngine(Component):
 
             if order.is_buy_c():
                 if cum_notional_buy is None:
-                    cum_notional_buy = order_balance_impact
+                    cum_notional_buy = Money(-order_balance_impact, order_balance_impact.currency)
                 else:
-                    cum_notional_buy._mem.raw += notional._mem.raw
+                    cum_notional_buy._mem.raw += -order_balance_impact._mem.raw
                 if free is not None and cum_notional_buy._mem.raw >= free._mem.raw:
                     self._deny_order(
                         order=order,
@@ -702,9 +703,9 @@ cdef class RiskEngine(Component):
                     return False  # Denied
             elif order.is_sell_c():
                 if cum_notional_sell is None:
-                    cum_notional_sell = order_balance_impact
+                    cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
                 else:
-                    cum_notional_sell._mem.raw += notional._mem.raw
+                    cum_notional_sell._mem.raw += order_balance_impact._mem.raw
                 if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
                     self._deny_order(
                         order=order,

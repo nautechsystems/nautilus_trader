@@ -329,9 +329,10 @@ cdef class CashAccount(Account):
         Price price,
         OrderSide order_side,
     ):
+        cdef object notional = instrument.notional_value(quantity, price)
         if order_side == OrderSide.BUY:
-            return -instrument.notional_value(quantity, price)
+            return Money(-notional, notional.currency)
         elif order_side == OrderSide.SELL:
-            return instrument.notional_value(quantity, price)
+            return Money(notional, notional.currency)
         else:
             raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)
