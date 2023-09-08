@@ -20,6 +20,7 @@ from decimal import Decimal
 from inspect import iscoroutinefunction
 from typing import Callable, Optional, Union
 
+import ibapi
 import pandas as pd
 
 # fmt: off
@@ -78,6 +79,11 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 
 # fmt: on
+
+
+ibapi_version = "10.19.1"
+if ibapi.__version__ != ibapi_version:
+    raise ValueError(f"Expected ibapi version {ibapi_version}, but found {ibapi.__version__}")
 
 
 class InteractiveBrokersClient(Component, EWrapper):
