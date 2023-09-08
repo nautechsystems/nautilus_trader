@@ -19,6 +19,7 @@ from nautilus_trader.accounting.error import AccountBalanceNegative
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport account_type_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -477,5 +478,14 @@ cdef class Account:
         Instrument instrument,
         OrderFilled fill,
         Position position: Optional[Position] = None,
+    ):
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
+    cpdef Money balance_impact(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        OrderSide order_side,
     ):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
