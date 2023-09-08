@@ -26,6 +26,7 @@ from nautilus_trader.core.rust.model import OrderSide
         (OrderSide.BUY, 1.50, 100.0, 100),
         (OrderSide.SELL, 5.0, 100.0, 400),
         (OrderSide.SELL, 1.5, 100.0, 50),
+        (OrderSide.SELL, 5.0, 300.0, 1200),
     ],
 )
 def test_betting_instrument_notional_value_buy(instrument, side, price, quantity, expected):

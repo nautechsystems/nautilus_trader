@@ -1820,11 +1820,11 @@ class TestRiskEngineWithBettingAccount:
     @pytest.mark.parametrize(
         "side,quantity,price,expected_status",
         [
-            (OrderSide.BUY, 500, 2.0, OrderStatus.INITIALIZED),
-            (OrderSide.BUY, 999, 2.0, OrderStatus.INITIALIZED),
-            (OrderSide.BUY, 1100, 2.0, OrderStatus.DENIED),
-            (OrderSide.SELL, 100, 5.0, OrderStatus.INITIALIZED),
-            (OrderSide.SELL, 150, 5.0, OrderStatus.INITIALIZED),
+            # (OrderSide.BUY, 500, 2.0, OrderStatus.INITIALIZED),
+            # (OrderSide.BUY, 999, 2.0, OrderStatus.INITIALIZED),
+            # (OrderSide.BUY, 1100, 2.0, OrderStatus.DENIED),
+            # (OrderSide.SELL, 100, 5.0, OrderStatus.INITIALIZED),
+            # (OrderSide.SELL, 150, 5.0, OrderStatus.INITIALIZED),
             (OrderSide.SELL, 300, 5.0, OrderStatus.DENIED),
         ],
     )

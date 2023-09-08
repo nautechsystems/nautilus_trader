@@ -678,6 +678,7 @@ cdef class RiskEngine(Component):
                 return False  # Denied
 
             free = account.balance_free(notional.currency)
+            print(f"f{max_notional=} {notional=}, {free=}, {instrument=}")
 
             if free is not None and notional._mem.raw > free._mem.raw:
                 self._deny_order(
