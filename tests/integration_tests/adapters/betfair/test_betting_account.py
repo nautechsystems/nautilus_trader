@@ -266,3 +266,30 @@ class TestBettingAccount:
                 last_px=Price.from_str("1"),
                 liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             )
+
+    @pytest.mark.parametrize(
+        "side, price, quantity, expected",
+        [
+            (OrderSide.BUY, 5.0, 100.0, -100),
+            (OrderSide.BUY, 1.50, 100.0, -100),
+            (OrderSide.SELL, 5.0, 100.0, -400),
+            (OrderSide.SELL, 1.5, 100.0, -50),
+            (OrderSide.SELL, 5.0, 300.0, -1200),
+            (OrderSide.SELL, 10.0, 100.0, -900),
+        ],
+    )
+    def test_balance_impact(self, side, price, quantity, expected):
+        # Arrange
+        account = TestExecStubs.betting_account()
+        instrument = self.instrument
+
+        # Act
+        impact = account.balance_impact(
+            instrument=instrument,
+            quantity=Quantity(quantity, instrument.size_precision),
+            price=Price(price, instrument.price_precision),
+            order_side=side,
+        )
+
+        # Assert
+        assert impact == Money(expected, impact.currency)

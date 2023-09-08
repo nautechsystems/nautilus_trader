@@ -321,3 +321,17 @@ cdef class CashAccount(Account):
             raise RuntimeError(f"invalid `OrderSide`, was {fill.order_side}")  # pragma: no cover (design-time error)
 
         return list(pnls.values())
+
+    cpdef Money balance_impact(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        OrderSide order_side,
+    ):
+        if order_side == OrderSide.BUY:
+            return -instrument.notional_value(quantity, price)
+        elif order_side == OrderSide.SELL:
+            return instrument.notional_value(quantity, price)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)

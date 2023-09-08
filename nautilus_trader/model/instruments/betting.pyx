@@ -199,8 +199,7 @@ cdef class BettingInstrument(Instrument):
 
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
         Condition.not_none(quantity, "quantity")
-        cdef double bet_price = 1.0 / price.as_f64_c()
-        return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)
+        return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
 
 
 def make_symbol(
