@@ -35,14 +35,24 @@ from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 
 class _StreamingBuffer:
     def __init__(self, batches: Generator) -> None:
-        self._data: list = []
+        self._data: list[Data] = []
         self._is_complete = False
         self._batches = batches
         self._size = 10_000
 
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({len(self)})"
+
     @property
     def is_complete(self) -> bool:
         return self._is_complete and len(self) == 0
+
+    @property
+    def max_timestamp(self) -> int:
+        return self._data[-1].ts_init
 
     def remove_front(self, timestamp_ns: int) -> list:
         if len(self) == 0 or timestamp_ns < self._data[0].ts_init:
@@ -63,16 +73,6 @@ class _StreamingBuffer:
             self._is_complete = True
         else:
             self._data.extend(objs)
-
-    @property
-    def max_timestamp(self) -> int:
-        return self._data[-1].ts_init
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({len(self)})"
 
 
 class _BufferIterator:
