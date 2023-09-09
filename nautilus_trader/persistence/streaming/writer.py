@@ -72,8 +72,8 @@ class StreamingFeatherWriter:
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
 
-        err_dir_empty = "Path must be directory or empty"
-        assert self.fs.isdir(self.path) or not self.fs.exists(self.path), err_dir_empty
+        if self.fs.exists(self.path) and not self.fs.isdir(self.path):
+            raise FileNotFoundError("Path must be directory or empty")
 
         self.include_types = include_types
         if self.fs.exists(self.path) and replace:
