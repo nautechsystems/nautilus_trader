@@ -15,7 +15,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import ClassVar, Optional
+from typing import Optional
 
 import pandas as pd
 
@@ -29,6 +29,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -41,12 +42,13 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.msgbus.bus import MessageBus
@@ -71,8 +73,6 @@ class SandboxExecutionClient(LiveExecutionClient):
 
     """
 
-    INSTRUMENTS: ClassVar[list[Instrument]] = []
-
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
@@ -83,6 +83,7 @@ class SandboxExecutionClient(LiveExecutionClient):
         venue: str,
         currency: str,
         balance: int,
+        account_id: str = "001",
         oms_type: OmsType = OmsType.NETTING,
         account_type: AccountType = AccountType.MARGIN,
     ) -> None:
@@ -91,15 +92,16 @@ class SandboxExecutionClient(LiveExecutionClient):
         self.balance = AccountBalance(total=money, locked=Money(0, money.currency), free=money)
         self.test_clock = TestClock()
         self._account_type = account_type
-        sandbox_venue = Venue(venue)
+        self.sandbox_venue = Venue(venue)
+        self._account_id = AccountId(f"{venue}-{account_id}")
         super().__init__(
             loop=loop,
             client_id=ClientId(venue),
-            venue=sandbox_venue,
+            venue=self.sandbox_venue,
             oms_type=oms_type,
             account_type=account_type,
             base_currency=self._currency,
-            instrument_provider=InstrumentProvider(venue=sandbox_venue, logger=logger),
+            instrument_provider=InstrumentProvider(venue=self.sandbox_venue, logger=logger),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -107,14 +109,14 @@ class SandboxExecutionClient(LiveExecutionClient):
             config=None,
         )
         self.exchange = SimulatedExchange(
-            venue=sandbox_venue,
+            venue=self.sandbox_venue,
             oms_type=oms_type,
             account_type=self._account_type,
             base_currency=self._currency,
             starting_balances=[self.balance.free],
             default_leverage=Decimal(10),
             leverages={},
-            instruments=self.INSTRUMENTS,
+            instruments=[],
             modules=[],
             msgbus=self._msgbus,
             cache=cache,
@@ -133,23 +135,52 @@ class SandboxExecutionClient(LiveExecutionClient):
         )
         self.exchange.register_client(self._client)
 
-    def connect(self) -> None:
-        """
-        Connect the client.
-        """
+    async def _connect(self) -> None:
         self._log.info("Connecting...")
+
+        # Load instruments into simulated exchange
+        self._log.info("Waiting for data client to load instruments..")
+        await asyncio.sleep(5)
+        instruments = self.exchange.cache.instruments(self.sandbox_venue)
+        self._log.info(f"Loading {len(instruments)} instruments into SimulatedExchange")
+        for instrument in instruments:
+            self.exchange.add_instrument(instrument)
+
+        # Subscribe to all data
         self._msgbus.subscribe("data.*", handler=self.on_data)
+
+        # Send account state
+        await self.send_account_state()
+
+        # Connected.
         self._client._set_connected(True)
         self._set_connected(True)
         self._log.info("Connected.")
 
-    def disconnect(self) -> None:
+    async def _disconnect(self) -> None:
         """
         Disconnect the client.
         """
         self._log.info("Disconnecting...")
         self._set_connected(False)
         self._log.info("Disconnected.")
+
+    async def send_account_state(self) -> None:
+        timestamp = self._clock.timestamp_ns()
+        account_state: AccountState = AccountState(
+            account_id=self._account_id,
+            account_type=self._account_type,
+            balances=[self.balance],
+            base_currency=self._currency,
+            reported=True,
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=timestamp,
+            ts_init=timestamp,
+        )
+        self._log.debug(f"Sending sandbox account state: {account_state}")
+        self._send_account_state(account_state)
 
     async def generate_order_status_report(
         self,

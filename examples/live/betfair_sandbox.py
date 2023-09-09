@@ -15,8 +15,12 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from decimal import Decimal
 
+from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
@@ -64,11 +68,11 @@ async def main(market_id: str):
         logging=LoggingConfig(log_level="DEBUG"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
-            # "BETFAIR": BetfairDataClientConfig(market_filter=tuple(market_filter.items()))
+            "BETFAIR": BetfairDataClientConfig(market_filter=tuple(market_filter.items())),
         },
         exec_clients={
             "SANDBOX": SandboxExecutionClientConfig(
-                venue="BETFAIR",
+                venue=BETFAIR_VENUE.value,
                 currency="AUD",
                 balance=10_000,
             ),
@@ -90,19 +94,20 @@ async def main(market_id: str):
     node.trader.add_strategies(strategies)
 
     # Register your client factories with the node (can take user defined factories)
-    # node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
+    node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
     node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
     SandboxExecutionClient.INSTRUMENTS = instruments
     node.build()
 
-    node.run()
-    # try:
-    #     node.start()
-    # except Exception as e:
-    #     print(e)
-    #     print(traceback.format_exc())
-    # finally:
-    #     node.dispose()
+    try:
+        await node.run_async()
+    except Exception as e:
+        print(e)
+        print(traceback.format_exc())
+    finally:
+        await node.stop_async()
+        await asyncio.sleep(1)
+        return node
 
 
 if __name__ == "__main__":
