@@ -12,6 +12,7 @@ rename_variants = "ScreamingSnakeCase"
 [export]
 exclude = [
     "BarAggregation",
+    "OrderId",
 ]
 
 [export.rename]
@@ -31,6 +32,7 @@ exclude = [
 "ExecAlgorithmId" = "ExecAlgorithmId_t"
 "InstrumentId" = "InstrumentId_t"
 "Money" = "Money_t"
+"OrderId" = "uint64_t"
 "OrderBookDelta" = "OrderBookDelta_t"
 "OrderInitialized" = "OrderInitialized_t"
 "OrderDenied" = "OrderDenied_t"

@@ -30,6 +30,8 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+pub type OrderId = u64;
+
 pub const NULL_ORDER: BookOrder = BookOrder {
     side: OrderSide::NoOrderSide,
     price: Price {
@@ -59,7 +61,7 @@ pub struct BookOrder {
     /// The order size.
     pub size: Quantity,
     /// The order ID.
-    pub order_id: u64,
+    pub order_id: OrderId,
     /// The order book quantity at the time of order acceptance.
     pub pre_book_qty: Quantity, // For more accurate backtesting
 }
@@ -163,7 +165,7 @@ impl Display for BookOrder {
 #[pymethods]
 impl BookOrder {
     #[new]
-    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: u64) -> Self {
+    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
         Self::new(side, price, size, order_id)
     }
 
@@ -269,7 +271,6 @@ impl BookOrder {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
