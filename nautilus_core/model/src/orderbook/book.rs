@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::time::UnixNanos;
 use tabled::{settings::Style, Table, Tabled};
 use thiserror::Error;
 
@@ -31,7 +32,7 @@ pub struct OrderBook {
     pub instrument_id: InstrumentId,
     pub book_type: BookType,
     pub sequence: u64,
-    pub ts_last: u64,
+    pub ts_last: UnixNanos,
     pub count: u64,
 }
 

@@ -21,7 +21,7 @@ use std::{
 
 use super::book::BookIntegrityError;
 use crate::{
-    data::order::BookOrder,
+    data::order::{BookOrder, OrderId},
     enums::OrderSide,
     orderbook::level::Level,
     types::{price::Price, quantity::Quantity},
@@ -122,30 +122,29 @@ impl Ladder {
 
     pub fn update(&mut self, order: BookOrder) {
         if let Some(price) = self.cache.get(&order.order_id) {
-            let level = self.levels.get_mut(price).unwrap();
-            if order.price == level.price.value {
-                // Size update for this level
-                level.update(order);
-            } else {
-                // Price update, delete and insert at new level
+            if let Some(level) = self.levels.get_mut(price) {
+                if order.price == level.price.value {
+                    // Update at current price level
+                    level.update(order);
+                    return;
+                }
+
+                // Price update: delete and insert at new level
                 level.delete(&order);
                 if level.is_empty() {
                     self.levels.remove(price);
                 }
-                self.add(order);
             }
-        } else {
-            // TODO(cs): Reinstate this with strict mode
-            // None => panic!("No order with ID {}", &order.order_id),
-            self.add(order);
         }
+
+        self.add(order);
     }
 
     pub fn delete(&mut self, order: BookOrder) {
         self.remove(order.order_id);
     }
 
-    pub fn remove(&mut self, order_id: u64) {
+    pub fn remove(&mut self, order_id: OrderId) {
         if let Some(price) = self.cache.remove(&order_id) {
             let level = self.levels.get_mut(&price).unwrap();
             level.remove(order_id);
