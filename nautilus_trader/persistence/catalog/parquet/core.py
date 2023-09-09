@@ -81,7 +81,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     def __init__(
         self,
         path: str,
-        fs_protocol: str | None = "file",
+        fs_protocol: str = "file",
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
     ):
@@ -237,7 +237,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
-        **kwargs,
+        **kwargs: Any,
     ):
         file_prefix = class_to_filename(cls)
         dataset_path = f"{self.path}/data/{file_prefix}"

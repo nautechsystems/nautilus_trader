@@ -99,7 +99,7 @@ class TestArrowSerializer:
         self.order_cancelled = copy.copy(self.order_pending_cancel)
         self.order_cancelled.apply(TestEventStubs.order_canceled(self.order_pending_cancel))
 
-    def _test_serialization(self, obj: Any):
+    def _test_serialization(self, obj: Any) -> bool:
         cls = type(obj)
         serialized = ArrowSerializer.serialize(obj)
         deserialized = ArrowSerializer.deserialize(cls, serialized)

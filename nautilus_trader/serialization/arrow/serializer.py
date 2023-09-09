@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from io import BytesIO
 from typing import Any, Callable, Optional, Union
 
@@ -181,7 +182,7 @@ class ArrowSerializer:
         ----------
         cls : type
             The type to deserialize to.
-        batch : pyarrow.RecordBatch
+        batch : pyarrow.RecordBatch or pyarrow.Table
             The RecordBatch to deserialize.
 
         Returns
@@ -208,7 +209,7 @@ class ArrowSerializer:
         return delegate(batch)
 
     @staticmethod
-    def _deserialize_rust(cls, table: pa.Table) -> list[DATA_OR_EVENTS]:
+    def _deserialize_rust(cls: type, table: pa.Table) -> list[DATA_OR_EVENTS]:
         Wrangler = {
             QuoteTick: QuoteTickDataWrangler,
             TradeTick: TradeTickDataWrangler,
