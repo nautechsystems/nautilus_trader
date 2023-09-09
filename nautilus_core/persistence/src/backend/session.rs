@@ -126,8 +126,8 @@ impl DataBackendSession {
     // Query a file for all it's records with a custom query. The caller must
     // specify `T` to indicate what kind of data is expected from this query.
     //
-    // #Safety
-    // They query should ensure the records are ordered by the `ts_init` field
+    // # Safety
+    // The query should ensure the records are ordered by the `ts_init` field
     // in ascending order.
     pub async fn add_file_with_custom_query<T>(
         &mut self,
@@ -197,7 +197,7 @@ unsafe impl Send for DataBackendSession {}
 #[pymethods]
 impl DataBackendSession {
     #[new]
-    #[pyo3(signature=(chunk_size=5000))]
+    #[pyo3(signature=(chunk_size=5_000))]
     fn new_session(chunk_size: usize) -> Self {
         // Initialize runtime here
         get_runtime();
