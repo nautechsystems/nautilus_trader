@@ -214,7 +214,7 @@ mod tests {
 
     use super::{TestTimer, TimeEvent};
 
-    #[test]
+    #[rstest]
     fn test_pop_event() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 0, 1, None);
