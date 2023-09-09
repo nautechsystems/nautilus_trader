@@ -229,10 +229,12 @@ class SandboxExecutionClient(LiveExecutionClient):
         return self._client.cancel_all_orders(command)
 
     def on_data(self, data: Data) -> None:
-        # Taken from main backtest loop of BacktestEngine
-        if isinstance(data, (OrderBookDelta)):
+        # Taken from main backtest loop of BacktestEngine.
+        if data.__class__ is OrderBookDelta:  # Don't want to process subclasses of OrderBookDelta
             self.exchange.process_order_book_delta(data)
-        elif isinstance(data, (OrderBookDeltas)):
+        elif (
+            data.__class__ is OrderBookDeltas
+        ):  # Don't want to process subclasses of OrderBookDeltas
             self.exchange.process_order_book_deltas(data)
         elif isinstance(data, QuoteTick):
             self.exchange.process_quote_tick(data)

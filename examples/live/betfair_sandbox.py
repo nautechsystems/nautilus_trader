@@ -65,7 +65,7 @@ async def main(market_id: str):
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        logging=LoggingConfig(log_level="DEBUG"),
+        logging=LoggingConfig(log_level="INFO"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(market_filter=tuple(market_filter.items())),
@@ -114,4 +114,4 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.199513161"))
+    asyncio.run(main(market_id="1.218019626"))
