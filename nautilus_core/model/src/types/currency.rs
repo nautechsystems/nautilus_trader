@@ -26,6 +26,7 @@ use nautilus_core::{
     string::{cstr_to_string, str_to_cstr},
 };
 use pyo3::{
+    exceptions::PyRuntimeError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyLong, PyString, PyTuple},
@@ -69,6 +70,34 @@ impl Currency {
             name: Ustr::from(name),
             currency_type,
         })
+    }
+
+    pub fn register(currency: Currency, overwrite: bool) -> Result<()> {
+        let mut map = CURRENCY_MAP.lock().map_err(|e| anyhow!(e.to_string()))?;
+
+        if !overwrite && map.contains_key(currency.code.as_str()) {
+            // If overwrite is false and the currency already exists, simply return
+            return Ok(());
+        }
+
+        // Insert or overwrite the currency in the map
+        map.insert(currency.code.to_string(), currency);
+        Ok(())
+    }
+
+    pub fn is_fiat(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::Fiat)
+    }
+
+    pub fn is_crypto(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::Crypto)
+    }
+
+    pub fn is_commodity_backed(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::CommodityBacked)
     }
 }
 
@@ -146,7 +175,7 @@ impl Currency {
         self.precision = tuple.1.extract::<u8>()?;
         self.iso4217 = tuple.2.extract::<u16>()?;
         self.name = Ustr::from(tuple.3.extract()?);
-        self.currency_type = tuple.4.extract()?;
+        self.currency_type = CurrencyType::from_str(tuple.4.extract()?).map_err(to_pyvalue_err)?;
         Ok(())
     }
 
@@ -189,7 +218,7 @@ impl Currency {
     }
 
     fn __repr__(&self) -> String {
-        format!("{}('{:?}')", stringify!(Currency), self)
+        format!("{:?}", self)
     }
 
     #[getter]
@@ -223,9 +252,47 @@ impl Currency {
     }
 
     #[staticmethod]
+    #[pyo3(name = "is_fiat")]
+    fn py_is_fiat(code: &str) -> PyResult<bool> {
+        Currency::is_fiat(code).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "is_crypto")]
+    fn py_is_crypto(code: &str) -> PyResult<bool> {
+        Currency::is_crypto(code).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "is_commodity_backed")]
+    fn py_is_commodidity_backed(code: &str) -> PyResult<bool> {
+        Currency::is_commodity_backed(code).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<Currency> {
-        Currency::from_str(value).map_err(to_pyvalue_err)
+    #[pyo3(signature = (value, strict = false))]
+    fn py_from_str(value: &str, strict: bool) -> PyResult<Currency> {
+        match Currency::from_str(value) {
+            Ok(currency) => Ok(currency),
+            Err(err) => {
+                if strict {
+                    Err(to_pyvalue_err(err))
+                } else {
+                    // SAFETY: Safe default arguments for the unwrap
+                    let new_crypto =
+                        Currency::new(value, 8, 0, value, CurrencyType::Crypto).unwrap();
+                    Ok(new_crypto)
+                }
+            }
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "register")]
+    #[pyo3(signature = (currency, overwrite = false))]
+    fn py_register(currency: Currency, overwrite: bool) -> PyResult<()> {
+        Currency::register(currency, overwrite).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 }
 
