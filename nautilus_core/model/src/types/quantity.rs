@@ -88,11 +88,6 @@ impl Quantity {
     }
 
     #[must_use]
-    pub fn as_str(&self) -> String {
-        format!("{self:?}").separate_with_underscores()
-    }
-
-    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -102,6 +97,11 @@ impl Quantity {
         // Scale down the raw value to match the precision
         let rescaled_raw = self.raw / u64::pow(10, (FIXED_PRECISION - self.precision) as u32);
         Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
+
+    #[must_use]
+    pub fn to_formatted_string(&self) -> String {
+        format!("{self}").separate_with_underscores()
     }
 }
 
@@ -628,11 +628,6 @@ impl Quantity {
         self.is_positive()
     }
 
-    #[pyo3(name = "to_str")]
-    fn py_to_str(&self) -> String {
-        self.as_str()
-    }
-
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()
@@ -641,6 +636,11 @@ impl Quantity {
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
         self.as_f64()
+    }
+
+    #[pyo3(name = "to_formatted_str")]
+    fn py_to_formatted_str(&self) -> String {
+        self.to_formatted_string()
     }
 }
 
@@ -805,11 +805,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_str_valid_input() {
-        let input = "1000.25";
-        let expected_quantity = Quantity::new(1000.25, precision_from_str(input)).unwrap();
-        let result = Quantity::from_str(input).unwrap();
-        assert_eq!(result, expected_quantity);
+    #[case("0", 0)]
+    #[case("1.1", 1)]
+    #[case("1.123456789", 9)]
+    fn test_from_str_valid_input(#[case] input: &str, #[case] expected_prec: u8) {
+        let qty = Quantity::from_str(input).unwrap();
+        assert_eq!(qty.precision, expected_prec);
+        assert_eq!(qty.as_decimal(), Decimal::from_str(input).unwrap());
     }
 
     #[rstest]
