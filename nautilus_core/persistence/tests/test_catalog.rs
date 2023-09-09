@@ -23,7 +23,49 @@ use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
 #[tokio::test]
-async fn test_quote_ticks() {
+async fn test_order_book_delta_query() {
+    let file_path = "../../tests/test_data/order_book_deltas.parquet";
+    let mut catalog = DataBackendSession::new(1_000);
+    catalog
+        .add_file_default_query::<OrderBookDelta>("order_book_delta", file_path)
+        .await
+        .unwrap();
+    let query_result: QueryResult = catalog.get_query_result().await;
+    let ticks: Vec<Data> = query_result.flatten().collect();
+
+    assert_eq!(ticks.len(), 1077);
+    assert!(is_ascending_by_init(&ticks));
+}
+
+#[rstest]
+fn test_order_book_delta_query_py() {
+    pyo3::prepare_freethreaded_python();
+
+    let file_path = "../../tests/test_data/order_book_deltas.parquet";
+    let catalog = DataBackendSession::new(2_000);
+    Python::with_gil(|py| {
+        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        pycatalog
+            .call_method1(
+                py,
+                "add_file",
+                (
+                    "order_book_deltas",
+                    file_path,
+                    NautilusDataType::OrderBookDelta,
+                ),
+            )
+            .unwrap();
+        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+        let chunk = result.call_method0(py, "__next__").unwrap();
+        let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+        let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+        assert_eq!(cvec.len, 1077);
+    });
+}
+
+#[tokio::test]
+async fn test_quote_tick_query() {
     let file_path = "../../tests/test_data/quote_tick_data.parquet";
     let length = 9_500;
     let mut catalog = DataBackendSession::new(10_000);
@@ -45,7 +87,7 @@ async fn test_quote_ticks() {
 }
 
 #[tokio::test]
-async fn test_data_ticks() {
+async fn test_quote_tick_multiple_query() {
     let mut catalog = DataBackendSession::new(5_000);
     catalog
         .add_file_default_query::<QuoteTick>(
@@ -64,50 +106,8 @@ async fn test_data_ticks() {
     let query_result: QueryResult = catalog.get_query_result().await;
     let ticks: Vec<Data> = query_result.flatten().collect();
 
-    assert_eq!(ticks.len(), 9600);
+    assert_eq!(ticks.len(), 9_600);
     assert!(is_ascending_by_init(&ticks));
-}
-
-#[tokio::test]
-async fn test_order_book_delta() {
-    let file_path = "../../tests/test_data/order_book_deltas.parquet";
-    let mut catalog = DataBackendSession::new(1000);
-    catalog
-        .add_file_default_query::<OrderBookDelta>("order_book_delta", file_path)
-        .await
-        .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
-
-    assert_eq!(ticks.len(), 1077);
-    assert!(is_ascending_by_init(&ticks));
-}
-
-#[rstest]
-fn test_order_book_delta_py() {
-    pyo3::prepare_freethreaded_python();
-
-    let file_path = "../../tests/test_data/order_book_deltas.parquet";
-    let catalog = DataBackendSession::new(2000);
-    Python::with_gil(|py| {
-        let pycatalog: Py<PyAny> = catalog.into_py(py);
-        pycatalog
-            .call_method1(
-                py,
-                "add_file",
-                (
-                    "order_book_deltas",
-                    file_path,
-                    NautilusDataType::OrderBookDelta,
-                ),
-            )
-            .unwrap();
-        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
-        let chunk = result.call_method0(py, "__next__").unwrap();
-        let capsule: &PyCapsule = chunk.downcast(py).unwrap();
-        let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
-        assert_eq!(cvec.len, 1077);
-    });
 }
 
 // NOTE: is_sorted_by_key is unstable otherwise use
