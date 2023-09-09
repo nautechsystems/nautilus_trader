@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from pathlib import Path
+from typing import Optional, Union
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -36,13 +37,18 @@ class NewsEventData(NewsEvent):
     """
 
 
-def data_catalog_setup(protocol, path=None) -> ParquetDataCatalog:
+def data_catalog_setup(
+    protocol: str,
+    path: Optional[Union[str, Path]] = None,
+) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
+    if isinstance(path, str):
+        path = Path(path)
 
     clear_singleton_instances(ParquetDataCatalog)
 
-    path = Path.cwd() / "data_catalog" if path is None else Path(path).resolve()
+    path = Path.cwd() / "data_catalog" if path is None else path.resolve()
 
     catalog = ParquetDataCatalog(path=path.as_posix(), fs_protocol=protocol)
 
