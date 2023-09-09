@@ -210,16 +210,22 @@ impl Currency {
         self.iso4217
     }
 
-    #[pyo3(name = "name")]
     #[getter]
+    #[pyo3(name = "name")]
     fn py_name(&self) -> &'static str {
         self.name.as_str()
     }
 
-    #[pyo3(name = "currency_type")]
     #[getter]
+    #[pyo3(name = "currency_type")]
     fn py_currency_type(&self) -> CurrencyType {
         self.currency_type
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(value: &str) -> PyResult<Currency> {
+        Currency::from_str(value).map_err(to_pyvalue_err)
     }
 }
 

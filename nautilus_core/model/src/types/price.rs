@@ -35,6 +35,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Deserializer, Serialize};
+use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
@@ -115,6 +116,11 @@ impl Price {
         // Scale down the raw value to match the precision
         let rescaled_raw = self.raw / i64::pow(10, (FIXED_PRECISION - self.precision) as u32);
         Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
+
+    #[must_use]
+    pub fn to_formatted_string(&self) -> String {
+        format!("{self}").separate_with_underscores()
     }
 }
 
@@ -639,6 +645,11 @@ impl Price {
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()
+    }
+
+    #[pyo3(name = "to_formatted_str")]
+    fn py_to_formatted_str(&self) -> String {
+        self.to_formatted_string()
     }
 }
 
