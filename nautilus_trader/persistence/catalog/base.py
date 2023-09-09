@@ -56,6 +56,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     # -- QUERIES -----------------------------------------------------------------------------------
 
+    @abstractmethod
     def query(
         self,
         cls: type,
@@ -162,10 +163,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         return data
 
     @abstractmethod
-    def list_data_types(self):
+    def list_data_types(self) -> list[str]:
         raise NotImplementedError
 
-    def list_generic_data_types(self):
+    def list_generic_data_types(self) -> list[str]:
         data_types = self.list_data_types()
         return [
             n.replace(GENERIC_DATA_PREFIX, "")
@@ -182,9 +183,9 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         raise NotImplementedError
 
     @abstractmethod
-    def read_live_run(self, instance_id: str, **kwargs):
+    def read_live_run(self, instance_id: str, **kwargs: Any) -> list[str]:
         raise NotImplementedError
 
     @abstractmethod
-    def read_backtest(self, instance_id: str, **kwargs):
+    def read_backtest(self, instance_id: str, **kwargs: Any) -> list[str]:
         raise NotImplementedError

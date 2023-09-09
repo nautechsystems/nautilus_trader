@@ -26,7 +26,7 @@ def is_nautilus_class(cls: type) -> bool:
         return True
     if cls.__module__.startswith("nautilus_trader.common"):
         return True
-    elif cls.__module__.startswith("nautilus_trader.test_kit"):
+    if cls.__module__.startswith("nautilus_trader.test_kit"):
         return False
     return bool(any(base.__module__.startswith("nautilus_trader.model") for base in cls.__bases__))
 
