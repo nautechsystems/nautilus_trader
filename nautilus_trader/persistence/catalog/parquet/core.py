@@ -19,11 +19,10 @@ import os
 import pathlib
 import platform
 from collections import defaultdict
-from collections import namedtuple
 from collections.abc import Generator
 from itertools import groupby
 from pathlib import Path
-from typing import Any, Callable, Union
+from typing import Any, Callable, NamedTuple, Union
 
 import fsspec
 import pandas as pd
@@ -50,13 +49,19 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.persistence.catalog.parquet.util import combine_filters
+from nautilus_trader.persistence.catalog.parquet.util import uri_instrument_id
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
 TimestampLike = Union[int, str, float]
-FeatherFile = namedtuple("FeatherFile", ["path", "class_name"])  # noqa
+
+
+class FeatherFile(NamedTuple):
+    path: str
+    class_name: str
 
 
 class ParquetDataCatalog(BaseDataCatalog):
@@ -177,7 +182,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             if isinstance(obj, Instrument):
                 return name, obj.id.value
             elif isinstance(obj, Bar):
-                return name, obj.bar_type.instrument_id.value
+                return name, str(obj.bar_type)
             elif hasattr(obj, "instrument_id"):
                 return name, obj.instrument_id.value
             return name, None
@@ -191,7 +196,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 **kwargs,
             )
 
-    # -- QUERIES -----------------------------------------------------------------------------------
+    # -- QUERIES ----------------------------------------------------------------------------------
 
     def query_rust(
         self,
@@ -206,6 +211,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         name = cls.__name__
         file_prefix = class_to_filename(cls)
         data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
+
         session = DataBackendSession()
         # TODO (bm) - fix this glob, query once on catalog creation?
         for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
@@ -220,6 +226,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 end=end,
                 where=where,
             )
+
             session.add_file_with_query(table, fn, query, data_type)
 
         result = session.to_query_result()
@@ -228,6 +235,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = []
         for chunk in result:
             data.extend(list_from_capsule(chunk))
+
         return data
 
     def query_pyarrow(
@@ -238,11 +246,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
         **kwargs: Any,
-    ):
+    ) -> list[Data]:
         file_prefix = class_to_filename(cls)
         dataset_path = f"{self.path}/data/{file_prefix}"
         if not self.fs.exists(dataset_path):
-            return
+            return []
         table = self._load_pyarrow_table(
             path=dataset_path,
             filter_expr=filter_expr,
@@ -252,8 +260,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
 
         assert (
+            table is not None
+        ), f"No table found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+        assert (
             table.num_rows
         ), f"No rows found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+
         return self._handle_table_nautilus(table, cls=cls)
 
     def _load_pyarrow_table(
@@ -333,31 +345,29 @@ class ParquetDataCatalog(BaseDataCatalog):
         end: TimestampLike | None = None,
         where: str | None = None,
     ) -> str:
-        """
-        Build datafusion sql query.
-        """
-        q = f"SELECT * FROM {table}"  # noqa
+        # Build datafusion SQL query
+        query = f"SELECT * FROM {table}"  # noqa (possible SQL injection)
         conditions: list[str] = [] + ([where] if where else [])
         # if len(instrument_ids or []) == 1:
         #     conditions.append(f"instrument_id = '{instrument_ids[0]}'")
         # elif instrument_ids:
         #     conditions.append(f"instrument_id in {tuple(instrument_ids)}")
         if start:
-            start_ts = dt_to_unix_nanos(pd.Timestamp(start))
+            start_ts = dt_to_unix_nanos(start)
             conditions.append(f"ts_init >= {start_ts}")
         if end:
-            end_ts = dt_to_unix_nanos(pd.Timestamp(end))
+            end_ts = dt_to_unix_nanos(end)
             conditions.append(f"ts_init <= {end_ts}")
         if conditions:
-            q += f" WHERE {' AND '.join(conditions)}"
-        q += " ORDER BY ts_init"
-        return q
+            query += f" WHERE {' AND '.join(conditions)}"
+        query += " ORDER BY ts_init"
+        return query
 
     @staticmethod
     def _handle_table_nautilus(
         table: pa.Table | pd.DataFrame,
         cls: type,
-    ):
+    ) -> list[Data]:
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
         data = ArrowSerializer.deserialize(cls=cls, batch=table)
@@ -410,7 +420,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         objects = [o for objs in [df for df in dfs if df is not None] for o in objs]
         return objects
 
-    # ---  OVERLOADED BASE METHODS ------------------------------------------------
+    # -- OVERLOADED BASE METHODS ------------------------------------------------------------------
+
     def instruments(
         self,
         instrument_type: type | None = None,
@@ -435,13 +446,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         glob_path = f"{self.path}/live/*"
         return [p.stem for p in map(Path, self.fs.glob(glob_path))]
 
-    def read_live_run(self, instance_id: str, **kwargs):
+    def read_live_run(self, instance_id: str, **kwargs: Any) -> list[Data]:
         return self._read_feather(kind="live", instance_id=instance_id, **kwargs)
 
-    def read_backtest(self, instance_id: str, **kwargs):
+    def read_backtest(self, instance_id: str, **kwargs: Any) -> list[Data]:
         return self._read_feather(kind="backtest", instance_id=instance_id, **kwargs)
 
-    def _read_feather(self, kind: str, instance_id: str, raise_on_failed_deserialize: bool = False):
+    def _read_feather(
+        self,
+        kind: str,
+        instance_id: str,
+        raise_on_failed_deserialize: bool = False,
+    ) -> list[Data]:
         from nautilus_trader.persistence.streaming.writer import read_feather_file
 
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
@@ -483,23 +499,3 @@ class ParquetDataCatalog(BaseDataCatalog):
         for ins_fn in self.fs.glob(f"{prefix}/**/*.feather"):
             ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
             yield FeatherFile(path=ins_fn, class_name=ins_cls_name)
-
-
-def uri_instrument_id(instrument_id: str) -> str:
-    """
-    Convert an instrument_id into a valid URI for writing to a file path.
-    """
-    return instrument_id.replace("/", "|")
-
-
-def combine_filters(*filters):
-    filters = tuple(x for x in filters if x is not None)
-    if len(filters) == 0:
-        return
-    elif len(filters) == 1:
-        return filters[0]
-    else:
-        expr = filters[0]
-        for f in filters[1:]:
-            expr = expr & f
-        return expr

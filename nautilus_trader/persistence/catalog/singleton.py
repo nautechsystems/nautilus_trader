@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import inspect
+from typing import Any
 
 
 class Singleton(type):
@@ -48,7 +49,7 @@ def resolve_kwargs(func, *args, **kwargs):
     return {k: check_value(v) for k, v in kw.items()}
 
 
-def check_value(v):
+def check_value(v: Any) -> Any:
     if isinstance(v, dict):
         return freeze_dict(dict_like=v)
     return v

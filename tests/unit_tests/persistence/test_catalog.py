@@ -163,25 +163,27 @@ class TestPersistenceCatalog:
         assert len(data) == 2745
         assert isinstance(data[0], GenericData)
 
-    @pytest.mark.skip(reason="data_fusion bar query not working")
+    @pytest.mark.skip(reason="datafusion bar query not working")
     def test_data_catalog_bars(self):
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
-        bars = TestDataStubs.binance_bars_from_csv(
+        stub_bars = TestDataStubs.binance_bars_from_csv(
             "ADABTC-1m-2021-11-27.csv",
             bar_type,
             instrument,
         )
 
         # Act
-        self.catalog.write_data(bars)
+        self.catalog.write_data(stub_bars)
 
         # Assert
         bars = self.catalog.bars(instrument_ids=[instrument.id.value])
-        assert len(bars) == 21
+        all_bars = self.catalog.bars()
+        assert len(all_bars) == 10
+        assert len(bars) == len(stub_bars) == 10
 
-    @pytest.mark.skip(reason="data_fusion bar query not working")
+    @pytest.mark.skip(reason="datafusion bar query not working")
     def test_catalog_bar_query_instrument_id(self, betfair_catalog):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
