@@ -219,10 +219,7 @@ mod tests {
         data::order::BookOrder,
         enums::OrderSide,
         orderbook::ladder::{BookPrice, Ladder},
-        types::{
-            price::{Price, PRICE_MAX, PRICE_MIN},
-            quantity::Quantity,
-        },
+        types::{price::Price, quantity::Quantity},
     };
 
     #[rstest]
@@ -498,7 +495,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MAX, 2).unwrap(), // <-- Simulate a MARKET order
+            price: Price::max(2), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Buy,
             order_id: 4,
@@ -508,17 +505,17 @@ mod tests {
 
         assert_eq!(fills.len(), 3);
 
-        let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::from("100.00"));
-        assert_eq!(size1, &Quantity::from(100));
+        let (price1, size1) = fills[0];
+        assert_eq!(price1, Price::from("100.00"));
+        assert_eq!(size1, Quantity::from(100));
 
-        let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::from("101.00"));
-        assert_eq!(size2, &Quantity::from(200));
+        let (price2, size2) = fills[1];
+        assert_eq!(price2, Price::from("101.00"));
+        assert_eq!(size2, Quantity::from(200));
 
-        let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::from("102.00"));
-        assert_eq!(size3, &Quantity::from(200));
+        let (price3, size3) = fills[2];
+        assert_eq!(price3, Price::from("102.00"));
+        assert_eq!(size3, Quantity::from(200));
     }
 
     #[rstest]
@@ -547,7 +544,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MIN, 2).unwrap(), // <-- Simulate a MARKET order
+            price: Price::min(2), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Sell,
             order_id: 4,
@@ -557,17 +554,17 @@ mod tests {
 
         assert_eq!(fills.len(), 3);
 
-        let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::from("102.00"));
-        assert_eq!(size1, &Quantity::from(100));
+        let (price1, size1) = fills[0];
+        assert_eq!(price1, Price::from("102.00"));
+        assert_eq!(size1, Quantity::from(100));
 
-        let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::from("101.00"));
-        assert_eq!(size2, &Quantity::from(200));
+        let (price2, size2) = fills[1];
+        assert_eq!(price2, Price::from("101.00"));
+        assert_eq!(size2, Quantity::from(200));
 
-        let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::from("100.00"));
-        assert_eq!(size3, &Quantity::from(200));
+        let (price3, size3) = fills[2];
+        assert_eq!(price3, Price::from("100.00"));
+        assert_eq!(size3, Quantity::from(200));
     }
 
     #[rstest]
@@ -596,7 +593,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MIN, 2).unwrap(), // <-- Simulate a MARKET order
+            price: Price::min(2),                  // <-- Simulate a MARKET order
             size: Quantity::from("699.999999999"), // <-- Size slightly less than total size in ladder
             side: OrderSide::Sell,
             order_id: 4,
@@ -606,16 +603,16 @@ mod tests {
 
         assert_eq!(fills.len(), 3);
 
-        let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::from("102.00"));
-        assert_eq!(size1, &Quantity::from("100.000000000"));
+        let (price1, size1) = fills[0];
+        assert_eq!(price1, Price::from("102.00"));
+        assert_eq!(size1, Quantity::from("100.000000000"));
 
-        let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::from("101.00"));
-        assert_eq!(size2, &Quantity::from("200.000000000"));
+        let (price2, size2) = fills[1];
+        assert_eq!(price2, Price::from("101.00"));
+        assert_eq!(size2, Quantity::from("200.000000000"));
 
-        let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::from("100.00"));
-        assert_eq!(size3, &Quantity::from("399.999999999"));
+        let (price3, size3) = fills[2];
+        assert_eq!(price3, Price::from("100.00"));
+        assert_eq!(size3, Quantity::from("399.999999999"));
     }
 }
