@@ -39,7 +39,6 @@ requires = [
     "numpy>=1.25.2",
     "Cython==3.0.2",
     "toml>=0.10.2",
-    "importlib_metadata>=6.8.0",
 ]
 build-backend = "poetry.core.masonry.api"
 
