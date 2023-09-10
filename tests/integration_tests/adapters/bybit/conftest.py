@@ -30,8 +30,8 @@ def bybit_http_client(loop, live_clock, live_logger):
     client = BybitHttpClient(
         clock=live_clock,
         logger=live_logger,
-        key=get_env_key('BYBIT_API_KEY'),
-        secret=get_env_key('BYBIT_API_SECRET'),
+        api_key="BYBIT_API_KEY",
+        api_secret='BYBIT_API_SECRET',
         base_url="https://api-testnet.bybit.com"
     )
     return client

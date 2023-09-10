@@ -127,3 +127,4 @@ class BybitEndpointType(Enum):
     NONE = "NONE"
     MARKET = "MARKET"
     ACCOUNT = "ACCOUNT"
+    TRADE = "TRADE"

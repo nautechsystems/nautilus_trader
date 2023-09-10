@@ -16,7 +16,7 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
         url_path = base_endpoint + "order/realtime"
         super().__init__(
             client=client,
-            endpoint_type=BybitEndpointType.USER_DATA,
+            endpoint_type=BybitEndpointType.TRADE,
             url_path=url_path,
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitOpenOrdersResponseStruct)

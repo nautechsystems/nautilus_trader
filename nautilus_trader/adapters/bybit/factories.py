@@ -202,7 +202,7 @@ def _get_ws_base_url(account_type: BybitAccountType, is_testnet: bool):
         elif account_type == BybitAccountType.LINEAR:
             return "wss://stream.bybit.com/v5/public/linear"
         elif account_type == BybitAccountType.INVERSE:
-            return "ss://stream.bybit.com/v5/public/inverse"
+            return "wss://stream.bybit.com/v5/public/inverse"
         else:
             raise RuntimeError(
                 f"invalid `BybitAccountType`, was {account_type}",  # pragma: no cover

@@ -44,7 +44,11 @@ class BybitInstrumentProvider(InstrumentProvider):
         self._client = client
         self._account_type = account_type
 
-        self._http_market = BybitMarketHttpAPI(self._client, self._account_type)
+        self._http_market = BybitMarketHttpAPI(
+            client=client,
+            clock=clock,
+            account_type=account_type
+        )
 
         self._log_warnings = config.log_warnings if config else True
         self._decoder = msgspec.json.Decoder()
