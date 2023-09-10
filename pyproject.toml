@@ -51,6 +51,7 @@ cython = "==3.0.2"  # Pinned for stability (also build dependency)
 click = "^8.1.7"
 frozendict = "^2.3.8"
 fsspec = "==2023.6.0"  # Pinned for stability
+importlib_metadata = "^6.8.0"
 msgspec = "^0.18.2"
 numpy = "^1.25.2"  # Also build dependency
 pandas = "^2.1.0"
