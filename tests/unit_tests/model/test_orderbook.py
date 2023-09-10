@@ -666,7 +666,7 @@ class TestOrderBook:
         instrument_id = InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR")
         book = OrderBook(instrument_id, BookType.L2_MBP)
 
-        def make_delta(side: OrderSide, price: float, size: float):
+        def make_delta(side: OrderSide, price: float, size: float, ts):
             order = BookOrder(
                 price=Price(price, 2),
                 size=Quantity(size, 0),
@@ -676,14 +676,16 @@ class TestOrderBook:
             return TestDataStubs.order_book_delta(
                 instrument_id=instrument_id,
                 order=order,
+                ts_init=ts,
+                ts_event=ts,
             )
 
         updates = [
             TestDataStubs.order_book_delta_clear(instrument_id=instrument_id),
-            make_delta(OrderSide.BUY, price=2.0, size=77.0),
-            make_delta(OrderSide.BUY, price=1.0, size=2.0),
-            make_delta(OrderSide.BUY, price=1.0, size=40.0),
-            make_delta(OrderSide.BUY, price=1.0, size=331.0),
+            make_delta(OrderSide.BUY, price=2.0, size=77.0, ts=1),
+            make_delta(OrderSide.BUY, price=1.0, size=2.0, ts=2),
+            make_delta(OrderSide.BUY, price=1.0, size=40.0, ts=3),
+            make_delta(OrderSide.BUY, price=1.0, size=331.0, ts=4),
         ]
 
         # Act
@@ -691,7 +693,8 @@ class TestOrderBook:
             print(update)
             book.apply_delta(update)
             book.check_integrity()
-            copy.deepcopy(book)
+        new = copy.deepcopy(book)
 
         # Assert
-        # assert str(book) == str(new)
+        assert book.ts_last == new.ts_last
+        assert book.sequence == new.sequence
