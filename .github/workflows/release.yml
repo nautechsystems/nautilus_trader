@@ -99,7 +99,7 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
 
-      - name: Set poety output
+      - name: Set poetry output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
 
       - name: Poetry cache
@@ -134,20 +134,31 @@ jobs:
 #          asset_name: ${{ env.ASSET_NAME }}
 #          asset_content_type: application/zip
 
-      - name: Authenticate to CodeArtifact
-        uses: source-ag/codeartifact-login-action@v2
+#      - name: Authenticate to CodeArtifact
+#        uses: source-ag/codeartifact-login-action@v2
+#        with:
+#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          aws-region: ap-northeast-1
+#          role-to-assume: aws
+#          codeartifact-domain: a23r
+#          codeartifact-domain-owner: 622371988550
+#          codeartifact-repository: a23r-repo
+#          configure-poetry: true
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ap-northeast-1
-          role-to-assume: aws
-          codeartifact-domain: a23r
-          codeartifact-domain-owner: 622371988550
-          codeartifact-repository: a23r-repo
-          configure-poetry: true
 
       - name: Install dependencies
-        run: poetry publish --repository artifact
+        run: |
+          export CODEARTIFACT_AUTH_TOKEN=`aws codeartifact get-authorization-token --domain a23r --domain-owner 622371988550 --region ap-northeast-1 --query authorizationToken --output text`
+          export POETRY_HTTP_BASIC_ARTIFACT_USERNAME=aws
+          export POETRY_HTTP_BASIC_ARTIFACT_PASSWORD=CODEARTIFACT_AUTH_TOKEN
+          poetry publish --repository artifact
 #
 #      - name: Publish to PyPI
 #        env:
