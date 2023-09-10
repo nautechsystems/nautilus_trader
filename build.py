@@ -12,12 +12,15 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import toml
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
 from Cython.Compiler.Version import version as cython_compiler_version
 from setuptools import Distribution
 from setuptools import Extension
+
+from nautilus_trader import PYPROJECT_PATH
 
 
 # The build mode (affects cargo)
@@ -328,9 +331,10 @@ def build() -> None:
 
 
 if __name__ == "__main__":
+    nautilus_trader_version = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
     print("\033[36m")
     print("=====================================================================")
-    print("Nautilus Builder")
+    print(f"Nautilus Builder {nautilus_trader_version}")
     print("=====================================================================\033[0m")
     print(f"System: {platform.system()} {platform.machine()}")
     print(f"Clang:  {_get_clang_version()}")
