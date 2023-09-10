@@ -86,11 +86,8 @@ class BybitHttpClient:
             body=msgspec.json.encode(payload) if payload else None,
             keys=ratelimiter_keys,
         )
-        response_status = self._decoder_response_code.decode(response.body)
-        if response_status.retCode == 0:
-            return response.body
-        else:
-            self._handle_error_by_code(response_status.retCode)
+        # first check for server error
+        print(str(response))
         if 400 <= response.status < 500:
             message = msgspec.json.decode(response.body) if response.body else None
             raise BybitError(
@@ -98,6 +95,12 @@ class BybitHttpClient:
                 message=message,
                 headers=response.headers,
             )
+        # then check for error inside bybit response
+        response_status = self._decoder_response_code.decode(response.body)
+        if response_status.retCode == 0:
+            return response.body
+        else:
+            self._handle_error_by_code(response_status.retCode)
 
     def _handle_error_by_code(self, code: int):
         pass

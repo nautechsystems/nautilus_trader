@@ -6,7 +6,7 @@ import pandas as pd
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.common.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -85,12 +85,12 @@ class BybitExecutionClient(LiveExecutionClient):
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self._log.info("Requesting OrderStatusReports...")
+        reports: list[OrderStatusReport] = []
         try:
             symbol = instrument_id.symbol.value if instrument_id is not None else None
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
             open_orders = await self._http_account.query_open_orders(symbol)
-            reports: list[OrderStatusReport] = []
             for order in open_orders:
                 report = order.parse_to_order_status_report(
                     account_id=self.account_id,
@@ -100,10 +100,9 @@ class BybitExecutionClient(LiveExecutionClient):
                     ts_init=self._clock.timestamp_ns(),
                 )
                 reports.append(report)
-
+            self._log.debug(f"Received {report}")
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
-        self._log.debug(f"Received {report}")
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
         self._log.info(f"Received {len(reports)} OrderStatusReport{plural}.")
@@ -157,4 +156,6 @@ class BybitExecutionClient(LiveExecutionClient):
         return active_symbols
 
     async def _update_account_state(self) -> None:
-        await self._http_account.query_position_info()
+        positions = await self._http_account.query_position_info()
+        balances = await self._http_account.query_wallet_balance()
+        print('tu smo')

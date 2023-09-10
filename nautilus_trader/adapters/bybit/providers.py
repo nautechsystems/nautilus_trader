@@ -5,10 +5,10 @@ import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
-from nautilus_trader.adapters.bybit.common.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.market import BybitLinearInstrumentStruct
+from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -74,7 +74,7 @@ class BybitInstrumentProvider(InstrumentProvider):
 
     def _parse_instrument(
         self,
-        instrument: BybitLinearInstrumentStruct,
+        instrument: BybitInstrument
     ):
         try:
             base_currency = instrument.parse_to_base_currency()

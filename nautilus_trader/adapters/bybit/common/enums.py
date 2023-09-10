@@ -125,6 +125,5 @@ class BybitEnumParser:
 @unique
 class BybitEndpointType(Enum):
     NONE = "NONE"
-    MARKET_DATA = "MARKET_DATA"
-    USER_DATA = "USER_DATA"
+    MARKET = "MARKET"
     ACCOUNT = "ACCOUNT"
