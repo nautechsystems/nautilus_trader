@@ -198,6 +198,42 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- QUERIES ----------------------------------------------------------------------------------
 
+    def query(
+        self,
+        cls: type,
+        instrument_ids: list[str] | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
+        **kwargs: Any,
+    ) -> list[Data | GenericData]:
+        if cls in (QuoteTick, TradeTick, Bar, OrderBookDelta):
+            data = self.query_rust(
+                cls=cls,
+                instrument_ids=instrument_ids,
+                start=start,
+                end=end,
+                where=where,
+                **kwargs,
+            )
+        else:
+            data = self.query_pyarrow(
+                cls=cls,
+                instrument_ids=instrument_ids,
+                start=start,
+                end=end,
+                where=where,
+                **kwargs,
+            )
+
+        if not is_nautilus_class(cls):
+            # Special handling for generic data
+            data = [
+                GenericData(data_type=DataType(cls, metadata=kwargs.get("metadata")), data=d)
+                for d in data
+            ]
+        return data
+
     def query_rust(
         self,
         cls: type,
@@ -214,7 +250,9 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         session = DataBackendSession()
         # TODO (bm) - fix this glob, query once on catalog creation?
-        for idx, fn in enumerate(self.fs.glob(f"{self.path}/data/{file_prefix}/**/*")):
+        glob_path = f"{self.path}/data/{file_prefix}/**/*"
+        dirs = self.fs.glob(glob_path)
+        for idx, fn in enumerate(dirs):
             assert self.fs.exists(fn)
             if instrument_ids and not any(uri_instrument_id(id_) in fn for id_ in instrument_ids):
                 continue
@@ -301,42 +339,6 @@ class ParquetDataCatalog(BaseDataCatalog):
         else:
             filter_ = None
         return dataset.to_table(filter=filter_)
-
-    def query(
-        self,
-        cls: type,
-        instrument_ids: list[str] | None = None,
-        start: TimestampLike | None = None,
-        end: TimestampLike | None = None,
-        where: str | None = None,
-        **kwargs: Any,
-    ) -> list[Data | GenericData]:
-        if cls in (QuoteTick, TradeTick, Bar, OrderBookDelta):
-            data = self.query_rust(
-                cls=cls,
-                instrument_ids=instrument_ids,
-                start=start,
-                end=end,
-                where=where,
-                **kwargs,
-            )
-        else:
-            data = self.query_pyarrow(
-                cls=cls,
-                instrument_ids=instrument_ids,
-                start=start,
-                end=end,
-                where=where,
-                **kwargs,
-            )
-
-        if not is_nautilus_class(cls):
-            # Special handling for generic data
-            data = [
-                GenericData(data_type=DataType(cls, metadata=kwargs.get("metadata")), data=d)
-                for d in data
-            ]
-        return data
 
     def _build_query(
         self,

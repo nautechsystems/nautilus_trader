@@ -39,7 +39,6 @@ from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
@@ -178,7 +177,7 @@ class TestPersistenceCatalog:
         self.catalog.write_data(stub_bars)
 
         # Assert
-        bars = self.catalog.bars(instrument_ids=[instrument.id.value])
+        bars = self.catalog.bars(bar_types=[str(bar_type)])
         all_bars = self.catalog.bars()
         assert len(all_bars) == 10
         assert len(bars) == len(stub_bars) == 10
@@ -190,7 +189,7 @@ class TestPersistenceCatalog:
         betfair_catalog.write_data([bar])
 
         # Act
-        data = self.catalog.bars(instrument_ids=[TestIdStubs.audusd_id().value])
+        data = self.catalog.bars(bar_types=[str(bar.bar_type)])
 
         # Assert
         assert len(data) == 1
