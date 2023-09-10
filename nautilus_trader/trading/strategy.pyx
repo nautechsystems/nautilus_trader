@@ -616,6 +616,7 @@ cdef class Strategy(Actor):
         Price price = None,
         Price trigger_price = None,
         ClientId client_id = None,
+        bint batch_more = False,
     ):
         """
         Modify the given order with optional parameters and routing instructions.
@@ -643,6 +644,8 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        batch_more : bool, default False
+            If more modify order commands should be batched for the venue.
 
         Raises
         ------
@@ -664,79 +667,22 @@ cdef class Strategy(Actor):
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
-        cdef bint updating = False  # Set validation flag (must become true)
-
-        if quantity is not None and quantity != order.quantity:
-            updating = True
-
-        if price is not None:
-            Condition.true(
-                order.order_type in VALID_LIMIT_ORDER_TYPES,
-                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
-            )
-            if price != order.price:
-                updating = True
-
-        if trigger_price is not None:
-            Condition.true(
-                order.order_type in VALID_STOP_ORDER_TYPES,
-                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
-            )
-            if trigger_price != order.trigger_price:
-                updating = True
-
-        if not updating:
-            self.log.error(
-                "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None "
-                "or the same as existing values.",
-            )
-            return
-
-        if order.is_closed_c() or order.is_pending_cancel_c():
-            self.log.warning(
-                f"Cannot create command ModifyOrder: "
-                f"state is {order.status_string_c()}, {order}.",
-            )
-            return  # Cannot send command
-
-        cdef OrderPendingUpdate event
-        if not order.is_active_local_c():
-            # Generate and apply event
-            event = self._generate_order_pending_update(order)
-            try:
-                order.apply(event)
-                self.cache.update_order(order)
-            except InvalidStateTrigger as e:
-                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
-                return
-
-            # Publish event
-            self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}",
-                msg=event,
-            )
-
-        cdef ModifyOrder command = ModifyOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
+        cdef ModifyOrder command = self._create_modify_order(
+            order=order,
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
+        if command is None:
+            return
 
         if order.is_emulated_c():
             self._send_emulator_command(command)
         else:
             self._send_risk_command(command)
 
-    cpdef void cancel_order(self, Order order, ClientId client_id = None):
+    cpdef void cancel_order(self, Order order, ClientId client_id = None, bint batch_more = False):
         """
         Cancel the given order with optional routing instructions.
 
@@ -752,46 +698,19 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        batch_more : bool, default False
+            If more cancel order commands should be batched for the venue.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
-        if order.is_closed_c() or order.is_pending_cancel_c():
-            self.log.warning(
-                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
-            )
-            return  # Cannot send command
-
-        cdef OrderStatus order_status = order.status_c()
-
-        cdef OrderPendingCancel event
-        if not order.is_active_local_c():
-            # Generate and apply event
-            event = self._generate_order_pending_cancel(order)
-            try:
-                order.apply(event)
-                self.cache.update_order(order)
-            except InvalidStateTrigger as e:
-                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
-                return
-
-            # Publish event
-            self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}",
-                msg=event,
-            )
-
-        cdef CancelOrder command = CancelOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
+        cdef CancelOrder command = self._create_cancel_order(
+            order=order,
             client_id=client_id,
         )
+        if command is None:
+            return
 
         if order.is_emulated_c():
             self._send_emulator_command(command)
@@ -1029,6 +948,118 @@ cdef class Strategy(Actor):
         )
 
         self._send_exec_command(command)
+
+    cdef ModifyOrder _create_modify_order(
+        self,
+        Order order,
+        Quantity quantity = None,
+        Price price = None,
+        Price trigger_price = None,
+        ClientId client_id = None,
+    ):
+        cdef bint updating = False  # Set validation flag (must become true)
+
+        if quantity is not None and quantity != order.quantity:
+            updating = True
+
+        if price is not None:
+            Condition.true(
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
+            )
+            if price != order.price:
+                updating = True
+
+        if trigger_price is not None:
+            Condition.true(
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
+            )
+            if trigger_price != order.trigger_price:
+                updating = True
+
+        if not updating:
+            self.log.error(
+                "Cannot create command ModifyOrder: "
+                "quantity, price and trigger were either None "
+                "or the same as existing values.",
+            )
+            return None  # Cannot send command
+
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot create command ModifyOrder: "
+                f"state is {order.status_string_c()}, {order}.",
+            )
+            return None  # Cannot send command
+
+        cdef OrderPendingUpdate event
+        if not order.is_active_local_c():
+            # Generate and apply event
+            event = self._generate_order_pending_update(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return  # Cannot send command
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
+        return ModifyOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
+    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id = None):
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
+            )
+            return None  # Cannot send command
+
+        cdef OrderStatus order_status = order.status_c()
+
+        cdef OrderPendingCancel event
+        if not order.is_active_local_c():
+            # Generate and apply event
+            event = self._generate_order_pending_cancel(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return None  # Cannot send command
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
+        return CancelOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
 
     cpdef void cancel_gtd_expiry(self, Order order):
         """
