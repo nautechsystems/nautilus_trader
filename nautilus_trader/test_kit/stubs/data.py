@@ -314,13 +314,15 @@ class TestDataStubs:
     def order_book_delta(
         instrument_id: Optional[InstrumentId] = None,
         order: Optional[BookOrder] = None,
+        ts_event: int = 0,
+        ts_init: int = 0,
     ) -> OrderBookDeltas:
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             action=BookAction.UPDATE,
             order=order or TestDataStubs.order(),
-            ts_event=0,
-            ts_init=0,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
     @staticmethod
