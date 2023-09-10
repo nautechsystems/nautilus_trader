@@ -20,8 +20,6 @@ from Cython.Compiler.Version import version as cython_compiler_version
 from setuptools import Distribution
 from setuptools import Extension
 
-from nautilus_trader import PYPROJECT_PATH
-
 
 # The build mode (affects cargo)
 BUILD_MODE = os.getenv("BUILD_MODE", "release")
@@ -331,7 +329,7 @@ def build() -> None:
 
 
 if __name__ == "__main__":
-    nautilus_trader_version = toml.load(PYPROJECT_PATH)["tool"]["poetry"]["version"]
+    nautilus_trader_version = toml.load("pyproject.toml")["tool"]["poetry"]["version"]
     print("\033[36m")
     print("=====================================================================")
     print(f"Nautilus Builder {nautilus_trader_version}")
