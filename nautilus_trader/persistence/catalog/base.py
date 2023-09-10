@@ -136,10 +136,10 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
 
     def bars(
         self,
-        instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Bar]:
-        return self.query(cls=Bar, instrument_ids=instrument_ids, **kwargs)
+        return self.query(cls=Bar, bar_types=bar_types, **kwargs)
 
     def order_book_deltas(
         self,
