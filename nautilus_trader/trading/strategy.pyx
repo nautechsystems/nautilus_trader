@@ -689,7 +689,7 @@ cdef class Strategy(Actor):
         else:
             self._send_risk_command(command)
 
-    cpdef void cancel_order(self, Order order, ClientId client_id = None, bint batch_more = False):
+    cpdef void cancel_order(self, Order order, ClientId client_id = None):
         """
         Cancel the given order with optional routing instructions.
 
@@ -705,17 +705,6 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        batch_more : bool, default False
-            Indicates if this command should be batched (grouped) with subsequent cancel order
-            commands for the venue. When set to `True`, we expect more calls to `cancel_order`
-            which will add to the current batch. Final processing of the batch occurs on a call
-            with `batch_more=False`. For proper behavior, maintain the correct call sequence.
-
-        Warnings
-        --------
-        The `batch_more` flag is an advanced feature which may have unintended consequences if not
-        called in the correct sequence. If a series of `batch_more=True` calls are not followed by
-        a `batch_more=False`, then no command will be sent from the strategy.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
