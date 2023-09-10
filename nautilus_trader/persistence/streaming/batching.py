@@ -28,6 +28,8 @@ import pyarrow.parquet as pq
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
@@ -85,7 +87,7 @@ def _generate_batches_rust(
 ) -> Generator[list[QuoteTick | TradeTick], None, None]:
     files = sorted(files, key=lambda x: Path(x).stem)
 
-    assert cls in (QuoteTick, TradeTick)
+    assert cls in (OrderBookDelta, QuoteTick, TradeTick, Bar)
 
     session = DataBackendSession(chunk_size=batch_size)
     data_type = {
