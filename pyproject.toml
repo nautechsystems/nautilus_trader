@@ -27,6 +27,9 @@ include = [
     # Compiled extensions must be included in the wheel distributions
     { path = "nautilus_trader/**/*.so", format = "wheel" },
     { path = "nautilus_trader/**/*.pyd", format = "wheel" },
+    # Include the py.typed file for type checking support
+    { path = "nautilus_trader/py.typed", format = "sdist" },
+    { path = "nautilus_trader/py.typed", format = "wheel" },
 ]
 
 [build-system]
