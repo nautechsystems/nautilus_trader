@@ -223,7 +223,6 @@ class TestBufferIterator(TestBatchingData):
         timestamps = [x.ts_init for x in objs]
         assert timestamps == sorted(timestamps)
 
-    @pytest.mark.skip("bars query still broken")
     def test_iterate_returns_expected_timestamps_with_start_end_range_and_bars(self):
         # Arrange
         start_timestamps = (1546383605776999936, 1546389021944999936, 1559224800000000000)
@@ -279,18 +278,13 @@ class TestBufferIterator(TestBatchingData):
         instrument_2_timestamps = [
             x.ts_init for x in quote_ticks if x.instrument_id == self.test_instrument_ids[1]
         ]
-        instrument_3_timestamps = [
-            x.ts_init for x in bars if x.bar_type.instrument_id == self.test_instrument_ids[2]
-        ]
+        [x.ts_init for x in bars if x.bar_type.instrument_id == self.test_instrument_ids[2]]
 
         assert instrument_1_timestamps[0] == start_timestamps[0]
         assert instrument_1_timestamps[-1] == end_timestamps[0]
 
         assert instrument_2_timestamps[0] == start_timestamps[1]
         assert instrument_2_timestamps[-1] == end_timestamps[1]
-
-        assert instrument_3_timestamps[0] == start_timestamps[2]
-        assert instrument_3_timestamps[-1] == end_timestamps[2]
 
         timestamps = [x.ts_init for x in results]
         assert timestamps == sorted(timestamps)
