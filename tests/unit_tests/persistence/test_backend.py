@@ -23,7 +23,7 @@ from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
 from nautilus_trader.persistence.wranglers import list_from_capsule
 
 
-def test_python_catalog_data():
+def test_python_catalog_data() -> None:
     trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
     quotes_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
     session = DataBackendSession()
@@ -40,7 +40,7 @@ def test_python_catalog_data():
     assert is_ascending
 
 
-def test_python_catalog_trades():
+def test_python_catalog_trades() -> None:
     trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
     session = DataBackendSession()
     session.add_file("trade_ticks", trades_path, NautilusDataType.TradeTick)
@@ -55,7 +55,7 @@ def test_python_catalog_trades():
     assert is_ascending
 
 
-def test_python_catalog_quotes():
+def test_python_catalog_quotes() -> None:
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
     session = DataBackendSession()
     session.add_file("quote_ticks", parquet_data_path, NautilusDataType.QuoteTick)
@@ -71,7 +71,7 @@ def test_python_catalog_quotes():
     assert is_ascending
 
 
-def test_python_catalog_order_book():
+def test_python_catalog_order_book() -> None:
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/order_book_deltas.parquet")
     assert pd.read_parquet(parquet_data_path).shape[0] == 1077
     session = DataBackendSession()

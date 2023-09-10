@@ -118,6 +118,8 @@ cdef class OrderBook(Data):
         return (
             self.instrument_id.value,
             self.book_type.value,
+            self.ts_last,
+            self.sequence,
             pickle.dumps(orders),
         )
 
@@ -127,12 +129,13 @@ cdef class OrderBook(Data):
             instrument_id._mem,
             state[1],
         )
-
-        cdef list orders = pickle.loads(state[2])
+        cdef int64_t ts_last = state[2]
+        cdef int64_t sequence = state[3]
+        cdef list orders = pickle.loads(state[4])
 
         cdef int64_t i
         for i in range(len(orders)):
-            self.add(orders[i], 0, 0)
+            self.add(orders[i], ts_last, sequence)
 
     @property
     def instrument_id(self) -> InstrumentId:

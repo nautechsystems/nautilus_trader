@@ -63,7 +63,6 @@ class TestPersistenceStreaming:
 
         return backtest_result
 
-    @pytest.mark.skipif(sys.platform == "win32", reason="Currently flaky on Windows")
     def test_feather_writer(self, betfair_catalog):
         # Arrange
         backtest_result = self._run_default_backtest(betfair_catalog)
@@ -268,3 +267,28 @@ class TestPersistenceStreaming:
         for update in updates[:10]:
             book.apply_delta(update)
             copy.deepcopy(book)
+
+    def test_read_backtest(self, betfair_catalog: ParquetDataCatalog):
+        # Arrange
+        [backtest_result] = self._run_default_backtest(betfair_catalog)
+
+        # Act
+        data = betfair_catalog.read_backtest(backtest_result.instance_id)
+        counts = dict(Counter([d.__class__.__name__ for d in data]))
+
+        # Assert
+        expected = {
+            "OrderBookDelta": 1307,
+            "AccountState": 772,
+            "OrderFilled": 397,
+            "PositionChanged": 394,
+            "OrderInitialized": 376,
+            "OrderSubmitted": 376,
+            "OrderAccepted": 375,
+            "TradeTick": 198,
+            "ComponentStateChanged": 21,
+            "PositionOpened": 3,
+            "PositionClosed": 2,
+            "BettingInstrument": 1,
+        }
+        assert counts == expected

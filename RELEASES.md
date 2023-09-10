@@ -3,8 +3,10 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `ParquetDataCatalog` v2 supporting built-in data types `OrderBookDelta`, `QuoteTick`, `TradeTick` and `Bar`
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
+- Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 
 ### Breaking Changes
 None
@@ -13,6 +15,7 @@ None
 - Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
 - Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
 - Fixed `SandboxExecutionClientConfig` `kw_only=True` to allow importing without initializing
+- Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
 
 ---
 

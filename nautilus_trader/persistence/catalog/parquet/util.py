@@ -143,3 +143,23 @@ def class_to_filename(cls: type) -> str:
     if not is_nautilus_class(cls):
         name = f"{GENERIC_DATA_PREFIX}{name}"
     return name
+
+
+def uri_instrument_id(instrument_id: str) -> str:
+    """
+    Convert an instrument_id into a valid URI for writing to a file path.
+    """
+    return instrument_id.replace("/", "")
+
+
+def combine_filters(*filters):
+    filters = tuple(x for x in filters if x is not None)
+    if len(filters) == 0:
+        return
+    elif len(filters) == 1:
+        return filters[0]
+    else:
+        expr = filters[0]
+        for f in filters[1:]:
+            expr = expr & f
+        return expr

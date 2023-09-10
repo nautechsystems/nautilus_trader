@@ -28,7 +28,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.funcs import parse_bytes
-from nautilus_trader.persistence.streaming.batching import generate_batches
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.persistence.streaming.engine import StreamingEngine
 from nautilus_trader.persistence.streaming.engine import _BufferIterator
@@ -223,7 +222,6 @@ class TestBufferIterator(TestBatchingData):
         timestamps = [x.ts_init for x in objs]
         assert timestamps == sorted(timestamps)
 
-    @pytest.mark.skip("bars query still broken")
     def test_iterate_returns_expected_timestamps_with_start_end_range_and_bars(self):
         # Arrange
         start_timestamps = (1546383605776999936, 1546389021944999936, 1559224800000000000)
@@ -249,12 +247,10 @@ class TestBufferIterator(TestBatchingData):
                 ),
             ),
             _StreamingBuffer(
-                generate_batches(
+                generate_batches_rust(
                     files=[self.test_parquet_files[2]],
                     cls=Bar,
-                    instrument_id=self.test_instrument_ids[2],
                     batch_size=1000,
-                    fs=fsspec.filesystem("file"),
                     start_nanos=start_timestamps[2],
                     end_nanos=end_timestamps[2],
                 ),
@@ -270,7 +266,6 @@ class TestBufferIterator(TestBatchingData):
 
         # Assert
         bars = [x for x in results if isinstance(x, Bar)]
-
         quote_ticks = [x for x in results if isinstance(x, QuoteTick)]
 
         instrument_1_timestamps = [

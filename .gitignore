@@ -16,6 +16,7 @@
 
 .benchmarks*
 .coverage*
+.history*
 .cache/
 .env/
 .git/

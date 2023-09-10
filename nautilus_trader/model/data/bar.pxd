@@ -73,6 +73,9 @@ cdef class Bar(Data):
     cdef str to_str(self)
 
     @staticmethod
+    cdef Bar from_mem_c(Bar_t mem)
+
+    @staticmethod
     cdef Bar from_dict_c(dict values)
 
     @staticmethod
