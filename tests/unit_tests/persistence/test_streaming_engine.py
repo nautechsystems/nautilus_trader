@@ -28,7 +28,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.persistence.funcs import parse_bytes
-from nautilus_trader.persistence.streaming.batching import generate_batches
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.persistence.streaming.engine import StreamingEngine
 from nautilus_trader.persistence.streaming.engine import _BufferIterator
@@ -248,12 +247,10 @@ class TestBufferIterator(TestBatchingData):
                 ),
             ),
             _StreamingBuffer(
-                generate_batches(
+                generate_batches_rust(
                     files=[self.test_parquet_files[2]],
                     cls=Bar,
-                    instrument_id=self.test_instrument_ids[2],
                     batch_size=1000,
-                    fs=fsspec.filesystem("file"),
                     start_nanos=start_timestamps[2],
                     end_nanos=end_timestamps[2],
                 ),
@@ -269,7 +266,6 @@ class TestBufferIterator(TestBatchingData):
 
         # Assert
         bars = [x for x in results if isinstance(x, Bar)]
-
         quote_ticks = [x for x in results if isinstance(x, QuoteTick)]
 
         instrument_1_timestamps = [
@@ -278,13 +274,18 @@ class TestBufferIterator(TestBatchingData):
         instrument_2_timestamps = [
             x.ts_init for x in quote_ticks if x.instrument_id == self.test_instrument_ids[1]
         ]
-        [x.ts_init for x in bars if x.bar_type.instrument_id == self.test_instrument_ids[2]]
+        instrument_3_timestamps = [
+            x.ts_init for x in bars if x.bar_type.instrument_id == self.test_instrument_ids[2]
+        ]
 
         assert instrument_1_timestamps[0] == start_timestamps[0]
         assert instrument_1_timestamps[-1] == end_timestamps[0]
 
         assert instrument_2_timestamps[0] == start_timestamps[1]
         assert instrument_2_timestamps[-1] == end_timestamps[1]
+
+        assert instrument_3_timestamps[0] == start_timestamps[2]
+        assert instrument_3_timestamps[-1] == end_timestamps[2]
 
         timestamps = [x.ts_init for x in results]
         assert timestamps == sorted(timestamps)
