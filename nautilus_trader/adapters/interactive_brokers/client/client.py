@@ -20,9 +20,8 @@ from decimal import Decimal
 from inspect import iscoroutinefunction
 from typing import Callable, Optional, Union
 
-import pandas as pd
-
 # fmt: off
+import pandas as pd
 from ibapi import comm
 from ibapi import decoder
 from ibapi.account_summary_tags import AccountSummaryTags
@@ -49,6 +48,9 @@ from ibapi.utils import BadMessage
 from ibapi.utils import current_fn_name
 from ibapi.wrapper import EWrapper
 
+from nautilus_trader import PYPROJECT_PATH
+from nautilus_trader import get_package_version_from_toml
+from nautilus_trader import get_package_version_installed
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
@@ -78,6 +80,16 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 
 # fmt: on
+
+# Check ibapi package versioning
+ibapi_package = "nautilus_ibapi"
+ibapi_version_specified = get_package_version_from_toml(PYPROJECT_PATH, ibapi_package, True)
+ibapi_version_installed = get_package_version_installed(ibapi_package)
+
+if ibapi_version_specified != ibapi_version_installed:
+    raise RuntimeError(
+        f"Expected `{ibapi_package}` version {ibapi_version_specified}, but found {ibapi_version_installed}",
+    )
 
 
 class InteractiveBrokersClient(Component, EWrapper):
