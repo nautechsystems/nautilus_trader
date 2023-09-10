@@ -42,15 +42,8 @@ jobs:
       - name: Poetry cache
         id: cached-poetry
         uses: actions/cache@v3
-        strategy:
-          fail-fast: false
-          matrix:
-            arch: [x64]
-            os: [ubuntu-latest, macos-latest]
-            python-version: ["3.11"]
-        with:
-          path: ${{ env.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        path: ${{ env.dir }}
+        key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Install
         run: poetry install
