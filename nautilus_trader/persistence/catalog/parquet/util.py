@@ -149,7 +149,7 @@ def uri_instrument_id(instrument_id: str) -> str:
     """
     Convert an instrument_id into a valid URI for writing to a file path.
     """
-    return instrument_id.replace("/", "|")
+    return instrument_id.replace("/", "")
 
 
 def combine_filters(*filters):
