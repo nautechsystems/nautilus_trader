@@ -9,47 +9,6 @@ on:
     branches: [develop]
 
 jobs:
-  test-pip-install:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
-        os: [ubuntu-latest, macos-latest]  # windows-latest
-        python-version: ["3.9", "3.10", "3.11"]
-    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Rust tool-chain (Linux, Windows) stable
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
-        uses: actions-rust-lang/setup-rust-toolchain@v1.5
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-
-      - name: Set up Rust tool-chain (macOS)
-        if: runner.os == 'macOS'
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
-
-      - name: Test pip installation
-        run: pip install .
-
   tag-release:
     needs: [test-pip-install]
     name: tag-release - Python 3.11 (ubuntu-latest)
@@ -83,6 +42,10 @@ jobs:
       - name: Poetry cache
         id: cached-poetry
         uses: actions/cache@v3
+        matrix:
+          arch: [x64]
+          os: [ubuntu-latest, macos-latest]
+          python-version: ["3.11"]
         with:
           path: ${{ env.dir }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
@@ -90,31 +53,31 @@ jobs:
       - name: Install
         run: poetry install
 
-      - name: Create git tag
-        uses: salsify/action-detect-and-tag-new-version@v2
-        with:
-          version-command: poetry version --short
+#      - name: Create git tag
+#        uses: salsify/action-detect-and-tag-new-version@v2
+#        with:
+#          version-command: poetry version --short
 
-      - name: Set output
-        id: vars
-        run: |
-          echo "::set-output name=tag_name::v$(poetry version --short)"
-          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
-          sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
+#      - name: Set output
+#        id: vars
+#        run: |
+#          echo "::set-output name=tag_name::v$(poetry version --short)"
+#          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta"
+#          sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
 
-      - name: Create GitHub release
-        id: create-release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ steps.vars.outputs.tag_name }}
-          RELEASE_NAME: ${{ steps.vars.outputs.release_name }}
-        with:
-          tag_name: ${{ env.TAG_NAME }}
-          release_name: ${{ env.RELEASE_NAME }}
-          draft: false
-          prerelease: false
-          body_path: RELEASE.md
+#      - name: Create GitHub release
+#        id: create-release
+#        uses: actions/create-release@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          TAG_NAME: ${{ steps.vars.outputs.tag_name }}
+#          RELEASE_NAME: ${{ steps.vars.outputs.release_name }}
+#        with:
+#          tag_name: ${{ env.TAG_NAME }}
+#          release_name: ${{ env.RELEASE_NAME }}
+#          draft: false
+#          prerelease: false
+#          body_path: RELEASE.md
 
   publish-sdist:
     needs: [tag-release]
@@ -163,18 +126,18 @@ jobs:
           cd dist
           echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
-      - name: Upload release asset
-        id: upload-release-asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
-        with:
-          upload_url: ${{ needs.tag-release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/zip
+#      - name: Upload release asset
+#        id: upload-release-asset
+#        uses: actions/upload-release-asset@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          ASSET_PATH: ${{ steps.vars.outputs.asset_path }}
+#          ASSET_NAME: ${{ steps.vars.outputs.asset_name }}
+#        with:
+#          upload_url: ${{ needs.tag-release.outputs.upload_url }}
+#          asset_path: ${{ env.ASSET_PATH }}
+#          asset_name: ${{ env.ASSET_NAME }}
+#          asset_content_type: application/zip
 
       - name: Authenticate to CodeArtifact
         uses: source-ag/codeartifact-login-action@v1
@@ -196,126 +159,126 @@ jobs:
 #          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
 #          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
 #        run: poetry publish
-
-  publish-wheels:
-    needs: [tag-release]
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64]
-        os: [ubuntu-20.04, ubuntu-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11"]
-    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    env:
-      BUILD_MODE: release
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up Rust tool-chain (Linux, Windows) stable
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
-        uses: actions-rust-lang/setup-rust-toolchain@v1.5
-        with:
-          toolchain: stable
-          components: rustfmt, clippy
-
-      - name: Set up Rust tool-chain (macOS)
-        if: runner.os == 'macOS'
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-          components: rustfmt, clippy
-
-      - name: Set up Python environment
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
-
-      - name: Set poetry output (Linux, macOS)
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set poetry output (Windows)
-        if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
-
-      - name: Poetry cache
-        id: cached-poetry
-        uses: actions/cache@v3
-        with:
-          path: ${{ env.dir }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
-
-      - name: Install / Build
-        run: |
-          poetry install
-          poetry build --format wheel
-
-      - name: Set output for release (Linux, macOS)
-        id: vars-unix
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
-        run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
-          cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
-
-      - name: Upload release asset (Linux, macOS)
-        id: upload-release-asset-unix
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars-unix.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars-unix.outputs.asset_name }}
-        with:
-          upload_url: ${{ needs.tag-release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/wheel
-
-      - name: Set output for release (Windows)
-        id: vars-windows
-        if: runner.os == 'Windows'
-        run: |
-          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
-
-      - name: Upload release asset (Windows)
-        id: upload-release-asset-windows
-        if: runner.os == 'Windows'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars-windows.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars-windows.outputs.asset_name }}
-        with:
-          upload_url: ${{ needs.tag-release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/wheel
-
-      - name: Authenticate to CodeArtifact
-        uses: source-ag/codeartifact-login-action@v1
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-northeast-1
-          role-to-assume: aws
-          codeartifact-domain: a23r
-          codeartifact-domain-owner: 622371988550
-          codeartifact-repository: a23r-repo
-          configure-poetry: true
-
-      - name: Install dependencies
-        run: poetry publish --repository artifact
-#      - name: Publish to PyPI
+#
+#  publish-wheels:
+#    needs: [tag-release]
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        arch: [x64]
+#        os: [ubuntu-20.04, ubuntu-latest]
+#        python-version: ["3.11"]
+#    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+#    runs-on: ${{ matrix.os }}
+#    env:
+#      BUILD_MODE: release
+#
+#    steps:
+#      - name: Checkout repository
+#        uses: actions/checkout@v3
+#
+#      - name: Set up Rust tool-chain (Linux, Windows) stable
+#        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+#        uses: actions-rust-lang/setup-rust-toolchain@v1.5
+#        with:
+#          toolchain: stable
+#          components: rustfmt, clippy
+#
+#      - name: Set up Rust tool-chain (macOS)
+#        if: runner.os == 'macOS'
+#        uses: actions-rs/toolchain@v1
+#        with:
+#          toolchain: stable
+#          override: true
+#          components: rustfmt, clippy
+#
+#      - name: Set up Python environment
+#        uses: actions/setup-python@v4
+#        with:
+#          python-version: ${{ matrix.python-version }}
+#
+#      - name: Install build dependencies
+#        run: python -m pip install --upgrade pip setuptools wheel pre-commit poetry==1.6.1 msgspec
+#
+#      - name: Set poetry output (Linux, macOS)
+#        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+#        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+#
+#      - name: Set poetry output (Windows)
+#        if: runner.os == 'Windows'
+#        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
+#
+#      - name: Poetry cache
+#        id: cached-poetry
+#        uses: actions/cache@v3
+#        with:
+#          path: ${{ env.dir }}
+#          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+#
+#      - name: Install / Build
+#        run: |
+#          poetry install
+#          poetry build --format wheel
+#
+#      - name: Set output for release (Linux, macOS)
+#        id: vars-unix
+#        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+#        run: |
+#          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+#          cd dist
+#          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+#
+#      - name: Upload release asset (Linux, macOS)
+#        id: upload-release-asset-unix
+#        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+#        uses: actions/upload-release-asset@v1
 #        env:
-#          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-#          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-#        run: poetry publish
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          ASSET_PATH: ${{ steps.vars-unix.outputs.asset_path }}
+#          ASSET_NAME: ${{ steps.vars-unix.outputs.asset_name }}
+#        with:
+#          upload_url: ${{ needs.tag-release.outputs.upload_url }}
+#          asset_path: ${{ env.ASSET_PATH }}
+#          asset_name: ${{ env.ASSET_NAME }}
+#          asset_content_type: application/wheel
+#
+#      - name: Set output for release (Windows)
+#        id: vars-windows
+#        if: runner.os == 'Windows'
+#        run: |
+#          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
+#          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
+#
+#      - name: Upload release asset (Windows)
+#        id: upload-release-asset-windows
+#        if: runner.os == 'Windows'
+#        uses: actions/upload-release-asset@v1
+#        env:
+#          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+#          ASSET_PATH: ${{ steps.vars-windows.outputs.asset_path }}
+#          ASSET_NAME: ${{ steps.vars-windows.outputs.asset_name }}
+#        with:
+#          upload_url: ${{ needs.tag-release.outputs.upload_url }}
+#          asset_path: ${{ env.ASSET_PATH }}
+#          asset_name: ${{ env.ASSET_NAME }}
+#          asset_content_type: application/wheel
+#
+#      - name: Authenticate to CodeArtifact
+#        uses: source-ag/codeartifact-login-action@v1
+#        with:
+#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          aws-region: ap-northeast-1
+#          role-to-assume: aws
+#          codeartifact-domain: a23r
+#          codeartifact-domain-owner: 622371988550
+#          codeartifact-repository: a23r-repo
+#          configure-poetry: true
+#
+#      - name: Install dependencies
+#        run: poetry publish --repository artifact
+##      - name: Publish to PyPI
+##        env:
+##          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+##          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+##        run: poetry publish
