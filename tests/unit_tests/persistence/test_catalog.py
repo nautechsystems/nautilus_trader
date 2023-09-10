@@ -35,6 +35,7 @@ from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.catalog.parquet.core import ParquetDataCatalog
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -49,7 +50,7 @@ class TestPersistenceCatalog:
         self.catalog = data_catalog_setup(protocol=self.fs_protocol)
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
-    def test_list_data_types(self, betfair_catalog):
+    def test_list_data_types(self, betfair_catalog: ParquetDataCatalog) -> None:
         data_types = betfair_catalog.list_data_types()
         expected = [
             "betfair_ticker",
@@ -60,7 +61,7 @@ class TestPersistenceCatalog:
         ]
         assert data_types == expected
 
-    def test_data_catalog_query_filtered(self, betfair_catalog):
+    def test_catalog_query_filtered(self, betfair_catalog) -> None:
         ticks = self.catalog.trade_ticks()
         assert len(ticks) == 312
 
@@ -76,17 +77,17 @@ class TestPersistenceCatalog:
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 2384
 
-    def test_data_catalog_query_custom_filtered(self, betfair_catalog):
+    def test_catalog_query_custom_filtered(self, betfair_catalog) -> None:
         filtered_deltas = self.catalog.order_book_deltas(
             where=f"action = '{BookAction.DELETE.value}'",
         )
         assert len(filtered_deltas) == 351
 
-    def test_data_catalog_instruments_df(self, betfair_catalog):
+    def test_catalog_instruments_df(self, betfair_catalog) -> None:
         instruments = self.catalog.instruments()
         assert len(instruments) == 2
 
-    def test_data_catalog_instruments_filtered_df(self, betfair_catalog):
+    def test_catalog_instruments_filtered_df(self, betfair_catalog) -> None:
         instrument_id = self.catalog.instruments()[0].id.value
         instruments = self.catalog.instruments(instrument_ids=[instrument_id])
         assert len(instruments) == 1
@@ -94,7 +95,7 @@ class TestPersistenceCatalog:
         assert instruments[0].id.value == instrument_id
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
-    def test_data_catalog_currency_with_null_max_price_loads(self, betfair_catalog):
+    def test_catalog_currency_with_null_max_price_loads(self, betfair_catalog: ParquetDataCatalog):
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         betfair_catalog.write_data([instrument])
@@ -105,10 +106,7 @@ class TestPersistenceCatalog:
         # Assert
         assert instrument.max_price is None
 
-    @pytest.mark.skip(
-        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
-    )
-    def test_data_catalog_instrument_ids_correctly_unmapped(self):
+    def test_catalog_instrument_ids_correctly_unmapped(self) -> None:
         # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
         trade_tick = TradeTick(
@@ -131,7 +129,7 @@ class TestPersistenceCatalog:
         assert instrument.id.value == "AUD/USD.SIM"
         assert trade_tick.instrument_id.value == "AUD/USD.SIM"
 
-    def test_data_catalog_filter(self, betfair_catalog):
+    def test_catalog_filter(self, betfair_catalog) -> None:
         # Arrange, Act
         deltas = self.catalog.order_book_deltas()
         filtered_deltas = self.catalog.order_book_deltas(
@@ -142,7 +140,7 @@ class TestPersistenceCatalog:
         assert len(deltas) == 2384
         assert len(filtered_deltas) == 351
 
-    def test_data_catalog_generic_data(self, betfair_catalog):
+    def test_catalog_generic_data(self) -> None:
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
         data = TestPersistenceStubs.news_events()
@@ -162,8 +160,7 @@ class TestPersistenceCatalog:
         assert len(data) == 2745
         assert isinstance(data[0], GenericData)
 
-    @pytest.mark.skip(reason="datafusion bar query not working")
-    def test_data_catalog_bars(self):
+    def test_catalog_bars(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_adabtc_binance_1min_last()
         instrument = TestInstrumentProvider.adabtc_binance()
@@ -182,8 +179,7 @@ class TestPersistenceCatalog:
         assert len(all_bars) == 10
         assert len(bars) == len(stub_bars) == 10
 
-    @pytest.mark.skip(reason="datafusion bar query not working")
-    def test_catalog_bar_query_instrument_id(self, betfair_catalog):
+    def test_catalog_bar_query_instrument_id(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         bar = TestDataStubs.bar_5decimal()
         betfair_catalog.write_data([bar])
@@ -194,7 +190,7 @@ class TestPersistenceCatalog:
         # Assert
         assert len(data) == 1
 
-    def test_catalog_persists_equity(self, betfair_catalog):
+    def test_catalog_persists_equity(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         instrument = Equity(
             instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
@@ -235,7 +231,7 @@ class TestPersistenceCatalog:
         assert instrument.margin_init == instrument_from_catalog.margin_init
         assert instrument.margin_maint == instrument_from_catalog.margin_maint
 
-    def test_list_backtest_runs(self, betfair_catalog):
+    def test_list_backtest_runs(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         mock_folder = f"{betfair_catalog.path}/backtest/abc"
         betfair_catalog.fs.mkdir(mock_folder)
@@ -246,7 +242,7 @@ class TestPersistenceCatalog:
         # Assert
         assert result == ["abc"]
 
-    def test_list_live_runs(self, betfair_catalog):
+    def test_list_live_runs(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         mock_folder = f"{betfair_catalog.path}/live/abc"
         betfair_catalog.fs.mkdir(mock_folder)
