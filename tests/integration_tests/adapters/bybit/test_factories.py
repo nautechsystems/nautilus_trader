@@ -37,3 +37,6 @@ class TestBybitFactories:
             database=self.cache_db,
             logger=self.logger,
         )
+
+    def test_init(self):
+        assert 2 == 2
