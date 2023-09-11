@@ -6,7 +6,7 @@ on:
   workflow_run:
     workflows:
       - build
-    branches: [master]
+    branches: [develop]
     types:
       - completed
 
@@ -286,9 +286,29 @@ jobs:
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
+          
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Fetch CodeArtifact metadata
+        id: codeartifact-metadata
+        shell: bash
+        run: |
+          echo "codeartifact-token=$(aws codeartifact get-authorization-token --domain a23r --domain-owner 622371988550 --query authorizationToken --region ap-northeast-1 --output text)" >> $GITHUB_OUTPUT
+          echo "codeartifact-repo-url=$(aws codeartifact get-repository-endpoint --domain a23r --domain-owner 622371988550 --repository a23r-repo --format pypi --query repositoryEndpoint --output text)" >> $GITHUB_OUTPUT
+
+      - name: Configure poetry with CodeArtifact login information
+        shell: bash
+        run: |
+            poetry config repositories.artifact ${{ steps.codeartifact-metadata.outputs.codeartifact-repo-url }} 
+            poetry config http-basic.artifact aws ${{ steps.codeartifact-metadata.outputs.codeartifact-token }} 
 
       - name: Publish to PyPI
-        env:
-          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
-          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish
+#        env:
+#          POETRY_HTTP_BASIC_PYPI_USERNAME: ${{ secrets.PYPI_USERNAME }}
+#          POETRY_HTTP_BASIC_PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: poetry publish --repository artifact
