@@ -98,7 +98,7 @@ where
             .for_each(|heap_elem| match heap_elem {
                 Ok(Some(heap_elem)) => self.heap.push(heap_elem),
                 Ok(None) => (),
-                Err(err) => panic!("Failed to create heap element because of error: {}", err),
+                Err(e) => panic!("Failed to create heap element because of error: {e}"),
             });
     }
 }

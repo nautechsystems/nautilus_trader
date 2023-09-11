@@ -108,7 +108,7 @@ impl SocketClient {
                 match reader.read_buf(&mut buf).await {
                     // Connection has been terminated or vector buffer is completely
                     Ok(bytes) if bytes == 0 => error!("Cannot read anymore bytes"),
-                    Err(err) => error!("Failed with error: {err}"),
+                    Err(e) => error!("Failed with error: {e}"),
                     // Received bytes of data
                     Ok(bytes) => {
                         debug!("Received {bytes} bytes of data");
@@ -123,10 +123,10 @@ impl SocketClient {
                             let mut data: Vec<u8> = buf.drain(0..i + suffix.len()).collect();
                             data.truncate(data.len() - suffix.len());
 
-                            if let Err(err) =
+                            if let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (data.as_slice(),)))
                             {
-                                error!("Call to handler failed: {}", err);
+                                error!("Call to handler failed: {e}");
                                 break;
                             }
                         }
@@ -152,7 +152,7 @@ impl SocketClient {
                     let mut guard = writer.lock().await;
                     match guard.write_all(&message).await {
                         Ok(()) => debug!("Sent heartbeat"),
-                        Err(err) => error!("Failed to send heartbeat: {}", err),
+                        Err(e) => error!("Failed to send heartbeat: {e}"),
                     }
                 }
             })

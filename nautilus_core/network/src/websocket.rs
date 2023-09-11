@@ -103,7 +103,7 @@ impl WebSocketClientInner {
                     let mut guard = writer.lock().await;
                     match guard.send(Message::Ping(vec![])).await {
                         Ok(()) => debug!("Sent heartbeat"),
-                        Err(err) => error!("Failed to send heartbeat: {}", err),
+                        Err(e) => error!("Failed to send heartbeat: {e}"),
                     }
                 }
             })
@@ -118,19 +118,19 @@ impl WebSocketClientInner {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
                         debug!("Received binary message");
-                        if let Err(err) =
+                        if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
                         {
-                            error!("Call to handler failed: {}", err);
+                            error!("Call to handler failed: {e}");
                             break;
                         }
                     }
                     Some(Ok(Message::Text(data))) => {
                         debug!("Received text message");
-                        if let Err(err) = Python::with_gil(|py| {
+                        if let Err(e) = Python::with_gil(|py| {
                             handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
                         }) {
-                            error!("Call to handler failed: {}", err);
+                            error!("Call to handler failed: {e}");
                             break;
                         }
                     }
@@ -139,8 +139,8 @@ impl WebSocketClientInner {
                         break;
                     }
                     Some(Ok(_)) => (),
-                    Some(Err(err)) => {
-                        error!("Received error message. Terminating. {err}");
+                    Some(Err(e)) => {
+                        error!("Received error message. Terminating. {e}");
                         break;
                     }
                     // Internally tungstenite considers the connection closed when polling
@@ -258,7 +258,7 @@ impl WebSocketClient {
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
                 Ok(_) => debug!("Called post_connection handler"),
-                Err(err) => error!("post_connection handler failed because: {}", err),
+                Err(e) => error!("Error calling post_connection handler: {e}"),
             });
         }
 
@@ -291,7 +291,7 @@ impl WebSocketClient {
         let mut guard = self.writer.lock().await;
         match guard.send(Message::Close(None)).await {
             Ok(()) => debug!("Sent close message"),
-            Err(err) => error!("Failed to send message: {}", err),
+            Err(e) => error!("Failed to send message: {e}"),
         }
     }
 
@@ -318,14 +318,14 @@ impl WebSocketClient {
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => debug!("Called post_reconnection handler"),
-                                    Err(err) => {
-                                        error!("post_reconnection handler failed because: {}", err);
+                                    Err(e) => {
+                                        error!("Error calling post_reconnection handler: {e}");
                                     }
                                 });
                             }
                         }
-                        Err(err) => {
-                            error!("Reconnect failed {}", err);
+                        Err(e) => {
+                            error!("Reconnect failed {e}");
                             break;
                         }
                     },
@@ -335,8 +335,8 @@ impl WebSocketClient {
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
                                 Ok(_) => debug!("Called post_reconnection handler"),
-                                Err(err) => {
-                                    error!("post_reconnection handler failed because: {}", err);
+                                Err(e) => {
+                                    error!("Error calling post_reconnection handler: {e}");
                                 }
                             });
                         }
@@ -376,10 +376,9 @@ impl WebSocketClient {
                 post_disconnection,
             )
             .await
-            .map_err(|err| {
+            .map_err(|e| {
                 PyException::new_err(format!(
-                    "Unable to make websocket connection because of error: {}",
-                    err
+                    "Unable to make websocket connection because of error: {e}",
                 ))
             })
         })
@@ -393,8 +392,8 @@ impl WebSocketClient {
         let writer = slf.writer.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
-            guard.send(Message::Text(data)).await.map_err(|err| {
-                PyException::new_err(format!("Unable to send data because of error: {}", err))
+            guard.send(Message::Text(data)).await.map_err(|e| {
+                PyException::new_err(format!("Unable to send data because of error: {e}"))
             })
         })
     }
@@ -407,8 +406,8 @@ impl WebSocketClient {
         let writer = slf.writer.clone();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
-            guard.send(Message::Binary(data)).await.map_err(|err| {
-                PyException::new_err(format!("Unable to send data because of error: {}", err))
+            guard.send(Message::Binary(data)).await.map_err(|e| {
+                PyException::new_err(format!("Unable to send data because of error: {e}"))
             })
         })
     }
@@ -485,8 +484,8 @@ mod tests {
                             if msg.is_binary() || msg.is_text() {
                                 websocket.send(msg).await.unwrap();
                             } else if msg.is_close() {
-                                if let Err(err) = websocket.close(None).await {
-                                    debug!("Connection already closed {err}");
+                                if let Err(e) = websocket.close(None).await {
+                                    debug!("Connection already closed {e}");
                                 };
                                 break;
                             }
