@@ -1,16 +1,16 @@
-from typing import Any
+from typing import Any, Optional
 
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 
 
 # from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
-def enc_hook(obj: Any)-> Any:
+def enc_hook(obj: Any) -> Any:
     if isinstance(obj, BybitSymbol):
         return str(obj)
     else:
@@ -35,13 +35,14 @@ class BybitHttpEndpoint:
             BybitEndpointType.NONE: self.client.send_request,
             BybitEndpointType.MARKET: self.client.send_request,
             BybitEndpointType.ACCOUNT: self.client.sign_request,
+            BybitEndpointType.TRADE: self.client.sign_request,
         }
 
     async def _method(
         self,
         method_type: Any,
-        parameters: Any,
-        ratelimiter_keys: Any = None,
+        parameters: Optional[Any] = None,
+        ratelimiter_keys: Optional[Any] = None,
     ) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(parameters))
         raw: bytes = await self._method_request[self.endpoint_type](

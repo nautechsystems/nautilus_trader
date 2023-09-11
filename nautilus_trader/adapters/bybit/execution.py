@@ -6,16 +6,17 @@ import pandas as pd
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
-from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
+from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -23,6 +24,7 @@ from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
@@ -59,8 +61,12 @@ class BybitExecutionClient(LiveExecutionClient):
             clock=clock,
             logger=logger,
         )
+        self._log.info(f"Account type: ${self.account_type.value}", LogColor.BLUE)
         self._bybit_account_type = account_type
         self._enum_parser = BybitEnumParser()
+
+        account_id = AccountId(f"{BYBIT_VENUE.value}-{self._bybit_account_type}")
+        self._set_account_id(account_id)
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
 
@@ -100,7 +106,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     ts_init=self._clock.timestamp_ns(),
                 )
                 reports.append(report)
-            self._log.debug(f"Received {report}")
+                self._log.debug(f"Received {report}")
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
         len_reports = len(reports)
@@ -149,13 +155,26 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _get_active_position_symbols(self, symbol: Optional[str]) -> set[str]:
         active_symbols: set[str] = set()
-        positions: list[BybitPositionStruct]
         bybit_positions = await self._http_account.query_position_info(symbol)
         for position in bybit_positions:
             active_symbols.add(position.symbol)
         return active_symbols
 
     async def _update_account_state(self) -> None:
-        positions = await self._http_account.query_position_info()
-        balances = await self._http_account.query_wallet_balance()
-        print('tu smo')
+        # positions = await self._http_account.query_position_info()
+        [account_type_balances, ts_event] = await self._http_account.query_wallet_balance()
+        if account_type_balances:
+            self._log.info("Binance API key authenticated.", LogColor.GREEN)
+            self._log.info(f"API key {self._http_account.client.api_key} has trading permissions.")
+        for balance in account_type_balances:
+            balances = balance.parse_to_account_balance()
+            margins = balance.parse_to_margin_balance()
+            try:
+                self.generate_account_state(
+                    balances=balances,
+                    margins=margins,
+                    reported=True,
+                    ts_event=millis_to_nanos(ts_event),
+                )
+            except Exception as e:
+                self._log.error(f"Failed to generate AccountState: {e}")

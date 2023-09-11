@@ -1,16 +1,13 @@
-import msgspec
-
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
-from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
+from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
+from nautilus_trader.adapters.bybit.utils import get_category_from_account_type
+from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
-from nautilus_trader.common.clock import LiveClock
-
-from nautilus_trader.adapters.bybit.utils import get_category_from_account_type
 
 
 class BybitMarketHttpAPI:
@@ -28,19 +25,24 @@ class BybitMarketHttpAPI:
 
         # endpoints
         self._endpoint_instruments = BybitInstrumentsInfoEndpoint(
-            client=client,
-            base_endpoint=self.base_endpoint,
-            account_type=account_type
+            client,
+            self.base_endpoint,
+            account_type,
         )
+        self._endpoint_server_time = BybitServerTimeEndpoint(client, self.base_endpoint)
 
     def _get_url(self, url: str):
         return self.base_endpoint + url
 
-    async def fetch_instruments(self)->list[BybitInstrument]:
+    async def fetch_server_time(self) -> BybitServerTime:
+        response = await self._endpoint_server_time._get()
+        return response.result
+
+    async def fetch_instruments(self) -> list[BybitInstrument]:
         response = await self._endpoint_instruments._get(
             parameters=self._endpoint_instruments.GetParameters(
-                category=get_category_from_account_type(self.account_type)
-            )
+                category=get_category_from_account_type(self.account_type),
+            ),
         )
         return response.result.list
 
@@ -56,6 +58,3 @@ class BybitMarketHttpAPI:
             return decoded.result.list
         except Exception as e:
             print(e)
-
-
-

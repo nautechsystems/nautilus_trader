@@ -3,31 +3,20 @@ import msgspec
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTimeResponseStruct
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
-class BybitServerTimeResult(msgspec.Struct):
-    timeSecond: str
-    timeNano: str
-
-
-class BybitServerTimeResponseStruct(msgspec.Struct):
-    retCode: int
-    retMsg: str
-    result: BybitServerTimeResult
-    time: int
-
-
-class BybitServerTimeHttp(BybitHttpEndpoint):
-    def __init(
+class BybitServerTimeEndpoint(BybitHttpEndpoint):
+    def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ):
-        url_path = base_endpoint + "market/time"
+        url_path = base_endpoint + "time"
         super().__init__(
             client=client,
-            endpoint_type=BybitEndpointType.MARKET_DATA,
+            endpoint_type=BybitEndpointType.MARKET,
             url_path=url_path,
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitServerTimeResponseStruct)

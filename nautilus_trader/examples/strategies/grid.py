@@ -25,4 +25,4 @@ class GridStrategy(Strategy):
         self.subscribe_trade_ticks(instrument_id=self.instrument_id)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
-        print(tick)
+        print(f"GRID: {tick}")

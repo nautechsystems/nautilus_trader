@@ -2,17 +2,16 @@ from typing import Optional
 
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
-from nautilus_trader.adapters.bybit.schemas.account import BybitWalletBalance
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
+from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.utils import get_category_from_account_type
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
-
-from nautilus_trader.adapters.bybit.utils import get_category_from_account_type
 
 
 class BybitAccountHttpAPI:
@@ -64,14 +63,10 @@ class BybitAccountHttpAPI:
     async def query_wallet_balance(
         self,
         coin: Optional[str] = None,
-    ) -> list[BybitWalletBalance]:
+    ) -> [list[BybitWalletBalance], int]:
         response = await self._endpoint_wallet_balance._get(
             parameters=self._endpoint_wallet_balance.GetaParameters(
-                accountType='UNIFIED',
+                accountType="UNIFIED",
             ),
         )
-        return response.result.list
-
-
-
-
+        return [response.result.list, response.time]

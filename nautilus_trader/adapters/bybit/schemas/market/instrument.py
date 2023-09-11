@@ -1,9 +1,13 @@
+from decimal import Decimal
 from typing import Union
 
 import msgspec
+
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
+from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
+from nautilus_trader.adapters.bybit.schemas.common import PriceFilter
 from nautilus_trader.core.rust.model import CurrencyType
-from decimal import Decimal
-from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter, PriceFilter, LotSizeFilter, BybitListResult
 from nautilus_trader.model.currency import Currency
 
 
@@ -17,6 +21,7 @@ class BybitInstrumentSpot(msgspec.Struct):
     lotSizeFilter: LotSizeFilter
     priceFilter: PriceFilter
 
+
 class BybitInstrumentOption(msgspec.Struct):
     symbol: str
     status: str
@@ -29,7 +34,6 @@ class BybitInstrumentOption(msgspec.Struct):
     deliveryFeeRate: str
     priceFilter: PriceFilter
     lotSizeFilter: LotSizeFilter
-
 
 
 class BybitInstrumentLinear(msgspec.Struct):
@@ -76,11 +80,13 @@ class BybitInstrumentLinear(msgspec.Struct):
 
 BybitInstrument = Union[BybitInstrumentLinear, BybitInstrumentSpot, BybitInstrumentOption]
 
+
 class BybitInstrumentsLinearResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitListResult(BybitInstrumentLinear)
     time: int
+
 
 class BybitInstrumentsSpotResponse(msgspec.Struct):
     retCode: int
@@ -88,9 +94,9 @@ class BybitInstrumentsSpotResponse(msgspec.Struct):
     result: BybitListResult(BybitInstrumentSpot)
     time: int
 
+
 class BybitInstrumentsOptionResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitListResult(BybitInstrumentOption)
     time: int
-

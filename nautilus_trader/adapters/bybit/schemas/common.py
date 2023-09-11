@@ -6,6 +6,7 @@ import msgspec
 def BybitListResult(type):
     return msgspec.defstruct("", [("list", list[type])])
 
+
 def BybitCoinResult(type):
     return msgspec.defstruct("", [("coin", list[type])])
 
@@ -37,3 +38,8 @@ class LotSizeFilter(msgspec.Struct):
     qtyStep: str
     # Maximum order qty for PostOnly order
     postOnlyMaxOrderQty: Optional[str]
+
+
+class BybitWsSubscriptionMsg(msgspec.Struct):
+    success: bool
+    op: str

@@ -1,14 +1,14 @@
 import asyncio
 from functools import lru_cache
-from typing import Optional, Union
+from typing import Optional
 
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
-from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -124,9 +124,8 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             instrument_provider=provider,
             account_type=config.account_type,
             base_url_ws=config.base_url_ws or default_base_url_ws,
-            config=config
+            config=config,
         )
-
 
 
 class BybitLiveExecClientFactory(LiveExecClientFactory):
@@ -196,7 +195,7 @@ def _get_http_base_url(is_testnet: bool):
 
 
 def _get_ws_base_url(account_type: BybitAccountType, is_testnet: bool):
-    if is_testnet:
+    if not is_testnet:
         if account_type == BybitAccountType.SPOT:
             return "wss://stream.bybit.com/v5/public/spot"
         elif account_type == BybitAccountType.LINEAR:

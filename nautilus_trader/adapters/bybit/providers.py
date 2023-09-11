@@ -5,10 +5,10 @@ import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
-from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -47,7 +47,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         self._http_market = BybitMarketHttpAPI(
             client=client,
             clock=clock,
-            account_type=account_type
+            account_type=account_type,
         )
 
         self._log_warnings = config.log_warnings if config else True
@@ -58,7 +58,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        instruments_info = await self._http_market.get_instruments_info()
+        instruments_info = await self._http_market.fetch_instruments()
         # risk_limits = await self._http_market.get_risk_limits()
         for instrument in instruments_info:
             self._parse_instrument(instrument)
@@ -78,7 +78,7 @@ class BybitInstrumentProvider(InstrumentProvider):
 
     def _parse_instrument(
         self,
-        instrument: BybitInstrument
+        instrument: BybitInstrument,
     ):
         try:
             base_currency = instrument.parse_to_base_currency()
