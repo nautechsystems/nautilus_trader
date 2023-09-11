@@ -275,9 +275,9 @@ impl Currency {
     fn py_from_str(value: &str, strict: bool) -> PyResult<Currency> {
         match Currency::from_str(value) {
             Ok(currency) => Ok(currency),
-            Err(err) => {
+            Err(e) => {
                 if strict {
-                    Err(to_pyvalue_err(err))
+                    Err(to_pyvalue_err(e))
                 } else {
                     // SAFETY: Safe default arguments for the unwrap
                     let new_crypto =
