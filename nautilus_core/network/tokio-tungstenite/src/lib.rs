@@ -334,7 +334,7 @@ where
                 Ok(())
             }
             Err(e) => {
-                debug!("websocket start_send error: {}", e);
+                debug!("websocket start_send error: {e}");
                 Err(e)
             }
         }
@@ -366,9 +366,9 @@ where
                 self.closing = true;
                 Poll::Pending
             }
-            Err(err) => {
-                debug!("websocket close error: {}", err);
-                Poll::Ready(Err(err))
+            Err(e) => {
+                debug!("websocket close error: {e}");
+                Poll::Ready(Err(e))
             }
         }
     }

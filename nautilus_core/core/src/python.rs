@@ -16,7 +16,7 @@
 use std::fmt;
 
 use pyo3::{
-    exceptions::{PyTypeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
 };
 
@@ -33,4 +33,9 @@ pub fn to_pyvalue_err(e: impl fmt::Debug) -> PyErr {
 /// Converts any type that implements `Debug` to a Python `TypeError`.
 pub fn to_pytype_err(e: impl fmt::Debug) -> PyErr {
     PyTypeError::new_err(format!("{e:?}"))
+}
+
+/// Converts any type that implements `Debug` to a Python `RuntimeError`.
+pub fn to_pyruntime_err(e: impl fmt::Debug) -> PyErr {
+    PyRuntimeError::new_err(format!("{e:?}"))
 }

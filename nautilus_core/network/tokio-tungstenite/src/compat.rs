@@ -153,7 +153,7 @@ where
             stream.poll_read(ctx, &mut buf)
         }) {
             Poll::Ready(Ok(())) => Ok(buf.filled().len()),
-            Poll::Ready(Err(err)) => Err(err),
+            Poll::Ready(Err(e)) => Err(e),
             Poll::Pending => Err(std::io::Error::from(std::io::ErrorKind::WouldBlock)),
         }
     }

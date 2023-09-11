@@ -18,7 +18,7 @@ use std::{collections::HashMap, vec::IntoIter};
 use compare::Compare;
 use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
 use futures::{executor::block_on, Stream, StreamExt};
-use nautilus_core::cvec::CVec;
+use nautilus_core::{cvec::CVec, python::to_pyruntime_err};
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data,
 };
@@ -209,35 +209,26 @@ impl DataBackendSession {
         table_name: &str,
         file_path: &str,
         data_type: NautilusDataType,
-    ) {
+    ) -> PyResult<()> {
         let rt = get_runtime();
         let _guard = rt.enter();
 
         match data_type {
             NautilusDataType::OrderBookDelta => {
-                match block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
-                {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
+                block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
+                    .map_err(to_pyruntime_err)
             }
             NautilusDataType::QuoteTick => {
-                match block_on(slf.add_file_default_query::<QuoteTick>(table_name, file_path)) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
+                block_on(slf.add_file_default_query::<QuoteTick>(table_name, file_path))
+                    .map_err(to_pyruntime_err)
             }
             NautilusDataType::TradeTick => {
-                match block_on(slf.add_file_default_query::<TradeTick>(table_name, file_path)) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
+                block_on(slf.add_file_default_query::<TradeTick>(table_name, file_path))
+                    .map_err(to_pyruntime_err)
             }
             NautilusDataType::Bar => {
-                match block_on(slf.add_file_default_query::<Bar>(table_name, file_path)) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
+                block_on(slf.add_file_default_query::<Bar>(table_name, file_path))
+                    .map_err(to_pyruntime_err)
             }
         }
     }
@@ -248,44 +239,26 @@ impl DataBackendSession {
         file_path: &str,
         sql_query: &str,
         data_type: NautilusDataType,
-    ) {
+    ) -> PyResult<()> {
         let rt = get_runtime();
         let _guard = rt.enter();
 
         match data_type {
-            NautilusDataType::OrderBookDelta => {
-                match block_on(
-                    slf.add_file_with_custom_query::<OrderBookDelta>(
-                        table_name, file_path, sql_query,
-                    ),
-                ) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::QuoteTick => {
-                match block_on(
-                    slf.add_file_with_custom_query::<QuoteTick>(table_name, file_path, sql_query),
-                ) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::TradeTick => {
-                match block_on(
-                    slf.add_file_with_custom_query::<TradeTick>(table_name, file_path, sql_query),
-                ) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
+            NautilusDataType::OrderBookDelta => block_on(
+                slf.add_file_with_custom_query::<OrderBookDelta>(table_name, file_path, sql_query),
+            )
+            .map_err(to_pyruntime_err),
+            NautilusDataType::QuoteTick => block_on(
+                slf.add_file_with_custom_query::<QuoteTick>(table_name, file_path, sql_query),
+            )
+            .map_err(to_pyruntime_err),
+            NautilusDataType::TradeTick => block_on(
+                slf.add_file_with_custom_query::<TradeTick>(table_name, file_path, sql_query),
+            )
+            .map_err(to_pyruntime_err),
             NautilusDataType::Bar => {
-                match block_on(
-                    slf.add_file_with_custom_query::<Bar>(table_name, file_path, sql_query),
-                ) {
-                    Ok(()) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
+                block_on(slf.add_file_with_custom_query::<Bar>(table_name, file_path, sql_query))
+                    .map_err(to_pyruntime_err)
             }
         }
     }
@@ -312,16 +285,22 @@ impl DataQueryResult {
     }
 
     /// Each iteration returns a chunk of values read from the parquet file.
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
+    fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<PyObject>> {
         slf.drop_chunk();
 
         let rt = get_runtime();
         let _guard = rt.enter();
 
-        slf.result.next().map(|chunk| {
-            let cvec = chunk.into();
-            Python::with_gil(|py| PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
-        })
+        match slf.result.next() {
+            Some(chunk) => {
+                let cvec = chunk.into();
+                Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
+                    Ok(capsule) => Ok(Some(capsule.into_py(py))),
+                    Err(err) => Err(to_pyruntime_err(err)),
+                })
+            }
+            None => Ok(None),
+        }
     }
 }
 
