@@ -50,6 +50,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -696,8 +697,6 @@ cdef class Strategy(Actor):
         A `CancelOrder` command will be created and then sent to **either** the
         `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
 
-        Logs an error if no `VenueOrderId` has been assigned to the order.
-
         Parameters
         ----------
         order : Order
@@ -723,6 +722,84 @@ cdef class Strategy(Actor):
             self._send_algo_command(command, order.exec_algorithm_id)
         else:
             self._send_exec_command(command)
+
+    cpdef void cancel_orders(self, list orders, ClientId client_id = None):
+        """
+        Cancel the given list of orders with optional routing instructions.
+
+        For each order in the list, a `CancelOrder` command will be created and added to a
+        `BatchCancelOrders` command. This command is then sent to **either** the `OrderEmulator`
+        or the `RiskEngine` (depending on whether the orders are emulated).
+
+        Logs an error if the `orders` list contains a combination of emulated and non-emulated
+        orders.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders to cancel.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Raises
+        ------
+        ValueError
+            If `orders` is empty.
+        TypeError
+            If `orders` contains a type other than `Order`.
+
+        """
+        Condition.not_empty(orders, "orders")
+        Condition.list_type(orders, Order, "orders")
+
+        cdef list cancels = []
+
+        cdef:
+            Order order
+            Order first = None
+            bint first_is_emulated = False
+            CancelOrder cancel
+        for order in orders:
+            if first is None:
+                first = order
+                first_is_emulated = first.is_emulated_c()
+            else:
+                if first.instrument_id != order.instrument_id:
+                    self._log.error(
+                        "Cannot cancel all orders: instrument_id mismatch "
+                        f"{first.instrument_id} vs {order.instrument_id}.",
+                    )
+                    return
+                if (first_is_emulated and not order.is_emulated_c()) or (not first_is_emulated and order.is_emulated_c()):
+                    self._log.error(
+                        "Cannot cancel all orders: emulated and non-emulated orders mismatch."
+                    )
+                    return
+
+            cancel = self._create_cancel_order(
+                order=order,
+                client_id=client_id,
+            )
+            if cancel is None:
+                continue
+            cancels.append(cancel)
+
+        if not cancels:
+            self._log.warning("Cannot send `BatchCancelOrders`, no valid cancel commands.")
+            return
+
+        cdef command = BatchCancelOrders(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=first.instrument_id,
+            cancels=cancels,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
+        self._log.error("`cancel_orders` is an experimental method not fully implemented.")
 
     cpdef void cancel_all_orders(
         self,

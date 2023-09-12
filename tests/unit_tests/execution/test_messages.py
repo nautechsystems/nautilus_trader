@@ -16,6 +16,7 @@
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -314,6 +315,62 @@ class TestCommands:
             repr(command)
             == f"CancelAllOrders(client_id=None, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, order_side=NO_ORDER_SIDE, command_id={uuid}, ts_init=0)"  # noqa
         )
+
+    def test_batch_cancel_orders_command_to_from_dict_and_str_repr(self):
+        # Arrange
+        uuid1 = UUID4()
+        uuid2 = UUID4()
+        uuid3 = UUID4()
+        uuid4 = UUID4()
+
+        cancel1 = CancelOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-1234561"),
+            venue_order_id=VenueOrderId("1"),
+            command_id=uuid1,
+            ts_init=self.clock.timestamp_ns(),
+        )
+        cancel2 = CancelOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-1234562"),
+            venue_order_id=VenueOrderId("2"),
+            command_id=uuid2,
+            ts_init=self.clock.timestamp_ns(),
+        )
+        cancel3 = CancelOrder(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-1234563"),
+            venue_order_id=VenueOrderId("3"),
+            command_id=uuid3,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        command = BatchCancelOrders(
+            trader_id=TraderId("TRADER-001"),
+            strategy_id=StrategyId("S-001"),
+            instrument_id=AUDUSD_SIM.id,
+            cancels=[cancel1, cancel2, cancel3],
+            command_id=uuid4,
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act, Assert
+        assert BatchCancelOrders.from_dict(BatchCancelOrders.to_dict(command)) == command
+        assert (
+            str(command)
+            == f"BatchCancelOrders(instrument_id=AUD/USD.SIM, cancels=[CancelOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-1234561, venue_order_id=1, command_id={uuid1}, ts_init=0), CancelOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-1234562, venue_order_id=2, command_id={uuid2}, ts_init=0), CancelOrder(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-1234563, venue_order_id=3, command_id={uuid3}, ts_init=0)])"  # noqa
+        )
+        # TODO: TBC
+        # assert (
+        #     repr(command)
+        #     == f"BatchCancelOrders(client_id=SIM, trader_id=TRADER-001, strategy_id=S-001, instrument_id=AUD/USD.SIM, client_order_id=O-123456, venue_order_id=None, command_id={uuid}, ts_init=0)"  # noqa
+        # )
 
     def test_query_order_command_to_from_dict_and_str_repr(self):
         # Arrange

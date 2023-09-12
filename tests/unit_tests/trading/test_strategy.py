@@ -1421,6 +1421,44 @@ class TestStrategy:
         assert not strategy.cache.is_order_closed(order.client_order_id)
         assert strategy.portfolio.is_flat(order.instrument_id)
 
+    def test_cancel_orders(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.stop_market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.007"),
+        )
+
+        order2 = strategy.order_factory.stop_market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.006"),
+        )
+
+        strategy.submit_order(order1)
+        self.exchange.process(0)
+        strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        strategy.cancel_orders([order1, order2])
+        self.exchange.process(0)
+
+        # Assert
+        # TODO: WIP!
+
     def test_cancel_all_orders(self):
         # Arrange
         strategy = Strategy()
