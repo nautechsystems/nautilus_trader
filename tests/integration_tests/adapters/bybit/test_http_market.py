@@ -3,13 +3,15 @@ from typing import Optional
 
 import msgspec
 import pytest
+from nautilus_trader.core.nautilus_pyo3.network import HttpClient, HttpResponse
 
 from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 
 class TestBybitMarketHttpAPI:
@@ -36,19 +38,10 @@ class TestBybitMarketHttpAPI:
             "server_time.json",
         )
 
-        async def mock_send_request(
-            self,
-            http_method: HttpMethod,
-            url_path: str,
-            payload: Optional[dict[str, str]] = None,
-            signature: Optional[str] = None,
-            ratelimiter_keys: list[str] | None = None,
-        ):
-            return msgspec.json.decode(response)
+        async def mock(*args,**kwargs):
+            return HttpResponse(status=200,body=response)
 
-        monkeypatch.setattr(
-            "nautilus_trader.adapters.bybit.http.client",
-            mock_send_request,
-        )
+        monkeypatch.setattr(HttpClient,"request",mock)
         server_time = await self.api.fetch_server_time()
-        assert server_time == response
+        assert server_time.timeSecond == '1694549475'
+        assert server_time.timeNano == '1694549475089935642'

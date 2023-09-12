@@ -8,7 +8,8 @@ from nautilus_trader.adapters.bybit.factories import get_cached_bybit_http_clien
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.utils.save_obj_to_file import save_obj_to_file
+
+from nautilus_trader.adapters.bybit.utils import msgspec_bybit_item_save
 
 
 @pytest.mark.asyncio()
@@ -31,7 +32,7 @@ async def test_bybit_market_http_client():
     # Server time
     ################################################################################
     server_time = await http_account_linear.fetch_server_time()
-    save_obj_to_file("../resources/http_responses/server_time.json", server_time)
+    msgspec_bybit_item_save("../resources/http_responses/server_time.json", server_time)
 
     ################################################################################
     # Instruments - Linear

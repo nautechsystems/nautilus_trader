@@ -1,4 +1,9 @@
 {
-    "timeSecond": "1694401285",
-    "timeNano": "1694401285093630192"
+    "retCode": 0,
+    "retMsg": "success",
+    "time": 1694549475175,
+    "result": {
+        "timeSecond": "1694549475",
+        "timeNano": "1694549475089935642"
+    }
 }
