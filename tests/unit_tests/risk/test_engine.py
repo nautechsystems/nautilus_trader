@@ -40,6 +40,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -64,7 +65,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
 
 class TestRiskEngineWithCashAccount:
@@ -821,6 +822,128 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert self.exec_engine.command_count == 1  # <-- command reaches engine with warning
+
+    @pytest.mark.parametrize(("order_side"), [OrderSide.BUY, OrderSide.SELL])
+    def test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
+        self,
+        order_side: OrderSide,
+    ) -> None:
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("BITMEX"),
+            venue=XBTUSD_BITMEX.id.venue,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("BITMEX-001")))
+        self.exec_engine.register_client(exec_client)
+
+        self.cache.add_instrument(XBTUSD_BITMEX)
+        quote = TestDataStubs.quote_tick(
+            instrument=XBTUSD_BITMEX,
+            bid_price=50_000.00,
+            ask_price=50_001.00,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            XBTUSD_BITMEX.id,
+            order_side,
+            Quantity.from_str("0.1"),  # <-- Less than min notional ($1 USD)
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+
+    @pytest.mark.parametrize(("order_side"), [OrderSide.BUY, OrderSide.SELL])
+    def test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
+        self,
+        order_side: OrderSide,
+    ) -> None:
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("BITMEX"),
+            venue=XBTUSD_BITMEX.id.venue,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("BITMEX-001")))
+        self.exec_engine.register_client(exec_client)
+
+        self.cache.add_instrument(XBTUSD_BITMEX)
+        quote = TestDataStubs.quote_tick(
+            instrument=XBTUSD_BITMEX,
+            bid_price=50_000.00,
+            ask_price=50_001.00,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            XBTUSD_BITMEX.id,
+            order_side,
+            Quantity.from_int(11_000_000),  # <-- Greater than max notional ($10 million USD)
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
 
     def test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(self):
         # Arrange
