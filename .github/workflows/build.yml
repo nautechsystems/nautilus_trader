@@ -14,8 +14,8 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-latest, macos-latest]  # windows-latest
-        python-version: ["3.9", "3.10", "3.11"]
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.11"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
