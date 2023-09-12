@@ -152,8 +152,8 @@ where
             trace!("{}:{} Read.with_context read -> poll_read", file!(), line!());
             stream.poll_read(ctx, &mut buf)
         }) {
-            Poll::Ready(Ok(_)) => Ok(buf.filled().len()),
-            Poll::Ready(Err(err)) => Err(err),
+            Poll::Ready(Ok(())) => Ok(buf.filled().len()),
+            Poll::Ready(Err(e)) => Err(e),
             Poll::Pending => Err(std::io::Error::from(std::io::ErrorKind::WouldBlock)),
         }
     }

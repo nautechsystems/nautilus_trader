@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
+from typing import Any, Optional
 
 import msgspec
 
@@ -65,7 +65,12 @@ class BinanceHttpEndpoint:
             BinanceSecurityType.USER_DATA: self.client.sign_request,
         }
 
-    async def _method(self, method_type: HttpMethod, parameters: Any) -> bytes:
+    async def _method(
+        self,
+        method_type: HttpMethod,
+        parameters: Any,
+        ratelimiter_keys: Optional[list[str]] = None,
+    ) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(parameters))
         if self.methods_desc[method_type] is None:
             raise RuntimeError(
@@ -75,5 +80,6 @@ class BinanceHttpEndpoint:
             http_method=method_type,
             url_path=self.url_path,
             payload=payload,
+            ratelimiter_keys=ratelimiter_keys,
         )
         return raw

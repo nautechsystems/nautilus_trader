@@ -44,8 +44,8 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_220325 = TestInstrumentProvider.btcusdt_future_binance()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-AAPL_EQUITY = TestInstrumentProvider.aapl_equity()
-ES_FUTURE = TestInstrumentProvider.es_future()
+AAPL_EQUITY = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
+ES_FUTURE = TestInstrumentProvider.future(symbol="ESZ21", underlying="ES", venue="CME")
 AAPL_OPTION = TestInstrumentProvider.aapl_option()
 
 

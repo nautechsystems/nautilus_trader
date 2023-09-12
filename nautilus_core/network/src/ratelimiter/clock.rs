@@ -50,7 +50,7 @@ impl Reference for Duration {
     /// The internal duration between this point and another.
     fn duration_since(&self, earlier: Self) -> Nanos {
         self.checked_sub(earlier)
-            .unwrap_or_else(|| Duration::new(0, 0))
+            .unwrap_or_else(|| Self::new(0, 0))
             .into()
     }
 
@@ -64,7 +64,7 @@ impl Add<Nanos> for Duration {
     type Output = Self;
 
     fn add(self, other: Nanos) -> Self {
-        let other: Duration = other.into();
+        let other: Self = other.into();
         self + other
     }
 }
@@ -120,9 +120,9 @@ impl Clock for FakeRelativeClock {
 pub struct MonotonicClock;
 
 impl Add<Nanos> for Instant {
-    type Output = Instant;
+    type Output = Self;
 
-    fn add(self, other: Nanos) -> Instant {
+    fn add(self, other: Nanos) -> Self {
         let other: Duration = other.into();
         self + other
     }
@@ -161,10 +161,10 @@ mod test {
         let clock = Arc::new(FakeRelativeClock::default());
         let threads = repeat(())
             .take(10)
-            .map(move |_| {
+            .map(move |()| {
                 let clock = Arc::clone(&clock);
                 thread::spawn(move || {
-                    for _ in 0..1000000 {
+                    for _ in 0..1_000_000 {
                         let now = clock.now();
                         clock.advance(Duration::from_nanos(1));
                         assert!(clock.now() > now);

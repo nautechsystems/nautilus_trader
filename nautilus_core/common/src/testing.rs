@@ -63,9 +63,10 @@ where
             break;
         }
 
-        if start_time.elapsed() > timeout {
-            panic!("Timeout waiting for condition");
-        }
+        assert!(
+            start_time.elapsed() <= timeout,
+            "Timeout waiting for condition"
+        );
 
         thread::sleep(Duration::from_millis(100));
     }

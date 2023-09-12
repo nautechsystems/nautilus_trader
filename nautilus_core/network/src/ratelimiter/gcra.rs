@@ -100,7 +100,7 @@ impl<P: clock::Reference> fmt::Display for NotUntil<P> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Gcra {
+pub struct Gcra {
     /// The "weight" of a single packet in units of time.
     t: Nanos,
 
@@ -112,7 +112,7 @@ impl Gcra {
     pub(crate) fn new(quota: Quota) -> Self {
         let tau: Nanos = (quota.replenish_1_per * quota.max_burst.get()).into();
         let t: Nanos = quota.replenish_1_per.into();
-        Gcra { t, tau }
+        Self { t, tau }
     }
 
     /// Computes and returns a new ratelimiter state if none exists yet.

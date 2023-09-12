@@ -16,8 +16,9 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, UInt64Array},
+    array::{Int64Array, UInt64Array},
     datatypes::{DataType, Field, Schema},
+    error::ArrowError,
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -25,7 +26,10 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use super::DecodeDataFromRecordBatch;
+use super::{
+    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_BAR_TYPE, KEY_PRICE_PRECISION,
+    KEY_SIZE_PRECISION,
+};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for Bar {
@@ -47,24 +51,33 @@ impl ArrowSchemaProvider for Bar {
     }
 }
 
-fn parse_metadata(metadata: &HashMap<String, String>) -> (BarType, u8, u8) {
-    let bar_type = BarType::from_str(metadata.get("bar_type").unwrap().as_str()).unwrap();
-    let price_precision = metadata
-        .get("price_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
-    let size_precision = metadata
-        .get("size_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+fn parse_metadata(metadata: &HashMap<String, String>) -> Result<(BarType, u8, u8), EncodingError> {
+    let bar_type_str = metadata
+        .get(KEY_BAR_TYPE)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_BAR_TYPE))?;
+    let bar_type = BarType::from_str(bar_type_str)
+        .map_err(|e| EncodingError::ParseError(KEY_BAR_TYPE, e.to_string()))?;
 
-    (bar_type, price_precision, size_precision)
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+
+    Ok((bar_type, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for Bar {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError> {
         // Create array builders
         let mut open_builder = Int64Array::builder(data.len());
         let mut high_builder = Int64Array::builder(data.len());
@@ -107,48 +120,53 @@ impl EncodeToRecordBatch for Bar {
                 Arc::new(ts_init_array),
             ],
         )
-        .unwrap()
     }
 }
 
 impl DecodeFromRecordBatch for Bar {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
         // Parse and validate metadata
-        let (bar_type, price_precision, size_precision) = parse_metadata(metadata);
+        let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let open_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let high_values = cols[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let low_values = cols[2].as_any().downcast_ref::<Int64Array>().unwrap();
-        let close_values = cols[3].as_any().downcast_ref::<Int64Array>().unwrap();
-        let volume_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[6].as_any().downcast_ref::<UInt64Array>().unwrap();
 
-        // Construct iterator of values from arrays
-        let values = open_values
-            .into_iter()
-            .zip(high_values.iter())
-            .zip(low_values.iter())
-            .zip(close_values.iter())
-            .zip(volume_values.iter())
-            .zip(ts_event_values.iter())
-            .zip(ts_init_values.iter())
-            .map(
-                |((((((open, high), low), close), volume), ts_event), ts_init)| Self {
+        let open_values = extract_column::<Int64Array>(cols, "open", 0, DataType::Int64)?;
+        let high_values = extract_column::<Int64Array>(cols, "high", 1, DataType::Int64)?;
+        let low_values = extract_column::<Int64Array>(cols, "low", 2, DataType::Int64)?;
+        let close_values = extract_column::<Int64Array>(cols, "close", 3, DataType::Int64)?;
+        let volume_values = extract_column::<UInt64Array>(cols, "volume", 4, DataType::UInt64)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 5, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 6, DataType::UInt64)?;
+
+        // Map record batch rows to vector of objects
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let open = Price::from_raw(open_values.value(i), price_precision);
+                let high = Price::from_raw(high_values.value(i), price_precision);
+                let low = Price::from_raw(low_values.value(i), price_precision);
+                let close = Price::from_raw(close_values.value(i), price_precision);
+                let volume = Quantity::from_raw(volume_values.value(i), size_precision);
+                let ts_event = ts_event_values.value(i);
+                let ts_init = ts_init_values.value(i);
+
+                Ok(Self {
                     bar_type,
-                    open: Price::from_raw(open.unwrap(), price_precision),
-                    high: Price::from_raw(high.unwrap(), price_precision),
-                    low: Price::from_raw(low.unwrap(), price_precision),
-                    close: Price::from_raw(close.unwrap(), price_precision),
-                    volume: Quantity::from_raw(volume.unwrap(), size_precision),
-                    ts_event: ts_event.unwrap(),
-                    ts_init: ts_init.unwrap(),
-                },
-            );
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    ts_event,
+                    ts_init,
+                })
+            })
+            .collect();
 
-        values.collect()
+        result
     }
 }
 
@@ -156,9 +174,9 @@ impl DecodeDataFromRecordBatch for Bar {
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data> {
-        let bars: Vec<Self> = Self::decode_batch(metadata, record_batch);
-        bars.into_iter().map(Data::from).collect()
+    ) -> Result<Vec<Data>, EncodingError> {
+        let bars: Vec<Self> = Self::decode_batch(metadata, record_batch)?;
+        Ok(bars.into_iter().map(Data::from).collect())
     }
 }
 
@@ -233,7 +251,7 @@ mod tests {
         );
 
         let data = vec![bar1, bar2];
-        let record_batch = Bar::encode_batch(&metadata, &data);
+        let record_batch = Bar::encode_batch(&metadata, &data).unwrap();
 
         let columns = record_batch.columns();
         let open_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
@@ -295,7 +313,7 @@ mod tests {
         )
         .unwrap();
 
-        let decoded_data = Bar::decode_batch(&metadata, record_batch);
+        let decoded_data = Bar::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
     }
 }

@@ -44,6 +44,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -419,21 +420,17 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_equity():
-        return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
-
-    @staticmethod
-    def es_future() -> FuturesContract:
+    def future(symbol: str = "ESZ21", underlying: str = "ES", venue: str = "CME"):
         return FuturesContract(
-            instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
-            raw_symbol=Symbol("ESZ21"),
+            instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
+            raw_symbol=Symbol(symbol),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
-            underlying="ES",
+            underlying=underlying,
             expiry_date=date(2021, 12, 17),
             ts_event=0,
             ts_init=0,
@@ -468,6 +465,31 @@ class TestInstrumentProvider:
                 TestInstrumentProvider.ethusdt_binance().id,
             ],
             formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def betting_instrument(venue: Optional[str] = None) -> BettingInstrument:
+        return BettingInstrument(
+            venue_name=venue or "BETFAIR",
+            betting_type="ODDS",
+            competition_id="12282733",
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id="29678534",
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+            event_type_id="6423",
+            event_type_name="American Football",
+            market_id="1.123456789",
+            market_name="AFC Conference Winner",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+            market_type="SPECIAL",
+            selection_handicap=None,
+            selection_id="50214",
+            selection_name="Kansas City Chiefs",
+            currency="GBP",
             ts_event=0,
             ts_init=0,
         )

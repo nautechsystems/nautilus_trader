@@ -72,8 +72,8 @@ pub unsafe fn optional_bytes_to_json(ptr: *const c_char) -> Option<HashMap<Strin
         let result: Result<HashMap<String, Value>> = serde_json::from_str(json_string);
         match result {
             Ok(map) => Some(map),
-            Err(err) => {
-                eprintln!("Error parsing JSON: {err}");
+            Err(e) => {
+                eprintln!("Error parsing JSON: {e}");
                 None
             }
         }
@@ -96,8 +96,8 @@ pub unsafe fn optional_bytes_to_str_map(ptr: *const c_char) -> Option<HashMap<Us
         let result: Result<HashMap<Ustr, Ustr>> = serde_json::from_str(json_string);
         match result {
             Ok(map) => Some(map),
-            Err(err) => {
-                eprintln!("Error parsing JSON: {err}");
+            Err(e) => {
+                eprintln!("Error parsing JSON: {e}");
                 None
             }
         }
@@ -120,8 +120,8 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
         let result: Result<Vec<String>> = serde_json::from_str(json_string);
         match result {
             Ok(map) => Some(map),
-            Err(err) => {
-                eprintln!("Error parsing JSON: {err}");
+            Err(e) => {
+                eprintln!("Error parsing JSON: {e}");
                 None
             }
         }
@@ -158,6 +158,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 }
 
 /// Return a `bool` value from the given `u8`.
+#[must_use]
 pub fn u8_to_bool(value: u8) -> bool {
     value != 0
 }

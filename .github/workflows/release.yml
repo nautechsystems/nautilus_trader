@@ -177,7 +177,7 @@ jobs:
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/zip
-      
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -306,7 +306,7 @@ jobs:
           asset_path: ${{ env.ASSET_PATH }}
           asset_name: ${{ env.ASSET_NAME }}
           asset_content_type: application/wheel
-       
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

@@ -16,7 +16,7 @@
 use std::cmp::Ordering;
 
 use crate::{
-    data::order::BookOrder,
+    data::order::{BookOrder, OrderId},
     orderbook::{book::BookIntegrityError, ladder::BookPrice},
     types::fixed::FIXED_SCALAR,
 };
@@ -89,7 +89,7 @@ impl Level {
         self.remove(order.order_id);
     }
 
-    pub fn remove(&mut self, order_id: u64) {
+    pub fn remove(&mut self, order_id: OrderId) {
         let index = self
             .orders
             .iter()

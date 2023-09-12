@@ -144,7 +144,7 @@ where
     K: Hash + Eq + Clone,
 {
     pub fn advance_clock(&self, by: Duration) {
-        self.clock.advance(by)
+        self.clock.advance(by);
     }
 }
 
@@ -160,11 +160,9 @@ where
     pub fn check_key(&self, key: &K) -> Result<(), NotUntil<C::Instant>> {
         match self.gcra.get(key) {
             Some(quota) => quota.test_and_update(self.start, key, &self.state, self.clock.now()),
-            None => self
-                .default_gcra
-                .as_ref()
-                .map(|gcra| gcra.test_and_update(self.start, key, &self.state, self.clock.now()))
-                .unwrap_or(Ok(())),
+            None => self.default_gcra.as_ref().map_or(Ok(()), |gcra| {
+                gcra.test_and_update(self.start, key, &self.state, self.clock.now())
+            }),
         }
     }
 

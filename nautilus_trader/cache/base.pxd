@@ -132,6 +132,7 @@ cdef class CacheFacade:
     cpdef bint is_order_closed(self, ClientOrderId client_order_id)
     cpdef bint is_order_emulated(self, ClientOrderId client_order_id)
     cpdef bint is_order_inflight(self, ClientOrderId client_order_id)
+    cpdef bint is_order_pending_cancel_local(self, ClientOrderId client_order_id)
     cpdef int orders_open_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef int orders_closed_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)
     cpdef int orders_emulated_count(self, Venue venue=*, InstrumentId instrument_id=*, StrategyId strategy_id=*, OrderSide side=*)

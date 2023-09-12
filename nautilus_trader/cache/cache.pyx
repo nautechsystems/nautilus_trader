@@ -149,6 +149,7 @@ cdef class Cache(CacheFacade):
         self._index_orders_closed: set[ClientOrderId] = set()
         self._index_orders_emulated: set[ClientOrderId] = set()
         self._index_orders_inflight: set[ClientOrderId] = set()
+        self._index_orders_pending_cancel: set[ClientOrderId] = set()
         self._index_positions: set[PositionId] = set()
         self._index_positions_open: set[PositionId] = set()
         self._index_positions_closed: set[PositionId] = set()
@@ -696,6 +697,7 @@ cdef class Cache(CacheFacade):
         self._index_orders_closed.clear()
         self._index_orders_emulated.clear()
         self._index_orders_inflight.clear()
+        self._index_orders_pending_cancel.clear()
         self._index_positions.clear()
         self._index_positions_open.clear()
         self._index_positions_closed.clear()
@@ -1781,6 +1783,7 @@ cdef class Cache(CacheFacade):
             self._index_orders_open.add(order.client_order_id)
         elif order.is_closed_c():
             self._index_orders_open.discard(order.client_order_id)
+            self._index_orders_pending_cancel.discard(order.client_order_id)
             self._index_orders_closed.add(order.client_order_id)
 
         # Update emulation
@@ -1796,6 +1799,20 @@ cdef class Cache(CacheFacade):
         self._database.update_order(order)
         if self.snapshot_orders:
             self._database.snapshot_order_state(order)
+
+    cpdef void update_order_pending_cancel_local(self, Order order):
+        """
+        Update the given `order` as pending cancel locally.
+
+        Parameters
+        ----------
+        order : Order
+            The order to update.
+
+        """
+        Condition.not_none(order, "order")
+
+        self._index_orders_pending_cancel.add(order.client_order_id)
 
     cpdef void update_position(self, Position position):
         """
@@ -3336,6 +3353,24 @@ cdef class Cache(CacheFacade):
         Condition.not_none(client_order_id, "client_order_id")
 
         return client_order_id in self._index_orders_inflight
+
+    cpdef bint is_order_pending_cancel_local(self, ClientOrderId client_order_id):
+        """
+        Return a value indicating whether an order with the given ID is pending cancel locally.
+
+        Parameters
+        ----------
+        client_order_id : ClientOrderId
+            The client order ID to check.
+
+        Returns
+        -------
+        bool
+
+        """
+        Condition.not_none(client_order_id, "client_order_id")
+
+        return client_order_id in self._index_orders_pending_cancel
 
     cpdef int orders_open_count(
         self,

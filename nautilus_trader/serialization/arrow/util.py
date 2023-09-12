@@ -30,8 +30,9 @@ def list_dicts_to_dict_lists(dicts: list[dict], keys: Optional[Any] = None) -> d
     Convert a list of dictionaries into a dictionary of lists.
     """
     result = {}
+    keys = keys or tuple(dicts[0])
     for d in dicts:
-        for k in keys or d:
+        for k in keys:
             if k not in result:
                 result[k] = [d.get(k)]
             else:

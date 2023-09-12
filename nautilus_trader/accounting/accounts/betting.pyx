@@ -70,6 +70,23 @@ cdef class BettingAccount(CashAccount):
         locked: Decimal = liability(quantity, price, side)
         return Money(locked, instrument.quote_currency)
 
+    cpdef Money balance_impact(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        OrderSide order_side,
+    ):
+        cdef Money notional
+        if order_side == OrderSide.BUY:
+            notional = instrument.notional_value(quantity, price)
+            return Money(-notional.as_f64_c(), notional.currency)
+        elif order_side == OrderSide.SELL:
+            notional = instrument.notional_value(quantity, price)
+            return Money(-notional.as_f64_c() * (price.as_f64_c() - 1.0), notional.currency)
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)
+
 
 cpdef stake(Quantity quantity, Price price):
     return quantity * (price - 1)

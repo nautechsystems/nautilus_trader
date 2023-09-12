@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import heapq
 import itertools
 import sys
@@ -32,15 +34,25 @@ from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 
 
 class _StreamingBuffer:
-    def __init__(self, batches: Generator):
-        self._data: list = []
+    def __init__(self, batches: Generator) -> None:
+        self._data: list[Data] = []
         self._is_complete = False
         self._batches = batches
         self._size = 10_000
 
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}({len(self)})"
+
     @property
     def is_complete(self) -> bool:
         return self._is_complete and len(self) == 0
+
+    @property
+    def max_timestamp(self) -> int:
+        return self._data[-1].ts_init
 
     def remove_front(self, timestamp_ns: int) -> list:
         if len(self) == 0 or timestamp_ns < self._data[0].ts_init:
@@ -62,16 +74,6 @@ class _StreamingBuffer:
         else:
             self._data.extend(objs)
 
-    @property
-    def max_timestamp(self) -> int:
-        return self._data[-1].ts_init
-
-    def __len__(self) -> int:
-        return len(self._data)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({len(self)})"
-
 
 class _BufferIterator:
     """
@@ -81,8 +83,8 @@ class _BufferIterator:
     def __init__(
         self,
         buffers: list[_StreamingBuffer],
-        target_batch_size_bytes: int = parse_bytes("100mb"),  # ,
-    ):
+        target_batch_size_bytes: int = parse_bytes("100mb"),
+    ) -> None:
         self._buffers = buffers
         self._target_batch_size_bytes = target_batch_size_bytes
 
@@ -212,7 +214,7 @@ class StreamingEngine(_BufferIterator):
         return _StreamingBuffer(batches=batches)
 
 
-def extract_generic_data_client_ids(data_configs: list["BacktestDataConfig"]) -> dict:
+def extract_generic_data_client_ids(data_configs: list[BacktestDataConfig]) -> dict:
     """
     Extract a mapping of data_type : client_id from the list of `data_configs`.
     In the process of merging the streaming data, we lose the `client_id` for

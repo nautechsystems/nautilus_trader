@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
+once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
@@ -24,7 +25,6 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 derive_builder = "0.12.0"
 evalexpr = "11.1.0"
-lazy_static = "1.4.0"
 tabled = "0.12.2"
 thousands = "0.2.0"
 

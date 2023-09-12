@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet.core import ParquetDataCatalog
 
 
 __all__ = (

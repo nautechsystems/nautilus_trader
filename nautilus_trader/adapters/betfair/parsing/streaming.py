@@ -15,7 +15,7 @@
 
 from collections import defaultdict
 from datetime import datetime
-from typing import Literal, Optional, Union
+from typing import Optional, Union
 
 import pandas as pd
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
@@ -26,13 +26,11 @@ from betfair_parser.spec.streaming.mcm import RunnerChange
 from betfair_parser.spec.streaming.mcm import RunnerStatus
 from betfair_parser.spec.streaming.mcm import _PriceVolume
 
-from nautilus_trader.adapters.betfair.common import B2N_MARKET_SIDE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -41,6 +39,7 @@ from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import TradeReport
+from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
@@ -67,7 +66,6 @@ PARSE_TYPES = Union[
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
-    BSPOrderBookDelta,
     BSPOrderBookDeltas,
     BetfairStartingPrice,
 ]
@@ -273,10 +271,12 @@ def runner_to_betfair_starting_price(
         return None
 
 
-def _price_volume_to_book_order(pv: _PriceVolume, side: OrderSide, order_id: int) -> BookOrder:
+def _price_volume_to_book_order(pv: _PriceVolume, side: OrderSide) -> BookOrder:
+    price = betfair_float_to_price(pv.price)
+    order_id = int(price.as_double() * 10**price.precision)
     return BookOrder(
         side,
-        betfair_float_to_price(pv.price),
+        price,
         betfair_float_to_quantity(pv.volume),
         order_id,
     )
@@ -307,7 +307,7 @@ def runner_change_to_order_book_snapshot(
         OrderBookDelta(
             instrument_id,
             BookAction.CLEAR,
-            None,
+            NULL_ORDER,
             ts_event,
             ts_init,
         ),
@@ -315,13 +315,11 @@ def runner_change_to_order_book_snapshot(
 
     # Bids are available to back (atb)
     for bid in rc.atb:
-        bid_price = betfair_float_to_price(bid.price)
-        bid_volume = betfair_float_to_quantity(bid.volume)
-        bid_order_id = price_to_order_id(bid_price)
+        book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
         delta = OrderBookDelta(
             instrument_id,
             BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
-            BookOrder(OrderSide.BUY, bid_price, bid_volume, bid_order_id),
+            book_order,
             ts_event,
             ts_init,
         )
@@ -329,13 +327,11 @@ def runner_change_to_order_book_snapshot(
 
     # Asks are available to back (atl)
     for ask in rc.atl:
-        ask_price = betfair_float_to_price(ask.price)
-        ask_volume = betfair_float_to_quantity(ask.volume)
-        ask_order_id = price_to_order_id(ask_price)
+        book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
         delta = OrderBookDelta(
             instrument_id,
             BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
-            BookOrder(OrderSide.SELL, ask_price, ask_volume, ask_order_id),
+            book_order,
             ts_event,
             ts_init,
         )
@@ -364,13 +360,11 @@ def runner_change_to_order_book_deltas(
 
     # Bids are available to back (atb)
     for bid in rc.atb:
-        bid_price = betfair_float_to_price(bid.price)
-        bid_volume = betfair_float_to_quantity(bid.volume)
-        bid_order_id = price_to_order_id(bid_price)
+        book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
         delta = OrderBookDelta(
             instrument_id,
             BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
-            BookOrder(OrderSide.BUY, bid_price, bid_volume, bid_order_id),
+            book_order,
             ts_event,
             ts_init,
         )
@@ -378,13 +372,12 @@ def runner_change_to_order_book_deltas(
 
     # Asks are available to back (atl)
     for ask in rc.atl:
-        ask_price = betfair_float_to_price(ask.price)
-        ask_volume = betfair_float_to_quantity(ask.volume)
-        ask_order_id = price_to_order_id(ask_price)
+        book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
+
         delta = OrderBookDelta(
             instrument_id,
             BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
-            BookOrder(OrderSide.SELL, ask_price, ask_volume, ask_order_id),
+            book_order,
             ts_event,
             ts_init,
         )
@@ -451,30 +444,6 @@ def runner_change_to_betfair_ticker(
     )
 
 
-def _create_bsp_order_book_delta(
-    bsp_instrument_id: InstrumentId,
-    side: Literal["spb", "spl"],
-    price: float,
-    volume: float,
-    ts_event: int,
-    ts_init: int,
-) -> BSPOrderBookDelta:
-    price = betfair_float_to_price(price)
-    order_id = price_to_order_id(price)
-    return BSPOrderBookDelta(
-        bsp_instrument_id,
-        BookAction.DELETE if volume == 0 else BookAction.UPDATE,
-        BookOrder(
-            price=price,
-            size=betfair_float_to_quantity(volume),
-            side=B2N_MARKET_SIDE[side],
-            order_id=order_id,
-        ),
-        ts_event,
-        ts_init,
-    )
-
-
 def runner_change_to_bsp_order_book_deltas(
     rc: RunnerChange,
     instrument_id: InstrumentId,
@@ -484,29 +453,29 @@ def runner_change_to_bsp_order_book_deltas(
     if not (rc.spb or rc.spl):
         return None
     bsp_instrument_id = make_bsp_instrument_id(instrument_id)
-    deltas: list[BSPOrderBookDelta] = []
+    deltas: list[OrderBookDelta] = []
+
     for spb in rc.spb:
-        deltas.append(
-            _create_bsp_order_book_delta(
-                bsp_instrument_id,
-                "spb",
-                spb.price,
-                spb.volume,
-                ts_event,
-                ts_init,
-            ),
+        book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
+        delta = OrderBookDelta(
+            bsp_instrument_id,
+            BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
+            book_order,
+            ts_event,
+            ts_init,
         )
+        deltas.append(delta)
+
     for spl in rc.spl:
-        deltas.append(
-            _create_bsp_order_book_delta(
-                bsp_instrument_id,
-                "spl",
-                spl.price,
-                spl.volume,
-                ts_event,
-                ts_init,
-            ),
+        book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
+        delta = OrderBookDelta(
+            bsp_instrument_id,
+            BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
+            book_order,
+            ts_event,
+            ts_init,
         )
+        deltas.append(delta)
 
     return BSPOrderBookDeltas(bsp_instrument_id, deltas)
 

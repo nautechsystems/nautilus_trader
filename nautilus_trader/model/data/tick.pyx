@@ -16,6 +16,11 @@
 from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
 
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
+from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -37,6 +42,7 @@ from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport aggressor_side_from_str
@@ -300,7 +306,7 @@ cdef class QuoteTick(Data):
         quote_tick._mem = mem
         return quote_tick
 
-    # Safety: Do NOT deallocate the capsule here
+    # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_quote_tick_list(object capsule):
@@ -316,8 +322,7 @@ cdef class QuoteTick(Data):
 
     @staticmethod
     cdef inline quote_tick_list_to_capsule(list items):
-
-        # create a C struct buffer
+        # Create a C struct buffer
         cdef uint64_t len_ = len(items)
         cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len_ * sizeof(QuoteTick_t))
         cdef uint64_t i
@@ -326,13 +331,13 @@ cdef class QuoteTick(Data):
         if not data:
             raise MemoryError()
 
-        # create CVec
+        # Create CVec
         cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
 
-        # create PyCapsule
+        # Create PyCapsule
         return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
 
     @staticmethod
@@ -750,7 +755,7 @@ cdef class TradeTick(Data):
         trade_tick._mem = mem
         return trade_tick
 
-    # Safety: Do NOT deallocate the capsule here
+    # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
     cdef inline list capsule_to_trade_tick_list(object capsule):

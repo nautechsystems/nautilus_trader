@@ -77,7 +77,8 @@ impl TradeTickDataWrangler {
                 Err(e) => return Err(to_pyvalue_err(e)),
             };
 
-            let batch_deltas = TradeTick::decode_batch(&self.metadata, record_batch);
+            let batch_deltas =
+                TradeTick::decode_batch(&self.metadata, record_batch).map_err(to_pyvalue_err)?;
             ticks.extend(batch_deltas);
         }
 

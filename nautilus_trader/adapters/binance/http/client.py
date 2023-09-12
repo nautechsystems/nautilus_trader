@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import hashlib
 import hmac
 import urllib.parse
-from typing import Any, Optional
+from typing import Any
 
 import msgspec
 
@@ -29,6 +31,7 @@ from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
+from nautilus_trader.core.nautilus_pyo3.network import Quota
 
 
 class BinanceHttpClient:
@@ -46,6 +49,11 @@ class BinanceHttpClient:
     secret : str
         The Binance API secret for signed requests.
     base_url : str, optional
+        The base endpoint URL for the client.
+    ratelimiter_quotas : list[tuple[str, Quota]], optional
+        The keyed rate limiter quotas for the client.
+    ratelimiter_quota : Quota, optional
+        The default rate limiter quota for the client.
 
     """
 
@@ -56,7 +64,9 @@ class BinanceHttpClient:
         key: str,
         secret: str,
         base_url: str,
-    ):
+        ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
+        ratelimiter_default_quota: Quota | None = None,
+    ) -> None:
         self._clock: LiveClock = clock
         self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
         self._key: str = key
@@ -68,7 +78,10 @@ class BinanceHttpClient:
             "User-Agent": "nautilus-trader/" + nautilus_trader.__version__,
             "X-MBX-APIKEY": key,
         }
-        self._client = HttpClient()
+        self._client = HttpClient(
+            keyed_quotas=ratelimiter_quotas or [],
+            default_quota=ratelimiter_default_quota,
+        )
 
     @property
     def base_url(self) -> str:
@@ -118,7 +131,8 @@ class BinanceHttpClient:
         self,
         http_method: HttpMethod,
         url_path: str,
-        payload: Optional[dict[str, str]] = None,
+        payload: dict[str, str] | None = None,
+        ratelimiter_keys: list[str] | None = None,
     ) -> Any:
         if payload is None:
             payload = {}
@@ -129,13 +143,15 @@ class BinanceHttpClient:
             http_method,
             url_path,
             payload=payload,
+            ratelimiter_keys=ratelimiter_keys,
         )
 
     async def send_request(
         self,
         http_method: HttpMethod,
         url_path: str,
-        payload: Optional[dict[str, str]] = None,
+        payload: dict[str, str] | None = None,
+        ratelimiter_keys: list[str] | None = None,
     ) -> bytes:
         if payload:
             url_path += "?" + urllib.parse.urlencode(payload)
@@ -146,6 +162,7 @@ class BinanceHttpClient:
             url=self._base_url + url_path,
             headers=self._headers,
             body=msgspec.json.encode(payload) if payload else None,
+            keys=ratelimiter_keys,
         )
 
         if 400 <= response.status < 500:

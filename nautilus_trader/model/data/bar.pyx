@@ -19,6 +19,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -761,6 +762,12 @@ cdef class Bar(Data):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    @staticmethod
+    cdef Bar from_mem_c(Bar_t mem):
+        cdef Bar bar = Bar.__new__(Bar)
+        bar._mem = mem
+        return bar
 
     @staticmethod
     cdef Bar from_dict_c(dict values):

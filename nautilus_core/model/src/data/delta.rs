@@ -24,7 +24,7 @@ use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::U
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
 
-use super::order::{BookOrder, NULL_ORDER};
+use super::order::{BookOrder, OrderId, NULL_ORDER};
 use crate::{
     enums::{BookAction, FromU8, OrderSide},
     identifiers::instrument_id::InstrumentId,
@@ -124,7 +124,7 @@ impl OrderBookDelta {
             let size_prec: u8 = size_py.getattr("precision")?.extract()?;
             let size = Quantity::from_raw(size_raw, size_prec);
 
-            let order_id: u64 = order_pyobject.getattr("order_id")?.extract()?;
+            let order_id: OrderId = order_pyobject.getattr("order_id")?.extract()?;
             BookOrder {
                 side,
                 price,
@@ -163,6 +163,9 @@ impl Display for OrderBookDelta {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "python")]
 #[pymethods]
 impl OrderBookDelta {
@@ -294,7 +297,6 @@ impl OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -317,9 +319,9 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
         OrderBookDelta::new(
-            instrument_id.clone(),
+            instrument_id,
             action,
             order,
             flags,
@@ -342,12 +344,12 @@ mod tests {
         let ts_event = 1;
         let ts_init = 2;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
 
         let delta = OrderBookDelta::new(
-            instrument_id.clone(),
+            instrument_id,
             action,
-            order.clone(),
+            order,
             flags,
             sequence,
             ts_event,

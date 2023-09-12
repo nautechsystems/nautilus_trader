@@ -117,7 +117,7 @@ pub extern "C" fn logger_get_instance_id(logger: &Logger_API) -> UUID4 {
 
 #[no_mangle]
 pub extern "C" fn logger_is_bypassed(logger: &Logger_API) -> u8 {
-    logger.is_bypassed as u8
+    u8::from(logger.is_bypassed)
 }
 
 /// Create a new log event.

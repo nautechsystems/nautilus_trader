@@ -19,12 +19,18 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use nautilus_core::{
     correctness::check_valid_string,
+    python::to_pyvalue_err,
     string::{cstr_to_string, str_to_cstr},
 };
-use pyo3::prelude::*;
+use pyo3::{
+    exceptions::PyRuntimeError,
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyLong, PyString, PyTuple},
+};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -33,7 +39,10 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Currency {
     pub code: Ustr,
     pub precision: u8,
@@ -52,7 +61,7 @@ impl Currency {
     ) -> Result<Self> {
         check_valid_string(code, "`Currency` code")?;
         check_valid_string(name, "`Currency` name")?;
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision)?;
 
         Ok(Self {
             code: Ustr::from(code),
@@ -61,6 +70,34 @@ impl Currency {
             name: Ustr::from(name),
             currency_type,
         })
+    }
+
+    pub fn register(currency: Currency, overwrite: bool) -> Result<()> {
+        let mut map = CURRENCY_MAP.lock().map_err(|e| anyhow!(e.to_string()))?;
+
+        if !overwrite && map.contains_key(currency.code.as_str()) {
+            // If overwrite is false and the currency already exists, simply return
+            return Ok(());
+        }
+
+        // Insert or overwrite the currency in the map
+        map.insert(currency.code.to_string(), currency);
+        Ok(())
+    }
+
+    pub fn is_fiat(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::Fiat)
+    }
+
+    pub fn is_crypto(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::Crypto)
+    }
+
+    pub fn is_commodity_backed(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::CommodityBacked)
     }
 }
 
@@ -77,21 +114,22 @@ impl Hash for Currency {
 }
 
 impl FromStr for Currency {
-    type Err = String;
+    type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        CURRENCY_MAP
+    fn from_str(s: &str) -> Result<Self> {
+        let map_guard = CURRENCY_MAP
             .lock()
-            .unwrap()
+            .map_err(|e| anyhow!("Failed to acquire lock on `CURRENCY_MAP`: {e}"))?;
+        map_guard
             .get(s)
-            .cloned()
-            .ok_or_else(|| format!("Unknown currency: {}", s))
+            .copied()
+            .ok_or_else(|| anyhow!("Unknown currency: {s}"))
     }
 }
 
 impl From<&str> for Currency {
     fn from(input: &str) -> Self {
-        input.parse().unwrap_or_else(|err| panic!("{}", err))
+        input.parse().unwrap()
     }
 }
 
@@ -111,6 +149,150 @@ impl<'de> Deserialize<'de> for Currency {
     {
         let currency_str: &str = Deserialize::deserialize(deserializer)?;
         Currency::from_str(currency_str).map_err(serde::de::Error::custom)
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(feature = "python")]
+#[pymethods]
+impl Currency {
+    #[new]
+    fn py_new(
+        code: &str,
+        precision: u8,
+        iso4217: u16,
+        name: &str,
+        currency_type: CurrencyType,
+    ) -> PyResult<Self> {
+        Self::new(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
+    }
+
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let tuple: (&PyString, &PyLong, &PyLong, &PyString, &PyString) = state.extract(py)?;
+        self.code = Ustr::from(tuple.0.extract()?);
+        self.precision = tuple.1.extract::<u8>()?;
+        self.iso4217 = tuple.2.extract::<u16>()?;
+        self.name = Ustr::from(tuple.3.extract()?);
+        self.currency_type = CurrencyType::from_str(tuple.4.extract()?).map_err(to_pyvalue_err)?;
+        Ok(())
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok((
+            self.code.to_string(),
+            self.precision,
+            self.iso4217,
+            self.name.to_string(),
+            self.currency_type.to_string(),
+        )
+            .to_object(py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(Currency::AUD()) // Safe default
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        self.code.precomputed_hash() as isize
+    }
+
+    fn __str__(&self) -> &'static str {
+        self.code.as_str()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{:?}", self)
+    }
+
+    #[getter]
+    #[pyo3(name = "code")]
+    fn py_code(&self) -> &'static str {
+        self.code.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "precision")]
+    fn py_precision(&self) -> u8 {
+        self.precision
+    }
+
+    #[getter]
+    #[pyo3(name = "iso4217")]
+    fn py_iso4217(&self) -> u16 {
+        self.iso4217
+    }
+
+    #[getter]
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &'static str {
+        self.name.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "currency_type")]
+    fn py_currency_type(&self) -> CurrencyType {
+        self.currency_type
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "is_fiat")]
+    fn py_is_fiat(code: &str) -> PyResult<bool> {
+        Currency::is_fiat(code).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "is_crypto")]
+    fn py_is_crypto(code: &str) -> PyResult<bool> {
+        Currency::is_crypto(code).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "is_commodity_backed")]
+    fn py_is_commodidity_backed(code: &str) -> PyResult<bool> {
+        Currency::is_commodity_backed(code).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_str")]
+    #[pyo3(signature = (value, strict = false))]
+    fn py_from_str(value: &str, strict: bool) -> PyResult<Currency> {
+        match Currency::from_str(value) {
+            Ok(currency) => Ok(currency),
+            Err(e) => {
+                if strict {
+                    Err(to_pyvalue_err(e))
+                } else {
+                    // SAFETY: Safe default arguments for the unwrap
+                    let new_crypto =
+                        Currency::new(value, 8, 0, value, CurrencyType::Crypto).unwrap();
+                    Ok(new_crypto)
+                }
+            }
+        }
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "register")]
+    #[pyo3(signature = (currency, overwrite = false))]
+    fn py_register(currency: Currency, overwrite: bool) -> PyResult<()> {
+        Currency::register(currency, overwrite).map_err(|e| PyRuntimeError::new_err(e.to_string()))
     }
 }
 
@@ -200,10 +382,12 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::ffi::{CStr, CString};
+
     use nautilus_core::string::str_to_cstr;
     use rstest::rstest;
 
-    use super::currency_register;
+    use super::*;
     use crate::{
         enums::CurrencyType,
         types::currency::{currency_exists, Currency},
@@ -256,8 +440,7 @@ mod tests {
 
     #[rstest]
     fn test_serialization_deserialization() {
-        let currency =
-            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let currency = Currency::USD();
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
@@ -270,5 +453,71 @@ mod tests {
         unsafe {
             assert_eq!(currency_exists(str_to_cstr("MYC")), 1);
         }
+    }
+
+    #[rstest]
+    fn test_currency_from_py() {
+        let code = CString::new("MYC").unwrap();
+        let name = CString::new("My Currency").unwrap();
+        let currency = unsafe {
+            super::currency_from_py(code.as_ptr(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
+        };
+        assert_eq!(currency.code.as_str(), "MYC");
+        assert_eq!(currency.name.as_str(), "My Currency");
+        assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_currency_to_cstr() {
+        let currency = Currency::USD();
+        let cstr = unsafe { CStr::from_ptr(currency_to_cstr(&currency)) };
+        let expected_output = format!("{:?}", currency);
+        assert_eq!(cstr.to_str().unwrap(), expected_output);
+    }
+
+    #[rstest]
+    fn test_currency_code_to_cstr() {
+        let currency = Currency::USD();
+        let cstr = unsafe { CStr::from_ptr(currency_code_to_cstr(&currency)) };
+        assert_eq!(cstr.to_str().unwrap(), "USD");
+    }
+
+    #[rstest]
+    fn test_currency_name_to_cstr() {
+        let currency = Currency::USD();
+        let cstr = unsafe { CStr::from_ptr(currency_name_to_cstr(&currency)) };
+        assert_eq!(cstr.to_str().unwrap(), "United States dollar");
+    }
+
+    #[rstest]
+    fn test_currency_hash() {
+        let currency = Currency::USD();
+        let hash = super::currency_hash(&currency);
+        assert_eq!(hash, currency.code.precomputed_hash());
+    }
+
+    #[rstest]
+    fn test_currency_from_cstr() {
+        let code = CString::new("USD").unwrap();
+        let currency = unsafe { currency_from_cstr(code.as_ptr()) };
+        assert_eq!(currency, Currency::USD());
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`code_ptr` was NULL")]
+    fn test_currency_from_py_null_code_ptr() {
+        let name = CString::new("My Currency").unwrap();
+        let _ = unsafe {
+            currency_from_py(std::ptr::null(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
+        };
+    }
+
+    #[rstest]
+    #[should_panic(expected = "`name_ptr` was NULL")]
+    fn test_currency_from_py_null_name_ptr() {
+        let code = CString::new("MYC").unwrap();
+        let _ = unsafe {
+            currency_from_py(code.as_ptr(), 4, 0, std::ptr::null(), CurrencyType::Crypto)
+        };
     }
 }

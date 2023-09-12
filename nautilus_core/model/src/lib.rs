@@ -13,10 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![recursion_limit = "256"]
-#[macro_use]
-extern crate lazy_static;
-
 use pyo3::{prelude::*, PyResult, Python};
 
 pub mod currencies;
@@ -45,6 +41,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::AccountType>()?;
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::BarAggregation>()?;
+    m.add_class::<enums::CurrencyType>()?;
     m.add_class::<enums::PriceType>()?;
     m.add_class::<enums::OrderSide>()?;
     m.add_class::<enums::PositionSide>()?;

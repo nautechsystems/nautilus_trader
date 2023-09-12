@@ -20,7 +20,7 @@ Also, the following optional dependency ‘extras’ are separately available fo
 
 For example, to install including the `docker`, `ib` and `redis` extras using pip:
 
-    pip install -U nautilus_trader[docker,ib,redis]
+    pip install -U "nautilus_trader[docker,ib,redis]"
 
 ## From Source
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 

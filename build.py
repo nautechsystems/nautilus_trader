@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import numpy as np
+import toml
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
@@ -156,6 +157,7 @@ def _build_extensions() -> list[Extension]:
     if platform.system() != "Windows":
         # Suppress warnings produced by Cython boilerplate
         extra_compile_args.append("-Wno-parentheses-equality")
+        extra_compile_args.append("-Wno-unreachable-code")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")
             extra_compile_args.append("-pipe")
@@ -327,9 +329,10 @@ def build() -> None:
 
 
 if __name__ == "__main__":
+    nautilus_trader_version = toml.load("pyproject.toml")["tool"]["poetry"]["version"]
     print("\033[36m")
     print("=====================================================================")
-    print("Nautilus Builder")
+    print(f"Nautilus Builder {nautilus_trader_version}")
     print("=====================================================================\033[0m")
     print(f"System: {platform.system()} {platform.machine()}")
     print(f"Clang:  {_get_clang_version()}")

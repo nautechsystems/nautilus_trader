@@ -76,7 +76,7 @@ where
     #[cfg(test)]
     async fn push_stream(&mut self, s: S) {
         if let Some(heap_elem) = PeekElementBatchStream::new_from_stream(s).await {
-            self.heap.push(heap_elem)
+            self.heap.push(heap_elem);
         }
     }
 
@@ -98,7 +98,7 @@ where
             .for_each(|heap_elem| match heap_elem {
                 Ok(Some(heap_elem)) => self.heap.push(heap_elem),
                 Ok(None) => (),
-                Err(err) => panic!("Failed to create heap element because of error: {}", err),
+                Err(e) => panic!("Failed to create heap element because of error: {e}"),
             });
     }
 }
@@ -127,7 +127,7 @@ where
                     item: next_item,
                     batch,
                     stream,
-                })
+                });
             }
             // Batch is empty create new heap element from stream
             else if let Some(heap_elem) =
@@ -176,7 +176,7 @@ mod tests {
         kmerge.push_stream(stream_b).await;
 
         let values: Vec<i32> = kmerge.collect().await;
-        assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 8, 9])
+        assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
     }
 
     #[tokio::test]
@@ -188,7 +188,7 @@ mod tests {
         kmerge.push_stream(stream_b).await;
 
         let values: Vec<i32> = kmerge.collect().await;
-        assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 6, 7, 8, 9])
+        assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 6, 7, 8, 9]);
     }
 
     #[tokio::test]
@@ -211,6 +211,6 @@ mod tests {
         assert_eq!(
             values,
             vec![1, 2, 3, 4, 4, 5, 7, 8, 9, 12, 12, 24, 35, 56, 90]
-        )
+        );
     }
 }

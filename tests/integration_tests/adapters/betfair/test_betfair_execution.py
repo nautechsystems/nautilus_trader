@@ -303,7 +303,7 @@ async def test_modify_order_error_order_doesnt_exist(
     expected_args = tuple(
         {
             "strategy_id": StrategyId("S-001"),
-            "instrument_id": InstrumentId.from_str("1.179082386|50214|0.0.BETFAIR"),
+            "instrument_id": InstrumentId.from_str("1.179082386-50214-0.0.BETFAIR"),
             "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
             "venue_order_id": None,
             "reason": "ORDER NOT IN CACHE",

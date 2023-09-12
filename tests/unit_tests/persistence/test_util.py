@@ -18,9 +18,9 @@ import pytest
 
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.serialization.arrow.util import camel_to_snake_case
-from nautilus_trader.serialization.arrow.util import class_to_filename
-from nautilus_trader.serialization.arrow.util import clean_key
+from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
+from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.persistence.catalog.parquet.util import clean_key
 
 
 @pytest.mark.parametrize(

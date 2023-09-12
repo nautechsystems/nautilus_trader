@@ -44,7 +44,7 @@ impl Venue {
 
     #[must_use]
     pub fn synthetic() -> Self {
-        // Safety: using synethtic venue constant
+        // SAFETY: using synethtic venue constant
         Self::new(SYNTHETIC_VENUE).unwrap()
     }
 
