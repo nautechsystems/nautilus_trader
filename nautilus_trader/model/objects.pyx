@@ -1045,8 +1045,8 @@ cdef class Money:
         return raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    def from_raw(uint64_t raw, uint8_t precision):
-        return Money.from_raw_c(raw, precision)
+    def from_raw(uint64_t raw, Currency currency):
+        return Money.from_raw_c(raw, currency)
 
     @staticmethod
     cdef Money from_raw_c(uint64_t raw, Currency currency):
