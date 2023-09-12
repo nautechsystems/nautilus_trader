@@ -32,4 +32,3 @@ async def test_bybit_account_http_client():
     account_balance = await http_account.query_wallet_balance()
     for item in account_balance:
         print(json.dumps(msgspec.to_builtins(item), indent=4))
-

@@ -1,5 +1,4 @@
 import asyncio
-import os
 
 import pytest
 
@@ -8,7 +7,7 @@ from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.utils.env import get_env_key
+
 
 @pytest.fixture(scope="session")
 def loop():
@@ -31,8 +30,8 @@ def bybit_http_client(loop, live_clock, live_logger):
         clock=live_clock,
         logger=live_logger,
         api_key="BYBIT_API_KEY",
-        api_secret='BYBIT_API_SECRET',
-        base_url="https://api-testnet.bybit.com"
+        api_secret="BYBIT_API_SECRET",
+        base_url="https://api-testnet.bybit.com",
     )
     return client
 
@@ -40,6 +39,7 @@ def bybit_http_client(loop, live_clock, live_logger):
 @pytest.fixture()
 def venue() -> Venue:
     raise BYBIT_VENUE
+
 
 @pytest.fixture()
 def data_client():
