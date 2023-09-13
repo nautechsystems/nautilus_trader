@@ -36,6 +36,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.client import ExecutionClient
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -494,4 +495,9 @@ class LiveExecutionClient(ExecutionClient):
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_cancel_all_orders` coroutine",  # pragma: no cover
+        )
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_batch_cancel_orders` coroutine",  # pragma: no cover
         )

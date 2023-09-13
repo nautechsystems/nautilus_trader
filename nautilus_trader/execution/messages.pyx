@@ -763,7 +763,7 @@ cdef class CancelAllOrders(TradingCommand):
 
 cdef class BatchCancelOrders(TradingCommand):
     """
-    Represents a command to cancel a batch orders for an instrument.
+    Represents a command to batch cancel orders working on a venue for an instrument.
 
     Parameters
     ----------

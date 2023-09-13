@@ -695,7 +695,7 @@ cdef class Strategy(Actor):
         Cancel the given order with optional routing instructions.
 
         A `CancelOrder` command will be created and then sent to **either** the
-        `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
+        `OrderEmulator` or the `ExecutionEngine` (depending on whether the order is emulated).
 
         Parameters
         ----------
@@ -725,14 +725,12 @@ cdef class Strategy(Actor):
 
     cpdef void cancel_orders(self, list orders, ClientId client_id = None):
         """
-        Cancel the given list of orders with optional routing instructions.
+        Batch cancel the given list of orders with optional routing instructions.
 
         For each order in the list, a `CancelOrder` command will be created and added to a
-        `BatchCancelOrders` command. This command is then sent to **either** the `OrderEmulator`
-        or the `RiskEngine` (depending on whether the orders are emulated).
+        `BatchCancelOrders` command. This command is then sent to the `ExecutionEngine`.
 
-        Logs an error if the `orders` list contains a combination of emulated and non-emulated
-        orders.
+        Logs an error if the `orders` list contains local/emulated orders.
 
         Parameters
         ----------
@@ -758,12 +756,10 @@ cdef class Strategy(Actor):
         cdef:
             Order order
             Order first = None
-            bint first_is_emulated = False
             CancelOrder cancel
         for order in orders:
             if first is None:
                 first = order
-                first_is_emulated = first.is_emulated_c()
             else:
                 if first.instrument_id != order.instrument_id:
                     self._log.error(
@@ -771,9 +767,9 @@ cdef class Strategy(Actor):
                         f"{first.instrument_id} vs {order.instrument_id}.",
                     )
                     return
-                if (first_is_emulated and not order.is_emulated_c()) or (not first_is_emulated and order.is_emulated_c()):
+                if order.is_emulated_c():
                     self._log.error(
-                        "Cannot cancel all orders: emulated and non-emulated orders mismatch."
+                        "Cannot include emulated orders in a batch cancel."
                     )
                     return
 
@@ -799,7 +795,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._log.error("`cancel_orders` is an experimental method not fully implemented.")
+        self._send_exec_command(command)
 
     cpdef void cancel_all_orders(
         self,
