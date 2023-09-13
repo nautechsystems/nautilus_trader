@@ -245,6 +245,22 @@ cdef class ExecutionClient(Component):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
+    cpdef void batch_cancel_orders(self, BatchCancelOrders command):
+        """
+        Batch cancel orders for the instrument ID contained in the given command.
+
+        Parameters
+        ----------
+        command : BatchCancelOrders
+            The command to execute.
+
+        """
+        self._log.error(  # pragma: no cover
+            f"Cannot execute command {command}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `batch_cancel_orders` method for this client.",  # pragma: no cover  # noqa
+        )
+        raise NotImplementedError("method must be implemented in the subclass")
+
     cpdef void query_order(self, QueryOrder command):
         """
         Initiate a reconciliation for the queried order which will generate an
