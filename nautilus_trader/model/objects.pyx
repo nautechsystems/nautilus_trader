@@ -33,6 +33,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport precision_from_cstr
+from nautilus_trader.core.rust.model cimport FIXED_PRECISION as RUST_FIXED_PRECISION
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR as RUST_FIXED_SCALAR
 from nautilus_trader.core.rust.model cimport MONEY_MAX as RUST_MONEY_MAX
 from nautilus_trader.core.rust.model cimport MONEY_MIN as RUST_MONEY_MIN
@@ -62,6 +63,7 @@ PRICE_MIN = RUST_PRICE_MIN
 MONEY_MAX = RUST_MONEY_MAX
 MONEY_MIN = RUST_MONEY_MIN
 
+FIXED_PRECISION = RUST_FIXED_PRECISION
 FIXED_SCALAR = RUST_FIXED_SCALAR
 
 
@@ -386,6 +388,40 @@ cdef class Quantity:
         return Quantity.zero_c(precision)
 
     @staticmethod
+    def from_raw(int64_t raw, uint8_t precision) -> Quantity:
+        """
+        Return a quantity from the given `raw` fixed precision integer and `precision`.
+
+        Handles up to 9 decimals of precision.
+
+        Parameters
+        ----------
+        raw : int64_t
+            The raw fixed precision quantity value.
+        precision : uint8_t
+            The precision for the quantity. Use a precision of 0 for whole numbers
+            (no fractional units).
+
+        Returns
+        -------
+        Quantity
+
+        Raises
+        ------
+        ValueError
+            If `precision` is greater than 9.
+        OverflowError
+            If `precision` is negative (< 0).
+
+        Warnings
+        --------
+        Small `raw` values can produce a zero quantity depending on the `precision`.
+
+        """
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        return Quantity.from_raw_c(raw, precision)
+
+    @staticmethod
     def from_str(str value) -> Quantity:
         """
         Return a quantity parsed from the given string.
@@ -660,6 +696,52 @@ cdef class Price:
         """
         return self._mem.precision
 
+    @staticmethod
+    cdef Price from_mem_c(Price_t mem):
+        cdef Price price = Price.__new__(Price)
+        price._mem = mem
+        return price
+
+    @staticmethod
+    cdef Price from_raw_c(int64_t raw, uint8_t precision):
+        cdef Price price = Price.__new__(Price)
+        price._mem = price_from_raw(raw, precision)
+        return price
+
+    @staticmethod
+    cdef object _extract_decimal(object obj):
+        assert not isinstance(obj, float)  # Design-time error
+        if hasattr(obj, "as_decimal"):
+            return obj.as_decimal()
+        else:
+            return decimal.Decimal(obj)
+
+    @staticmethod
+    cdef bint _compare(a, b, int op):
+        if isinstance(a, Quantity):
+            a = <Quantity>a.as_decimal()
+        elif isinstance(a, Price):
+            a = <Price>a.as_decimal()
+
+        if isinstance(b, Quantity):
+            b = <Quantity>b.as_decimal()
+        elif isinstance(b, Price):
+            b = <Price>b.as_decimal()
+
+        return PyObject_RichCompareBool(a, b, op)
+
+    @staticmethod
+    cdef double raw_to_f64_c(uint64_t raw):
+        return raw / RUST_FIXED_SCALAR
+
+    @staticmethod
+    cdef Price from_str_c(str value):
+        return Price(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
+
+    @staticmethod
+    cdef Price from_int_c(int value):
+        return Price(value, precision=0)
+
     cdef bint eq(self, Price other):
         return self._mem.raw == other._mem.raw
 
@@ -699,22 +781,6 @@ cdef class Price:
     cdef void sub_assign(self, Price other):
         self._mem.raw -= other._mem.raw
 
-    @staticmethod
-    cdef Price from_mem_c(Price_t mem):
-        cdef Price price = Price.__new__(Price)
-        price._mem = mem
-        return price
-
-    @staticmethod
-    def from_raw(int64_t raw, uint8_t precision):
-        return Price.from_raw_c(raw, precision)
-
-    @staticmethod
-    cdef Price from_raw_c(int64_t raw, uint8_t precision):
-        cdef Price price = Price.__new__(Price)
-        price._mem = price_from_raw(raw, precision)
-        return price
-
     cdef int64_t raw_int64_c(self):
         return self._mem.raw
 
@@ -722,42 +788,38 @@ cdef class Price:
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    cdef object _extract_decimal(object obj):
-        assert not isinstance(obj, float)  # Design-time error
-        if hasattr(obj, "as_decimal"):
-            return obj.as_decimal()
-        else:
-            return decimal.Decimal(obj)
+    def from_raw(int64_t raw, uint8_t precision) -> Price:
+        """
+        Return a price from the given `raw` fixed precision integer and `precision`.
 
-    @staticmethod
-    cdef bint _compare(a, b, int op):
-        if isinstance(a, Quantity):
-            a = <Quantity>a.as_decimal()
-        elif isinstance(a, Price):
-            a = <Price>a.as_decimal()
+        Handles up to 9 decimals of precision.
 
-        if isinstance(b, Quantity):
-            b = <Quantity>b.as_decimal()
-        elif isinstance(b, Price):
-            b = <Price>b.as_decimal()
+        Parameters
+        ----------
+        raw : int64_t
+            The raw fixed precision price value.
+        precision : uint8_t
+            The precision for the price. Use a precision of 0 for whole numbers
+            (no fractional units).
 
-        return PyObject_RichCompareBool(a, b, op)
+        Returns
+        -------
+        Price
 
-    @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw):
-        return raw / RUST_FIXED_SCALAR
+        Raises
+        ------
+        ValueError
+            If `precision` is greater than 9.
+        OverflowError
+            If `precision` is negative (< 0).
 
-    @staticmethod
-    def raw_to_f64(raw) -> float:
-        return Price.raw_to_f64_c(raw)
+        Warnings
+        --------
+        Small `raw` values can produce a zero price depending on the `precision`.
 
-    @staticmethod
-    cdef Price from_str_c(str value):
-        return Price(float(value), precision=precision_from_cstr(pystr_to_cstr(value)))
-
-    @staticmethod
-    cdef Price from_int_c(int value):
-        return Price(value, precision=0)
+        """
+        Condition.true(precision <= 9, f"invalid `precision` greater than max 9, was {precision}")
+        return Price.from_raw_c(raw, precision)
 
     @staticmethod
     def from_str(str value) -> Price:
@@ -1004,7 +1066,42 @@ cdef class Money:
 
     @property
     def currency(self) -> Currency:
+        """
+        Return the currency for the money.
+
+        Returns
+        -------
+        Currency
+
+        """
         return Currency.from_str_c(self.currency_code_c())
+
+    @staticmethod
+    cdef double raw_to_f64_c(uint64_t raw):
+        return raw / RUST_FIXED_SCALAR
+
+    @staticmethod
+    cdef Money from_raw_c(uint64_t raw, Currency currency):
+        cdef Money money = Money.__new__(Money)
+        money._mem = money_from_raw(raw, currency._mem)
+        return money
+
+    @staticmethod
+    cdef object _extract_decimal(object obj):
+        assert not isinstance(obj, float)  # Design-time error
+        if hasattr(obj, "as_decimal"):
+            return obj.as_decimal()
+        else:
+            return decimal.Decimal(obj)
+
+    @staticmethod
+    cdef Money from_str_c(str value):
+        cdef list pieces = value.split(' ', maxsplit=1)
+
+        if len(pieces) != 2:
+            raise ValueError(f"The `Money` string value was malformed, was {value}")
+
+        return Money(pieces[0], Currency.from_str_c(pieces[1]))
 
     cdef str currency_code_c(self):
         return cstr_to_pystr(currency_code_to_cstr(&self._mem.currency))
@@ -1041,35 +1138,28 @@ cdef class Money:
         return self._mem.raw / RUST_FIXED_SCALAR
 
     @staticmethod
-    cdef double raw_to_f64_c(uint64_t raw):
-        return raw / RUST_FIXED_SCALAR
+    def from_raw(int64_t raw, Currency currency) -> Money:
+        """
+        Return money from the given `raw` fixed precision integer and `currency`.
 
-    @staticmethod
-    def from_raw(uint64_t raw, Currency currency):
+        Parameters
+        ----------
+        raw : int64_t
+            The raw fixed precision money amount.
+        currency : Currency
+            The currency of the money.
+
+        Returns
+        -------
+        Money
+
+        Warnings
+        --------
+        Small `raw` values can produce a zero money amount depending on the precision of the currency.
+
+        """
+        Condition.not_none(currency, "currency")
         return Money.from_raw_c(raw, currency)
-
-    @staticmethod
-    cdef Money from_raw_c(uint64_t raw, Currency currency):
-        cdef Money money = Money.__new__(Money)
-        money._mem = money_from_raw(raw, currency._mem)
-        return money
-
-    @staticmethod
-    cdef object _extract_decimal(object obj):
-        assert not isinstance(obj, float)  # Design-time error
-        if hasattr(obj, "as_decimal"):
-            return obj.as_decimal()
-        else:
-            return decimal.Decimal(obj)
-
-    @staticmethod
-    cdef Money from_str_c(str value):
-        cdef list pieces = value.split(' ', maxsplit=1)
-
-        if len(pieces) != 2:
-            raise ValueError(f"The `Money` string value was malformed, was {value}")
-
-        return Money(pieces[0], Currency.from_str_c(pieces[1]))
 
     @staticmethod
     def from_str(str value) -> Money:
