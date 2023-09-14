@@ -45,17 +45,23 @@ class BybitTimeInForce(Enum):
 
 @unique
 class BybitAccountType(Enum):
+    UNIFIED = "UNIFIED"
+
+
+@unique
+class BybitInstrumentType(Enum):
     SPOT = "SPOT"
     LINEAR = "LINEAR"
     INVERSE = "INVERSE"
+    OPTION = "OPTION"
 
     @property
     def is_spot_or_margin(self) -> bool:
-        return self in [BybitAccountType.SPOT]
+        return self in [BybitInstrumentType.SPOT]
 
     @property
     def is_spot(self) -> bool:
-        return self in [BybitAccountType.SPOT]
+        return self in [BybitInstrumentType.SPOT]
 
 
 class BybitEnumParser:

@@ -1,15 +1,17 @@
 from typing import Optional
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
-from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
-from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint
-from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint, \
+    WalletBalanceGetParameters
+from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint, \
+    PositionInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp, OpenOrdersGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.utils import get_category_from_account_type
+from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 
@@ -19,12 +21,12 @@ class BybitAccountHttpAPI:
         self,
         client: BybitHttpClient,
         clock: LiveClock,
-        account_type: BybitAccountType,
+        instrument_type: BybitInstrumentType,
     ):
         PyCondition.not_none(client, "client")
         self.client = client
         self._clock = clock
-        self.account_type = account_type
+        self.instrument_type = instrument_type
         self.base_endpoint = "/v5/"
         self.default_settle_coin = "USDT"
 
@@ -39,10 +41,10 @@ class BybitAccountHttpAPI:
     ) -> list[BybitPositionStruct]:
         # symbol = 'USD'
         response = await self._endpoint_position_info._get(
-            parameters=self._endpoint_position_info.GetParameters(
+            PositionInfoGetParameters(
                 symbol=BybitSymbol(symbol) if symbol else None,
                 settleCoin=self.default_settle_coin if symbol is None else None,
-                category=get_category_from_account_type(self.account_type),
+                category=get_category_from_instrument_type(self.instrument_type),
             ),
         )
         return response.result.list
@@ -52,9 +54,9 @@ class BybitAccountHttpAPI:
         symbol: Optional[str] = None,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders._get(
-            parameters=self._endpoint_open_orders.GetParameters(
+            OpenOrdersGetParameters(
                 symbol=BybitSymbol(symbol) if symbol else None,
-                category=get_category_from_account_type(self.account_type),
+                category=get_category_from_instrument_type(self.instrument_type),
                 settleCoin=self.default_settle_coin if symbol is None else None,
             ),
         )
@@ -65,7 +67,7 @@ class BybitAccountHttpAPI:
         coin: Optional[str] = None,
     ) -> [list[BybitWalletBalance], int]:
         response = await self._endpoint_wallet_balance._get(
-            parameters=self._endpoint_wallet_balance.GetaParameters(
+                WalletBalanceGetParameters(
                 accountType="UNIFIED",
             ),
         )

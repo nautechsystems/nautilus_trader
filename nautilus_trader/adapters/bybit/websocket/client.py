@@ -42,6 +42,10 @@ class BybitWebsocketClient:
         sub = {"op": "subscribe", "args": [f"publicTrade.{symbol}"]}
         await self._client.send_text(json.dumps(sub))
 
+    async def subscribe_tickers(self,symbol: str)-> None:
+        sub = {"op": "subscribe", "args": [f"tickers.{symbol}"]}
+        await self._client.send_text(json.dumps(sub))
+
     async def _connect(self, stream: str) -> None:
         if stream not in self._streams and stream not in self._streams_connecting:
             self._streams_connecting.add(stream)

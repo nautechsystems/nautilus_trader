@@ -2,7 +2,7 @@ import asyncio
 from functools import lru_cache
 from typing import Optional
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
@@ -68,7 +68,7 @@ def get_cached_bybit_instrument_provider(
     client: BybitHttpClient,
     logger: Logger,
     clock: LiveClock,
-    account_type: BybitAccountType,
+    instrument_type: BybitInstrumentType,
     is_testnet: bool,
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
@@ -77,7 +77,7 @@ def get_cached_bybit_instrument_provider(
         logger=logger,
         config=config,
         clock=clock,
-        account_type=account_type,
+        instrument_type=instrument_type,
         is_testnet=is_testnet,
     )
 
@@ -105,12 +105,12 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             client=client,
             logger=logger,
             clock=clock,
-            account_type=config.account_type,
+            instrument_type=config.instrument_type,
             is_testnet=config.testnet,
             config=config.instrument_provider,
         )
         default_base_url_ws: str = _get_ws_base_url(
-            account_type=config.account_type,
+            instrument_type=config.instrument_type,
             is_testnet=config.testnet,
         )
 
@@ -122,7 +122,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            account_type=config.account_type,
+            instrument_type=config.instrument_type,
             base_url_ws=config.base_url_ws or default_base_url_ws,
             config=config,
         )
@@ -151,12 +151,12 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             client=client,
             logger=logger,
             clock=clock,
-            account_type=config.account_type,
+            instrument_type=config.instrument_type,
             is_testnet=config.testnet,
             config=config.instrument_provider,
         )
         default_base_url_ws: str = _get_ws_base_url(
-            account_type=config.account_type,
+            instrument_type=config.instrument_type,
             is_testnet=config.testnet,
         )
         return BybitExecutionClient(
@@ -167,7 +167,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            account_type=config.account_type,
+            instrument_type=config.instrument_type,
             base_url_ws=config.base_url_ws or default_base_url_ws,
             config=config,
         )
@@ -194,26 +194,26 @@ def _get_http_base_url(is_testnet: bool):
         return "https://api.bytick.com"
 
 
-def _get_ws_base_url(account_type: BybitAccountType, is_testnet: bool):
+def _get_ws_base_url(instrument_type: BybitInstrumentType, is_testnet: bool):
     if not is_testnet:
-        if account_type == BybitAccountType.SPOT:
+        if instrument_type == BybitInstrumentType.SPOT:
             return "wss://stream.bybit.com/v5/public/spot"
-        elif account_type == BybitAccountType.LINEAR:
+        elif instrument_type == BybitInstrumentType.LINEAR:
             return "wss://stream.bybit.com/v5/public/linear"
-        elif account_type == BybitAccountType.INVERSE:
+        elif instrument_type == BybitInstrumentType.INVERSE:
             return "wss://stream.bybit.com/v5/public/inverse"
         else:
             raise RuntimeError(
-                f"invalid `BybitAccountType`, was {account_type}",  # pragma: no cover
+                f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
             )
     else:
-        if account_type == BybitAccountType.SPOT:
+        if instrument_type == BybitInstrumentType.SPOT:
             return "wss://stream-testnet.bybit.com/v5/public/spot"
-        elif account_type == BybitAccountType.LINEAR:
+        elif instrument_type == BybitInstrumentType.LINEAR:
             return "wss://stream-testnet.bybit.com/v5/public/linear"
-        elif account_type == BybitAccountType.INVERSE:
+        elif instrument_type == BybitInstrumentType.INVERSE:
             return "wss://stream-testnet.bybit.com/v5/public/inverse"
         else:
             raise RuntimeError(
-                f"invalid `BybitAccountType`, was {account_type}",  # pragma: no cover
+                f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
             )

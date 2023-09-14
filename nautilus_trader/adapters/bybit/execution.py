@@ -4,7 +4,7 @@ from typing import Optional
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
@@ -44,7 +44,7 @@ class BybitExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        account_type: BybitAccountType,
+        instrument_type: BybitInstrumentType,
         base_url_ws: str,
         config: BybitExecClientConfig,
     ) -> None:
@@ -54,7 +54,7 @@ class BybitExecutionClient(LiveExecutionClient):
             venue=BYBIT_VENUE,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,
+            account_type=AccountType.CASH if instrument_type.is_spot else AccountType.MARGIN,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -62,10 +62,10 @@ class BybitExecutionClient(LiveExecutionClient):
             logger=logger,
         )
         self._log.info(f"Account type: ${self.account_type.value}", LogColor.BLUE)
-        self._bybit_account_type = account_type
+        self._bybit_instrument_type = instrument_type
         self._enum_parser = BybitEnumParser()
 
-        account_id = AccountId(f"{BYBIT_VENUE.value}-{self._bybit_account_type}")
+        account_id = AccountId(f"{BYBIT_VENUE.value}-{self._bybit_instrument_type}")
         self._set_account_id(account_id)
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
@@ -74,7 +74,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._http_account = BybitAccountHttpAPI(
             client=client,
             clock=clock,
-            account_type=account_type,
+            instrument_type=instrument_type,
         )
 
     async def _connect(self) -> None:
@@ -146,7 +146,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     def _get_cached_instrument_id(self, symbol: str) -> Optional[InstrumentId]:
         # parse instrument id
-        nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus(self._bybit_account_type)
+        nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus(self._bybit_instrument_type)
         instrument_id: InstrumentId = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
@@ -162,11 +162,11 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _update_account_state(self) -> None:
         # positions = await self._http_account.query_position_info()
-        [account_type_balances, ts_event] = await self._http_account.query_wallet_balance()
-        if account_type_balances:
+        [instrument_type_balances, ts_event] = await self._http_account.query_wallet_balance()
+        if instrument_type_balances:
             self._log.info("Binance API key authenticated.", LogColor.GREEN)
             self._log.info(f"API key {self._http_account.client.api_key} has trading permissions.")
-        for balance in account_type_balances:
+        for balance in instrument_type_balances:
             balances = balance.parse_to_account_balance()
             margins = balance.parse_to_margin_balance()
             try:

@@ -3,10 +3,10 @@ from typing import Union
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResult, SpotLotSizeFilter, SpotPriceFilter
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
 from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
-from nautilus_trader.adapters.bybit.schemas.common import PriceFilter
+from nautilus_trader.adapters.bybit.schemas.common import LinearPriceFilter
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.model.currency import Currency
 
@@ -18,8 +18,8 @@ class BybitInstrumentSpot(msgspec.Struct):
     innovation: str
     status: str
     marginTrading: str
-    lotSizeFilter: LotSizeFilter
-    priceFilter: PriceFilter
+    lotSizeFilter: SpotLotSizeFilter
+    priceFilter: SpotPriceFilter
 
 
 class BybitInstrumentOption(msgspec.Struct):
@@ -32,7 +32,7 @@ class BybitInstrumentOption(msgspec.Struct):
     launchTime: str
     deliveryTime: str
     deliveryFeeRate: str
-    priceFilter: PriceFilter
+    priceFilter: LinearPriceFilter
     lotSizeFilter: LotSizeFilter
 
 
@@ -47,7 +47,7 @@ class BybitInstrumentLinear(msgspec.Struct):
     deliveryFeeRate: str
     priceScale: str
     leverageFilter: LeverageFilter
-    priceFilter: PriceFilter
+    priceFilter: LinearPriceFilter
     lotSizeFilter: LotSizeFilter
     unifiedMarginTrade: bool
     fundingInterval: int

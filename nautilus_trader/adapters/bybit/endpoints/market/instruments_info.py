@@ -2,7 +2,7 @@ from typing import Union
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -12,7 +12,7 @@ from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstru
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
-class InstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitInstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str = None
     symbol: str = None
     status: str = None
@@ -23,9 +23,9 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-        account_type: BybitAccountType,
+        instrument_type: BybitInstrumentType,
     ):
-        self.account_type = account_type
+        self.instrument_type = instrument_type
         url_path = base_endpoint + "instruments-info"
         super().__init__(
             client=client,
@@ -36,13 +36,11 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
             BybitInstrumentsLinearResponse,
         )
         self._response_decoder_instrument_spot = msgspec.json.Decoder(BybitInstrumentsSpotResponse)
-        self._response_decoder_instrument_option = msgspec.json.Decoder(
-            BybitInstrumentsOptionResponse,
-        )
+        self._response_decoder_instrument_option = msgspec.json.Decoder(BybitInstrumentsOptionResponse)
 
-    async def _get(
+    async def get(
         self,
-        parameters: InstrumentsInfoGetParameters,
+        parameters: BybitInstrumentsInfoGetParameters,
     ) -> Union[
         BybitInstrumentsLinearResponse,
         BybitInstrumentsSpotResponse,
@@ -50,11 +48,11 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
     ]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
-        if self.account_type == BybitAccountType.LINEAR:
+        if self.instrument_type == BybitInstrumentType.LINEAR:
             return self._response_decoder_instrument_linear.decode(raw)
-        elif self.account_type == BybitAccountType.SPOT:
+        elif self.instrument_type == BybitInstrumentType.SPOT:
             return self._response_decoder_instrument_spot.decode(raw)
-        elif self.account_type == BybitAccountType.OPTION:
+        elif self.instrument_type == BybitInstrumentType.OPTION:
             return self._response_decoder_instrument_option.decode(raw)
         else:
             raise ValueError("Invalid account type")

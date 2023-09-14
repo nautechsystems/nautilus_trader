@@ -4,13 +4,13 @@ from typing import Optional
 import msgspec.json
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMessage
+from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade,decoder_ws_ticker
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -38,11 +38,11 @@ class BybitDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        account_type: BybitAccountType,
+        instrument_type: BybitInstrumentType,
         base_url_ws: str,
         config: BybitDataClientConfig,
     ) -> None:
-        self._account_type = account_type
+        self._instrument_type = instrument_type
         self._enum_parser = BybitEnumParser()
         super().__init__(
             loop=loop,
@@ -69,9 +69,14 @@ class BybitDataClient(LiveMarketDataClient):
         self._update_instruments_task: Optional[asyncio.Task] = None
 
         # web socket decoders
+        self._decoders = {
+            "trade": decoder_ws_trade(),
+            "ticker": decoder_ws_ticker(instrument_type)
+        }
         self._decoder_ws_topic_check = msgspec.json.Decoder(BybitWsTopicCheck)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
-        self._decoder_ws_trade = msgspec.json.Decoder(BybitWsTradeMessage)
+        # self._decoder_ws_trade = msgspec.json.Decoder(BybitWsTradeMessage)
+        # self._decoder_ws_ticker = de
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
@@ -108,6 +113,11 @@ class BybitDataClient(LiveMarketDataClient):
         await self._ws_client.subscribe_trades(symbol)
         self._log.info(f"Subscribed to trade ticks for {instrument_id}.")
 
+    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
+        symbol = BybitSymbol(instrument_id.symbol.value)
+        await self._ws_client.subscribe_tickers(symbol)
+        self._log.info(f"Subscribed to ticker for {instrument_id}.")
+
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
             ws_message = self._decoder_ws_topic_check.decode(raw)
@@ -124,7 +134,7 @@ class BybitDataClient(LiveMarketDataClient):
 
     def _handle_trade(self, raw: bytes) -> None:
         try:
-            msg = self._decoder_ws_trade.decode(raw)
+            msg = self._decoders["trade"].decode(raw)
             for trade in msg.data:
                 instrument_id: InstrumentId = self._get_cached_instrument_id(trade.s)
                 trade_tick: TradeTick = trade.parse_to_trade_tick(
@@ -135,9 +145,19 @@ class BybitDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse trade tick: {raw}", e)
 
+    def _handle_ticker(self, raw: bytes)-> None:
+        try:
+            msg = self._decoders["ticker"].decode(raw)
+            print(msg)
+        except Exception as e:
+            print(e)
+            print("failed to parse ticker ",raw)
+
     def _topic_check(self, topic: str, raw: bytes) -> None:
         if "publicTrade" in topic:
             self._handle_trade(raw)
+        elif "tickers" in topic:
+            self._handle_ticker(raw)
         else:
             self._log.error(f"Unknown websocket message topic: {topic}")
 
@@ -146,7 +166,7 @@ class BybitDataClient(LiveMarketDataClient):
         binance_symbol = BybitSymbol(symbol)
         assert binance_symbol
         nautilus_symbol: str = binance_symbol.parse_as_nautilus(
-            self._account_type,
+            self._instrument_type,
         )
         instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:

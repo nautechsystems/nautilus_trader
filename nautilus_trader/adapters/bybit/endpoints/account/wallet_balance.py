@@ -7,7 +7,7 @@ from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBa
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
-class WalletBalanceGetaParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class WalletBalanceGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     accountType: str = None
     coin: str = None
 
@@ -27,6 +27,9 @@ class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitWalletBalanceResponse)
 
-    async def _get(self, parameters: WalletBalanceGetaParameters) -> BybitWalletBalanceResponse:
+    async def _get(self, parameters: WalletBalanceGetParameters) -> BybitWalletBalanceResponse:
         raw = await self._method(self.http_method, parameters)
-        return self._get_resp_decoder.decode(raw)
+        try:
+            return self._get_resp_decoder.decode(raw)
+        except Exception as e:
+            raise RuntimeError(f"Failed to decode response wallet balance response: {raw}")

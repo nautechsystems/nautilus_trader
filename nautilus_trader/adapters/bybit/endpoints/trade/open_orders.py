@@ -31,4 +31,7 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
     async def _get(self, parameters: OpenOrdersGetParameters) -> BybitOpenOrdersResponseStruct:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
-        return self._get_resp_decoder.decode(raw)
+        try:
+            return self._get_resp_decoder.decode(raw)
+        except Exception as e:
+            raise RuntimeError(f"Failed to decode response open orders response: {raw}")

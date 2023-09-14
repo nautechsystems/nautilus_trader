@@ -1,6 +1,6 @@
 from typing import Optional
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 
 
 class BybitSymbol(str):
@@ -11,8 +11,8 @@ class BybitSymbol(str):
                 symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
             )
 
-    def parse_as_nautilus(self, account_type: BybitAccountType) -> str:
-        if account_type.is_spot_or_margin:
+    def parse_as_nautilus(self, instrument_type: BybitInstrumentType) -> str:
+        if instrument_type.is_spot_or_margin:
             return str(self)
 
         if self[-1].isdigit():

@@ -1,10 +1,11 @@
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
-from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint, \
+    BybitInstrumentsInfoGetParameters
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
-from nautilus_trader.adapters.bybit.utils import get_category_from_account_type
+from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
@@ -15,19 +16,19 @@ class BybitMarketHttpAPI:
         self,
         client: BybitHttpClient,
         clock: LiveClock,
-        account_type: BybitAccountType,
+        instrument_type: BybitInstrumentType,
     ):
         PyCondition.not_none(client, "client")
         self.client = client
         self._clock = clock
         self.base_endpoint = "/v5/market/"
-        self.account_type = account_type
+        self.instrument_type = instrument_type
 
         # endpoints
         self._endpoint_instruments = BybitInstrumentsInfoEndpoint(
             client,
             self.base_endpoint,
-            account_type,
+            instrument_type,
         )
         self._endpoint_server_time = BybitServerTimeEndpoint(client, self.base_endpoint)
 
@@ -35,13 +36,13 @@ class BybitMarketHttpAPI:
         return self.base_endpoint + url
 
     async def fetch_server_time(self) -> BybitServerTime:
-        response = await self._endpoint_server_time._get()
+        response = await self._endpoint_server_time.get()
         return response.result
 
     async def fetch_instruments(self) -> list[BybitInstrument]:
-        response = await self._endpoint_instruments._get(
-            parameters=self._endpoint_instruments.GetParameters(
-                category=get_category_from_account_type(self.account_type),
+        response = await self._endpoint_instruments.get(
+            BybitInstrumentsInfoGetParameters(
+                category=get_category_from_instrument_type(self.instrument_type),
             ),
         )
         return response.result.list

@@ -1,6 +1,6 @@
 from typing import Optional
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config.validation import PositiveFloat
@@ -10,7 +10,7 @@ from nautilus_trader.config.validation import PositiveInt
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
-    account_type: BybitAccountType = BybitAccountType.SPOT
+    instrument_type: BybitInstrumentType = BybitInstrumentType.SPOT
     base_url_http: Optional[str] = None
     base_url_ws: Optional[str] = None
     # us: bool = False
@@ -21,7 +21,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     api_key: Optional[str] = None
     api_secret: Optional[str] = None
-    account_type: BybitAccountType = BybitAccountType.SPOT
+    instrument_type: BybitInstrumentType = BybitInstrumentType.SPOT
     base_url_http: Optional[str] = None
     base_url_ws: Optional[str] = None
     testnet: bool = False

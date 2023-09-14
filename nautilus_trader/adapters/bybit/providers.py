@@ -4,7 +4,7 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
@@ -31,7 +31,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         client: BybitHttpClient,
         logger: Logger,
         clock: LiveClock,
-        account_type: BybitAccountType,
+        instrument_type: BybitInstrumentType,
         is_testnet: bool = False,
         config: Optional[InstrumentProviderConfig] = None,
     ):
@@ -42,12 +42,12 @@ class BybitInstrumentProvider(InstrumentProvider):
         )
         self._clock = clock
         self._client = client
-        self._account_type = account_type
+        self._instrument_type = instrument_type
 
         self._http_market = BybitMarketHttpAPI(
             client=client,
             clock=clock,
-            account_type=account_type,
+            instrument_type=instrument_type,
         )
 
         self._log_warnings = config.log_warnings if config else True
@@ -85,7 +85,7 @@ class BybitInstrumentProvider(InstrumentProvider):
             quote_currency = instrument.parse_to_quote_currency()
             raw_symbol = Symbol(instrument.symbol)
 
-            parsed_symbol = BybitSymbol(raw_symbol.value).parse_as_nautilus(self._account_type)
+            parsed_symbol = BybitSymbol(raw_symbol.value).parse_as_nautilus(self._instrument_type)
             nautilus_symbol = Symbol(parsed_symbol)
             instrument_id = InstrumentId(symbol=nautilus_symbol, venue=BYBIT_VENUE)
             if instrument.settleCoin == instrument.baseCoin:

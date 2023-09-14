@@ -33,8 +33,7 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
     async def _get(self, parameters: PositionInfoGetParameters) -> BybitPositionResponseStruct:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
-        if raw is None:
-            raise RuntimeError(
-                f"Failed to get position info for {parameters.symbol} {parameters.settleCoin}",
-            )
-        return self._get_resp_decoder.decode(raw)
+        try:
+            return self._get_resp_decoder.decode(raw)
+        except Exception as e:
+            raise RuntimeError(f"Failed to decode response position info response: {raw}")

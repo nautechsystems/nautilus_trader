@@ -80,11 +80,9 @@ class BybitHttpClient:
         else:
             headers = self._headers
         response: HttpResponse = await self._client.request(
-            http_method,
-            url=url,
-            headers=headers,
-            body=msgspec.json.encode(payload) if payload else None,
-            keys=ratelimiter_keys,
+            http_method,url,headers,
+            msgspec.json.encode(payload) if payload else None,
+            ratelimiter_keys
         )
         # first check for server error
         print(str(response))
@@ -95,7 +93,7 @@ class BybitHttpClient:
                 message=message,
                 headers=response.headers,
             )
-        # then check for error inside bybit response
+        # then check for error inside spot response
         response_status = self._decoder_response_code.decode(response.body)
         if response_status.retCode == 0:
             return response.body

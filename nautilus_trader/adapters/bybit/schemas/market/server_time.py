@@ -6,7 +6,7 @@ class BybitServerTime(msgspec.Struct):
     timeNano: str
 
 
-class BybitServerTimeResponseStruct(msgspec.Struct):
+class BybitServerTimeResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitServerTime
