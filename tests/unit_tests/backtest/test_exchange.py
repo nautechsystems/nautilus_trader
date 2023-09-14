@@ -1643,6 +1643,65 @@ class TestSimulatedExchange:
         assert order3.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_open_orders()) == 1
 
+    def test_batch_cancel_orders_all_open_orders_for_batch(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.030"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.020"),
+        )
+
+        order3 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.010"),
+        )
+
+        order4 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.010"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.strategy.submit_order(order3)
+        self.strategy.submit_order(order4)
+        self.exchange.process(0)
+
+        self.strategy.cancel_order(order4)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_orders([order1, order2, order3, order4])
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.CANCELED
+        assert len(self.exchange.get_open_orders()) == 0
+        assert self.exec_engine.event_count == 12
+
     def test_modify_stop_order_when_order_does_not_exist(self) -> None:
         # Arrange
         command = ModifyOrder(
