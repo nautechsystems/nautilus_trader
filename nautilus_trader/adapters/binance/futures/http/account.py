@@ -13,12 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Any, Optional, Union
 
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
+from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceStatusCode
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesAccountInfo
@@ -196,7 +197,10 @@ class BinanceFuturesCancelMultipleOrdersHttp(BinanceHttpEndpoint):
             methods,
             url_path,
         )
-        self._delete_resp_decoder = msgspec.json.Decoder(BinanceStatusCode)
+        self._delete_resp_decoder = msgspec.json.Decoder(
+            Union[list[BinanceOrder], dict[str, Any]],
+            strict=False,
+        )
 
     class DeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -215,11 +219,11 @@ class BinanceFuturesCancelMultipleOrdersHttp(BinanceHttpEndpoint):
 
         timestamp: str
         symbol: BinanceSymbol
-        orderIdList: Optional[list[str]] = None
-        origClientOrderIdList: Optional[list[str]] = None
+        orderIdList: Optional[str] = None
+        origClientOrderIdList: Optional[str] = None
         recvWindow: Optional[str] = None
 
-    async def delete(self, parameters: DeleteParameters) -> BinanceStatusCode:
+    async def delete(self, parameters: DeleteParameters) -> list[BinanceOrder]:
         method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._delete_resp_decoder.decode(raw)
@@ -445,15 +449,16 @@ class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
         Returns whether successful.
 
         """
-        response = await self._endpoint_futures_cancel_multiple_orders.delete(
+        stringified_client_order_ids = str(client_order_ids).replace(" ", "").replace("'", '"')
+        await self._endpoint_futures_cancel_multiple_orders.delete(
             parameters=self._endpoint_futures_cancel_multiple_orders.DeleteParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),
-                origClientOrderIdList=client_order_ids,
+                origClientOrderIdList=stringified_client_order_ids,
                 recvWindow=recv_window,
             ),
         )
-        return response.code == 200
+        return True
 
     async def query_futures_account_info(
         self,
