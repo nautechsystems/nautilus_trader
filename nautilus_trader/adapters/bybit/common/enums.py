@@ -8,6 +8,22 @@ from nautilus_trader.model.enums import TimeInForce
 
 
 @unique
+class BybitKlineInterval(Enum):
+    MINUTE_1 = "1"
+    MINUTE_3 = "3"
+    MINUTE_5 = "5"
+    MINUTE_15 = "15"
+    MINUTE_30 = "30"
+    HOUR_1 = "60"
+    HOUR_2 = "120"
+    HOUR_4 = "240"
+    HOUR_6 = "360"
+    HOUR_12 = "720"
+    DAY_1 = "D"
+    WEEK_1 = "W"
+    MONTH_1 = "M"
+
+@unique
 class BybitOrderStatus(Enum):
     CREATED = "Created"
     NEW = "New"

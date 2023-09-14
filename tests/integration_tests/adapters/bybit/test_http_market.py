@@ -5,7 +5,7 @@ import msgspec
 import pytest
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient, HttpResponse
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType, BybitKlineInterval
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
@@ -15,6 +15,7 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsLinearResponse, \
     BybitInstrumentsSpotResponse, BybitInstrumentsOptionResponse
+from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKlinesResponse
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTimeResponse
 
 
@@ -106,4 +107,33 @@ class TestBybitMarketHttpAPI:
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
+
+
+    @pytest.mark.asyncio()
+    async def test_klines_spot(self, monkeypatch):
+        response = pkgutil.get_data(
+            "tests.integration_tests.adapters.bybit.resources.http_responses.spot",
+            "klines_btc.json",
+        )
+        response_decoded = msgspec.json.Decoder(BybitKlinesResponse).decode(response)
+        monkeypatch.setattr(HttpClient, "request", get_mock(response))
+        klines = await self.spot_api.fetch_klines("BTCUSDT",BybitKlineInterval.DAY_1,3)
+        assert len(klines) == 3
+        assert response_decoded.result.list[0] == klines[0]
+        assert response_decoded.result.list[1] == klines[1]
+        assert response_decoded.result.list[2] == klines[2]
+
+    @pytest.mark.asyncio()
+    async def test_klines_linear(self, monkeypatch):
+        response = pkgutil.get_data(
+            "tests.integration_tests.adapters.bybit.resources.http_responses.linear",
+            "klines_btc.json",
+        )
+        response_decoded = msgspec.json.Decoder(BybitKlinesResponse).decode(response)
+        monkeypatch.setattr(HttpClient, "request", get_mock(response))
+        klines = await self.linear_api.fetch_klines("BTCUSDT",BybitKlineInterval.DAY_1,3)
+        assert len(klines) == 3
+        assert response_decoded.result.list[0] == klines[0]
+        assert response_decoded.result.list[1] == klines[1]
+        assert response_decoded.result.list[2] == klines[2]
 

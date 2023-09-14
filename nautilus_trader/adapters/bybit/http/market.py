@@ -1,6 +1,9 @@
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from typing import Optional
+
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType, BybitKlineInterval
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint, \
     BybitInstrumentsInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint, BybitKlinesGetParameters
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
@@ -31,6 +34,7 @@ class BybitMarketHttpAPI:
             instrument_type,
         )
         self._endpoint_server_time = BybitServerTimeEndpoint(client, self.base_endpoint)
+        self._endpoint_klines = BybitKlinesEndpoint(client, self.base_endpoint)
 
     def _get_url(self, url: str):
         return self.base_endpoint + url
@@ -44,6 +48,26 @@ class BybitMarketHttpAPI:
             BybitInstrumentsInfoGetParameters(
                 category=get_category_from_instrument_type(self.instrument_type),
             ),
+        )
+        return response.result.list
+
+    async def fetch_klines(
+        self,
+        symbol: str,
+        interval: BybitKlineInterval,
+        limit: Optional[int] = None,
+        start: Optional[int] = None,
+        end: Optional[int] = None,
+    ):
+        response = await self._endpoint_klines.get(
+            parameters=BybitKlinesGetParameters(
+                category=get_category_from_instrument_type(self.instrument_type),
+                symbol=symbol,
+                interval=interval,
+                limit=limit,
+                start=start,
+                end=end,
+            )
         )
         return response.result.list
 
