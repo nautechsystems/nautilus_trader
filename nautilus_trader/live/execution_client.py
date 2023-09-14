@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import traceback
 from asyncio import Task
 from collections.abc import Coroutine
 from datetime import timedelta
@@ -200,18 +201,21 @@ class LiveExecutionClient(ExecutionClient):
         success: str | None,
         task: Task,
     ) -> None:
-        if task.exception():
+        e: BaseException | None = task.exception()
+        if e:
+            tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
+                f"Error on `{task.get_name()}`: " f"{task.exception()!r}\n{tb_str}",
             )
         else:
             if actions:
                 try:
                     actions()
                 except Exception as e:
+                    tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
                     self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
-                        f"{e!r}",
+                        f"{e!r}\n{tb_str}",
                     )
             if success:
                 self._log.info(success, LogColor.GREEN)
