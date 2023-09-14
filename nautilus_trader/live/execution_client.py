@@ -268,6 +268,12 @@ class LiveExecutionClient(ExecutionClient):
             log_msg=f"cancel_all_orders: {command}",
         )
 
+    def batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        self.create_task(
+            self._batch_cancel_orders(command),
+            log_msg=f"batch_cancel_orders: {command}",
+        )
+
     def query_order(self, command: QueryOrder) -> None:
         self.create_task(
             self._query_order(command),
