@@ -806,7 +806,7 @@ cdef class SimulatedExchange:
             elif isinstance(command, CancelAllOrders):
                 self._matching_engines[command.instrument_id].process_cancel_all(command, self.exec_client.account_id)
             elif isinstance(command, BatchCancelOrders):
-                self._log.error("The `BatchCancelOrders` command is not yet supported by the simulated exchange.")
+                self._matching_engines[command.instrument_id].process_batch_cancel(command, self.exec_client.account_id)
 
         # Iterate over modules
         cdef SimulationModule module
