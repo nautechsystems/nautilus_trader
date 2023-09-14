@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
@@ -63,12 +63,12 @@ class TestBybitFactories:
     @pytest.mark.parametrize(
         ("account_type", "is_testnet", "expected"),
         [
-            [BybitAccountType.SPOT, False, "wss://stream.bybit.com/v5/public/spot"],
-            [BybitAccountType.SPOT, True, "wss://stream-testnet.bybit.com/v5/public/spot"],
-            [BybitAccountType.LINEAR, False, "wss://stream.bybit.com/v5/public/linear"],
-            [BybitAccountType.LINEAR, True, "wss://stream-testnet.bybit.com/v5/public/linear"],
-            [BybitAccountType.INVERSE, False, "wss://stream.bybit.com/v5/public/inverse"],
-            [BybitAccountType.INVERSE, True, "wss://stream-testnet.bybit.com/v5/public/inverse"],
+            [BybitInstrumentType.SPOT, False, "wss://stream.bybit.com/v5/public/spot"],
+            [BybitInstrumentType.SPOT, True, "wss://stream-testnet.bybit.com/v5/public/spot"],
+            [BybitInstrumentType.LINEAR, False, "wss://stream.bybit.com/v5/public/linear"],
+            [BybitInstrumentType.LINEAR, True, "wss://stream-testnet.bybit.com/v5/public/linear"],
+            [BybitInstrumentType.INVERSE, False, "wss://stream.bybit.com/v5/public/inverse"],
+            [BybitInstrumentType.INVERSE, True, "wss://stream-testnet.bybit.com/v5/public/inverse"],
         ],
     )
     def test_get_ws_base_url(self, account_type, is_testnet, expected):
@@ -82,7 +82,7 @@ class TestBybitFactories:
             config=BybitDataClientConfig(
                 api_key="SOME_BYBIT_API_KEY",
                 api_secret="SOME_BYBIT_API_SECRET",
-                account_type=BybitAccountType.LINEAR,
+                instrument_type=BybitInstrumentType.LINEAR,
             ),
             msgbus=self.msgbus,
             cache=self.cache,
@@ -98,7 +98,7 @@ class TestBybitFactories:
             config=BybitExecClientConfig(
                 api_key="SOME_BYBIT_API_KEY",
                 api_secret="SOME_BYBIT_API_SECRET",
-                account_type=BybitAccountType.LINEAR,
+                instrument_type=BybitInstrumentType.LINEAR,
             ),
             msgbus=self.msgbus,
             cache=self.cache,

@@ -3,7 +3,7 @@ import json
 import msgspec
 import pytest
 
-from nautilus_trader.adapters.bybit.common.enums import BybitAccountType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.factories import get_cached_bybit_http_client
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
@@ -23,7 +23,7 @@ async def test_bybit_account_http_client():
     http_account = BybitAccountHttpAPI(
         clock=clock,
         client=client,
-        account_type=BybitAccountType.LINEAR,
+        account_type=BybitInstrumentType.LINEAR,
     )
 
     ################################################################################
