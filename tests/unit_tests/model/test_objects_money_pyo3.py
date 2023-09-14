@@ -158,6 +158,26 @@ class TestMoney:
         # Assert
         assert result == "Money('1.00', USD)"
 
+    @pytest.mark.parametrize(
+        ("value", "currency", "expected"),
+        [
+            [0, USDT, Money(0, USDT)],
+            [1_000_000_000, USD, Money(1.00, USD)],
+            [10_000_000_000, AUD, Money(10.00, AUD)],
+        ],
+    )
+    def test_from_raw_given_valid_values_returns_expected_result(
+        self,
+        value: str,
+        currency: Currency,
+        expected: Money,
+    ) -> None:
+        # Arrange, Act
+        result = Money.from_raw(value, currency)
+
+        # Assert
+        assert result == expected
+
     def test_from_str_when_malformed_raises_value_error(self) -> None:
         # Arrange
         value = "@"

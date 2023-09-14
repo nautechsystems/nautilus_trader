@@ -23,6 +23,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.execution.matching_core cimport MatchingCore
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -143,6 +144,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_modify(self, ModifyOrder command, AccountId account_id)
     cpdef void process_cancel(self, CancelOrder command, AccountId account_id)
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id)
+    cpdef void process_batch_cancel(self, BatchCancelOrders command, AccountId account_id)
     cdef void _process_market_order(self, MarketOrder order)
     cdef void _process_market_to_limit_order(self, MarketToLimitOrder order)
     cdef void _process_limit_order(self, LimitOrder order)

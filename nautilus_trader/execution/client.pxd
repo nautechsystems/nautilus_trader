@@ -18,6 +18,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -73,6 +74,7 @@ cdef class ExecutionClient(Component):
     cpdef void modify_order(self, ModifyOrder command)
     cpdef void cancel_order(self, CancelOrder command)
     cpdef void cancel_all_orders(self, CancelAllOrders command)
+    cpdef void batch_cancel_orders(self, BatchCancelOrders command)
     cpdef void query_order(self, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------

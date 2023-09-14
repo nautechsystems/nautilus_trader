@@ -671,12 +671,36 @@ cdef class RiskEngine(Component):
                 notional = Money(order.quantity.as_f64_c() * xrate, instrument.base_currency)
                 max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
             else:
-                notional = instrument.notional_value(order.quantity, last_px)
+                notional = instrument.notional_value(order.quantity, last_px, use_quote_for_inverse=True)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
                     order=order,
                     reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER {max_notional.to_str()} @ {notional.to_str()}",
+                )
+                return False  # Denied
+
+            # Check MIN notional instrument limit
+            if (
+                instrument.min_notional is not None
+                and instrument.min_notional.currency == notional.currency
+                and notional._mem.raw < instrument.min_notional._mem.raw
+            ):
+                self._deny_order(
+                    order=order,
+                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT {instrument.min_notional.to_str()} @ {notional.to_str()}",
+                )
+                return False  # Denied
+
+            # Check MAX notional instrument limit
+            if (
+                instrument.max_notional is not None
+                and instrument.max_notional.currency == notional.currency
+                and notional._mem.raw > instrument.max_notional._mem.raw
+            ):
+                self._deny_order(
+                    order=order,
+                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT {instrument.max_notional.to_str()} @ {notional.to_str()}",
                 )
                 return False  # Denied
 

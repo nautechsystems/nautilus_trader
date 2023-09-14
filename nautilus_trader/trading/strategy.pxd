@@ -110,6 +110,7 @@ cdef class Strategy(Actor):
         bint batch_more=*,
     )
     cpdef void cancel_order(self, Order order, ClientId client_id=*)
+    cpdef void cancel_orders(self, list orders, ClientId client_id=*)
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*)
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*)
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*)

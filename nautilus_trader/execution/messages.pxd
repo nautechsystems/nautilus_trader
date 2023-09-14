@@ -115,6 +115,16 @@ cdef class CancelAllOrders(TradingCommand):
     cdef dict to_dict_c(CancelAllOrders obj)
 
 
+cdef class BatchCancelOrders(TradingCommand):
+    cdef readonly list cancels
+
+    @staticmethod
+    cdef BatchCancelOrders from_dict_c(dict values)
+
+    @staticmethod
+    cdef dict to_dict_c(BatchCancelOrders obj)
+
+
 cdef class QueryOrder(TradingCommand):
     cdef readonly ClientOrderId client_order_id
     """The client order ID for the order to query.\n\n:returns: `ClientOrderId`"""

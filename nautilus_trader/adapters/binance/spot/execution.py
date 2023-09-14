@@ -38,6 +38,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_type_to_str
@@ -200,6 +201,11 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
                 "This order may become a liquidity TAKER.",
             )
             return
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        self._log.error(
+            "Cannot batch cancel orders: not supported by the Binance Spot/Margin exchange. ",
+        )
 
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 

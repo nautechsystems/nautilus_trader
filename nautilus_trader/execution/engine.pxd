@@ -18,6 +18,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -105,6 +106,7 @@ cdef class ExecutionEngine(Component):
     cpdef void _handle_modify_order(self, ExecutionClient client, ModifyOrder command)
     cpdef void _handle_cancel_order(self, ExecutionClient client, CancelOrder command)
     cpdef void _handle_cancel_all_orders(self, ExecutionClient client, CancelAllOrders command)
+    cpdef void _handle_batch_cancel_orders(self, ExecutionClient client, BatchCancelOrders command)
     cpdef void _handle_query_order(self, ExecutionClient client, QueryOrder command)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------

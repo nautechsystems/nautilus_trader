@@ -32,6 +32,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -621,7 +622,7 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
             ts = command.ts_init + self.latency_model.update_latency_nanos
-        elif isinstance(command, (CancelOrder, CancelAllOrders)):
+        elif isinstance(command, (CancelOrder, CancelAllOrders, BatchCancelOrders)):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:
             raise ValueError(f"invalid `TradingCommand`, was {command}")  # pragma: no cover (design-time error)
@@ -804,6 +805,8 @@ cdef class SimulatedExchange:
                 self._matching_engines[command.instrument_id].process_cancel(command, self.exec_client.account_id)
             elif isinstance(command, CancelAllOrders):
                 self._matching_engines[command.instrument_id].process_cancel_all(command, self.exec_client.account_id)
+            elif isinstance(command, BatchCancelOrders):
+                self._matching_engines[command.instrument_id].process_batch_cancel(command, self.exec_client.account_id)
 
         # Iterate over modules
         cdef SimulationModule module

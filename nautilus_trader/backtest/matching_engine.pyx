@@ -38,6 +38,10 @@ from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.matching_core cimport MatchingCore
+from nautilus_trader.execution.messages cimport BatchCancelOrders
+from nautilus_trader.execution.messages cimport CancelAllOrders
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.data.book cimport BookOrder
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -723,6 +727,11 @@ cdef class OrderMatchingEngine:
         else:
             if order.is_inflight_c() or order.is_open_c():
                 self.cancel_order(order)
+
+    cpdef void process_batch_cancel(self, BatchCancelOrders command, AccountId account_id):
+        cdef CancelOrder cancel
+        for cancel in command.cancels:
+            self.process_cancel(cancel, account_id)
 
     cpdef void process_cancel_all(self, CancelAllOrders command, AccountId account_id):
         cdef Order order
