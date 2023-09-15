@@ -135,6 +135,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
     executedQty: Optional[str] = None
     status: Optional[BinanceOrderStatus] = None
     timeInForce: Optional[BinanceTimeInForce] = None
+    goodTillDate: Optional[int] = None
     type: Optional[BinanceOrderType] = None
     side: Optional[BinanceOrderSide] = None
     stopPrice: Optional[str] = None  # please ignore when order type is TRAILING_STOP_MARKET
@@ -229,7 +230,9 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             order_side=enum_parser.parse_binance_order_side(self.side),
             order_type=enum_parser.parse_binance_order_type(self.type),
             contingency_type=contingency_type,
-            time_in_force=enum_parser.parse_binance_time_in_force(self.timeInForce),
+            time_in_force=enum_parser.parse_binance_time_in_force(self.timeInForce)
+            if self.timeInForce
+            else None,
             order_status=order_status,
             price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),
