@@ -200,6 +200,11 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             SPOT/MARGIN MARKET, LIMIT orders default to FULL.
             All others default to ACK.
             FULL response only for SPOT/MARGIN orders.
+        goodTillDate : int, optional
+            The order cancel time for timeInForce GTD, mandatory when timeInforce set to GTD;
+            order the timestamp only retains second-level precision, ms part will be ignored.
+            The goodTillDate timestamp must be greater than the current time plus 600 seconds and
+            smaller than 253402300799000.
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
@@ -227,6 +232,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         workingType: Optional[str] = None
         priceProtect: Optional[str] = None
         newOrderRespType: Optional[BinanceNewOrderRespType] = None
+        goodTillDate: Optional[int] = None
         recvWindow: Optional[str] = None
 
     class PutParameters(msgspec.Struct, omit_defaults=True, frozen=True):
@@ -625,6 +631,7 @@ class BinanceAccountHttpAPI:
         callback_rate: Optional[str] = None,
         working_type: Optional[str] = None,
         price_protect: Optional[str] = None,
+        good_till_date: Optional[int] = None,
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
@@ -653,6 +660,7 @@ class BinanceAccountHttpAPI:
                 callbackRate=callback_rate,
                 workingType=working_type,
                 priceProtect=price_protect,
+                goodTillDate=good_till_date,
                 newOrderRespType=new_order_resp_type,
                 recvWindow=recv_window,
             ),

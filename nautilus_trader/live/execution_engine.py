@@ -42,6 +42,7 @@ from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.enums import trigger_type_to_str
@@ -864,7 +865,7 @@ class LiveExecutionEngine(ExecutionEngine):
             order_side=report.order_side,
             order_type=report.order_type,
             quantity=report.quantity,
-            time_in_force=report.time_in_force,
+            time_in_force=report.time_in_force if report.expire_time else TimeInForce.GTC,
             post_only=report.post_only,
             reduce_only=report.reduce_only,
             quote_quantity=False,
