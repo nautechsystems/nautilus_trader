@@ -1,11 +1,14 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-
+from nautilus_trader.model.enums import BarAggregation
+def raise_error(error):
+    raise error
 
 @unique
 class BybitKlineInterval(Enum):
@@ -110,6 +113,16 @@ class BybitEnumParser:
             BybitOrderStatus.DEACTIVATED: OrderStatus.CANCELED,
             BybitOrderStatus.ACTIVE: OrderStatus.ACCEPTED,
         }
+        # klines
+        self.minute_klines_interval = [1,3,5,15,30]
+        self.hour_klines_interval = [1,2,4,6,12]
+        self.aggregation_kline_mapping = {
+            BarAggregation.MINUTE: lambda x: BybitKlineInterval(f"{x}"),
+            BarAggregation.HOUR: lambda x: BybitKlineInterval(f"{x * 60}"),
+            BarAggregation.DAY: lambda x: BybitKlineInterval("D") if x == 1 else raise_error(ValueError(f"Bybit incorrect day kline interval {x}")),
+            BarAggregation.WEEK: lambda x: BybitKlineInterval("W") if x == 1 else raise_error(ValueError(f"Bybit incorrect week kline interval {x}")),
+            BarAggregation.MONTH: lambda x: BybitKlineInterval("M") if x == 1 else raise_error(ValueError(f"Bybit incorrect month kline interval {x}"))
+        }
 
     def parse_bybit_order_status(self, order_status: BybitOrderStatus) -> OrderStatus:
         try:
@@ -141,6 +154,24 @@ class BybitEnumParser:
         except KeyError:
             raise RuntimeError(
                 f"unrecognized Bybit order type, was {order_type}",  # pragma: no cover
+            )
+
+
+
+    def parse_bybit_kline(self, bar_type: BarType)-> BybitKlineInterval:
+        try:
+            aggregation = bar_type.spec.aggregation
+            interval = int(bar_type.spec.step)
+            if aggregation in self.aggregation_kline_mapping:
+                result = self.aggregation_kline_mapping[aggregation](interval)
+                return result
+            else:
+                raise ValueError(
+                    f"Bybit incorrect aggregation {aggregation}",  # pragma: no cover
+                )
+        except KeyError:
+            raise RuntimeError(
+                f"unrecognized Bybit bar type, was {bar_type}",  # pragma: no cover
             )
 
 
