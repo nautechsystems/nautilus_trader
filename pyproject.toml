@@ -36,7 +36,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.7.0",
-    "numpy>=1.25.2",
+    "numpy>=1.26.0",
     "Cython==3.0.2",
     "toml>=0.10.2",
 ]
@@ -49,17 +49,17 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
 cython = "==3.0.2"  # Build dependency (pinned for stability)
+numpy = "^1.26.0"  # Build dependency
+toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 frozendict = "^2.3.8"
 fsspec = "==2023.6.0"  # Pinned for stability
-importlib_metadata = "^6.8.0"  # Build dependency
+importlib_metadata = "^6.8.0"
 msgspec = "^0.18.2"
-numpy = "^1.25.2"  # Build dependency
 pandas = "^2.1.0"
 psutil = "^5.9.5"
 pyarrow = ">=12.0.1"  # Minimum version set one major version behind the latest for compatibility
 pytz = "^2023.3.0"
-toml = "^0.10.2"  # Build dependency
 tqdm = "^4.66.1"
 uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.3", optional = true}
@@ -82,7 +82,7 @@ black = "^23.9.1"
 docformatter = "^1.7.5"
 mypy = "^1.5.1"
 pre-commit = "^3.4.0"
-ruff = "^0.0.289"
+ruff = "^0.0.290"
 types-pytz = "^2023.3"
 types-redis = "^4.6"
 types-requests = "^2.31"
