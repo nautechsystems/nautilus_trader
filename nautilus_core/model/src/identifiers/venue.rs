@@ -21,14 +21,16 @@ use std::{
 
 use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
 use ustr::Ustr;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Venue {
     pub value: Ustr,
 }
