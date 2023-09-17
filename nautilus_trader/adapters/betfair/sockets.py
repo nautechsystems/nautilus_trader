@@ -227,6 +227,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         subscribe_book_updates=True,
         subscribe_trade_updates=True,
         subscribe_market_definitions=True,
+        subscribe_ticker=True,
         subscribe_bsp_updates=True,
         subscribe_bsp_projected=True,
     ):
@@ -266,6 +267,8 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             data_fields.append("EX_ALL_OFFERS")
         if subscribe_trade_updates:
             data_fields.append("EX_TRADED")
+        if subscribe_ticker:
+            data_fields.extend(["EX_TRADED_VOL", "EX_LTP"])
         if subscribe_market_definitions:
             data_fields.append("EX_MARKET_DEF")
         if subscribe_bsp_updates:

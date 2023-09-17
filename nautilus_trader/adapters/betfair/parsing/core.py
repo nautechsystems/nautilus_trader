@@ -27,6 +27,7 @@ from betfair_parser.util import iter_stream
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 
 
@@ -37,6 +38,7 @@ class BetfairParser:
 
     def __init__(self) -> None:
         self.market_definitions: dict[str, MarketDefinition] = {}
+        self.traded_volumes: dict[InstrumentId, dict[float, float]] = {}
 
     def parse(self, mcm: MCM, ts_init: Optional[int] = None) -> list[PARSE_TYPES]:
         if isinstance(mcm, (Status, Connection, OCM)):
@@ -49,7 +51,7 @@ class BetfairParser:
         for mc in mcm.mc:
             if mc.market_definition is not None:
                 self.market_definitions[mc.id] = mc.market_definition
-            mc_updates = market_change_to_updates(mc, ts_event, ts_init)
+            mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
         return updates
 
