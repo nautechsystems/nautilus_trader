@@ -49,7 +49,6 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Strategy(Actor):
-    cdef bint _manage_gtd_expiry
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
@@ -61,6 +60,8 @@ cdef class Strategy(Actor):
     """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly list external_order_claims
     """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
+    cdef readonly bint manage_gtd_expiry
+    """If all order GTD time in force expirations should be managed by the strategy.\n\n:returns: `bool`"""
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -80,14 +81,12 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id=*,
-        bint manage_gtd_expiry=*,
         ClientId client_id=*,
     )
     cpdef void submit_order_list(
         self,
         OrderList order_list,
         PositionId position_id=*,
-        bint manage_gtd_expiry=*,
         ClientId client_id=*,
     )
     cpdef void modify_order(

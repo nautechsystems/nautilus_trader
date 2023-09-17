@@ -123,6 +123,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
+        # Configuration
         self._binance_account_type = account_type
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)

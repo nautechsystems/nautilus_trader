@@ -64,14 +64,14 @@ class EMACrossBracketConfig(StrategyConfig, frozen=True):
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
-    manage_gtd_expiry : bool, default True
-        If the expiry for orders with a time in force of 'GTD' will be managed by the strategy.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+    manage_gtd_expiry : bool, default True
+        If all order GTD time in force expirations should be managed by the strategy.
 
     """
 
@@ -83,7 +83,6 @@ class EMACrossBracketConfig(StrategyConfig, frozen=True):
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
     emulation_trigger: str = "NO_TRIGGER"
-    manage_gtd_expiry: bool = True
 
 
 class EMACrossBracket(Strategy):
@@ -229,7 +228,7 @@ class EMACrossBracket(Strategy):
             emulation_trigger=self.emulation_trigger,
         )
 
-        self.submit_order_list(order_list, manage_gtd_expiry=True)
+        self.submit_order_list(order_list)
 
     def sell(self, last_bar: Bar) -> None:
         """
@@ -254,7 +253,7 @@ class EMACrossBracket(Strategy):
             emulation_trigger=self.emulation_trigger,
         )
 
-        self.submit_order_list(order_list, manage_gtd_expiry=True)
+        self.submit_order_list(order_list)
 
     def on_data(self, data: Data) -> None:
         """
