@@ -11,10 +11,9 @@ Released on TBD (UTC).
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
-- Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 
 ### Breaking Changes
-None
+- Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 
 ### Fixes
 - Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
