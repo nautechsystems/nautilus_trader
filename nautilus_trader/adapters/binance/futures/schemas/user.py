@@ -30,6 +30,7 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositio
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionUpdateReason
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesWorkingType
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currency import Currency
@@ -222,6 +223,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     si: int  # ignore
     ss: int  # ignore
     rp: str  # Realized Profit of the trade
+    gtd: int  # TIF GTD order auto cancel time
 
     def parse_to_order_status_report(
         self,
@@ -238,6 +240,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         trailing_offset = Decimal(self.cr) * 100 if self.cr is not None else None
         order_side = OrderSide.BUY if self.S == BinanceOrderSide.BUY else OrderSide.SELL
         post_only = self.f == BinanceTimeInForce.GTX
+        expire_time = unix_nanos_to_dt(millis_to_nanos(self.gtd)) if self.gtd else None
 
         return OrderStatusReport(
             account_id=account_id,
@@ -248,6 +251,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             order_type=enum_parser.parse_binance_order_type(self.o),
             time_in_force=enum_parser.parse_binance_time_in_force(self.f),
             order_status=OrderStatus.ACCEPTED,
+            expire_time=expire_time,
             price=price,
             trigger_price=trigger_price,
             trigger_type=enum_parser.parse_binance_trigger_type(self.wt.value),

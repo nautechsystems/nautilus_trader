@@ -200,6 +200,11 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             SPOT/MARGIN MARKET, LIMIT orders default to FULL.
             All others default to ACK.
             FULL response only for SPOT/MARGIN orders.
+        goodTillDate : int, optional
+            The order cancel time for timeInForce GTD, mandatory when timeInforce set to GTD;
+            order the timestamp only retains second-level precision, ms part will be ignored.
+            The goodTillDate timestamp must be greater than the current time plus 600 seconds and
+            smaller than 253402300799000.
         recvWindow : str, optional
             The response receive window in milliseconds for the request.
             Cannot exceed 60000.
@@ -227,6 +232,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         workingType: Optional[str] = None
         priceProtect: Optional[str] = None
         newOrderRespType: Optional[BinanceNewOrderRespType] = None
+        goodTillDate: Optional[int] = None
         recvWindow: Optional[str] = None
 
     class PutParameters(msgspec.Struct, omit_defaults=True, frozen=True):
@@ -264,22 +270,22 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         origClientOrderId: Optional[str] = None
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetDeleteParameters) -> BinanceOrder:
+    async def get(self, parameters: GetDeleteParameters) -> BinanceOrder:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
-    async def _delete(self, parameters: GetDeleteParameters) -> BinanceOrder:
+    async def delete(self, parameters: GetDeleteParameters) -> BinanceOrder:
         method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
-    async def _post(self, parameters: PostParameters) -> BinanceOrder:
+    async def post(self, parameters: PostParameters) -> BinanceOrder:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
-    async def _put(self, parameters: PutParameters) -> BinanceOrder:
+    async def put(self, parameters: PutParameters) -> BinanceOrder:
         method_type = HttpMethod.PUT
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
@@ -350,7 +356,7 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
         limit: Optional[int] = None
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceOrder]:
+    async def get(self, parameters: GetParameters) -> list[BinanceOrder]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -414,7 +420,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
         symbol: Optional[BinanceSymbol] = None
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceOrder]:
+    async def get(self, parameters: GetParameters) -> list[BinanceOrder]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -560,7 +566,7 @@ class BinanceAccountHttpAPI:
             raise RuntimeError(
                 "Either orderId or origClientOrderId must be sent.",
             )
-        binance_order = await self._endpoint_order._get(
+        binance_order = await self._endpoint_order.get(
             parameters=self._endpoint_order.GetDeleteParameters(
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
@@ -593,7 +599,7 @@ class BinanceAccountHttpAPI:
             raise RuntimeError(
                 "Either orderId or origClientOrderId must be sent.",
             )
-        binance_order = await self._endpoint_order._delete(
+        binance_order = await self._endpoint_order.delete(
             parameters=self._endpoint_order.GetDeleteParameters(
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
@@ -625,13 +631,14 @@ class BinanceAccountHttpAPI:
         callback_rate: Optional[str] = None,
         working_type: Optional[str] = None,
         price_protect: Optional[str] = None,
+        good_till_date: Optional[int] = None,
         new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
         recv_window: Optional[str] = None,
     ) -> BinanceOrder:
         """
         Send in a new order to Binance.
         """
-        binance_order = await self._endpoint_order._post(
+        binance_order = await self._endpoint_order.post(
             parameters=self._endpoint_order.PostParameters(
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
@@ -653,6 +660,7 @@ class BinanceAccountHttpAPI:
                 callbackRate=callback_rate,
                 workingType=working_type,
                 priceProtect=price_protect,
+                goodTillDate=good_till_date,
                 newOrderRespType=new_order_resp_type,
                 recvWindow=recv_window,
             ),
@@ -672,7 +680,7 @@ class BinanceAccountHttpAPI:
         """
         Modify a LIMIT order with Binance.
         """
-        binance_order = await self._endpoint_order._put(
+        binance_order = await self._endpoint_order.put(
             parameters=self._endpoint_order.PutParameters(
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
@@ -698,7 +706,7 @@ class BinanceAccountHttpAPI:
         """
         Query all orders, active or filled.
         """
-        return await self._endpoint_all_orders._get(
+        return await self._endpoint_all_orders.get(
             parameters=self._endpoint_all_orders.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),
@@ -718,7 +726,7 @@ class BinanceAccountHttpAPI:
         """
         Query open orders.
         """
-        return await self._endpoint_open_orders._get(
+        return await self._endpoint_open_orders.get(
             parameters=self._endpoint_open_orders.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 timestamp=self._timestamp(),

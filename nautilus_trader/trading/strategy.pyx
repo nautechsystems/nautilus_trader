@@ -57,7 +57,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -139,13 +138,7 @@ cdef class Strategy(Actor):
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
-        self._manage_gtd_expiry = False
-
-        # Indicators
-        self._indicators: list[Indicator] = []
-        self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
-        self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
-        self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
+        self.manage_gtd_expiry = config.manage_gtd_expiry
 
         # Public components
         self.clock = self._clock
@@ -182,37 +175,6 @@ cdef class Strategy(Actor):
             config_path=self.config.fully_qualified_name(),
             config=self.config.dict(),
         )
-
-    @property
-    def registered_indicators(self):
-        """
-        Return the registered indicators for the strategy.
-
-        Returns
-        -------
-        list[Indicator]
-
-        """
-        return self._indicators.copy()
-
-    cpdef bint indicators_initialized(self):
-        """
-        Return a value indicating whether all indicators are initialized.
-
-        Returns
-        -------
-        bool
-            True if all initialized, else False
-
-        """
-        if not self._indicators:
-            return False
-
-        cdef Indicator indicator
-        for indicator in self._indicators:
-            if not indicator.initialized:
-                return False
-        return True
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -309,93 +271,14 @@ cdef class Strategy(Actor):
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
         self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
-    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
-        """
-        Register the given indicator with the strategy to receive quote tick
-        data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for tick updates.
-        indicator : Indicator
-            The indicator to register.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(indicator, "indicator")
-
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
-
-        if instrument_id not in self._indicators_for_quotes:
-            self._indicators_for_quotes[instrument_id] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_quotes[instrument_id]:
-            self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
-
-    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator):
-        """
-        Register the given indicator with the strategy to receive trade tick
-        data for the given instrument ID.
-
-        Parameters
-        ----------
-        instrument_id : InstrumentId
-            The instrument ID for tick updates.
-        indicator : indicator
-            The indicator to register.
-
-        """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(indicator, "indicator")
-
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
-
-        if instrument_id not in self._indicators_for_trades:
-            self._indicators_for_trades[instrument_id] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_trades[instrument_id]:
-            self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
-
-    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator):
-        """
-        Register the given indicator with the strategy to receive bar data for the
-        given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for bar updates.
-        indicator : Indicator
-            The indicator to register.
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(indicator, "indicator")
-
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
-
-        if bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[bar_type] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_bars[bar_type]:
-            self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
-
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
+        # Log configuration
+        self._log.info(f"{self.config.oms_type=}", LogColor.BLUE)
+        self._log.info(f"{self.config.external_order_claims=}", LogColor.BLUE)
+        self._log.info(f"{self.config.manage_gtd_expiry=}", LogColor.BLUE)
+
         cdef set client_order_ids = self.cache.client_order_ids(
             venue=None,
             instrument_id=None,
@@ -415,11 +298,24 @@ cdef class Strategy(Actor):
         self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
         self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
 
+        cdef list open_orders = self.cache.orders_open(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
+        cdef Order order
+        for order in open_orders:
+            if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+                self._set_gtd_expiry(order)
+
         self.on_start()
 
     cpdef void _reset(self):
         if self.order_factory:
             self.order_factory.reset()
+
+        self._pending_requests.clear()
 
         self._indicators.clear()
         self._indicators_for_quotes.clear()
@@ -434,7 +330,6 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
-        bint manage_gtd_expiry = False,
         ClientId client_id = None,
     ):
         """
@@ -454,8 +349,6 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        manage_gtd_expiry : bool, default False
-            If any GTD time in force order expiry should be managed by the strategy.
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -499,7 +392,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+        if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
             self._set_gtd_expiry(order)
 
         # Route order
@@ -514,7 +407,6 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
-        bint manage_gtd_expiry = False,
         ClientId client_id = None
     ):
         """
@@ -534,8 +426,6 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        manage_gtd_expiry : bool, default False
-            If any GTD time in force order expiry should be managed by the strategy.
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -597,7 +487,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if manage_gtd_expiry:
+        if self.manage_gtd_expiry:
             for order in command.order_list.orders:
                 if order.time_in_force == TimeInForce.GTD:
                     self._set_gtd_expiry(order)
@@ -1184,8 +1074,6 @@ cdef class Strategy(Actor):
             alert_time_ns=order.expire_time_ns,
             callback=self._expire_gtd_order,
         )
-        # For now, we flip this opt-in flag
-        self._manage_gtd_expiry = True
 
     cpdef void _expire_gtd_order(self, TimeEvent event):
         cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
@@ -1203,219 +1091,6 @@ cdef class Strategy(Actor):
         self.cancel_order(order)
 
     # -- HANDLERS -------------------------------------------------------------------------------------
-
-    cpdef void handle_quote_tick(self, QuoteTick tick):
-        """
-        Handle the given quote tick.
-
-        If state is ``RUNNING`` then passes to `on_quote_tick`.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(tick, "tick")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)
-        if indicators:
-            self._handle_indicators_for_quote(indicators, tick)
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_quote_tick(tick)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(tick)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_quote_ticks(self, list ticks):
-        """
-        Handle the given historical quote tick data by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[QuoteTick]
-            The ticks received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef QuoteTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}.")
-        else:
-            self._log.warning("Received <QuoteTick[]> data with no ticks.")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(first.instrument_id)
-
-        cdef:
-            int i
-            QuoteTick tick
-        for i in range(length):
-            tick = ticks[i]
-            if indicators:
-                self._handle_indicators_for_quote(indicators, tick)
-            self.handle_historical_data(tick)
-
-    cpdef void handle_trade_tick(self, TradeTick tick):
-        """
-        Handle the given trade tick.
-
-        If state is ``RUNNING`` then passes to `on_trade_tick`.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(tick, "tick")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)
-        if indicators:
-            self._handle_indicators_for_trade(indicators, tick)
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_trade_tick(tick)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(tick)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_trade_ticks(self, list ticks):
-        """
-        Handle the given historical trade tick data by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[TradeTick]
-            The ticks received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef TradeTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}.")
-        else:
-            self._log.warning("Received <TradeTick[]> data with no ticks.")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(first.instrument_id)
-
-        cdef:
-            int i
-            TradeTick tick
-        for i in range(length):
-            tick = ticks[i]
-            if indicators:
-                self._handle_indicators_for_trade(indicators, tick)
-            self.handle_historical_data(tick)
-
-    cpdef void handle_bar(self, Bar bar):
-        """
-        Handle the given bar data.
-
-        If state is ``RUNNING`` then passes to `on_bar`.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(bar, "bar")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar.bar_type)
-        if indicators:
-            self._handle_indicators_for_bar(indicators, bar)
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_bar(bar)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(bar)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_bars(self, list bars):
-        """
-        Handle the given historical bar data by handling each bar individually.
-
-        Parameters
-        ----------
-        bars : list[Bar]
-            The bars to handle.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(bars, "bars")  # Can be empty
-
-        cdef int length = len(bars)
-        cdef Bar first = bars[0] if length > 0 else None
-        cdef Bar last = bars[length - 1] if length > 0 else None
-
-        if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}.")
-        else:
-            self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
-            return
-
-        if length > 0 and first.ts_init > last.ts_init:
-            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(first.bar_type)
-
-        cdef:
-            int i
-            Bar bar
-        for i in range(length):
-            bar = bars[i]
-            if indicators:
-                self._handle_indicators_for_bar(indicators, bar)
-            self.handle_historical_data(bar)
 
     cpdef void handle_event(self, Event event):
         """
@@ -1441,7 +1116,7 @@ cdef class Strategy(Actor):
             self.log.info(f"{RECV}{EVT} {event}.")
 
         cdef Order order
-        if self._manage_gtd_expiry and isinstance(event, OrderEvent):
+        if self.manage_gtd_expiry and isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
             if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
@@ -1452,23 +1127,6 @@ cdef class Strategy(Actor):
             except Exception as e:
                 self.log.exception(f"Error on handling {repr(event)}", e)
                 raise
-
-# -- HANDLERS -------------------------------------------------------------------------------------
-
-    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_quote_tick(tick)
-
-    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_trade_tick(tick)
-
-    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_bar(bar)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 

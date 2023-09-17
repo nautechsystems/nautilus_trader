@@ -57,6 +57,7 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -117,6 +118,12 @@ cdef class Actor(Component):
         self._warning_events: set[type] = set()
         self._signal_classes: dict[str, type] = {}
         self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
+
+        # Indicators
+        self._indicators: list[Indicator] = []
+        self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
+        self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
+        self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
         # Configuration
         self.config = config
@@ -503,6 +510,37 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
+    @property
+    def registered_indicators(self):
+        """
+        Return the registered indicators for the strategy.
+
+        Returns
+        -------
+        list[Indicator]
+
+        """
+        return self._indicators.copy()
+
+    cpdef bint indicators_initialized(self):
+        """
+        Return a value indicating whether all indicators are initialized.
+
+        Returns
+        -------
+        bool
+            True if all initialized, else False
+
+        """
+        if not self._indicators:
+            return False
+
+        cdef Indicator indicator
+        for indicator in self._indicators:
+            if not indicator.initialized:
+                return False
+        return True
+
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register_base(
@@ -602,6 +640,90 @@ cdef class Actor(Component):
         self._warning_events.discard(event)
 
         self._log.debug(f"Deregistered `{event.__name__}` from warning log levels.")
+
+    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
+        """
+        Register the given indicator with the actor/strategy to receive quote tick
+        data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for tick updates.
+        indicator : Indicator
+            The indicator to register.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(indicator, "indicator")
+
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
+
+        if instrument_id not in self._indicators_for_quotes:
+            self._indicators_for_quotes[instrument_id] = []  # type: list[Indicator]
+
+        if indicator not in self._indicators_for_quotes[instrument_id]:
+            self._indicators_for_quotes[instrument_id].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
+
+    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator):
+        """
+        Register the given indicator with the actor/strategy to receive trade tick
+        data for the given instrument ID.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for tick updates.
+        indicator : indicator
+            The indicator to register.
+
+        """
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(indicator, "indicator")
+
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
+
+        if instrument_id not in self._indicators_for_trades:
+            self._indicators_for_trades[instrument_id] = []  # type: list[Indicator]
+
+        if indicator not in self._indicators_for_trades[instrument_id]:
+            self._indicators_for_trades[instrument_id].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
+
+    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator):
+        """
+        Register the given indicator with the actor/strategy to receive bar data for the
+        given bar type.
+
+        Parameters
+        ----------
+        bar_type : BarType
+            The bar type for bar updates.
+        indicator : Indicator
+            The indicator to register.
+
+        """
+        Condition.not_none(bar_type, "bar_type")
+        Condition.not_none(indicator, "indicator")
+
+        if indicator not in self._indicators:
+            self._indicators.append(indicator)
+
+        if bar_type not in self._indicators_for_bars:
+            self._indicators_for_bars[bar_type] = []  # type: list[Indicator]
+
+        if indicator not in self._indicators_for_bars[bar_type]:
+            self._indicators_for_bars[bar_type].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
+        else:
+            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -935,6 +1057,8 @@ cdef class Actor(Component):
         self.on_start()
 
     cpdef void _stop(self):
+        self.on_stop()
+
         # Clean up clock
         cdef list timer_names = self._clock.timer_names
         self._clock.cancel_timers()
@@ -947,14 +1071,18 @@ cdef class Actor(Component):
             self._log.info(f"Canceling executor tasks...")
             self._executor.cancel_all_tasks()
 
-        self.on_stop()
-
     cpdef void _resume(self):
         self.on_resume()
 
     cpdef void _reset(self):
-        self._pending_requests.clear()
         self.on_reset()
+
+        self._pending_requests.clear()
+
+        self._indicators.clear()
+        self._indicators_for_quotes.clear()
+        self._indicators_for_trades.clear()
+        self._indicators_for_bars.clear()
 
     cpdef void _dispose(self):
         self.on_dispose()
@@ -2386,11 +2514,16 @@ cdef class Actor(Component):
         """
         Condition.not_none(tick, "tick")
 
+        # Update indicators
+        cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)
+        if indicators:
+            self._handle_indicators_for_quote(indicators, tick)
+
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_quote_tick(tick)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(tick)}", e)
+                self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
     @cython.boundscheck(False)
@@ -2419,10 +2552,19 @@ cdef class Actor(Component):
             self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}.")
         else:
             self._log.warning("Received <QuoteTick[]> data with no ticks.")
+            return
 
-        cdef int i
+        # Update indicators
+        cdef list indicators = self._indicators_for_quotes.get(first.instrument_id)
+
+        cdef:
+            int i
+            QuoteTick tick
         for i in range(length):
-            self.handle_historical_data(ticks[i])
+            tick = ticks[i]
+            if indicators:
+                self._handle_indicators_for_quote(indicators, tick)
+            self.handle_historical_data(tick)
 
     cpdef void handle_trade_tick(self, TradeTick tick):
         """
@@ -2442,18 +2584,23 @@ cdef class Actor(Component):
         """
         Condition.not_none(tick, "tick")
 
+        # Update indicators
+        cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)
+        if indicators:
+            self._handle_indicators_for_trade(indicators, tick)
+
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_trade_tick(tick)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(tick)}", e)
+                self.log.exception(f"Error on handling {repr(tick)}", e)
                 raise
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
     cpdef void handle_trade_ticks(self, list ticks):
         """
-        Handle the given tick data by handling each tick individually.
+        Handle the given historical trade tick data by handling each tick individually.
 
         Parameters
         ----------
@@ -2475,10 +2622,19 @@ cdef class Actor(Component):
             self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}.")
         else:
             self._log.warning("Received <TradeTick[]> data with no ticks.")
+            return
 
-        cdef int i
+        # Update indicators
+        cdef list indicators = self._indicators_for_trades.get(first.instrument_id)
+
+        cdef:
+            int i
+            TradeTick tick
         for i in range(length):
-            self.handle_historical_data(ticks[i])
+            tick = ticks[i]
+            if indicators:
+                self._handle_indicators_for_trade(indicators, tick)
+            self.handle_historical_data(tick)
 
     cpdef void handle_bar(self, Bar bar):
         """
@@ -2498,11 +2654,16 @@ cdef class Actor(Component):
         """
         Condition.not_none(bar, "bar")
 
+        # Update indicators
+        cdef list indicators = self._indicators_for_bars.get(bar.bar_type)
+        if indicators:
+            self._handle_indicators_for_bar(indicators, bar)
+
         if self._fsm.state == ComponentState.RUNNING:
             try:
                 self.on_bar(bar)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(bar)}", e)
+                self.log.exception(f"Error on handling {repr(bar)}", e)
                 raise
 
     @cython.boundscheck(False)
@@ -2536,9 +2697,17 @@ cdef class Actor(Component):
         if length > 0 and first.ts_init > last.ts_init:
             raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
 
-        cdef int i
+        # Update indicators
+        cdef list indicators = self._indicators_for_bars.get(first.bar_type)
+
+        cdef:
+            int i
+            Bar bar
         for i in range(length):
-            self.handle_historical_data(bars[i])
+            bar = bars[i]
+            if indicators:
+                self._handle_indicators_for_bar(indicators, bar)
+            self.handle_historical_data(bar)
 
     cpdef void handle_venue_status_update(self, VenueStatusUpdate update):
         """
@@ -2720,6 +2889,21 @@ cdef class Actor(Component):
         callback: Callable | None = self._pending_requests.pop(request_id, None)
         if callback is not None:
             callback(request_id)
+
+    cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_quote_tick(tick)
+
+    cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick):
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_trade_tick(tick)
+
+    cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar):
+        cdef Indicator indicator
+        for indicator in indicators:
+            indicator.handle_bar(bar)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

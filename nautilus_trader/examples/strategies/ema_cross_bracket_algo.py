@@ -66,8 +66,6 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
-    manage_gtd_expiry : bool, default True
-        If the expiry for orders with a time in force of 'GTD' will be managed by the strategy.
     entry_exec_algorithm_id : str, optional
         The execution algorithm for entry orders.
     entry_exec_algorithm_params : dict[str, Any], optional
@@ -88,6 +86,8 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     oms_type : OmsType
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
+    manage_gtd_expiry : bool, default True
+        If all order GTD time in force expirations should be managed by the strategy.
 
     """
 
@@ -99,7 +99,6 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
     emulation_trigger: str = "NO_TRIGGER"
-    manage_gtd_expiry: bool = True
     entry_exec_algorithm_id: Optional[str] = None
     entry_exec_algorithm_params: Optional[dict[str, Any]] = None
     sl_exec_algorithm_id: Optional[str] = None
@@ -282,7 +281,7 @@ class EMACrossBracketAlgo(Strategy):
             tp_exec_algorithm_params=self.tp_exec_algorithm_params,
         )
 
-        self.submit_order_list(order_list, manage_gtd_expiry=True)
+        self.submit_order_list(order_list)
 
     def sell(self, last_bar: Bar) -> None:
         """
@@ -314,7 +313,7 @@ class EMACrossBracketAlgo(Strategy):
             tp_exec_algorithm_params=self.tp_exec_algorithm_params,
         )
 
-        self.submit_order_list(order_list, manage_gtd_expiry=True)
+        self.submit_order_list(order_list)
 
     def on_data(self, data: Data) -> None:
         """

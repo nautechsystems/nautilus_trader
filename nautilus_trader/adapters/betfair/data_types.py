@@ -181,6 +181,13 @@ class BetfairTicker(Ticker):
             "starting_price_far": self.starting_price_far,
         }
 
+    def __repr__(self):
+        return (
+            f"BetfairTicker(instrument_id={self.instrument_id.value}, ltp={self.last_traded_price}, "
+            f"tv={self.traded_volume}, spn={self.starting_price_near}, spf={self.starting_price_far},"
+            f" ts_init={self.ts_init})"
+        )
+
 
 class BetfairStartingPrice(Data):
     """

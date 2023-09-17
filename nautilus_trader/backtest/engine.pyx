@@ -1026,6 +1026,7 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
+        cdef SimulatedExchange venue
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1038,19 +1039,26 @@ cdef class BacktestEngine:
 
                 # Process data through venue
                 if isinstance(data, OrderBookDelta):
-                    self._venues[data.instrument_id.venue].process_order_book_delta(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
-                    self._venues[data.instrument_id.venue].process_order_book_deltas(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_order_book_deltas(data)
                 elif isinstance(data, QuoteTick):
-                    self._venues[data.instrument_id.venue].process_quote_tick(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_quote_tick(data)
                 elif isinstance(data, TradeTick):
-                    self._venues[data.instrument_id.venue].process_trade_tick(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_trade_tick(data)
                 elif isinstance(data, Bar):
-                    self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+                    venue = self._venues[data.bar_type.instrument_id.venue]
+                    venue.process_bar(data)
                 elif isinstance(data, VenueStatusUpdate):
-                    self._venues[data.venue].process_venue_status(data)
+                    venue = self._venues[data.venue]
+                    venue.process_venue_status(data)
                 elif isinstance(data, InstrumentStatusUpdate):
-                    self._venues[data.instrument_id.venue].process_instrument_status(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_instrument_status(data)
 
                 self._data_engine.process(data)
 

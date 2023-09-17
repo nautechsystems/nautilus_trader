@@ -199,6 +199,7 @@ class TestStrategy:
             "order_id_tag": None,
             "strategy_id": None,
             "external_order_claims": None,
+            "manage_gtd_expiry": False,
         }
 
     def test_strategy_to_importable_config(self):
@@ -207,6 +208,7 @@ class TestStrategy:
             order_id_tag="001",
             strategy_id="ALPHA-01",
             external_order_claims=["ETHUSDT-PERP.DYDX"],
+            manage_gtd_expiry=True,
         )
 
         strategy = Strategy(config=config)
@@ -223,6 +225,7 @@ class TestStrategy:
             "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
+            "manage_gtd_expiry": True,
         }
 
     def test_strategy_equality(self):
@@ -874,7 +877,8 @@ class TestStrategy:
 
     def test_submit_order_with_managed_gtd_starts_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -894,7 +898,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order(order, manage_gtd_expiry=True)
+        strategy.submit_order(order)
 
         # Assert
         assert strategy.clock.timer_count == 1
@@ -902,7 +906,8 @@ class TestStrategy:
 
     def test_submit_order_with_managed_gtd_when_immediately_filled_cancels_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -922,7 +927,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order(order, manage_gtd_expiry=True)
+        strategy.submit_order(order)
         self.exchange.process(0)
 
         # Assert
@@ -1086,7 +1091,8 @@ class TestStrategy:
 
     def test_submit_order_list_with_managed_gtd_starts_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1109,7 +1115,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        strategy.submit_order_list(bracket)
         self.exchange.process(0)
 
         # Assert
@@ -1118,7 +1124,8 @@ class TestStrategy:
 
     def test_submit_order_list_with_managed_gtd_when_immediately_filled_cancels_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1141,7 +1148,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        strategy.submit_order_list(bracket)
         self.exchange.process(0)
 
         # Assert
@@ -1152,7 +1159,8 @@ class TestStrategy:
 
     def test_cancel_gtd_expiry(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1171,7 +1179,7 @@ class TestStrategy:
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
-        strategy.submit_order(order, manage_gtd_expiry=True)
+        strategy.submit_order(order)
 
         # Act
         strategy.cancel_gtd_expiry(order)

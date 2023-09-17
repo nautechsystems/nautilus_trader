@@ -6,18 +6,21 @@ Released on TBD (UTC).
 - Added `ParquetDataCatalog` v2 supporting built-in data types `OrderBookDelta`, `QuoteTick`, `TradeTick` and `Bar`
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
+- Added Binance Futures support for GTD orders
+- Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
+- Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
 
 ### Breaking Changes
-None
+- Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 
 ### Fixes
 - Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
 - Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
 - Fixed `SandboxExecutionClientConfig` `kw_only=True` to allow importing without initializing
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
-- Fixed `Binance` instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
+- Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed open position snapshots race condition (added `open_only` flag)
 
 ---
