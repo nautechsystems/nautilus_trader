@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 from typing import Optional
 
 from libc.stdint cimport uint8_t
@@ -240,7 +241,7 @@ cdef class BookOrder:
 
 cdef class OrderBookDelta(Data):
     """
-    Represents a single difference on an `OrderBook`.
+    Represents a single update/difference on an `OrderBook`.
 
     Parameters
     ----------
@@ -249,7 +250,7 @@ cdef class OrderBookDelta(Data):
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
     order : BookOrder
-        The order to apply.
+        The order for the delta.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -257,7 +258,8 @@ cdef class OrderBookDelta(Data):
     flags : uint8_t, default 0 (no flags)
         A combination of packet end with matching engine status.
     sequence : uint64_t, default 0
-        The unique sequence number for the update. If default 0 then will increment the `sequence`.
+        The unique sequence number for the update.
+        If default 0 then will increment the `sequence`.
     """
 
     def __init__(
