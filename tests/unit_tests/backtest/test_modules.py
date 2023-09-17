@@ -71,10 +71,10 @@ class TestSimulationModules:
     def test_python_module(self):
         # Arrange
         class PythonModule(SimulationModule):
-            def process(self, ts_now: int):
+            def process(self, ts_now: int) -> None:
                 assert self.exchange
 
-            def log_diagnostics(self, log: LoggerAdapter):
+            def log_diagnostics(self, log: LoggerAdapter) -> None:
                 pass
 
         config = SimulationModuleConfig()
@@ -83,19 +83,19 @@ class TestSimulationModules:
         # Act
         engine.run()
 
-    def test_pre_data_custom_order_fill(self):
+    def test_pre_process_custom_order_fill(self):
         # Arrange
         class PythonModule(SimulationModule):
-            def pre_data(self, data: Data):
+            def pre_process(self, data: Data) -> None:
                 if data.ts_init == 1359676979900000000:
                     assert data
                     matching_engine = self.exchange.get_matching_engine(data.instrument_id)
                     assert matching_engine
 
-            def process(self, ts_now: int):
+            def process(self, ts_now: int) -> None:
                 assert self.exchange
 
-            def log_diagnostics(self, log: LoggerAdapter):
+            def log_diagnostics(self, log: LoggerAdapter) -> None:
                 pass
 
         config = SimulationModuleConfig()

@@ -1026,6 +1026,7 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
+        cdef SimulatedExchange venue
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1036,24 +1037,28 @@ cdef class BacktestEngine:
                     raw_handlers = self._advance_time(data.ts_init, clocks)
                     raw_handlers_count = raw_handlers.len
 
-                # Run pre-process for any simulation_modules
-                self._run_pre_process_simulation_modules(data)
-
                 # Process data through venue
                 if isinstance(data, OrderBookDelta):
-                    self._venues[data.instrument_id.venue].process_order_book_delta(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
-                    self._venues[data.instrument_id.venue].process_order_book_deltas(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_order_book_deltas(data)
                 elif isinstance(data, QuoteTick):
-                    self._venues[data.instrument_id.venue].process_quote_tick(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_quote_tick(data)
                 elif isinstance(data, TradeTick):
-                    self._venues[data.instrument_id.venue].process_trade_tick(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_trade_tick(data)
                 elif isinstance(data, Bar):
-                    self._venues[data.bar_type.instrument_id.venue].process_bar(data)
+                    venue = self._venues[data.bar_type.instrument_id.venue]
+                    venue.process_bar(data)
                 elif isinstance(data, VenueStatusUpdate):
-                    self._venues[data.venue].process_venue_status(data)
+                    venue = self._venues[data.venue]
+                    venue.process_venue_status(data)
                 elif isinstance(data, InstrumentStatusUpdate):
-                    self._venues[data.instrument_id.venue].process_instrument_status(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_instrument_status(data)
 
                 self._data_engine.process(data)
 
@@ -1167,23 +1172,6 @@ cdef class BacktestEngine:
                 ts_last_init = ts_event_init
                 for exchange in self._venues.values():
                     exchange.process(ts_event_init)
-
-    def _run_pre_process_simulation_modules(self, data: Data):
-        # Determine Venue
-        instrument_id: Optional[InstrumentId] = None
-        if isinstance(data, (OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, InstrumentStatusUpdate)):
-            instrument_id = data.instrument_id
-        elif isinstance(data, Bar):
-            instrument_id = data.bar_type.instrument_id
-        else:
-            if hasattr(data, "instrument_id"):
-                instrument_id = data.instrument_id
-            else:
-                return
-
-        venue = self._venues[instrument_id.venue]
-        for module in venue.modules:
-            module.pre_process(data)
 
     def _log_pre_run(self):
         log_memory(self._log)
