@@ -18,16 +18,16 @@ import pytest
 from nautilus_trader.core.nautilus_pyo3.core import UUID4
 from nautilus_trader.core.nautilus_pyo3.model import AccountId
 from nautilus_trader.core.nautilus_pyo3.model import ClientOrderId
+from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
 from nautilus_trader.core.nautilus_pyo3.model import MarketOrder
 from nautilus_trader.core.nautilus_pyo3.model import OrderSide
 from nautilus_trader.core.nautilus_pyo3.model import PositionSide
 from nautilus_trader.core.nautilus_pyo3.model import Quantity
 from nautilus_trader.core.nautilus_pyo3.model import StrategyId
 from nautilus_trader.core.nautilus_pyo3.model import TraderId
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
-AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
+AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
 
 pytestmark = pytest.mark.skip(reason="WIP")
 
@@ -38,9 +38,6 @@ class TestOrders:
         self.trader_id = TraderId("TESTER-000")
         self.strategy_id = StrategyId("S-001")
         self.account_id = AccountId("SIM-000")
-
-    def test_identifier(self):
-        TraderId("")
 
     def test_opposite_side_given_invalid_value_raises_value_error(self):
         # Arrange, Act, Assert
@@ -109,7 +106,7 @@ class TestOrders:
         order = MarketOrder(
             self.trader_id,
             self.strategy_id,
-            AUDUSD_SIM.id,
+            AUDUSD_SIM,
             ClientOrderId("O-123456"),
             order_side,
             Quantity.from_int(1),
@@ -129,10 +126,10 @@ class TestOrders:
             MarketOrder(
                 self.trader_id,
                 self.strategy_id,
-                AUDUSD_SIM.id,
+                AUDUSD_SIM,
                 ClientOrderId("O-123456"),
                 OrderSide.BUY,
-                Quantity.zero(),  # <- invalid
+                Quantity.zero(),  # <-- Invalid value
                 UUID4(),
                 0,
             )
@@ -143,7 +140,7 @@ class TestOrders:
     #         MarketOrder(
     #             self.trader_id,
     #             self.strategy_id,
-    #             AUDUSD_SIM.id,
+    #             AUDUSD_SIM,
     #             ClientOrderId("O-123456"),
     #             OrderSide.BUY,
     #             Quantity.from_int(100_000),
@@ -158,7 +155,7 @@ class TestOrders:
     #         StopMarketOrder(
     #             self.trader_id,
     #             self.strategy_id,
-    #             AUDUSD_SIM.id,
+    #             AUDUSD_SIM,
     #             ClientOrderId("O-123456"),
     #             OrderSide.BUY,
     #             Quantity.from_int(100_000),
@@ -175,7 +172,7 @@ class TestOrders:
     #         StopLimitOrder(
     #             self.trader_id,
     #             self.strategy_id,
-    #             AUDUSD_SIM.id,
+    #             AUDUSD_SIM,
     #             ClientOrderId("O-123456"),
     #             OrderSide.BUY,
     #             Quantity.from_int(100_000),
@@ -193,7 +190,7 @@ class TestOrders:
     #         MarketToLimitOrder(
     #             self.trader_id,
     #             self.strategy_id,
-    #             AUDUSD_SIM.id,
+    #             AUDUSD_SIM,
     #             ClientOrderId("O-123456"),
     #             OrderSide.BUY,
     #             Quantity.from_int(100_000),
@@ -205,7 +202,7 @@ class TestOrders:
     # def test_overfill_limit_buy_order_raises_value_error(self):
     #     # Arrange, Act, Assert
     #     order = self.order_factory.limit(
-    #         AUDUSD_SIM.id,
+    #         AUDUSD_SIM,
     #         OrderSide.BUY,
     #         Quantity.from_int(100_000),
     #         Price.from_str("1.00000"),
@@ -226,7 +223,7 @@ class TestOrders:
     # def test_reset_order_factory(self):
     #     # Arrange
     #     self.order_factory.limit(
-    #         AUDUSD_SIM.id,
+    #         AUDUSD_SIM,
     #         OrderSide.BUY,
     #         Quantity.from_int(100_000),
     #         Price.from_str("1.00000"),
@@ -236,7 +233,7 @@ class TestOrders:
     #     self.order_factory.reset()
     #
     #     order2 = self.order_factory.limit(
-    #         AUDUSD_SIM.id,
+    #         AUDUSD_SIM,
     #         OrderSide.BUY,
     #         Quantity.from_int(100_000),
     #         Price.from_str("1.00000"),
