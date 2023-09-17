@@ -133,7 +133,9 @@ impl UUID4 {
         let slice = bytes.as_bytes();
 
         if slice.len() != 37 {
-            panic!("Invalid state for deserialzing, incorrect bytes length")
+            return Err(to_pyvalue_err(
+                "Invalid state for deserialzing, incorrect bytes length",
+            ));
         }
 
         self.value.copy_from_slice(slice);
@@ -148,6 +150,11 @@ impl UUID4 {
         let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
         Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(Self::new()) // Safe default
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -169,12 +176,7 @@ impl UUID4 {
     }
 
     fn __repr__(&self) -> String {
-        format!("UUID4('{self}')")
-    }
-
-    #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new()) // Safe default
+        format!("{}('{}')", stringify!(UUID4), self)
     }
 
     #[getter]
