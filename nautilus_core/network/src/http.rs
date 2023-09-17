@@ -40,13 +40,19 @@ pub struct InnerHttpClient {
     header_keys: Vec<String>,
 }
 
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct HttpClient {
     rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     client: InnerHttpClient,
 }
 
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HttpMethod {
     GET,
@@ -79,8 +85,11 @@ impl HttpMethod {
 }
 
 /// HttpResponse contains relevant data from a HTTP request.
-#[pyclass]
 #[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct HttpResponse {
     #[pyo3(get)]
     pub status: u16,
@@ -102,6 +111,15 @@ impl Default for InnerHttpClient {
 
 #[pymethods]
 impl HttpResponse {
+    #[new]
+    fn new(status: u16, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            body,
+            headers: Default::default(),
+        }
+    }
+
     #[getter]
     fn get_body(&self, py: Python) -> PyResult<Py<PyBytes>> {
         Ok(PyBytes::new(py, &self.body).into())
