@@ -17,6 +17,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.config import ActorConfig
+from nautilus_trader.core.data import Data
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -68,6 +69,10 @@ cdef class SimulationModule(Actor):
         Condition.not_none(exchange, "exchange")
 
         self.exchange = exchange
+
+    cpdef void pre_data(self, Data data):
+        """Abstract method (implement in subclass)."""
+        pass
 
     cpdef void process(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""

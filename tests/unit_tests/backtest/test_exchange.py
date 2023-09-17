@@ -2496,6 +2496,40 @@ class TestSimulatedExchange:
         assert order.avg_px == 90.100
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
+    def test_process_trade_tick_fills_sell_limit_order(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.100"),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        trade = TestDataStubs.trade_tick(
+            instrument=USDJPY_SIM,
+            price=91.000,
+        )
+
+        self.exchange.process_trade_tick(trade)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert len(self.exchange.get_open_orders()) == 0
+        assert order.avg_px == 90.100
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
+
     def test_realized_pnl_contains_commission(self) -> None:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
@@ -2814,3 +2848,139 @@ class TestSimulatedExchange:
         # Assert
         assert entry.status == OrderStatus.ACCEPTED
         assert entry.quantity == 200000
+
+
+class TestSimulatedExchangeL2:
+    def setup(self) -> None:
+        # Fixture Setup
+        self.clock = TestClock()
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
+
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            clock=self.clock,
+            cache=self.cache,
+            logger=self.logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config=ExecEngineConfig(debug=True),
+        )
+
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config=RiskEngineConfig(debug=True),
+        )
+
+        self.exchange = SimulatedExchange(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            default_leverage=Decimal(50),
+            leverages={AUDUSD_SIM.id: Decimal(10)},
+            instruments=[USDJPY_SIM],
+            modules=[],
+            fill_model=FillModel(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            latency_model=LatencyModel(0),
+            book_type=BookType.L2_MBP,
+        )
+
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Wire up components
+        self.exec_engine.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
+
+        self.cache.add_instrument(USDJPY_SIM)
+
+        # Create mock strategy
+        self.strategy = MockStrategy(bar_type=TestDataStubs.bartype_usdjpy_1min_bid())
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Start components
+        self.exchange.reset()
+        self.data_engine.start()
+        self.exec_engine.start()
+        self.strategy.start()
+
+    def test_process_trade_tick_fills_sell_limit_order(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.100"),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        trade = TestDataStubs.trade_tick(
+            instrument=USDJPY_SIM,
+            price=91.000,
+        )
+
+        self.exchange.process_trade_tick(trade)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert len(self.exchange.get_open_orders()) == 0
+        assert order.avg_px == 90.100
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)

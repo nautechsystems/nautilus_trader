@@ -1036,6 +1036,12 @@ cdef class BacktestEngine:
                     raw_handlers = self._advance_time(data.ts_init, clocks)
                     raw_handlers_count = raw_handlers.len
 
+                # Run pre-process for any simulation_modules
+                if isinstance(data, (OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, Bar, InstrumentStatusUpdate)):
+                    venue = self._venues[data.instrument_id.venue]
+                    for module in venue.modules:
+                        module.pre_data(data)
+
                 # Process data through venue
                 if isinstance(data, OrderBookDelta):
                     self._venues[data.instrument_id.venue].process_order_book_delta(data)
