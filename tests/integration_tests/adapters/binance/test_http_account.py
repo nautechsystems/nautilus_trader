@@ -56,7 +56,7 @@ class TestBinanceSpotAccountHttpAPI:
         )
 
         # Act
-        await endpoint._post(
+        await endpoint.post(
             parameters=endpoint.PostParameters(
                 symbol=BinanceSymbol("ETHUSDT"),
                 side=BinanceOrderSide.SELL,
