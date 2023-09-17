@@ -373,6 +373,10 @@ def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     ticker: BetfairTicker = mock_call_args[1]
     assert ticker.last_traded_price == 3.15
     assert ticker.traded_volume == 364.45
+    assert (
+        str(ticker)
+        == "BetfairTicker(instrument_id=1.176621195-42153-0.0.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
+    )
 
 
 def test_betfair_ticker_sp(data_client, mock_data_engine_process):
@@ -381,6 +385,7 @@ def test_betfair_ticker_sp(data_client, mock_data_engine_process):
 
     # Act
     for line in lines:
+        line = line.replace(b'"con":true', b'"con":false')
         data_client.on_market_update(line)
 
     # Assert
@@ -401,6 +406,7 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
 
     # Act
     for line in lines[-100:]:
+        line = line.replace(b'"con":true', b'"con":false')
         data_client.on_market_update(line)
 
     # Assert

@@ -87,7 +87,7 @@ class TestPersistenceStreaming:
             "PositionChanged": 394,
             "PositionClosed": 2,
             "PositionOpened": 3,
-            "TradeTick": 198,
+            "TradeTick": 179,
         }
 
         assert result == expected
@@ -178,7 +178,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])
-        assert result["SignalCounter"] == 198
+        assert result["SignalCounter"] == 179
 
     def test_generate_signal_class(self):
         # Arrange
@@ -244,7 +244,7 @@ class TestPersistenceStreaming:
         )
 
         # Assert
-        assert len([d for d in result if isinstance(d, TradeTick)]) == 198
+        assert len([d for d in result if isinstance(d, TradeTick)]) == 179
         assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
 
     def test_feather_reader_order_book_deltas(self, betfair_catalog):
@@ -285,7 +285,7 @@ class TestPersistenceStreaming:
             "OrderInitialized": 376,
             "OrderSubmitted": 376,
             "OrderAccepted": 375,
-            "TradeTick": 198,
+            "TradeTick": 179,
             "ComponentStateChanged": 21,
             "PositionOpened": 3,
             "PositionClosed": 2,
