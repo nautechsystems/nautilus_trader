@@ -2905,7 +2905,7 @@ class TestSimulatedExchangeL2:
         )
 
         class TradeTickFillModule(SimulationModule):
-            def pre_data(self, data):
+            def pre_process(self, data):
                 if isinstance(data, TradeTick):
                     matching_engine = self.exchange.get_matching_engine(data.instrument_id)
                     book = matching_engine.get_book()
@@ -3002,7 +3002,7 @@ class TestSimulatedExchangeL2:
             instrument=USDJPY_SIM,
             price=91.000,
         )
-        self.module.pre_data(trade)
+        self.module.pre_process(trade)
         self.exchange.process_trade_tick(trade)
 
         # Assert
