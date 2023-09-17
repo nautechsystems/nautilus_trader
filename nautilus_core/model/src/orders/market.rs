@@ -353,14 +353,15 @@ impl From<OrderInitialized> for MarketOrder {
 impl MarketOrder {
     #[new]
     #[pyo3(signature = (
-        trader_id, strategy_id,
+        trader_id,
+        strategy_id,
         instrument_id,
         client_order_id,
         order_side,
         quantity,
-        time_in_force,
         init_id,
         ts_init,
+        time_in_force=TimeInForce::Gtd,
         reduce_only=false,
         quote_quantity=false,
         contingency_type=None,
@@ -380,9 +381,9 @@ impl MarketOrder {
         client_order_id: ClientOrderId,
         order_side: OrderSide,
         quantity: Quantity,
-        time_in_force: TimeInForce,
         init_id: UUID4,
         ts_init: UnixNanos,
+        time_in_force: TimeInForce,
         reduce_only: bool,
         quote_quantity: bool,
         contingency_type: Option<ContingencyType>,
