@@ -1057,6 +1057,8 @@ cdef class Actor(Component):
         self.on_start()
 
     cpdef void _stop(self):
+        self.on_stop()
+
         # Clean up clock
         cdef list timer_names = self._clock.timer_names
         self._clock.cancel_timers()
@@ -1069,20 +1071,18 @@ cdef class Actor(Component):
             self._log.info(f"Canceling executor tasks...")
             self._executor.cancel_all_tasks()
 
-        self.on_stop()
-
     cpdef void _resume(self):
         self.on_resume()
 
     cpdef void _reset(self):
+        self.on_reset()
+
         self._pending_requests.clear()
 
         self._indicators.clear()
         self._indicators_for_quotes.clear()
         self._indicators_for_trades.clear()
         self._indicators_for_bars.clear()
-
-        self.on_reset()
 
     cpdef void _dispose(self):
         self.on_dispose()

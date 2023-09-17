@@ -112,9 +112,9 @@ It's possible for the strategy to manage expiry for orders with a time in force 
 This may be desirable if the exchange/broker does not support this time in force option, or for any
 reason you prefer the strategy to manage this.
 
-Simply set the `manage_gtd_expiry` boolean flag on the `submit_order()` or `submit_order_list()` methods
-to `True`. This will then start a timer, when the timer expires the order will be canceled (if not already closed).
+To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
+a time in force of GTD, the strategy will automatically start an internal time alert.
+Once the internal GTD time alert is reached, the order will be canceled (if not already closed).
 
-```python
-strategy.submit_order(order, manage_gtd_expiry=True)
-```
+Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
+`managed_gtd_expiry` you should set `use_gtd=False` for your execution client config.

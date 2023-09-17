@@ -443,6 +443,9 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     external_order_claims : list[str], optional
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.
+    manage_gtd_expiry : bool, default False
+        If all order GTD time in force expirations should be managed by the strategy.
+        If True then will ensure open orders have their GTD timers re-activated on start.
 
     """
 
@@ -450,6 +453,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     order_id_tag: Optional[str] = None
     oms_type: Optional[str] = None
     external_order_claims: Optional[list[str]] = None
+    manage_gtd_expiry: bool = False
 
 
 class ImportableStrategyConfig(NautilusConfig, frozen=True):

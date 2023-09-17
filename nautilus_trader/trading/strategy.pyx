@@ -138,7 +138,7 @@ cdef class Strategy(Actor):
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
-        self._manage_gtd_expiry = False
+        self.manage_gtd_expiry = config.manage_gtd_expiry
 
         # Public components
         self.clock = self._clock
@@ -274,6 +274,11 @@ cdef class Strategy(Actor):
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
+        # Log configuration
+        self._log.info(f"{self.config.oms_type=}", LogColor.BLUE)
+        self._log.info(f"{self.config.external_order_claims=}", LogColor.BLUE)
+        self._log.info(f"{self.config.manage_gtd_expiry=}", LogColor.BLUE)
+
         cdef set client_order_ids = self.cache.client_order_ids(
             venue=None,
             instrument_id=None,
@@ -293,11 +298,29 @@ cdef class Strategy(Actor):
         self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
         self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
 
+        cdef list open_orders = self.cache.orders_open(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
+        cdef Order order
+        for order in open_orders:
+            if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+                self._set_gtd_expiry(order)
+
         self.on_start()
 
     cpdef void _reset(self):
         if self.order_factory:
             self.order_factory.reset()
+
+        self._pending_requests.clear()
+
+        self._indicators.clear()
+        self._indicators_for_quotes.clear()
+        self._indicators_for_trades.clear()
+        self._indicators_for_bars.clear()
 
         self.on_reset()
 
@@ -307,7 +330,6 @@ cdef class Strategy(Actor):
         self,
         Order order,
         PositionId position_id = None,
-        bint manage_gtd_expiry = False,
         ClientId client_id = None,
     ):
         """
@@ -327,8 +349,6 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        manage_gtd_expiry : bool, default False
-            If any GTD time in force order expiry should be managed by the strategy.
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -372,7 +392,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+        if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
             self._set_gtd_expiry(order)
 
         # Route order
@@ -387,7 +407,6 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
-        bint manage_gtd_expiry = False,
         ClientId client_id = None
     ):
         """
@@ -407,8 +426,6 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        manage_gtd_expiry : bool, default False
-            If any GTD time in force order expiry should be managed by the strategy.
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -470,7 +487,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if manage_gtd_expiry:
+        if self.manage_gtd_expiry:
             for order in command.order_list.orders:
                 if order.time_in_force == TimeInForce.GTD:
                     self._set_gtd_expiry(order)
@@ -1057,8 +1074,6 @@ cdef class Strategy(Actor):
             alert_time_ns=order.expire_time_ns,
             callback=self._expire_gtd_order,
         )
-        # For now, we flip this opt-in flag
-        self._manage_gtd_expiry = True
 
     cpdef void _expire_gtd_order(self, TimeEvent event):
         cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
@@ -1101,7 +1116,7 @@ cdef class Strategy(Actor):
             self.log.info(f"{RECV}{EVT} {event}.")
 
         cdef Order order
-        if self._manage_gtd_expiry and isinstance(event, OrderEvent):
+        if self.manage_gtd_expiry and isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
             if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)

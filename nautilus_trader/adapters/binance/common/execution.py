@@ -151,6 +151,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             logger=logger,
         )
 
+        # Configuration
         self._binance_account_type = account_type
         self._use_gtd = config.use_gtd
         self._use_reduce_only = config.use_reduce_only
@@ -568,6 +569,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
         return time_in_force
 
+    def _determine_good_till_date(self, order: Order) -> Optional[int]:
+        good_till_date = nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None
+        if self._binance_account_type.is_spot_or_margin:
+            good_till_date = None
+            self._log.warning("Cannot set GTD time in force with `expiry_time` for Binance Spot.")
+        return good_till_date
+
     def _determine_reduce_only(self, order: Order) -> bool:
         return order.is_reduce_only if self._use_reduce_only else False
 
@@ -648,7 +656,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             side=self._enum_parser.parse_internal_order_side(order.side),
             order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=time_in_force,
-            good_till_date=nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None,
+            good_till_date=self._determine_good_till_date(order),
             quantity=str(order.quantity),
             price=str(order.price),
             iceberg_qty=str(order.display_qty) if order.display_qty is not None else None,
@@ -676,7 +684,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             side=self._enum_parser.parse_internal_order_side(order.side),
             order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=self._determine_time_in_force(order),
-            good_till_date=nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None,
+            good_till_date=self._determine_good_till_date(order),
             quantity=str(order.quantity),
             price=str(order.price),
             stop_price=str(order.trigger_price),
@@ -720,7 +728,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             side=self._enum_parser.parse_internal_order_side(order.side),
             order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=self._determine_time_in_force(order),
-            good_till_date=nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None,
+            good_till_date=self._determine_good_till_date(order),
             quantity=str(order.quantity),
             stop_price=str(order.trigger_price),
             working_type=working_type,
@@ -772,7 +780,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             side=self._enum_parser.parse_internal_order_side(order.side),
             order_type=self._enum_parser.parse_internal_order_type(order),
             time_in_force=self._determine_time_in_force(order),
-            good_till_date=nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None,
+            good_till_date=self._determine_good_till_date(order),
             quantity=str(order.quantity),
             activation_price=str(activation_price),
             callback_rate=str(order.trailing_offset / 100),
