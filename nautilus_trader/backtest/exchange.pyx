@@ -644,6 +644,10 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(delta, "delta")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(delta)
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(delta.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
@@ -661,6 +665,10 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(deltas, "deltas")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(deltas)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(deltas.instrument_id)
         if matching_engine is None:
@@ -682,6 +690,10 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(tick, "tick")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(tick)
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
@@ -701,6 +713,10 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(tick, "tick")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(tick)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
         if matching_engine is None:
@@ -722,6 +738,10 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(bar, "bar")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(bar)
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(bar.bar_type.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
@@ -740,6 +760,10 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(update, "status")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(update)
+
         cdef OrderMatchingEngine matching_engine
         for matching_engine in self._matching_engines.values():
             matching_engine.process_status(update.status)
@@ -755,6 +779,10 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(update, "status")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(update)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(update.instrument_id)
         if matching_engine is None:
