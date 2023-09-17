@@ -74,7 +74,7 @@ class BinancePingHttp(BinanceHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder()
 
-    async def _get(self) -> dict:
+    async def get(self) -> dict:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
@@ -108,7 +108,7 @@ class BinanceTimeHttp(BinanceHttpEndpoint):
         super().__init__(client, methods, url_path)
         self._get_resp_decoder = msgspec.json.Decoder(BinanceTime)
 
-    async def _get(self) -> BinanceTime:
+    async def get(self) -> BinanceTime:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
@@ -167,7 +167,7 @@ class BinanceDepthHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol
         limit: Optional[int] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceDepth:
+    async def get(self, parameters: GetParameters) -> BinanceDepth:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -221,7 +221,7 @@ class BinanceTradesHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol
         limit: Optional[int] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
+    async def get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -278,7 +278,7 @@ class BinanceHistoricalTradesHttp(BinanceHttpEndpoint):
         limit: Optional[int] = None
         fromId: Optional[int] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceTrade]:
+    async def get(self, parameters: GetParameters) -> list[BinanceTrade]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -342,7 +342,7 @@ class BinanceAggTradesHttp(BinanceHttpEndpoint):
         startTime: Optional[int] = None
         endTime: Optional[int] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
+    async def get(self, parameters: GetParameters) -> list[BinanceAggTrade]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -406,7 +406,7 @@ class BinanceKlinesHttp(BinanceHttpEndpoint):
         startTime: Optional[int] = None
         endTime: Optional[int] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceKline]:
+    async def get(self, parameters: GetParameters) -> list[BinanceKline]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -653,13 +653,13 @@ class BinanceMarketHttpAPI:
         """
         Ping Binance REST API.
         """
-        return await self._endpoint_ping._get()
+        return await self._endpoint_ping.get()
 
     async def request_server_time(self) -> int:
         """
         Request server time from Binance.
         """
-        response = await self._endpoint_time._get()
+        response = await self._endpoint_time.get()
         return response.serverTime
 
     async def query_depth(
@@ -670,7 +670,7 @@ class BinanceMarketHttpAPI:
         """
         Query order book depth for a symbol.
         """
-        return await self._endpoint_depth._get(
+        return await self._endpoint_depth.get(
             parameters=self._endpoint_depth.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 limit=limit,
@@ -700,7 +700,7 @@ class BinanceMarketHttpAPI:
         """
         Query trades for symbol.
         """
-        return await self._endpoint_trades._get(
+        return await self._endpoint_trades.get(
             parameters=self._endpoint_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 limit=limit,
@@ -736,7 +736,7 @@ class BinanceMarketHttpAPI:
         """
         Query aggregated trades for symbol.
         """
-        return await self._endpoint_agg_trades._get(
+        return await self._endpoint_agg_trades.get(
             parameters=self._endpoint_agg_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 limit=limit,
@@ -832,7 +832,7 @@ class BinanceMarketHttpAPI:
         """
         Query historical trades for symbol.
         """
-        return await self._endpoint_historical_trades._get(
+        return await self._endpoint_historical_trades.get(
             parameters=self._endpoint_historical_trades.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 limit=limit,
@@ -874,7 +874,7 @@ class BinanceMarketHttpAPI:
         """
         Query klines for a symbol over an interval.
         """
-        return await self._endpoint_klines._get(
+        return await self._endpoint_klines.get(
             parameters=self._endpoint_klines.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 interval=interval,
