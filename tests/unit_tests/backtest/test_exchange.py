@@ -22,6 +22,8 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.modules import SimulationModule
+from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
@@ -35,6 +37,7 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
@@ -2901,6 +2904,29 @@ class TestSimulatedExchangeL2:
             config=RiskEngineConfig(debug=True),
         )
 
+        class TradeTickFillModule(SimulationModule):
+            def pre_data(self, data):
+                if isinstance(data, TradeTick):
+                    matching_engine = self.exchange.get_matching_engine(data.instrument_id)
+                    book = matching_engine.get_book()
+                    for order in self.cache.orders_open(instrument_id=data.instrument_id):
+                        book.update_trade_tick(data)
+                        fills = matching_engine.determine_limit_price_and_volume(order)
+                        matching_engine.apply_fills(
+                            order=order,
+                            fills=fills,
+                            liquidity_side=LiquiditySide.MAKER,
+                        )
+
+            def process(self, uint64_t_ts_now):
+                pass
+
+            def reset(self):
+                pass
+
+        config = SimulationModuleConfig()
+        self.module = TradeTickFillModule(config)
+
         self.exchange = SimulatedExchange(
             venue=Venue("SIM"),
             oms_type=OmsType.HEDGING,
@@ -2910,7 +2936,7 @@ class TestSimulatedExchangeL2:
             default_leverage=Decimal(50),
             leverages={AUDUSD_SIM.id: Decimal(10)},
             instruments=[USDJPY_SIM],
-            modules=[],
+            modules=[self.module],
             fill_model=FillModel(),
             msgbus=self.msgbus,
             cache=self.cache,
@@ -2965,7 +2991,7 @@ class TestSimulatedExchangeL2:
             USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.100"),
+            Price.from_str("91.000"),
         )
 
         self.strategy.submit_order(order)
@@ -2976,11 +3002,11 @@ class TestSimulatedExchangeL2:
             instrument=USDJPY_SIM,
             price=91.000,
         )
-
+        self.module.pre_data(trade)
         self.exchange.process_trade_tick(trade)
 
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
-        assert order.avg_px == 90.100
-        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
+        assert order.avg_px == 91.000
+        assert self.exchange.get_account().balance_total(USD) == Money(999997.98, USD)
