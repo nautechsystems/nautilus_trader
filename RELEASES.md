@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
+- Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
 
 ### Breaking Changes
 None

@@ -29,6 +29,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
@@ -54,6 +55,10 @@ cdef class Actor(Component):
     cdef set _warning_events
     cdef dict _signal_classes
     cdef dict _pending_requests
+    cdef list _indicators
+    cdef dict _indicators_for_quotes
+    cdef dict _indicators_for_trades
+    cdef dict _indicators_for_bars
 
     cdef readonly config
     """The actors configuration.\n\n:returns: `NautilusConfig`"""
@@ -65,6 +70,8 @@ cdef class Actor(Component):
     """The message bus for the actor (if registered).\n\n:returns: `MessageBus` or ``None``"""
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
+
+    cpdef bint indicators_initialized(self)
 
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
@@ -104,6 +111,9 @@ cdef class Actor(Component):
     cpdef void register_executor(self, loop, executor)
     cpdef void register_warning_event(self, type event)
     cpdef void deregister_warning_event(self, type event)
+    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator)
+    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator)
+    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator)
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -217,6 +227,8 @@ cdef class Actor(Component):
     cpdef void handle_historical_data(self, Data data)
     cpdef void handle_event(self, Event event)
 
+# -- HANDLERS -------------------------------------------------------------------------------------
+
     cpdef void _handle_data_response(self, DataResponse response)
     cpdef void _handle_instrument_response(self, DataResponse response)
     cpdef void _handle_instruments_response(self, DataResponse response)
@@ -224,6 +236,9 @@ cdef class Actor(Component):
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
     cpdef void _finish_response(self, UUID4 request_id)
+    cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
+    cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)
+    cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

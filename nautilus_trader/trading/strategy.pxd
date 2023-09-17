@@ -22,7 +22,6 @@ from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -50,10 +49,6 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Strategy(Actor):
-    cdef list _indicators
-    cdef dict _indicators_for_quotes
-    cdef dict _indicators_for_trades
-    cdef dict _indicators_for_bars
     cdef bint _manage_gtd_expiry
 
     cdef readonly PortfolioFacade portfolio
@@ -67,8 +62,6 @@ cdef class Strategy(Actor):
     cdef readonly list external_order_claims
     """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
 
-    cpdef bint indicators_initialized(self)
-
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register(
@@ -80,9 +73,6 @@ cdef class Strategy(Actor):
         Clock clock,
         Logger logger,
     )
-    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator)
-    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator)
-    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -130,12 +120,6 @@ cdef class Strategy(Actor):
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
     cdef void _set_gtd_expiry(self, Order order)
     cpdef void _expire_gtd_order(self, TimeEvent event)
-
-# -- HANDLERS -------------------------------------------------------------------------------------
-
-    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
-    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)
-    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar)
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 
