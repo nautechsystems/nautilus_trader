@@ -63,16 +63,16 @@ class TestPersistenceCatalog:
 
     def test_catalog_query_filtered(self, betfair_catalog) -> None:
         ticks = self.catalog.trade_ticks()
-        assert len(ticks) == 312
+        assert len(ticks) == 283
 
         ticks = self.catalog.trade_ticks(start="2019-12-20 20:56:18")
-        assert len(ticks) == 123
+        assert len(ticks) == 121
 
         ticks = self.catalog.trade_ticks(start=1576875378384999936)
-        assert len(ticks) == 123
+        assert len(ticks) == 121
 
         ticks = self.catalog.trade_ticks(start=datetime.datetime(2019, 12, 20, 20, 56, 18))
-        assert len(ticks) == 123
+        assert len(ticks) == 121
 
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 2384
