@@ -1922,6 +1922,7 @@ dependencies = [
 name = "nautilus-common"
 version = "0.10.0"
 dependencies = [
+ "anyhow",
  "cbindgen",
  "chrono",
  "nautilus-core",
