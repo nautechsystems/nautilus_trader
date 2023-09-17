@@ -5,11 +5,6 @@ of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
-```{warning}
-This integration is still under construction. Consider it to be in an
-unstable beta phase and exercise caution.
-```
-
 ## Overview
 The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Binance integration consists of an assortment of components,
