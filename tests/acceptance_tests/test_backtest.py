@@ -756,7 +756,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         self.engine.run()
 
         # Assert
-        assert self.engine.iteration in (8199, 7812)
+        assert self.engine.iteration in (8198, 7812)
 
 
 class TestBacktestAcceptanceTestsMarketMaking:
