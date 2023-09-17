@@ -27,6 +27,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.persistence.catalog.parquet.core import ParquetDataCatalog
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.persistence.streaming.batching import generate_batches_rust
 from nautilus_trader.persistence.streaming.engine import StreamingEngine
@@ -67,7 +68,7 @@ class TestBuffer(TestBatchingData):
         self,
         trim_timestamp: int,
         expected: int,
-    ):
+    ) -> None:
         # Arrange
         buffer = _StreamingBuffer(
             generate_batches_rust(
@@ -96,7 +97,7 @@ class TestBuffer(TestBatchingData):
         self,
         trim_timestamp: int,
         expected: int,
-    ):
+    ) -> None:
         # Arrange
         buffer = _StreamingBuffer(
             generate_batches_rust(
@@ -116,7 +117,7 @@ class TestBuffer(TestBatchingData):
 
 
 class TestBufferIterator(TestBatchingData):
-    def test_iterate_returns_expected_timestamps_single(self):
+    def test_iterate_returns_expected_timestamps_single(self) -> None:
         # Arrange
         batches = generate_batches_rust(
             files=[self.test_parquet_files[0]],
@@ -139,7 +140,7 @@ class TestBufferIterator(TestBatchingData):
         assert len(timestamps) == len(expected)
         assert timestamps == expected
 
-    def test_iterate_returns_expected_timestamps(self):
+    def test_iterate_returns_expected_timestamps(self) -> None:
         # Arrange
         expected = sorted(
             list(pd.read_parquet(self.test_parquet_files[0]).ts_event)
@@ -174,7 +175,7 @@ class TestBufferIterator(TestBatchingData):
         assert len(timestamps) == len(expected)
         assert timestamps == expected
 
-    def test_iterate_returns_expected_timestamps_with_start_end_range_rust(self):
+    def test_iterate_returns_expected_timestamps_with_start_end_range_rust(self) -> None:
         # Arrange
         start_timestamps = (1546383605776999936, 1546389021944999936)
         end_timestamps = (1546390125908000000, 1546394394948999936)
@@ -222,7 +223,7 @@ class TestBufferIterator(TestBatchingData):
         timestamps = [x.ts_init for x in objs]
         assert timestamps == sorted(timestamps)
 
-    def test_iterate_returns_expected_timestamps_with_start_end_range_and_bars(self):
+    def test_iterate_returns_expected_timestamps_with_start_end_range_and_bars(self) -> None:
         # Arrange
         start_timestamps = (1546383605776999936, 1546389021944999936, 1559224800000000000)
         end_timestamps = (1546390125908000000, 1546394394948999936, 1577710800000000000)
@@ -304,7 +305,7 @@ class TestPersistenceBatching:
             fs.rm(path, recursive=True)
 
     @pytest.mark.skip("config_to_buffer no longer has get_files")
-    def test_batch_files_single(self, betfair_catalog):
+    def test_batch_files_single(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         self.catalog = betfair_catalog
 

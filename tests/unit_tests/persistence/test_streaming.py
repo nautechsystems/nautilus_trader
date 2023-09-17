@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import copy
 import sys
 from collections import Counter
@@ -42,7 +43,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestPersistenceStreaming:
-    def setup(self):
+    def setup(self) -> None:
         self.catalog: Optional[ParquetDataCatalog] = None
 
     def _run_default_backtest(self, betfair_catalog):
@@ -69,7 +70,7 @@ class TestPersistenceStreaming:
         instance_id = backtest_result[0].instance_id
 
         # Assert
-        result = self.catalog.read_backtest(
+        result = betfair_catalog.read_backtest(
             instance_id=instance_id,
             raise_on_failed_deserialize=True,
         )
@@ -92,7 +93,7 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    def test_feather_writer_generic_data(self, betfair_catalog):
+    def test_feather_writer_generic_data(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         self.catalog = betfair_catalog
         TestPersistenceStubs.setup_news_event_persistence()
@@ -135,10 +136,10 @@ class TestPersistenceStreaming:
             raise_on_failed_deserialize=True,
         )
 
-        result = Counter([r.__class__.__name__ for r in result])
-        assert result["NewsEventData"] == 86985
+        result = Counter([r.__class__.__name__ for r in result])  # type: ignore
+        assert result["NewsEventData"] == 86985  # type: ignore
 
-    def test_feather_writer_signal_data(self, betfair_catalog):
+    def test_feather_writer_signal_data(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         self.catalog = betfair_catalog
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
@@ -177,10 +178,10 @@ class TestPersistenceStreaming:
             raise_on_failed_deserialize=True,
         )
 
-        result = Counter([r.__class__.__name__ for r in result])
-        assert result["SignalCounter"] == 179
+        result = Counter([r.__class__.__name__ for r in result])  # type: ignore
+        assert result["SignalCounter"] == 179  # type: ignore
 
-    def test_generate_signal_class(self):
+    def test_generate_signal_class(self) -> None:
         # Arrange
         cls = generate_signal_class(name="test", value_type=float)
 
@@ -193,7 +194,7 @@ class TestPersistenceStreaming:
         assert instance.value == 5.0
         assert instance.ts_init == 0
 
-    def test_config_write(self, betfair_catalog):
+    def test_config_write(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         self.catalog = betfair_catalog
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
@@ -232,12 +233,16 @@ class TestPersistenceStreaming:
         raw = self.catalog.fs.open(config_file, "rb").read()
         assert msgspec.json.decode(raw, type=NautilusKernelConfig)
 
-    def test_feather_reader_returns_cython_objects(self, betfair_catalog):
+    def test_feather_reader_returns_cython_objects(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
         # Arrange
         backtest_result = self._run_default_backtest(betfair_catalog)
         instance_id = backtest_result[0].instance_id
 
         # Act
+        assert self.catalog
         result = self.catalog.read_backtest(
             instance_id=instance_id,
             raise_on_failed_deserialize=True,
@@ -247,7 +252,7 @@ class TestPersistenceStreaming:
         assert len([d for d in result if isinstance(d, TradeTick)]) == 179
         assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
 
-    def test_feather_reader_order_book_deltas(self, betfair_catalog):
+    def test_feather_reader_order_book_deltas(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         backtest_result = self._run_default_backtest(betfair_catalog)
         book = OrderBook(
@@ -256,6 +261,7 @@ class TestPersistenceStreaming:
         )
 
         # Act
+        assert self.catalog
         result = self.catalog.read_backtest(
             instance_id=backtest_result[0].instance_id,
             raise_on_failed_deserialize=True,
@@ -268,7 +274,7 @@ class TestPersistenceStreaming:
             book.apply_delta(update)
             copy.deepcopy(book)
 
-    def test_read_backtest(self, betfair_catalog: ParquetDataCatalog):
+    def test_read_backtest(self, betfair_catalog: ParquetDataCatalog) -> None:
         # Arrange
         [backtest_result] = self._run_default_backtest(betfair_catalog)
 
