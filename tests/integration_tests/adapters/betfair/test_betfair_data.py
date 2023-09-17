@@ -385,6 +385,7 @@ def test_betfair_ticker_sp(data_client, mock_data_engine_process):
 
     # Act
     for line in lines:
+        line = line.replace(b'"con":true', b'"con":false')
         data_client.on_market_update(line)
 
     # Assert
@@ -405,6 +406,7 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
 
     # Act
     for line in lines[-100:]:
+        line = line.replace(b'"con":true', b'"con":false')
         data_client.on_market_update(line)
 
     # Assert

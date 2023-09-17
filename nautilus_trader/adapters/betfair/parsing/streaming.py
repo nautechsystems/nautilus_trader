@@ -73,6 +73,7 @@ PARSE_TYPES = Union[
 
 def market_change_to_updates(  # noqa: C901
     mc: MarketChange,
+    traded_volumes: dict[InstrumentId, dict[float, float]],
     ts_event: int,
     ts_init: int,
 ) -> list[PARSE_TYPES]:
@@ -129,8 +130,16 @@ def market_change_to_updates(  # noqa: C901
 
         # Trade ticks
         if rc.trd:
+            if instrument_id not in traded_volumes:
+                traded_volumes[instrument_id] = {}
             updates.extend(
-                runner_change_to_trade_ticks(rc, instrument_id, ts_event, ts_init),
+                runner_change_to_trade_ticks(
+                    rc,
+                    traded_volumes[instrument_id],
+                    instrument_id,
+                    ts_event,
+                    ts_init,
+                ),
             )
 
         # BetfairTicker
@@ -340,6 +349,38 @@ def runner_change_to_order_book_snapshot(
     return OrderBookDeltas(instrument_id, deltas)
 
 
+def runner_change_to_trade_ticks(
+    rc: RunnerChange,
+    traded_volumes: dict[float, float],
+    instrument_id: InstrumentId,
+    ts_event: int,
+    ts_init: int,
+) -> list[TradeTick]:
+    trade_ticks: list[TradeTick] = []
+    for trd in rc.trd:
+        if trd.volume == 0:
+            continue
+        # Betfair trade ticks are total volume traded.
+        if trd.price not in traded_volumes:
+            traded_volumes[trd.price] = 0
+        existing_volume = traded_volumes[trd.price]
+        if not trd.volume > existing_volume:
+            continue
+        trade_id = hash_market_trade(timestamp=ts_event, price=trd.price, volume=trd.volume)
+        tick = TradeTick(
+            instrument_id,
+            betfair_float_to_price(trd.price),
+            betfair_float_to_quantity(trd.volume - existing_volume),
+            AggressorSide.NO_AGGRESSOR,
+            TradeId(trade_id),
+            ts_event,
+            ts_init,
+        )
+        trade_ticks.append(tick)
+        traded_volumes[trd.price] = trd.volume
+    return trade_ticks
+
+
 def runner_change_to_order_book_deltas(
     rc: RunnerChange,
     instrument_id: InstrumentId,
@@ -387,30 +428,6 @@ def runner_change_to_order_book_deltas(
         return None
 
     return OrderBookDeltas(instrument_id, deltas)
-
-
-def runner_change_to_trade_ticks(
-    rc: RunnerChange,
-    instrument_id: InstrumentId,
-    ts_event: int,
-    ts_init: int,
-) -> list[TradeTick]:
-    trade_ticks: list[TradeTick] = []
-    for trd in rc.trd:
-        if trd.volume == 0:
-            continue
-        trade_id = hash_market_trade(timestamp=ts_event, price=trd.price, volume=trd.volume)
-        tick = TradeTick(
-            instrument_id,
-            betfair_float_to_price(trd.price),
-            betfair_float_to_quantity(trd.volume),
-            AggressorSide.NO_AGGRESSOR,
-            TradeId(trade_id),
-            ts_event,
-            ts_init,
-        )
-        trade_ticks.append(tick)
-    return trade_ticks
 
 
 def runner_change_to_betfair_ticker(

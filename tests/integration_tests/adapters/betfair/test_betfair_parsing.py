@@ -16,6 +16,7 @@
 import asyncio
 import datetime
 from collections import Counter
+from collections import defaultdict
 
 import msgspec
 import pytest
@@ -168,14 +169,14 @@ class TestBetfairParsingStreaming:
     def test_market_change_bsp_updates(self):
         raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'  # noqa
         mc = msgspec.json.decode(raw, type=MarketChange)
-        result = Counter([upd.__class__.__name__ for upd in market_change_to_updates(mc, 0, 0)])
+        result = Counter([upd.__class__.__name__ for upd in market_change_to_updates(mc, {}, 0, 0)])
         expected = Counter({"BSPOrderBookDeltas": 12, "OrderBookDeltas": 1})
         assert result == expected
 
     def test_market_change_ticker(self):
         raw = b'{"id":"1.205822330","rc":[{"atl":[[1.98,0],[1.91,30.38]],"id":49808338},{"atb":[[3.95,2.98]],"id":49808334},{"trd":[[3.95,46.95]],"ltp":3.95,"tv":46.95,"id":49808334}],"con":true,"img":false}'  # noqa
         mc = msgspec.json.decode(raw, type=MarketChange)
-        result = market_change_to_updates(mc, 0, 0)
+        result = market_change_to_updates(mc, {}, 0, 0)
         assert result[0] == TradeTick.from_dict(
             {
                 "type": "TradeTick",
@@ -205,10 +206,10 @@ class TestBetfairParsingStreaming:
     @pytest.mark.parametrize(
         ("filename", "num_msgs"),
         [
-            ("1.166564490.bz2", 2533),
-            ("1.166811431.bz2", 17846),
-            ("1.180305278.bz2", 15734),
-            ("1.206064380.bz2", 50269),
+            ("1.166564490.bz2", 2504),
+            ("1.166811431.bz2", 17838),
+            ("1.180305278.bz2", 15153),
+            ("1.206064380.bz2", 50166),
         ],
     )
     def test_parsing_streaming_file(self, filename, num_msgs):
@@ -228,7 +229,7 @@ class TestBetfairParsingStreaming:
             {
                 "OrderBookDeltas": 40525,
                 "BetfairTicker": 4658,
-                "TradeTick": 3590,
+                "TradeTick": 3487,
                 "BSPOrderBookDeltas": 1139,
                 "InstrumentStatusUpdate": 260,
                 "BetfairStartingPrice": 72,
@@ -267,6 +268,36 @@ class TestBetfairParsingStreaming:
                 books[instrument_id].check_integrity()
         result = [book.count for book in books.values()]
         assert result == book_count
+
+    def test_betfair_trade_sizes(self):
+        mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
+        parser = BetfairParser()
+        trade_ticks: dict[InstrumentId, list[TradeTick]] = defaultdict(list)
+        betfair_tv: dict[int, dict[float, float]] = {}
+        for mcm in mcms:
+            for data in parser.parse(mcm):
+                if isinstance(data, TradeTick):
+                    trade_ticks[data.instrument_id].append(data)
+
+            for rc in [rc for mc in mcm.mc for rc in mc.rc]:
+                if rc.id not in betfair_tv:
+                    betfair_tv[rc.id] = {}
+                for trd in rc.trd:
+                    if trd.volume > betfair_tv[rc.id].get(trd.price, 0):
+                        betfair_tv[rc.id][trd.price] = trd.volume
+
+        for selection_id in betfair_tv:
+            for price in betfair_tv[selection_id]:
+                instrument_id = next(ins for ins in trade_ticks if f"-{selection_id}-" in ins.value)
+                betfair_volume = betfair_tv[selection_id][price]
+                trade_volume = sum(
+                    [
+                        tick.size
+                        for tick in trade_ticks[instrument_id]
+                        if tick.price.as_double() == price
+                    ],
+                )
+                assert betfair_volume == float(trade_volume)
 
 
 class TestBetfairParsing:
