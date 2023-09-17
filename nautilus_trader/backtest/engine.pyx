@@ -1037,10 +1037,7 @@ cdef class BacktestEngine:
                     raw_handlers_count = raw_handlers.len
 
                 # Run pre-process for any simulation_modules
-                if isinstance(data, (OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, Bar, InstrumentStatusUpdate)):
-                    venue = self._venues[data.instrument_id.venue]
-                    for module in venue.modules:
-                        module.pre_data(data)
+                self._run_pre_process_simulation_modules(data)
 
                 # Process data through venue
                 if isinstance(data, OrderBookDelta):
@@ -1170,6 +1167,23 @@ cdef class BacktestEngine:
                 ts_last_init = ts_event_init
                 for exchange in self._venues.values():
                     exchange.process(ts_event_init)
+
+    def _run_pre_process_simulation_modules(self, data: Data):
+        # Determine Venue
+        instrument_id: Optional[InstrumentId] = None
+        if isinstance(data, (OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, InstrumentStatusUpdate)):
+            instrument_id = data.instrument_id
+        elif isinstance(data, Bar):
+            instrument_id = data.bar_type.instrument_id
+        else:
+            if hasattr(data, "instrument_id"):
+                instrument_id = data.instrument_id
+            else:
+                return
+
+        venue = self._venues[instrument_id.venue]
+        for module in venue.modules:
+            module.pre_process(data)
 
     def _log_pre_run(self):
         log_memory(self._log)

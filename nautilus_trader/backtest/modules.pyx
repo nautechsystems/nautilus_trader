@@ -70,7 +70,7 @@ cdef class SimulationModule(Actor):
 
         self.exchange = exchange
 
-    cpdef void pre_data(self, Data data):
+    cpdef void pre_process(self, Data data):
         """Abstract method (implement in subclass)."""
         pass
 
