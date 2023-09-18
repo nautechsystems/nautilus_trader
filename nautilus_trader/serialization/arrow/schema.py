@@ -19,6 +19,10 @@ import pyarrow as pa
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
+from nautilus_trader.core.nautilus_pyo3.model import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
+from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatusUpdate
@@ -44,40 +48,20 @@ from nautilus_trader.model.events import OrderUpdated
 
 
 NAUTILUS_ARROW_SCHEMA = {
-    # TODO - remove when rust schemas exposed
     OrderBookDelta: pa.schema(
         [
-            pa.field("action", pa.uint8(), False),
-            pa.field("side", pa.uint8(), False),
-            pa.field("price", pa.int64(), False),
-            pa.field("size", pa.uint64(), False),
-            pa.field("order_id", pa.uint64(), False),
-            pa.field("flags", pa.uint8(), False),
-            pa.field("sequence", pa.uint64(), False),
-            pa.field("ts_event", pa.uint64(), False),
-            pa.field("ts_init", pa.uint64(), False),
+            pa.field(k, pa.type_for_alias(v), False)
+            for k, v in RustOrderBookDelta.get_fields().items()
         ],
     ),
-    Bar: pa.schema(
-        {
-            "open": pa.int64(),
-            "high": pa.int64(),
-            "low": pa.int64(),
-            "close": pa.int64(),
-            "volume": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
+    QuoteTick: pa.schema(
+        [pa.field(k, pa.type_for_alias(v), False) for k, v in RustQuoteTick.get_fields().items()],
     ),
     TradeTick: pa.schema(
-        [
-            pa.field("price", pa.int64(), False),
-            pa.field("size", pa.uint64(), False),
-            pa.field("aggressor_side", pa.uint8(), False),
-            pa.field("trade_id", pa.string(), False),
-            pa.field("ts_event", pa.uint64(), False),
-            pa.field("ts_init", pa.uint64(), False),
-        ],
+        [pa.field(k, pa.type_for_alias(v), False) for k, v in RustTradeTick.get_fields().items()],
+    ),
+    Bar: pa.schema(
+        [pa.field(k, pa.type_for_alias(v), False) for k, v in RustBar.get_fields().items()],
     ),
     Ticker: pa.schema(
         [
@@ -85,22 +69,6 @@ NAUTILUS_ARROW_SCHEMA = {
             pa.field("ts_event", pa.uint64(), False),
             pa.field("ts_init", pa.uint64(), False),
         ],
-    ),
-    QuoteTick: pa.schema(
-        {
-            "bid_price": pa.int64(),
-            "bid_size": pa.uint64(),
-            "ask_price": pa.int64(),
-            "ask_size": pa.uint64(),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={
-            "type": "QuoteTick",
-            # "instrument_id": ...,
-            # "price_precision": ...,
-            # "size_precision": ...,
-        },
     ),
     VenueStatusUpdate: pa.schema(
         {

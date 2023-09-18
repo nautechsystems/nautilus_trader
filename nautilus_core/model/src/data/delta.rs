@@ -20,6 +20,7 @@ use std::{
     str::FromStr,
 };
 
+use indexmap::IndexMap;
 use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Serialize};
@@ -86,6 +87,21 @@ impl OrderBookDelta {
         metadata.insert("instrument_id".to_string(), instrument_id.to_string());
         metadata.insert("price_precision".to_string(), price_precision.to_string());
         metadata.insert("size_precision".to_string(), size_precision.to_string());
+        metadata
+    }
+
+    /// Returns the field map for the type, for use with arrow schemas.
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("action".to_string(), "UInt8".to_string());
+        metadata.insert("side".to_string(), "UInt8".to_string());
+        metadata.insert("price".to_string(), "Int64".to_string());
+        metadata.insert("size".to_string(), "UInt64".to_string());
+        metadata.insert("order_id".to_string(), "UInt64".to_string());
+        metadata.insert("flags".to_string(), "UInt8".to_string());
+        metadata.insert("sequence".to_string(), "UInt64".to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
         metadata
     }
 
@@ -269,6 +285,31 @@ impl OrderBookDelta {
         // Deserialize to object
         let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(
+            instrument_id,
+            price_precision,
+            size_precision,
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
     }
 
     #[staticmethod]
