@@ -48,9 +48,9 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
-from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
-from nautilus_trader.persistence.catalog.parquet.util import combine_filters
-from nautilus_trader.persistence.catalog.parquet.util import uri_instrument_id
+from nautilus_trader.persistence.funcs import class_to_filename
+from nautilus_trader.persistence.funcs import combine_filters
+from nautilus_trader.persistence.funcs import uri_instrument_id
 from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas

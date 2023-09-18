@@ -32,9 +32,7 @@ from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.singleton import Singleton
-
-
-GENERIC_DATA_PREFIX = "genericdata_"
+from nautilus_trader.persistence.funcs import GENERIC_DATA_PREFIX
 
 
 class _CombinedMeta(Singleton, ABCMeta):
