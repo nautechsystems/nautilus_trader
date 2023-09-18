@@ -17,7 +17,7 @@ import hashlib
 import importlib
 import sys
 from decimal import Decimal
-from typing import Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 import msgspec
 import pandas as pd
@@ -32,6 +32,8 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.persistence.catalog.parquet.core import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.types import CatalogDataResult
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -79,7 +81,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     batch_size: Optional[int] = 10_000
 
     @property
-    def data_type(self):
+    def data_type(self) -> type:
         if isinstance(self.data_cls, str):
             mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
             mod = importlib.import_module(mod_path)
@@ -88,10 +90,10 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             return self.data_cls
 
     @property
-    def query(self):
+    def query(self) -> dict[str, Any]:
         if self.data_cls is Bar and self.bar_spec:
             bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
-            filter_expr = f'field("bar_type") == "{bar_type}"'
+            filter_expr: Optional[str] = f'field("bar_type") == "{bar_type}"'
         else:
             filter_expr = self.filter_expr
 
@@ -117,7 +119,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             return sys.maxsize
         return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
 
-    def catalog(self):
+    def catalog(self) -> ParquetDataCatalog:
         from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
         return ParquetDataCatalog(
@@ -130,7 +132,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         self,
         start_time: Optional[pd.Timestamp] = None,
         end_time: Optional[pd.Timestamp] = None,
-    ):
+    ) -> CatalogDataResult:
         query = self.query
         query.update(
             {
@@ -144,14 +146,14 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             catalog.instruments(instrument_ids=[self.instrument_id]) if self.instrument_id else None
         )
         if self.instrument_id and not instruments:
-            return {"data": [], "instrument": None}
-        data = catalog.query(**query)
-        return {
-            "type": query["cls"],
-            "data": data,
-            "instrument": instruments[0] if self.instrument_id else None,
-            "client_id": ClientId(self.client_id) if self.client_id else None,
-        }
+            return CatalogDataResult(data_cls=self.data_type, data=[])
+
+        return CatalogDataResult(
+            data_cls=self.data_type,
+            data=catalog.query(**query),
+            instrument=instruments[0] if instruments else None,
+            client_id=ClientId(self.client_id) if self.client_id else None,
+        )
 
 
 class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
@@ -210,20 +212,22 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    engine : BacktestEngineConfig, optional
-        The backtest engine configuration (represents the core system kernel).
     venues : list[BacktestVenueConfig]
         The venue configurations for the backtest run.
+        A valid configuration must include at least one venue config.
     data : list[BacktestDataConfig]
         The data configurations for the backtest run.
+        A valid configuration must include at least one data config.
+    engine : BacktestEngineConfig
+        The backtest engine configuration (the core system kernel).
     batch_size_bytes : optional
         The batch block size in bytes (will then run in streaming mode).
 
     """
 
+    venues: list[BacktestVenueConfig]
+    data: list[BacktestDataConfig]
     engine: Optional[BacktestEngineConfig] = None
-    venues: Optional[list[BacktestVenueConfig]] = None
-    data: Optional[list[BacktestDataConfig]] = None
     batch_size_bytes: Optional[int] = None
 
     @property
