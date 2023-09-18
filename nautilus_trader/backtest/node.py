@@ -269,10 +269,16 @@ class BacktestNode:
             )
 
         # Stream data
-        result = session.to_query_result()
-        for chunk in result:
-            engine.add_data(data=list_from_capsule(chunk))
-            engine.run(run_config_id=run_config_id, streaming=True)
+        for chunk in session.to_query_result():
+            engine.add_data(
+                data=list_from_capsule(chunk),
+                validate=False,  # Cannot validate mixed type stream
+                sort=False,  # Already sorted from kmerge
+            )
+            engine.run(
+                run_config_id=run_config_id,
+                streaming=True,
+            )
 
         engine.end()
         engine.dispose()
