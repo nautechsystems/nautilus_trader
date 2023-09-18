@@ -35,7 +35,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.persistence.streaming.writer import generate_signal_class
+from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs

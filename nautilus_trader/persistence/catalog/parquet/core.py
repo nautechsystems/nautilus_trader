@@ -64,6 +64,9 @@ class FeatherFile(NamedTuple):
     class_name: str
 
 
+_DEFAULT_FS_PROTOCOL = "file"
+
+
 class ParquetDataCatalog(BaseDataCatalog):
     """
     Provides a queryable data catalog persisted to files in parquet format.
@@ -73,7 +76,11 @@ class ParquetDataCatalog(BaseDataCatalog):
     path : str
         The root path for this data catalog. Must exist and must be an absolute path.
     fs_protocol : str, default 'file'
-        The fsspec filesystem protocol to use.
+        The filesystem protocol used by `fsspec` to handle file operations.
+        This determines how the data catalog interacts with storage, be it local filesystem,
+        cloud storage, or others. Common protocols include 'file' for local storage,
+        's3' for Amazon S3, and 'gcs' for Google Cloud Storage. If not provided, it defaults to 'file',
+        meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
 
@@ -86,11 +93,11 @@ class ParquetDataCatalog(BaseDataCatalog):
     def __init__(
         self,
         path: str,
-        fs_protocol: str = "file",
+        fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
-    ):
-        self.fs_protocol = fs_protocol
+    ) -> None:
+        self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
         self.fs_storage_options = fs_storage_options or {}
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol,
@@ -111,11 +118,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.path = str(path)
 
     @classmethod
-    def from_env(cls):
+    def from_env(cls) -> ParquetDataCatalog:
         return cls.from_uri(os.environ["NAUTILUS_PATH"] + "/catalog")
 
     @classmethod
-    def from_uri(cls, uri):
+    def from_uri(cls: type, uri: str) -> ParquetDataCatalog:
         if "://" not in uri:
             # Assume a local path
             uri = "file://" + uri
@@ -234,21 +241,26 @@ class ParquetDataCatalog(BaseDataCatalog):
             ]
         return data
 
-    def query_rust(
+    def backend_session(
         self,
         cls: type,
         instrument_ids: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
+        session: DataBackendSession | None = None,
         **kwargs: Any,
-    ) -> list[Data]:
+    ) -> DataBackendSession:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
         name = cls.__name__
         file_prefix = class_to_filename(cls)
         data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
 
-        session = DataBackendSession()
+        if session is None:
+            session = DataBackendSession()
+        if session is None:
+            raise ValueError("`session` was `None` when a value was expected")
+
         # TODO (bm) - fix this glob, query once on catalog creation?
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
         dirs = self.fs.glob(glob_path)
@@ -266,6 +278,26 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
 
             session.add_file_with_query(table, fn, query, data_type)
+
+        return session
+
+    def query_rust(
+        self,
+        cls: type,
+        instrument_ids: list[str] | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        where: str | None = None,
+        **kwargs: Any,
+    ) -> list[Data]:
+        session = self.backend_session(
+            cls=cls,
+            instrument_ids=instrument_ids,
+            start=start,
+            end=end,
+            where=where,
+            **kwargs,
+        )
 
         result = session.to_query_result()
 
@@ -460,7 +492,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         raise_on_failed_deserialize: bool = False,
     ) -> list[Data]:
-        from nautilus_trader.persistence.streaming.writer import read_feather_file
+        from nautilus_trader.persistence.writer import read_feather_file
 
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = defaultdict(list)
