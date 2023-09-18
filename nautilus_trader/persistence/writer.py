@@ -16,10 +16,12 @@
 from __future__ import annotations
 
 import datetime
+from io import TextIOWrapper
 from typing import Any, BinaryIO
 
 import fsspec
 import pyarrow as pa
+from fsspec.compression import AbstractBufferedFile
 from pyarrow import RecordBatchStreamWriter
 
 from nautilus_trader.common.logging import LoggerAdapter
@@ -33,8 +35,8 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.persistence.catalog.parquet.core import uri_instrument_id
-from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
+from nautilus_trader.persistence.funcs import class_to_filename
+from nautilus_trader.persistence.funcs import uri_instrument_id
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.serializer import register_arrow
@@ -85,7 +87,7 @@ class StreamingFeatherWriter:
 
         self._schemas = list_schemas()
         self.logger = logger
-        self._files: dict[object, BinaryIO] = {}
+        self._files: dict[object, TextIOWrapper | BinaryIO | AbstractBufferedFile] = {}
         self._writers: dict[str, RecordBatchStreamWriter] = {}
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
@@ -122,11 +124,11 @@ class StreamingFeatherWriter:
         for cls in self._schemas:
             self._create_writer(cls=cls)
 
-    def _create_instrument_writer(self, cls, obj) -> None:
+    def _create_instrument_writer(self, cls: type, obj: Any) -> None:
         """
         Create an arrow writer with instrument specific metadata in the schema.
         """
-        metadata = self._extract_obj_metadata(obj)
+        metadata: dict[bytes, bytes] = self._extract_obj_metadata(obj)
         mapped_cls = {OrderBookDeltas: OrderBookDelta}.get(cls, cls)
         schema = self._schemas[mapped_cls].with_metadata(metadata)
         table_name = class_to_filename(cls)
@@ -138,7 +140,10 @@ class StreamingFeatherWriter:
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
 
-    def _extract_obj_metadata(self, obj: TradeTick | QuoteTick | Bar | OrderBookDelta):
+    def _extract_obj_metadata(
+        self,
+        obj: TradeTick | QuoteTick | Bar | OrderBookDelta,
+    ) -> dict[bytes, bytes]:
         instrument = self._instruments[obj.instrument_id]
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
         if isinstance(obj, (TradeTick, QuoteTick)):
@@ -319,7 +324,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
             schema=schema,
         )
 
-    def deserialize_signal(table: pa.Table):
+    def deserialize_signal(table: pa.Table) -> list[SignalData]:
         return [SignalData(**d) for d in table.to_pylist()]
 
     schema = pa.schema(
@@ -344,6 +349,8 @@ def read_feather_file(
     fs: fsspec.AbstractFileSystem | None = None,
 ) -> pa.Table | None:
     fs = fs or fsspec.filesystem("file")
+    if fs is None:
+        raise FileNotFoundError("`fs` was `None` when a value was expected")
     if not fs.exists(path):
         return None
     try:

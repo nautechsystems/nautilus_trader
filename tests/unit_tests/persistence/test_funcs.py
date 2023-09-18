@@ -18,9 +18,9 @@ import pytest
 
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.persistence.catalog.parquet.util import camel_to_snake_case
-from nautilus_trader.persistence.catalog.parquet.util import class_to_filename
-from nautilus_trader.persistence.catalog.parquet.util import clean_key
+from nautilus_trader.persistence.funcs import camel_to_snake_case
+from nautilus_trader.persistence.funcs import class_to_filename
+from nautilus_trader.persistence.funcs import clean_windows_key
 
 
 @pytest.mark.parametrize(
@@ -41,8 +41,8 @@ def test_camel_to_snake_case(s, expected):
         ("Instrument\\ID:hello", "Instrument-ID-hello"),
     ],
 )
-def test_clean_key(s, expected):
-    assert clean_key(s) == expected
+def test_clean_windows_key(s, expected):
+    assert clean_windows_key(s) == expected
 
 
 @pytest.mark.parametrize(

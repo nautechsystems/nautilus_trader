@@ -32,7 +32,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.catalog.parquet.core import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.types import CatalogDataResult
 
 

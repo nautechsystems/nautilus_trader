@@ -34,7 +34,7 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orderbook import OrderBook
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
@@ -93,7 +93,10 @@ class TestPersistenceStreaming:
 
         assert result == expected
 
-    def test_feather_writer_generic_data(self, betfair_catalog: ParquetDataCatalog) -> None:
+    def test_feather_writer_generic_data(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
         # Arrange
         self.catalog = betfair_catalog
         TestPersistenceStubs.setup_news_event_persistence()
@@ -139,7 +142,10 @@ class TestPersistenceStreaming:
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
         assert result["NewsEventData"] == 86985  # type: ignore
 
-    def test_feather_writer_signal_data(self, betfair_catalog: ParquetDataCatalog) -> None:
+    def test_feather_writer_signal_data(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
         # Arrange
         self.catalog = betfair_catalog
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
@@ -194,7 +200,10 @@ class TestPersistenceStreaming:
         assert instance.value == 5.0
         assert instance.ts_init == 0
 
-    def test_config_write(self, betfair_catalog: ParquetDataCatalog) -> None:
+    def test_config_write(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
         # Arrange
         self.catalog = betfair_catalog
         instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
@@ -252,7 +261,10 @@ class TestPersistenceStreaming:
         assert len([d for d in result if isinstance(d, TradeTick)]) == 179
         assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
 
-    def test_feather_reader_order_book_deltas(self, betfair_catalog: ParquetDataCatalog) -> None:
+    def test_feather_reader_order_book_deltas(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
         # Arrange
         backtest_result = self._run_default_backtest(betfair_catalog)
         book = OrderBook(
@@ -274,7 +286,10 @@ class TestPersistenceStreaming:
             book.apply_delta(update)
             copy.deepcopy(book)
 
-    def test_read_backtest(self, betfair_catalog: ParquetDataCatalog) -> None:
+    def test_read_backtest(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
         # Arrange
         [backtest_result] = self._run_default_backtest(betfair_catalog)
 
