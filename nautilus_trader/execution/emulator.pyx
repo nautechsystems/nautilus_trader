@@ -219,8 +219,9 @@ cdef class OrderEmulator(Actor):
                 if parent_order.is_closed_c() and (position_id is None or self.cache.is_position_closed(position_id)):
                     self._manager.cancel_order(order=order)
                     continue  # Parent already closed
-                if parent_order.contingency_type == ContingencyType.OTO and parent_order.is_emulated_c():
-                    continue  # Process contingency order later once parent triggered
+                if parent_order.contingency_type == ContingencyType.OTO:
+                    if parent_order.is_active_local_c() or parent_order.filled_qty == 0:
+                        continue  # Process contingency order later once parent triggered
 
             position_id = self.cache.position_id(order.client_order_id)
             client_id = self.cache.client_id(order.client_order_id)
