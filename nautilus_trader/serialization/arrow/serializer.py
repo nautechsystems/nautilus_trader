@@ -49,11 +49,11 @@ DATA_OR_EVENTS = Union[Data, Event]
 TABLE_OR_BATCH = Union[pa.Table, pa.RecordBatch]
 
 
-def get_schema(cls: type):
+def get_schema(cls: type) -> pa.Schema:
     return _SCHEMAS[cls]
 
 
-def list_schemas():
+def list_schemas() -> dict[type, pa.Schema]:
     return _SCHEMAS
 
 
@@ -72,7 +72,7 @@ def register_arrow(
     schema: Optional[pa.Schema],
     serializer: Optional[Callable] = None,
     deserializer: Optional[Callable] = None,
-):
+) -> None:
     """
     Register a new class for serialization to parquet.
 
@@ -112,7 +112,7 @@ class ArrowSerializer:
     """
 
     @staticmethod
-    def _unpack_container_objects(cls: type, data: list[Any]):
+    def _unpack_container_objects(cls: type, data: list[Any]) -> list[Data]:
         if cls == OrderBookDeltas:
             return [delta for deltas in data for delta in deltas.deltas]
         return data
@@ -174,7 +174,7 @@ class ArrowSerializer:
         return pa.Table.from_batches(batches, schema=batches[0].schema)
 
     @staticmethod
-    def deserialize(cls: type, batch: Union[pa.RecordBatch, pa.Table]):
+    def deserialize(cls: type, batch: Union[pa.RecordBatch, pa.Table]) -> Data:
         """
         Deserialize the given `Parquet` specification bytes to an object.
 

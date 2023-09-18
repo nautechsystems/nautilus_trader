@@ -22,6 +22,7 @@ use std::{
 };
 
 use anyhow::Result;
+use indexmap::IndexMap;
 use nautilus_core::{
     correctness::check_u8_equal, python::to_pyvalue_err, serialization::Serializable,
     time::UnixNanos,
@@ -102,7 +103,19 @@ impl QuoteTick {
         metadata
     }
 
-    /// Create a new [`Bar`] extracted from the given [`PyAny`].
+    /// Returns the field map for the type, for use with arrow schemas.
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("bid_price".to_string(), "Int64".to_string());
+        metadata.insert("ask_price".to_string(), "Int64".to_string());
+        metadata.insert("bid_size".to_string(), "UInt64".to_string());
+        metadata.insert("ask_size".to_string(), "UInt64".to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata
+    }
+
+    /// Create a new [`QuoteTick`] extracted from the given [`PyAny`].
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
@@ -287,6 +300,31 @@ impl QuoteTick {
         // Deserialize to object
         let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(
+            instrument_id,
+            price_precision,
+            size_precision,
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
     }
 
     #[staticmethod]

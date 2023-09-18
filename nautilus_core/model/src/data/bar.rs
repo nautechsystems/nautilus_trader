@@ -20,6 +20,7 @@ use std::{
     str::FromStr,
 };
 
+use indexmap::IndexMap;
 use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -253,7 +254,21 @@ impl Bar {
         metadata
     }
 
+    /// Returns the field map for the type, for use with arrow schemas.
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("open".to_string(), "Int64".to_string());
+        metadata.insert("high".to_string(), "Int64".to_string());
+        metadata.insert("low".to_string(), "Int64".to_string());
+        metadata.insert("close".to_string(), "Int64".to_string());
+        metadata.insert("volume".to_string(), "UInt64".to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata
+    }
+
     /// Create a new [`Bar`] extracted from the given [`PyAny`].
+    #[cfg(feature = "python")]
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
         let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
@@ -409,6 +424,31 @@ impl Bar {
         // Deserialize to object
         let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
         Ok(instance)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        bar_type: &BarType,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(
+            bar_type,
+            price_precision,
+            size_precision,
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
     }
 
     #[staticmethod]
