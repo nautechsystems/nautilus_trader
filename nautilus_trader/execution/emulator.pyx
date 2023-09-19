@@ -538,9 +538,7 @@ cdef class OrderEmulator(Actor):
         cdef InstrumentId trigger_instrument_id = order.instrument_id if order.trigger_instrument_id is None else order.trigger_instrument_id
         cdef MatchingCore matching_core = self._matching_cores.get(trigger_instrument_id)
         if matching_core is None:
-            self._log.error(
-                f"Cannot handle `CancelOrder`: no matching core for trigger instrument {trigger_instrument_id}.",
-            )
+            self._manager.cancel_order(order)
             return
 
         if not matching_core.order_exists(order.client_order_id) and order.is_open_c() and not order.is_pending_cancel_c():
