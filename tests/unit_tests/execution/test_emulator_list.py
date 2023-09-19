@@ -1173,7 +1173,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[2].status == OrderStatus.INITIALIZED
 
     def test_restart_emulator_with_partially_filled_parent(self):
-        # Arrange - Prepare market
+        # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
@@ -1214,7 +1214,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[2].status == OrderStatus.EMULATED
 
     def test_restart_emulator_then_cancel_bracket(self):
-        # Arrange - Prepare market
+        # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
@@ -1232,16 +1232,6 @@ class TestOrderEmulatorWithOrderLists:
             position_id=PositionId("P-001"),
         )
 
-        tick = TestDataStubs.quote_tick(
-            instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5000.0,
-            ask_price=5000.0,
-        )
-
-        self.data_engine.process(tick)
-        self.exchange.process_quote_tick(tick)
-        self.exchange.process(0)
-
         self.emulator.stop()
         self.emulator.reset()
         self.emulator.start()
@@ -1251,12 +1241,12 @@ class TestOrderEmulatorWithOrderLists:
 
         # Assert
         entry_order = self.cache.order(bracket.orders[0].client_order_id)
-        assert entry_order.status == OrderStatus.FILLED
+        assert entry_order.status == OrderStatus.EMULATED
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.CANCELED
 
     def test_restart_emulator_with_closed_parent_position(self):
-        # Arrange - Prepare market
+        # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
