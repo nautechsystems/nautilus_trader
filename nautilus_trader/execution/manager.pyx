@@ -436,6 +436,11 @@ cdef class OrderManager:
                     self.cancel_order(contingent_order)
                 elif filled_qty._mem.raw > 0 and filled_qty._mem.raw != contingent_order.quantity._mem.raw:
                     self.update_order_quantity(contingent_order, filled_qty)
+            elif order.contingency_type == ContingencyType.OCO:
+                if self.debug:
+                    self._log.info(f"Processing OCO contingent order {client_order_id}.", LogColor.MAGENTA)
+                if order.is_closed_c() and (order.exec_spawn_id is None or not is_spawn_active):
+                    self.cancel_order(contingent_order)
             elif order.contingency_type == ContingencyType.OUO:
                 if self.debug:
                     self._log.info(f"Processing OUO contingent order {client_order_id}, {leaves_qty=}, {contingent_order.leaves_qty=}.", LogColor.MAGENTA)

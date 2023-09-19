@@ -612,7 +612,7 @@ cdef class Strategy(Actor):
         if command is None:
             return
 
-        if order.is_emulated_c():
+        if order.is_emulated_c() or order.emulation_trigger != TriggerType.NO_TRIGGER:
             self._send_emulator_command(command)
         elif order.exec_algorithm_id is not None and order.is_active_local_c():
             self._send_algo_command(command, order.exec_algorithm_id)
