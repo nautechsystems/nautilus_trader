@@ -30,6 +30,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
@@ -259,12 +260,21 @@ class BacktestNode:
         # Add query for all data configs
         for config in data_configs:
             catalog = config.catalog()
+            if config.data_type == Bar:
+                # TODO: Temporary hack - improve bars config and decide implementation with `filter_expr`
+                assert config.instrument_id, "No `instrument_id` for Bar data config"
+                assert config.bar_spec, "No `bar_spec` for Bar data config"
+                bar_type = config.instrument_id + "-" + config.bar_spec + "-EXTERNAL"
+            else:
+                bar_type = None
             session = catalog.backend_session(
                 cls=config.data_type,
-                instrument_ids=[config.instrument_id] if config.instrument_id else [],
+                instrument_ids=[config.instrument_id]
+                if config.instrument_id and not bar_type
+                else [],
+                bar_types=[bar_type] if bar_type else [],
                 start=config.start_time,
                 end=config.end_time,
-                # where=where,  # TODO
                 session=session,
             )
 
