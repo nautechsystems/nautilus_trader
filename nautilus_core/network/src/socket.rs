@@ -15,7 +15,7 @@
 
 use std::{io, sync::Arc, time::Duration};
 
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes, PyObject, Python};
+use pyo3::{exceptions::PyException, prelude::*, PyObject, Python};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -34,6 +34,43 @@ type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 
+/// Configuration for TCP socket connection
+#[pyclass]
+#[derive(Debug, Clone)]
+pub struct SocketConfig {
+    /// Url to connect to
+    url: String,
+    /// Connection mode is plain or TLS
+    mode: Mode,
+    /// Sequence of bytes that separate lines
+    suffix: Vec<u8>,
+    /// Python function to handle incoming messages
+    handler: PyObject,
+    /// Optional heartbeat with period and beat message
+    heartbeat: Option<(u64, Vec<u8>)>,
+}
+
+#[pymethods]
+impl SocketConfig {
+    #[new]
+    fn new(
+        url: String,
+        ssl: bool,
+        suffix: Vec<u8>,
+        handler: PyObject,
+        heartbeat: Option<(u64, Vec<u8>)>,
+    ) -> Self {
+        let mode = if ssl { Mode::Tls } else { Mode::Plain };
+        Self {
+            url,
+            mode,
+            heartbeat,
+            suffix,
+            handler,
+        }
+    }
+}
+
 /// Creates a TcpStream with the server
 ///
 /// The stream can be encrypted with TLS or Plain. The stream is split into
@@ -51,25 +88,22 @@ type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 /// the received byte stream.
 #[pyclass]
 struct SocketClientInner {
-    url: String,
-    mode: Mode,
-    heartbeat: Option<(u64, Vec<u8>)>,
+    config: SocketConfig,
     read_task: task::JoinHandle<()>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedTcpWriter,
-    suffix: Vec<u8>,
-    handler: PyObject,
 }
 
 impl SocketClientInner {
-    pub async fn connect_url(
-        url: &str,
-        handler: PyObject,
-        mode: Mode,
-        suffix: Vec<u8>,
-        heartbeat: Option<(u64, Vec<u8>)>,
-    ) -> io::Result<Self> {
-        let (reader, writer) = Self::tls_connect_with_server(url, mode).await;
+    pub async fn connect_url(config: SocketConfig) -> io::Result<Self> {
+        let SocketConfig {
+            url,
+            mode,
+            heartbeat,
+            suffix,
+            handler,
+        } = &config;
+        let (reader, writer) = Self::tls_connect_with_server(url, *mode).await;
         let shared_writer = Arc::new(Mutex::new(writer));
 
         // Keep receiving messages from socket pass them as arguments to handler
@@ -80,14 +114,10 @@ impl SocketClientInner {
             Self::spawn_heartbeat_task(heartbeat.clone(), shared_writer.clone(), suffix.clone());
 
         Ok(Self {
-            url: url.to_string(),
-            mode,
-            heartbeat,
+            config,
             read_task,
             heartbeat_task,
             writer: shared_writer,
-            suffix,
-            handler,
         })
     }
 
@@ -201,17 +231,21 @@ impl SocketClientInner {
     ///
     /// TODO: fix error type
     pub async fn reconnect(&mut self) -> Result<(), String> {
-        let (reader, new_writer) = Self::tls_connect_with_server(&self.url, self.mode).await;
+        let SocketConfig {
+            url,
+            mode,
+            heartbeat,
+            suffix,
+            handler,
+        } = &self.config;
+        let (reader, new_writer) = Self::tls_connect_with_server(url, *mode).await;
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
 
-        self.read_task = Self::spawn_read_task(reader, self.handler.clone(), self.suffix.clone());
-        self.heartbeat_task = Self::spawn_heartbeat_task(
-            self.heartbeat.clone(),
-            self.writer.clone(),
-            self.suffix.clone(),
-        );
+        self.read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
+        self.heartbeat_task =
+            Self::spawn_heartbeat_task(heartbeat.clone(), self.writer.clone(), suffix.clone());
         Ok(())
     }
 
@@ -253,17 +287,13 @@ pub struct SocketClient {
 
 impl SocketClient {
     pub async fn connect_client(
-        url: &str,
-        handler: PyObject,
-        mode: Mode,
-        suffix: Vec<u8>,
-        heartbeat: Option<(u64, Vec<u8>)>,
+        config: SocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> io::Result<Self> {
-        let inner =
-            SocketClientInner::connect_url(url, handler, mode, suffix.clone(), heartbeat).await?;
+        let suffix = config.suffix.clone();
+        let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(Mutex::new(false));
         let controller_task = Self::spawn_controller_task(
@@ -371,25 +401,15 @@ impl SocketClient {
     /// - Throws an Exception if it is unable to make socket connection
     #[staticmethod]
     fn connect(
-        url: String,
-        suffix: Py<PyBytes>,
-        ssl: bool,
-        handler: PyObject,
-        heartbeat: Option<(u64, Vec<u8>)>,
+        config: SocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         py: Python<'_>,
     ) -> PyResult<&PyAny> {
-        let mode = if ssl { Mode::Tls } else { Mode::Plain };
-        let suffix = suffix.as_ref(py).as_bytes().to_vec();
         pyo3_asyncio::tokio::future_into_py(py, async move {
             Self::connect_client(
-                &url,
-                handler,
-                mode,
-                suffix,
-                heartbeat,
+                config,
                 post_connection,
                 post_reconnection,
                 post_disconnection,
@@ -463,7 +483,7 @@ mod tests {
     use tracing::debug;
     use tracing_test::traced_test;
 
-    use crate::socket::SocketClient;
+    use crate::socket::{SocketClient, SocketConfig};
 
     struct TestServer {
         task: JoinHandle<()>,
@@ -559,18 +579,16 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let client: SocketClient = SocketClient::connect_client(
-            &format!("127.0.0.1:{}", server.port),
-            handler.clone(),
-            Mode::Plain,
-            b"\r\n".to_vec(),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        let config = SocketConfig {
+            url: format!("127.0.0.1:{}", server.port).to_string(),
+            handler: handler.clone(),
+            mode: Mode::Plain,
+            suffix: b"\r\n".to_vec(),
+            heartbeat: None,
+        };
+        let client: SocketClient = SocketClient::connect_client(config, None, None, None)
+            .await
+            .unwrap();
 
         // Send messages that increment the count
         for _ in 0..N {
