@@ -197,6 +197,36 @@ class TestPersistenceCatalog:
         assert len(all_bars) == 10
         assert len(bars) == len(stub_bars) == 10
 
+    def test_catalog_multiple_bar_types(self) -> None:
+        # Arrange
+        bar_type1 = TestDataStubs.bartype_adabtc_binance_1min_last()
+        instrument1 = TestInstrumentProvider.adabtc_binance()
+        stub_bars1 = TestDataStubs.binance_bars_from_csv(
+            "ADABTC-1m-2021-11-27.csv",
+            bar_type1,
+            instrument1,
+        )
+
+        bar_type2 = TestDataStubs.bartype_btcusdt_binance_100tick_last()
+        instrument2 = TestInstrumentProvider.btcusdt_binance()
+        stub_bars2 = TestDataStubs.binance_bars_from_csv(
+            "ADABTC-1m-2021-11-27.csv",
+            bar_type2,
+            instrument2,
+        )
+
+        # Act
+        self.catalog.write_data(stub_bars1)
+        self.catalog.write_data(stub_bars2)
+
+        # Assert
+        bars1 = self.catalog.bars(bar_types=[str(bar_type1)])
+        bars2 = self.catalog.bars(bar_types=[str(bar_type2)])
+        all_bars = self.catalog.bars()
+        assert len(all_bars) == 20
+        assert len(bars1) == 10
+        assert len(bars2) == 10
+
     def test_catalog_bar_query_instrument_id(
         self,
         betfair_catalog: ParquetDataCatalog,

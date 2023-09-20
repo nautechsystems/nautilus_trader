@@ -82,7 +82,26 @@ def test_backend_session_trades() -> None:
     assert is_ascending
 
 
-def test_backend_session_data() -> None:
+def test_backend_session_bars() -> None:
+    # Arrange
+    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/bar_data.parquet")
+    session = DataBackendSession()
+    session.add_file("bars_01", trades_path, NautilusDataType.Bar)
+
+    # Act
+    result = session.to_query_result()
+
+    bars = []
+    for chunk in result:
+        bars.extend(list_from_capsule(chunk))
+
+    # Assert
+    assert len(bars) == 10
+    is_ascending = all(bars[i].ts_init <= bars[i].ts_init for i in range(len(bars) - 1))
+    assert is_ascending
+
+
+def test_backend_session_multiple_types() -> None:
     # Arrange
     trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
     quotes_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
@@ -100,23 +119,4 @@ def test_backend_session_data() -> None:
     # Assert
     assert len(ticks) == 9600
     is_ascending = all(ticks[i].ts_init <= ticks[i].ts_init for i in range(len(ticks) - 1))
-    assert is_ascending
-
-
-def test_backend_session_bars() -> None:
-    # Arrange
-    trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/bar_data.parquet")
-    session = DataBackendSession()
-    session.add_file("bars_01", trades_path, NautilusDataType.Bar)
-
-    # Act
-    result = session.to_query_result()
-
-    bars = []
-    for chunk in result:
-        bars.extend(list_from_capsule(chunk))
-
-    # Assert
-    assert len(bars) == 10
-    is_ascending = all(bars[i].ts_init <= bars[i].ts_init for i in range(len(bars) - 1))
     assert is_ascending
