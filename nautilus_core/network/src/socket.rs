@@ -146,8 +146,14 @@ impl SocketClientInner {
             loop {
                 match reader.read_buf(&mut buf).await {
                     // Connection has been terminated or vector buffer is completely
-                    Ok(bytes) if bytes == 0 => error!("Cannot read anymore bytes"),
-                    Err(e) => error!("Failed with error: {e}"),
+                    Ok(bytes) if bytes == 0 => {
+                        error!("Cannot read anymore bytes");
+                        break;
+                    }
+                    Err(e) => {
+                        error!("Failed with error: {e}");
+                        break;
+                    }
                     // Received bytes of data
                     Ok(bytes) => {
                         debug!("Received {bytes} bytes of data");
@@ -238,11 +244,15 @@ impl SocketClientInner {
             suffix,
             handler,
         } = &self.config;
+        debug!("Reconnecting client");
         let (reader, new_writer) = Self::tls_connect_with_server(url, *mode).await;
+
+        debug!("Use new writer end");
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
 
+        debug!("Recreate reader and heartbeat task");
         self.read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
         self.heartbeat_task =
             Self::spawn_heartbeat_task(heartbeat.clone(), self.writer.clone(), suffix.clone());
@@ -503,37 +513,46 @@ mod tests {
 
             // Setup test server
             let handle = task::spawn(async move {
-                let mut buf = Vec::new();
-                let (mut stream, _) = server.accept().await.unwrap();
-                debug!("socket:test Server accepted connection");
-
+                // keep listening for new connections
                 loop {
-                    let bytes = stream.read_buf(&mut buf).await.unwrap();
-                    debug!("socket:test Server received {bytes} bytes");
+                    let (mut stream, _) = server.accept().await.unwrap();
+                    debug!("socket:test Server accepted connection");
 
-                    // Terminate if 0 bytes have been read
-                    // Connection has been terminated or vector buffer is completely
-                    if bytes == 0 {
-                        break;
-                    } else {
-                        // if received data has a line break
-                        // extract and write it to the stream
-                        while let Some((i, _)) =
-                            &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
-                        {
-                            let close_message = b"close".as_slice();
-                            if &buf[0..*i] == close_message {
-                                debug!("socket:test Client sent closing message");
-                                return;
+                    // keep receiving messages from connection
+                    // and sending them back as it is
+                    // if the message contains a close stop receiving messages
+                    // and drop the connection
+                    task::spawn(async move {
+                        let mut buf = Vec::new();
+                        loop {
+                            let bytes = stream.read_buf(&mut buf).await.unwrap();
+                            debug!("socket:test Server received {bytes} bytes");
+
+                            // Terminate if 0 bytes have been read
+                            // Connection has been terminated or vector buffer is completely
+                            if bytes == 0 {
+                                break;
                             } else {
-                                debug!("socket:test Server sending message");
-                                stream
-                                    .write_all(buf.drain(0..i + 2).as_slice())
-                                    .await
-                                    .unwrap();
+                                // if received data has a line break
+                                // extract and write it to the stream
+                                while let Some((i, _)) =
+                                    &buf.windows(2).enumerate().find(|(_, pair)| pair == b"\r\n")
+                                {
+                                    let close_message = b"close".as_slice();
+                                    if &buf[0..*i] == close_message {
+                                        debug!("socket:test Client sent closing message");
+                                        return;
+                                    } else {
+                                        debug!("socket:test Server sending message");
+                                        stream
+                                            .write_all(buf.drain(0..i + 2).as_slice())
+                                            .await
+                                            .unwrap();
+                                    }
+                                }
                             }
                         }
-                    }
+                    });
                 }
             });
 
