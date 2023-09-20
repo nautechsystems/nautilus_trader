@@ -59,6 +59,7 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         cls: type,
         instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
         raise NotImplementedError

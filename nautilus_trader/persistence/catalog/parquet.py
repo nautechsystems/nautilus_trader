@@ -209,15 +209,17 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         cls: type,
         instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data | GenericData]:
-        if cls in (QuoteTick, TradeTick, Bar, OrderBookDelta):
+        if cls in (OrderBookDelta, QuoteTick, TradeTick, Bar):
             data = self.query_rust(
                 cls=cls,
                 instrument_ids=instrument_ids,
+                bar_types=bar_types,
                 start=start,
                 end=end,
                 where=where,
@@ -245,6 +247,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         cls: type,
         instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
@@ -263,10 +266,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # TODO (bm) - fix this glob, query once on catalog creation?
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
+        print(glob_path)
         dirs = self.fs.glob(glob_path)
         for idx, fn in enumerate(dirs):
             assert self.fs.exists(fn)
             if instrument_ids and not any(uri_instrument_id(id_) in fn for id_ in instrument_ids):
+                continue
+            if bar_types and not any(uri_instrument_id(id_) in fn for id_ in bar_types):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
@@ -285,6 +291,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self,
         cls: type,
         instrument_ids: list[str] | None = None,
+        bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         where: str | None = None,
@@ -293,6 +300,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         session = self.backend_session(
             cls=cls,
             instrument_ids=instrument_ids,
+            bar_types=bar_types,
             start=start,
             end=end,
             where=where,
@@ -382,10 +390,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Build datafusion SQL query
         query = f"SELECT * FROM {table}"  # noqa (possible SQL injection)
         conditions: list[str] = [] + ([where] if where else [])
-        # if len(instrument_ids or []) == 1:
-        #     conditions.append(f"instrument_id = '{instrument_ids[0]}'")
-        # elif instrument_ids:
-        #     conditions.append(f"instrument_id in {tuple(instrument_ids)}")
+
         if start:
             start_ts = dt_to_unix_nanos(start)
             conditions.append(f"ts_init >= {start_ts}")
