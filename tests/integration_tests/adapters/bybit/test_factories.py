@@ -10,7 +10,7 @@ from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit.factories import _get_http_base_url
-from nautilus_trader.adapters.bybit.factories import _get_ws_base_url
+from nautilus_trader.adapters.bybit.factories import _get_ws_base_url_public
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
@@ -72,7 +72,7 @@ class TestBybitFactories:
         ],
     )
     def test_get_ws_base_url(self, account_type, is_testnet, expected):
-        base_url = _get_ws_base_url(account_type, is_testnet)
+        base_url = _get_ws_base_url_public(account_type, is_testnet)
         assert base_url == expected
 
     def test_create_bybit_live_data_client(self, bybit_http_client):

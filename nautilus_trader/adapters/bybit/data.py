@@ -2,12 +2,14 @@ import asyncio
 from typing import Optional
 
 import msgspec.json
+import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
+from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade,decoder_ws_ticker
@@ -16,12 +18,16 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
+from nautilus_trader.core.uuid import UUID4
+
+from nautilus_trader.core.datetime import secs_to_millis
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import TradeTick, BarType, Bar
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.model.enums import PriceType
 
 
 class BybitWsTopicCheck(msgspec.Struct):
@@ -57,12 +63,19 @@ class BybitDataClient(LiveMarketDataClient):
         # hot cache
         self._instrument_ids: dict[str, InstrumentId] = {}
 
+        # http API
+        self._http_market = BybitMarketHttpAPI(
+            client=client,
+            clock=clock,
+            instrument_type=instrument_type,
+        )
+
         # websocket API
         self._ws_client = BybitWebsocketClient(
             clock=clock,
             logger=logger,
             handler=self._handle_ws_message,
-            base_url=base_url_ws,
+            base_url=base_url_ws
         )
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -122,7 +135,7 @@ class BybitDataClient(LiveMarketDataClient):
         try:
             ws_message = self._decoder_ws_topic_check.decode(raw)
             self._topic_check(ws_message.topic, raw)
-        except Exception:
+        except Exception as e:
             try:
                 ws_message = self._decoder_ws_subscription.decode(raw)
                 if ws_message.success:
@@ -148,9 +161,7 @@ class BybitDataClient(LiveMarketDataClient):
     def _handle_ticker(self, raw: bytes)-> None:
         try:
             msg = self._decoders["ticker"].decode(raw)
-            print(msg)
         except Exception as e:
-            print(e)
             print("failed to parse ticker ",raw)
 
     def _topic_check(self, topic: str, raw: bytes) -> None:
@@ -159,7 +170,7 @@ class BybitDataClient(LiveMarketDataClient):
         elif "tickers" in topic:
             self._handle_ticker(raw)
         else:
-            self._log.error(f"Unknown websocket message topic: {topic}")
+            self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
@@ -173,3 +184,56 @@ class BybitDataClient(LiveMarketDataClient):
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
+
+
+    async def _request_bars(
+        self,
+        bar_type: BarType,
+        limit: int,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        if limit == 0 or limit > 1000:
+            limit = 1000
+
+        if bar_type.is_internally_aggregated():
+            self._log.error(
+                f"Cannot request {bar_type}: "
+                f"only historical bars with EXTERNAL aggregation available from Bybit.",
+            )
+            return
+
+        if not bar_type.spec.is_time_aggregated():
+            self._log.error(
+                f"Cannot request {bar_type}: only time bars are aggregated by Bybit.",
+            )
+            return
+
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.error(
+                f"Cannot request {bar_type}: "
+                f"only historical bars for LAST price type available from Binance.",
+            )
+            return
+
+        bybit_interval = self._enum_parser.parse_bybit_kline(bar_type)
+        start_time_ms = None
+        if start is not None:
+            start_time_ms = secs_to_millis(start.timestamp())
+
+        end_time_ms = None
+        if end is not None:
+            end_time_ms = secs_to_millis(end.timestamp())
+        bars = await self._http_market.request_bybit_bars(
+            bar_type=bar_type,
+            interval=bybit_interval,
+            start=start_time_ms,
+            end=end_time_ms,
+            limit=limit,
+            ts_init=self._clock.timestamp_ns(),
+        )
+        partial: Bar = bars.pop()
+        self._handle_bars(bar_type,bars,partial,correlation_id)
+
+

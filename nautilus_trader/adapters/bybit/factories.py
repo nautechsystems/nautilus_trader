@@ -109,7 +109,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             is_testnet=config.testnet,
             config=config.instrument_provider,
         )
-        default_base_url_ws: str = _get_ws_base_url(
+        default_base_url_ws: str = _get_ws_base_url_public(
             instrument_type=config.instrument_type,
             is_testnet=config.testnet,
         )
@@ -155,10 +155,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             is_testnet=config.testnet,
             config=config.instrument_provider,
         )
-        default_base_url_ws: str = _get_ws_base_url(
-            instrument_type=config.instrument_type,
-            is_testnet=config.testnet,
-        )
+        default_base_url_ws: str = _get_ws_base_url_private(config.testnet)
         return BybitExecutionClient(
             loop=loop,
             client=client,
@@ -194,7 +191,7 @@ def _get_http_base_url(is_testnet: bool):
         return "https://api.bytick.com"
 
 
-def _get_ws_base_url(instrument_type: BybitInstrumentType, is_testnet: bool):
+def _get_ws_base_url_public(instrument_type: BybitInstrumentType, is_testnet: bool):
     if not is_testnet:
         if instrument_type == BybitInstrumentType.SPOT:
             return "wss://stream.bybit.com/v5/public/spot"
@@ -217,3 +214,11 @@ def _get_ws_base_url(instrument_type: BybitInstrumentType, is_testnet: bool):
             raise RuntimeError(
                 f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
             )
+
+def _get_ws_base_url_private(is_testnet: bool)-> str:
+    if is_testnet:
+        return "wss://stream-testnet.bybit.com/v5/private"
+    else:
+        return "wss://stream.bybit.com/v5/private"
+
+

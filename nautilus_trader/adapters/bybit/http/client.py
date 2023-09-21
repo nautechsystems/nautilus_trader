@@ -17,6 +17,16 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
 from nautilus_trader.core.nautilus_pyo3.network import Quota
 
 
+def create_string_from_dict(data):
+    property_strings = []
+
+    for key, value in data.items():
+        property_string = f'"{key}":"{value}"'
+        property_strings.append(property_string)
+
+    result_string = '{'+ ','.join(property_strings)+'}'
+    return result_string
+
 class ResponseCode(msgspec.Struct):
     retCode: int
 
@@ -67,7 +77,7 @@ class BybitHttpClient:
         timestamp: Optional[int] = None,
         ratelimiter_keys: list[str] | None = None,
     ):
-        if payload:
+        if payload and http_method == HttpMethod.GET:
             url_path += "?" + urllib.parse.urlencode(payload)
             payload = None
         url = self._base_url + url_path
@@ -86,7 +96,6 @@ class BybitHttpClient:
             ratelimiter_keys
         )
         # first check for server error
-        print(str(response))
         if 400 <= response.status < 500:
             message = msgspec.json.decode(response.body) if response.body else None
             raise BybitError(
@@ -114,7 +123,9 @@ class BybitHttpClient:
         if payload is None:
             payload = {}
         # we need to get timestamp and signature
-        [timestamp,authed_signature] = self._extend_params_with_authentication_info(payload)
+
+        [timestamp,authed_signature] = self._sign_get_request(payload) \
+            if http_method == HttpMethod.GET else self._sign_post_request(payload)
         return await self.send_request(
             http_method=http_method,
             url_path=url_path,
@@ -129,7 +140,19 @@ class BybitHttpClient:
             f"Some exception in HTTP request status: {error.status} message:{error.message}",
         )
 
-    def _extend_params_with_authentication_info(self, payload: dict[str, Any]) -> [str,str]:
+
+    def _sign_post_request(self, payload: dict[str,Any])-> [str, str]:
+        timestamp = str(self._clock.timestamp_ms())
+        payload = create_string_from_dict(payload)
+        result = timestamp + self._api_key + str(self._recv_window) + payload
+        signature = hmac.new(
+            self._api_secret.encode("utf-8"),
+            result.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+        return [timestamp,signature]
+
+    def _sign_get_request(self, payload: dict[str, Any]) -> [str, str]:
         timestamp = str(self._clock.timestamp_ms())
         payload = urllib.parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload

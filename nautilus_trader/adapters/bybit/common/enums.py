@@ -53,6 +53,12 @@ class BybitOrderType(Enum):
     LIMIT = "Limit"
     UNKNOWN = "Unknown"
 
+@unique
+class BybitTriggerType(Enum):
+    LAST_PRICE = 'LastPrice'
+    INDEX_PRICE = 'IndexPrice'
+    MARK_PRICE = 'MarkPrice'
+
 
 @unique
 class BybitTimeInForce(Enum):
@@ -83,36 +89,54 @@ class BybitInstrumentType(Enum):
         return self in [BybitInstrumentType.SPOT]
 
 
+def check_dict_keys(key,data):
+    try:
+        return data[key]
+    except KeyError:
+        raise RuntimeError(
+            f"Unrecognized Bybit {key} not found in {data}"
+        )
+
 class BybitEnumParser:
     def __init__(self) -> None:
-        self.ext_to_int_order_side = {
+        self.bybit_to_nautilus_order_side = {
             BybitOrderSide.BUY: OrderSide.BUY,
             BybitOrderSide.SELL: OrderSide.SELL,
         }
-        self.ext_to_int_order_type = {
+        self.nautilus_to_bybit_order_side = {
+            b: a for a, b in self.bybit_to_nautilus_order_side.items()
+        }
+        self.bybit_to_nautilus_order_type = {
             BybitOrderType.MARKET: OrderType.MARKET,
             BybitOrderType.LIMIT: OrderType.LIMIT,
         }
+        self.nautilus_to_bybit_order_type = {
+            b: a for a, b in self.bybit_to_nautilus_order_type.items()
+        }
+
+
         # TODO check time in force mapping
-        self.ext_to_int_time_in_force = {
+        self.bybit_to_nautilus_time_in_force = {
             BybitTimeInForce.GTC: TimeInForce.GTC,
             BybitTimeInForce.IOC: TimeInForce.IOC,
             BybitTimeInForce.FOK: TimeInForce.FOK,
             BybitTimeInForce.POST_ONLY: TimeInForce.GTC,
         }
-        self.ext_to_int_order_status = {
-            BybitOrderStatus.CREATED: OrderStatus.ACCEPTED,
-            BybitOrderStatus.NEW: OrderStatus.INITIALIZED,
-            BybitOrderStatus.REJECTED: OrderStatus.REJECTED,
-            BybitOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
-            BybitOrderStatus.PARTIALLY_FILLED_CANCELED: OrderStatus.PARTIALLY_FILLED,
-            BybitOrderStatus.FILLED: OrderStatus.FILLED,
-            BybitOrderStatus.CANCELED: OrderStatus.CANCELED,
-            BybitOrderStatus.UNTRIGGERED: OrderStatus.RELEASED,
-            BybitOrderStatus.TRIGGERED: OrderStatus.TRIGGERED,
-            BybitOrderStatus.DEACTIVATED: OrderStatus.CANCELED,
-            BybitOrderStatus.ACTIVE: OrderStatus.ACCEPTED,
+        self.nautilus_to_bybit_time_in_force = {
+            TimeInForce.GTC: BybitTimeInForce.GTC,
+            TimeInForce.IOC: BybitTimeInForce.IOC,
+            TimeInForce.FOK: BybitTimeInForce.FOK,
         }
+
+        self.bybit_to_nautilus_order_status = {
+            BybitOrderStatus.CREATED: OrderStatus.SUBMITTED,
+            BybitOrderStatus.NEW: OrderStatus.ACCEPTED,
+            BybitOrderStatus.FILLED: OrderStatus.FILLED,
+        }
+        self.nautilus_to_bybit_order_status = {
+            b: a for a, b in self.bybit_to_nautilus_order_status.items()
+        }
+
         # klines
         self.minute_klines_interval = [1,3,5,15,30]
         self.hour_klines_interval = [1,2,4,6,12]
@@ -123,40 +147,53 @@ class BybitEnumParser:
             BarAggregation.WEEK: lambda x: BybitKlineInterval("W") if x == 1 else raise_error(ValueError(f"Bybit incorrect week kline interval {x}")),
             BarAggregation.MONTH: lambda x: BybitKlineInterval("M") if x == 1 else raise_error(ValueError(f"Bybit incorrect month kline interval {x}"))
         }
+        self.valid_order_types = {
+            OrderType.MARKET,
+            OrderType.LIMIT,
+        }
+        self.valid_time_in_force = {
+            TimeInForce.GTC,
+            TimeInForce.IOC,
+            TimeInForce.FOK,
+        }
 
     def parse_bybit_order_status(self, order_status: BybitOrderStatus) -> OrderStatus:
-        try:
-            return self.ext_to_int_order_status[order_status]
-        except KeyError:
-            raise RuntimeError(
-                f"unrecognized Bybit order status, was {order_status}",  # pragma: no cover
-            )
+        return check_dict_keys(order_status,self.bybit_to_nautilus_order_status)
+
+    def parse_nautilus_order_status(self, order_status: OrderStatus) -> BybitOrderStatus:
+        return check_dict_keys(order_status,self.nautilus_to_bybit_order_status)
+
 
     def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
+        return check_dict_keys(time_in_force,self.bybit_to_nautilus_time_in_force)
+
+    def parse_bybit_order_side(self, order_side: BybitOrderSide) -> OrderSide:
+        return check_dict_keys(order_side,self.bybit_to_nautilus_order_side)
+
+    def parse_nautilus_order_side(self, order_side: OrderSide) -> BybitOrderSide:
+        return check_dict_keys(order_side,self.nautilus_to_bybit_order_side)
+
+    def parse_bybit_order_type(self, order_type: BybitOrderType) -> OrderType:
+        return check_dict_keys(order_type,self.bybit_to_nautilus_order_type)
+
+    def parse_nautilus_order_type(self, order_type: OrderType) -> BybitOrderType:
+        return check_dict_keys(order_type,self.nautilus_to_bybit_order_type)
+
+    def parse_nautilus_time_in_force(self,time_in_force: TimeInForce) -> BybitTimeInForce:
         try:
-            return self.ext_to_int_time_in_force[time_in_force]
+            return self.nautilus_to_bybit_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(
                 f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
             )
 
-    def parse_bybit_order_side(self, order_side: BybitOrderSide) -> OrderSide:
+    def parse_bybit_time_in_force(self,time_in_force: BybitTimeInForce) -> TimeInForce:
         try:
-            return self.ext_to_int_order_side[order_side]
+            return self.bybit_to_nautilus_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(
-                f"unrecognized Bybit order side, was {order_side}",  # pragma: no cover
+                f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
             )
-
-    def parse_bybit_order_type(self, order_type: BybitOrderType) -> OrderType:
-        try:
-            return self.ext_to_int_order_type[order_type]
-        except KeyError:
-            raise RuntimeError(
-                f"unrecognized Bybit order type, was {order_type}",  # pragma: no cover
-            )
-
-
 
     def parse_bybit_kline(self, bar_type: BarType)-> BybitKlineInterval:
         try:

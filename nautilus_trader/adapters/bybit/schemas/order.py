@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Optional
 
 import msgspec
 
@@ -22,10 +23,10 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-class BybitOrder(msgspec.Struct):
+class BybitOrder(msgspec.Struct,omit_defaults=True,kw_only=True):
     orderId: str
     orderLinkId: str
-    blockTradeId: str
+    blockTradeId: Optional[str] = None
     symbol: str
     price: str
     qty: str
@@ -120,4 +121,15 @@ class BybitOpenOrdersResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitListResult(BybitOrder)
+    time: int
+
+
+class BybitPlaceOrder(msgspec.Struct):
+    orderId:str
+    orderLinkId:str
+
+class BybitPlaceOrderResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitPlaceOrder
     time: int

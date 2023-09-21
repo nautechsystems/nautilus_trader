@@ -1,11 +1,13 @@
 from typing import Optional
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType, BybitOrderSide, BybitOrderType, \
+    BybitTimeInForce
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint, \
     WalletBalanceGetParameters
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint, \
     PositionInfoGetParameters
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp, OpenOrdersGetParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint, PlaceOrderGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
@@ -34,6 +36,8 @@ class BybitAccountHttpAPI:
         self._endpoint_position_info = BybitPositionInfoEndpoint(client, self.base_endpoint)
         self._endpoint_open_orders = BybitOpenOrdersHttp(client, self.base_endpoint)
         self._endpoint_wallet_balance = BybitWalletBalanceEndpoint(client, self.base_endpoint)
+        self._endpoint_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
+
 
     async def query_position_info(
         self,
@@ -53,7 +57,7 @@ class BybitAccountHttpAPI:
         self,
         symbol: Optional[str] = None,
     ) -> list[BybitOrder]:
-        response = await self._endpoint_open_orders._get(
+        response = await self._endpoint_open_orders.get(
             OpenOrdersGetParameters(
                 symbol=BybitSymbol(symbol) if symbol else None,
                 category=get_category_from_instrument_type(self.instrument_type),
@@ -72,3 +76,27 @@ class BybitAccountHttpAPI:
             ),
         )
         return [response.result.list, response.time]
+
+
+    async def place_order(
+        self,
+        symbol: str,
+        side: BybitOrderSide,
+        order_type: BybitOrderType,
+        time_in_force: Optional[BybitTimeInForce] = None,
+        quantity: Optional[str] = None,
+        price: Optional[str] = None,
+        order_id: Optional[str] = None,
+    ):
+        await self._endpoint_order.post(
+            parameters=PlaceOrderGetParameters(
+                category=get_category_from_instrument_type(self.instrument_type),
+                symbol=BybitSymbol(symbol),
+                side=side,
+                orderType=order_type,
+                # timeInForce=time_in_force,
+                qty=quantity,
+                price=price,
+                orderLinkId=order_id
+            )
+        )
