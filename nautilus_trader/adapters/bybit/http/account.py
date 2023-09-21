@@ -6,8 +6,10 @@ from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import Bybi
     WalletBalanceGetParameters
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint, \
     PositionInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint, \
+    BybitCancelAllOrdersPostParameters
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp, OpenOrdersGetParameters
-from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint, PlaceOrderGetParameters
+from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint, BybitPlaceOrderGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
@@ -37,7 +39,7 @@ class BybitAccountHttpAPI:
         self._endpoint_open_orders = BybitOpenOrdersHttp(client, self.base_endpoint)
         self._endpoint_wallet_balance = BybitWalletBalanceEndpoint(client, self.base_endpoint)
         self._endpoint_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
-
+        self._endpoint_cancel_all_orders = BybitCancelAllOrdersEndpoint(client, self.base_endpoint)
 
     async def query_position_info(
         self,
@@ -66,6 +68,19 @@ class BybitAccountHttpAPI:
         )
         return response.result.list
 
+
+    async def cancel_all_orders(
+        self,
+        symbol: str
+    ):
+        response = await self._endpoint_cancel_all_orders.post(
+            BybitCancelAllOrdersPostParameters(
+                category=get_category_from_instrument_type(self.instrument_type),
+                symbol=BybitSymbol(symbol),
+            )
+        )
+        return response.result.list
+
     async def query_wallet_balance(
         self,
         coin: Optional[str] = None,
@@ -89,7 +104,7 @@ class BybitAccountHttpAPI:
         order_id: Optional[str] = None,
     ):
         await self._endpoint_order.post(
-            parameters=PlaceOrderGetParameters(
+            parameters=BybitPlaceOrderGetParameters(
                 category=get_category_from_instrument_type(self.instrument_type),
                 symbol=BybitSymbol(symbol),
                 side=side,

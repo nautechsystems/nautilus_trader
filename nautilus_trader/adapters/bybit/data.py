@@ -237,3 +237,11 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_bars(bar_type,bars,partial,correlation_id)
 
 
+    async def _disconnect(self):
+        if self._update_instruments_task:
+            self._log.debug("Cancelling `update_instruments` task.")
+            self._update_instruments_task.cancel()
+            self._update_instruments_task = None
+        await self._ws_client.disconnect()
+
+

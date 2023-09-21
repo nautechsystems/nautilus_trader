@@ -24,7 +24,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrder, CancelOrder, CancelAllOrders
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
@@ -255,8 +255,13 @@ class BybitExecutionClient(LiveExecutionClient):
             except Exception as e:
                 self._log.error(f"Failed to generate AccountState: {e}")
 
+
+    async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
+        await self._http_account.cancel_all_orders(command.instrument_id.symbol.value)
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_inner(command.order)
+
     async def _submit_order_inner(self, order: Order)-> None:
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed.")
@@ -282,9 +287,6 @@ class BybitExecutionClient(LiveExecutionClient):
             except BybitError as e:
                 print("BYBIT ERROR")
 
-
-
-
     def _check_order_validity(self, order: Order) -> None:
         # check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
@@ -305,7 +307,6 @@ class BybitExecutionClient(LiveExecutionClient):
             )
             return
 
-
     async def _submit_market_order(self, order: MarketOrder) -> None:
         pass
 
@@ -322,7 +323,6 @@ class BybitExecutionClient(LiveExecutionClient):
             price=str(order.price),
             order_id=str(order.client_order_id)
         )
-
 
     ################################################################################
     #   WS user handlers
@@ -347,8 +347,6 @@ class BybitExecutionClient(LiveExecutionClient):
         else:
             self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
-
-
     def _handle_account_position_update(self,raw: bytes):
         pass
 
@@ -359,7 +357,6 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             print(e)
             print(raw)
-
 
     def _handle_account_order_update(self,raw: bytes):
         try:
@@ -374,5 +371,9 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             print(e)
             print(raw)
+
+    async def _disconnect(self) -> None:
+        await self._ws_client.disconnect()
+
 
 

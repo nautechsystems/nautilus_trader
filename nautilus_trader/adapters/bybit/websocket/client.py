@@ -32,7 +32,7 @@ class BybitWebsocketClient:
         self._api_secret = api_secret
 
         self._streams_connecting: set[str] = set()
-        self._streams: dict[str, WebSocketClient] = {}
+        self._subscriptions: list[str] = []
 
     @property
     def url(self) -> str:
@@ -40,11 +40,10 @@ class BybitWebsocketClient:
 
     @property
     def subscriptions(self) -> list[str]:
-        return list(self._streams.keys())
+        return self._subscriptions
 
-    @property
-    def has_subscriptions(self) -> bool:
-        return bool(self._streams)
+    def has_subscriptions(self,item: str) -> bool:
+        return item in self._subscriptions
 
     ################################################################################
     # Public
@@ -52,12 +51,16 @@ class BybitWebsocketClient:
 
 
     async def subscribe_trades(self, symbol: str) -> None:
-        sub = {"op": "subscribe", "args": [f"publicTrade.{symbol}"]}
+        subscription = f"publicTrade.{symbol}"
+        sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
+        self._subscriptions.append(subscription)
 
     async def subscribe_tickers(self,symbol: str)-> None:
-        sub = {"op": "subscribe", "args": [f"tickers.{symbol}"]}
+        subscription = f"tickers.{symbol}"
+        sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
+        self._subscriptions.append(subscription)
 
 
     ################################################################################
@@ -67,14 +70,16 @@ class BybitWebsocketClient:
         sub = {"op": "subscribe", "args": ["position"]}
 
     async def subscribe_orders_update(self) -> None:
-        sub = {"op": "subscribe", "args": ["order"]}
+        subscription = "order"
+        sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
+        self._subscriptions.append(subscription)
 
     async def subscribe_executions_update(self) -> None:
-        sub = {"op": "subscribe", "args": ["execution"]}
+        subscription = "execution"
+        sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
-
-
+        self._subscriptions.append(subscription)
 
     async def connect(self) -> None:
         self._log.debug(f"Connecting to {self.url} websocket stream")
@@ -99,3 +104,8 @@ class BybitWebsocketClient:
             "op": "auth",
             "args": [self._api_key, timestamp, signature],
         }
+
+    async def disconnect(self) -> None:
+        await self._client.send_text(json.dumps({"op": "unsubscribe", "args": self._subscriptions}))
+        await self._client.disconnect()
+        self._log.info(f"Disconnected from {self.url}.", LogColor.BLUE)

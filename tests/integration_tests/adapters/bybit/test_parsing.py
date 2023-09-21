@@ -84,6 +84,7 @@ class TestBybitParsing:
             [BybitOrderStatus.CREATED, OrderStatus.SUBMITTED],
             [BybitOrderStatus.NEW,OrderStatus.ACCEPTED],
             [BybitOrderStatus.FILLED,OrderStatus.FILLED],
+            [BybitOrderStatus.CANCELLED,OrderStatus.CANCELLED],
         ]
     )
     def test_parse_bybit_order_status(self,bybit_order_status,order_status):
@@ -96,6 +97,7 @@ class TestBybitParsing:
             [OrderStatus.SUBMITTED, BybitOrderStatus.CREATED],
             [OrderStatus.ACCEPTED,BybitOrderStatus.NEW],
             [OrderStatus.FILLED,BybitOrderStatus.FILLED],
+            [OrderStatus.CANCELLED,BybitOrderStatus.CANCELLED],
         ]
     )
     def test_parse_nautilus_order_status(self,order_status,bybit_order_status):

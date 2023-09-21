@@ -132,6 +132,7 @@ class BybitEnumParser:
             BybitOrderStatus.CREATED: OrderStatus.SUBMITTED,
             BybitOrderStatus.NEW: OrderStatus.ACCEPTED,
             BybitOrderStatus.FILLED: OrderStatus.FILLED,
+            BybitOrderStatus.CANCELED: OrderStatus.CANCELED,
         }
         self.nautilus_to_bybit_order_status = {
             b: a for a, b in self.bybit_to_nautilus_order_status.items()
