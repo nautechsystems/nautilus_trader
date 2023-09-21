@@ -23,6 +23,7 @@ from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import SocketClient
+from nautilus_trader.core.nautilus_pyo3.network import SocketConfig
 
 
 HOST = "stream-api.betfair.com"
@@ -72,10 +73,12 @@ class BetfairStreamClient:
 
         self._log.info("Connecting betfair socket client..")
         self._client = await SocketClient.connect(
-            url=f"{self.host}:{self.port}",
-            handler=self.handler,
-            ssl=True,
-            suffix=self.crlf,
+            SocketConfig(
+                url=f"{self.host}:{self.port}",
+                handler=self.handler,
+                ssl=True,
+                suffix=self.crlf,
+            ),
         )
 
         self._log.debug("Running post connect")
