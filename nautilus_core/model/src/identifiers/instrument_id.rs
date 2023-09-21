@@ -323,19 +323,6 @@ mod tests {
         );
     }
 
-    #[ignore] // Cannot implement yet due Betfair instrument IDs
-    #[rstest]
-    fn test_instrument_id_parse_failure_multiple_dots() {
-        let result = InstrumentId::from_str("ETH.USDT.BINANCE");
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "Error parsing `InstrumentId` from 'ETH.USDT.BINANCE'"
-        );
-    }
-
     #[rstest]
     fn test_string_reprs() {
         let id = InstrumentId::from("ETH/USDT.BINANCE");
