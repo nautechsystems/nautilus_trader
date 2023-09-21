@@ -1614,6 +1614,15 @@ uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
 struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
 
 /**
+ * Returns any parsing error string from the provided `InstrumentId` value.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+const char *instrument_id_is_valid(const char *ptr);
+
+/**
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
