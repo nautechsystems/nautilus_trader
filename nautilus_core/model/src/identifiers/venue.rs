@@ -122,7 +122,7 @@ pub mod stubs {
         Venue::from("BINANCE")
     }
     #[fixture]
-    pub fn simulation() -> Venue {
+    pub fn sim() -> Venue {
         Venue::from("SIM")
     }
 }
