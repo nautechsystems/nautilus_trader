@@ -15,6 +15,8 @@
 
 import os
 
+import pandas as pd
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import TradeId
@@ -68,8 +70,8 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].ask_price == Price.from_str("86.728")
         assert ticks[0].bid_size == Quantity.from_int(1_000_000)
         assert ticks[0].ask_size == Quantity.from_int(1_000_000)
-        assert ticks[0].ts_event == 1357077600295000064
-        assert ticks[0].ts_event == 1357077600295000064
+        assert ticks[0].ts_event == 1357077600295000000
+        assert ticks[0].ts_init == 1357077600295000000
 
     def test_process_tick_data_with_delta(self):
         # Arrange
@@ -92,8 +94,27 @@ class TestQuoteTickDataWrangler:
         assert ticks[0].ask_price == Price.from_str("86.728")
         assert ticks[0].bid_size == Quantity.from_int(1_000_000)
         assert ticks[0].ask_size == Quantity.from_int(1_000_000)
-        assert ticks[0].ts_event == 1357077600295000064
-        assert ticks[0].ts_init == 1357077600296000564  # <-- delta diff
+        assert ticks[0].ts_event == 1357077600295000000
+        assert ticks[0].ts_init == 1357077600296000500  # <-- delta diff
+
+    def test_process_handles_nanosecond_timestamps(self):
+        # Arrange
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+        df = pd.DataFrame.from_dict(
+            {
+                "timestamp": [pd.Timestamp("2023-01-04 23:59:01.642000+0000", tz="UTC")],
+                "bid_price": [1.0],
+                "ask_price": [1.0],
+            },
+        )
+        df = df.set_index("timestamp")
+
+        # Act
+        ticks = wrangler.process(df)
+
+        # Assert
+        assert ticks[0].ts_event == 1672876741642000000
 
     def test_pre_process_bar_data_with_delta(self):
         # Arrange
@@ -177,8 +198,8 @@ class TestTradeTickDataWrangler:
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELLER
         assert ticks[0].trade_id == TradeId("148568980")
-        assert ticks[0].ts_event == 1597399200223000064
-        assert ticks[0].ts_init == 1597399200223000064
+        assert ticks[0].ts_event == 1597399200223000000
+        assert ticks[0].ts_init == 1597399200223000000
 
     def test_process_with_delta(self):
         # Arrange
@@ -198,8 +219,29 @@ class TestTradeTickDataWrangler:
         assert ticks[0].size == Quantity.from_str("2.67900")
         assert ticks[0].aggressor_side == AggressorSide.SELLER
         assert ticks[0].trade_id == TradeId("148568980")
-        assert ticks[0].ts_event == 1597399200223000064
-        assert ticks[0].ts_init == 1597399200224000564  # <-- delta diff
+        assert ticks[0].ts_event == 1597399200223000000
+        assert ticks[0].ts_init == 1597399200224000500  # <-- delta diff
+
+    def test_process_handles_nanosecond_timestamps(self):
+        # Arrange
+        usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+        wrangler = TradeTickDataWrangler(instrument=usdjpy)
+        df = pd.DataFrame.from_dict(
+            {
+                "timestamp": [pd.Timestamp("2023-01-04 23:59:01.642000+0000", tz="UTC")],
+                "side": ["BUY"],
+                "trade_id": [TestIdStubs.trade_id()],
+                "price": [1.0],
+                "quantity": [1.0],
+            },
+        )
+        df = df.set_index("timestamp")
+
+        # Act
+        ticks = wrangler.process(df)
+
+        # Assert
+        assert ticks[0].ts_event == 1672876741642000000
 
 
 class TestBarDataWrangler:
@@ -324,8 +366,8 @@ class TestTardisQuoteDataWrangler:
         assert ticks[0].ask_price == Price.from_str("9682.00")
         assert ticks[0].bid_size == Quantity.from_str("0.670000")
         assert ticks[0].ask_size == Quantity.from_str("0.840000")
-        assert ticks[0].ts_event == 1582329603502091776
-        assert ticks[0].ts_init == 1582329603503092277
+        assert ticks[0].ts_event == 1582329603502092000
+        assert ticks[0].ts_init == 1582329603503092501
 
 
 class TestTardisTradeDataWrangler:
@@ -357,5 +399,5 @@ class TestTardisTradeDataWrangler:
         assert ticks[0].size == Quantity.from_str("0.132000")
         assert ticks[0].aggressor_side == AggressorSide.BUYER
         assert ticks[0].trade_id == TradeId("42377944")
-        assert ticks[0].ts_event == 1582329602418379008
-        assert ticks[0].ts_init == 1582329602418379008
+        assert ticks[0].ts_event == 1582329602418379000
+        assert ticks[0].ts_init == 1582329602418379000
