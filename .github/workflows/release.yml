@@ -19,6 +19,9 @@ jobs:
         arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
+    defaults:
+      run:
+        shell: bash
     name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
@@ -207,6 +210,9 @@ jobs:
         arch: [x64]
         os: [ubuntu-20.04, ubuntu-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
+    defaults:
+      run:
+        shell: bash
     name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
@@ -244,13 +250,8 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Set poetry output (Linux, macOS)
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+      - name: Set poetry output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Set poetry output (Windows)
-        if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
@@ -264,43 +265,20 @@ jobs:
           poetry install
           poetry build --format wheel
 
-      - name: Set output for release (Linux, macOS)
-        id: vars-unix
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+      - name: Set output for release
+        id: vars-release
         run: |
           echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
           cd dist
           echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
 
-      - name: Upload release asset (Linux, macOS)
+      - name: Upload release asset
         id: upload-release-asset-unix
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars-unix.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars-unix.outputs.asset_name }}
-        with:
-          upload_url: ${{ needs.tag-release.outputs.upload_url }}
-          asset_path: ${{ env.ASSET_PATH }}
-          asset_name: ${{ env.ASSET_NAME }}
-          asset_content_type: application/wheel
-
-      - name: Set output for release (Windows)
-        id: vars-windows
-        if: runner.os == 'Windows'
-        run: |
-          echo "::set-output name=asset_path::$(Get-ChildItem dist | Select-Object -ExpandProperty FullName)"
-          echo "::set-output name=asset_name::$(Get-ChildItem dist | Select-Object -ExpandProperty Name)"
-
-      - name: Upload release asset (Windows)
-        id: upload-release-asset-windows
-        if: runner.os == 'Windows'
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars-windows.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars-windows.outputs.asset_name }}
+          ASSET_PATH: ${{ steps.vars-release.outputs.asset_path }}
+          ASSET_NAME: ${{ steps.vars-release.outputs.asset_name }}
         with:
           upload_url: ${{ needs.tag-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
