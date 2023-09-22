@@ -24,7 +24,7 @@ use std::{
 use anyhow::{anyhow, bail, Result};
 use nautilus_core::{
     python::to_pyvalue_err,
-    string::{cstr_to_string, str_to_cstr},
+    string::{cstr_to_str, cstr_to_string, str_to_cstr},
 };
 use pyo3::{
     prelude::*,
@@ -35,6 +35,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::identifiers::{symbol::Symbol, venue::Venue};
 
+/// Represents a valid instrument ID.
+///
+/// The symbol and venue combination should uniquely identify the instrument.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[cfg_attr(
@@ -42,7 +45,9 @@ use crate::identifiers::{symbol::Symbol, venue::Venue};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct InstrumentId {
+    /// The instruments ticker symbol.
     pub symbol: Symbol,
+    /// The instruments trading venue.
     pub venue: Venue,
 }
 
@@ -223,8 +228,8 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// - Assumes `ptr` is a valid C string pointer.
 #[cfg(feature = "ffi")]
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_is_valid(ptr: *const c_char) -> *const c_char {
-    match InstrumentId::from_str(cstr_to_string(ptr).as_str()) {
+pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *const c_char {
+    match InstrumentId::from_str(cstr_to_str(ptr)) {
         Ok(_) => str_to_cstr(""),
         Err(e) => str_to_cstr(&e.to_string()),
     }

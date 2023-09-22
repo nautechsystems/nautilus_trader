@@ -640,16 +640,39 @@ typedef struct OrderBook OrderBook;
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 
+/**
+ * Represents a valid ticker symbol ID for a tradable financial market instrument.
+ */
 typedef struct Symbol_t {
+    /**
+     * The ticker symbol ID value.
+     */
     char* value;
 } Symbol_t;
 
+/**
+ * Represents a valid trading venue ID.
+ */
 typedef struct Venue_t {
+    /**
+     * The venue ID value.
+     */
     char* value;
 } Venue_t;
 
+/**
+ * Represents a valid instrument ID.
+ *
+ * The symbol and venue combination should uniquely identify the instrument.
+ */
 typedef struct InstrumentId_t {
+    /**
+     * The instruments ticker symbol.
+     */
     struct Symbol_t symbol;
+    /**
+     * The instruments trading venue.
+     */
     struct Venue_t venue;
 } InstrumentId_t;
 
@@ -753,7 +776,18 @@ typedef struct QuoteTick_t {
     uint64_t ts_init;
 } QuoteTick_t;
 
+/**
+ * Represents a valid trade match ID (assigned by a trading venue).
+ *
+ * Can correspond to the `TradeID <1003> field` of the FIX protocol.
+ *
+ * The unique ID assigned to the trade entity once it is received or matched by
+ * the exchange or central counterparty.
+ */
 typedef struct TradeId_t {
+    /**
+     * The trade match ID value.
+     */
     char* value;
 } TradeId_t;
 
@@ -910,15 +944,50 @@ typedef struct Ticker {
     uint64_t ts_init;
 } Ticker;
 
+/**
+ * Represents a valid trader ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a trader ID is the abbreviated name of the trader
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "TESTER-001".
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another node instance.
+ */
 typedef struct TraderId_t {
+    /**
+     * The trader ID value.
+     */
     char* value;
 } TraderId_t;
 
+/**
+ * Represents a valid strategy ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a strategy ID is the class name of the strategy,
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "EMACross-001".
+ *
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another strategy within the node instance.
+ */
 typedef struct StrategyId_t {
+    /**
+     * The strategy ID value.
+     */
     char* value;
 } StrategyId_t;
 
+/**
+ * Represents a valid client order ID (assigned by the Nautilus system).
+ */
 typedef struct ClientOrderId_t {
+    /**
+     * The client order ID value.
+     */
     char* value;
 } ClientOrderId_t;
 
@@ -954,7 +1023,19 @@ typedef struct OrderReleased_t {
     uint64_t ts_init;
 } OrderReleased_t;
 
+/**
+ * Represents a valid account ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen '-'.
+ * It is expected an account ID is the name of the issuer with an account number
+ * separated by a hyphen.
+ *
+ * Example: "IB-D02851908".
+ */
 typedef struct AccountId_t {
+    /**
+     * The account ID value.
+     */
     char* value;
 } AccountId_t;
 
@@ -969,7 +1050,13 @@ typedef struct OrderSubmitted_t {
     uint64_t ts_init;
 } OrderSubmitted_t;
 
+/**
+ * Represents a valid venue order ID (assigned by a trading venue).
+ */
 typedef struct VenueOrderId_t {
+    /**
+     * The venue assigned order ID value.
+     */
     char* value;
 } VenueOrderId_t;
 
@@ -999,23 +1086,53 @@ typedef struct OrderRejected_t {
     uint8_t reconciliation;
 } OrderRejected_t;
 
+/**
+ * Represents a system client ID.
+ */
 typedef struct ClientId_t {
+    /**
+     * The client ID value.
+     */
     char* value;
 } ClientId_t;
 
+/**
+ * Represents a valid component ID.
+ */
 typedef struct ComponentId_t {
+    /**
+     * The component ID value.
+     */
     char* value;
 } ComponentId_t;
 
+/**
+ * Represents a valid execution algorithm ID.
+ */
 typedef struct ExecAlgorithmId_t {
+    /**
+     * The execution algorithm ID value.
+     */
     char* value;
 } ExecAlgorithmId_t;
 
+/**
+ * Represents a valid order list ID (assigned by the Nautilus system).
+ */
 typedef struct OrderListId_t {
+    /**
+     * The order list ID value.
+     */
     char* value;
 } OrderListId_t;
 
+/**
+ * Represents a valid position ID.
+ */
 typedef struct PositionId_t {
+    /**
+     * The position ID value.
+     */
     char* value;
 } PositionId_t;
 
@@ -1620,7 +1737,7 @@ struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t v
  *
  * - Assumes `ptr` is a valid C string pointer.
  */
-const char *instrument_id_is_valid(const char *ptr);
+const char *instrument_id_check_parsing(const char *ptr);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

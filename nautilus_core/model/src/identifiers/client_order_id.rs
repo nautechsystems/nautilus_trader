@@ -14,15 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
 use ustr::Ustr;
 
+/// Represents a valid client order ID (assigned by the Nautilus system).
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -30,6 +31,7 @@ use ustr::Ustr;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct ClientOrderId {
+    /// The client order ID value.
     pub value: Ustr,
 }
 
@@ -101,8 +103,7 @@ impl From<&str> for ClientOrderId {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    ClientOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ClientOrderId::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]
