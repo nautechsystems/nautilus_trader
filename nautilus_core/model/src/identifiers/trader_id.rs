@@ -14,14 +14,27 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::{check_string_contains, check_valid_string};
+use nautilus_core::{
+    correctness::{check_string_contains, check_valid_string},
+    string::cstr_to_str,
+};
 use ustr::Ustr;
 
+/// Represents a valid trader ID.
+///
+/// Must be correctly formatted with two valid strings either side of a hyphen.
+/// It is expected a trader ID is the abbreviated name of the trader
+/// with an order ID tag number separated by a hyphen.
+///
+/// Example: "TESTER-001".
+
+/// The reason for the numerical component of the ID is so that order and position IDs
+/// do not collide with those from another node instance.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -29,6 +42,7 @@ use ustr::Ustr;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct TraderId {
+    /// The trader ID value.
     pub value: Ustr,
 }
 
@@ -80,8 +94,7 @@ impl From<&str> for TraderId {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    TraderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    TraderId::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]

@@ -26,9 +26,9 @@ from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport exec_algorithm_id_hash
 from nautilus_trader.core.rust.model cimport exec_algorithm_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_check_parsing
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
-from nautilus_trader.core.rust.model cimport instrument_id_is_valid
 from nautilus_trader.core.rust.model cimport instrument_id_new
 from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
@@ -273,7 +273,7 @@ cdef class InstrumentId(Identifier):
 
     @staticmethod
     cdef InstrumentId from_str_c(str value):
-        cdef str parse_err = cstr_to_pystr(instrument_id_is_valid(pystr_to_cstr(value)))
+        cdef str parse_err = cstr_to_pystr(instrument_id_check_parsing(pystr_to_cstr(value)))
         if parse_err:
             raise ValueError(parse_err)
 

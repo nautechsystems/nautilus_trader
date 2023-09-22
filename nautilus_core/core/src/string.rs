@@ -69,6 +69,21 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
     }
 }
 
+/// Convert a C string pointer into a string slice.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// - If `ptr` is null.
+#[must_use]
+pub unsafe fn cstr_to_str(ptr: *const c_char) -> &'static str {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")
+}
+
 /// Convert a C string pointer into an owned `String`.
 ///
 /// # Safety
@@ -80,11 +95,7 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    CStr::from_ptr(ptr)
-        .to_str()
-        .expect("CStr::from_ptr failed")
-        .to_string()
+    cstr_to_str(ptr).to_string()
 }
 
 /// Convert a C string pointer into an owned `Option<String>`.
@@ -150,6 +161,15 @@ mod tests {
         unsafe {
             let _ = pystr_to_string(ptr);
         };
+    }
+
+    #[rstest]
+    fn test_cstr_to_str() {
+        // Create a valid C string pointer
+        let c_string = CString::new("test string2").expect("CString::new failed");
+        let ptr = c_string.as_ptr();
+        let result = unsafe { cstr_to_str(ptr) };
+        assert_eq!(result, "test string2");
     }
 
     #[rstest]
