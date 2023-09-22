@@ -165,7 +165,7 @@ cdef class RiskEngine(Component):
             limit=order_modify_rate_limit,
             interval=order_modify_rate_interval,
             output_send=self._send_to_execution,
-            output_drop=None,  # Buffer modify commands
+            output_drop=self._deny_modify_order,
             clock=clock,
             logger=logger,
         )
@@ -482,19 +482,19 @@ cdef class RiskEngine(Component):
         cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
             self._log.error(
-                f"ModifyOrder DENIED: Order with {repr(command.client_order_id)} not found.",
+                f"ModifyOrder DENIED: Order with {command.client_order_id!r} not found.",
             )
             return  # Denied
         elif order.is_closed_c():
             self._reject_modify_order(
                 order=order,
-                reason=f"Order with {repr(command.client_order_id)} already closed",
+                reason=f"Order with {command.client_order_id!r} already closed",
             )
             return  # Denied
         elif order.is_pending_cancel_c():
             self._reject_modify_order(
                 order=order,
-                reason=f"Order with {repr(command.client_order_id)} already pending cancel",
+                reason=f"Order with {command.client_order_id!r} already pending cancel",
             )
             return  # Denied
 
@@ -781,6 +781,14 @@ cdef class RiskEngine(Component):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
         elif isinstance(command, SubmitOrderList):
             self._deny_order_list(command.order_list, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
+
+    # Needs to be `cpdef` due being called from throttler
+    cpdef void _deny_modify_order(self, ModifyOrder command):
+        cdef Order order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"Order with {command.client_order_id!r} not found.")
+            return
+        self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
         self._log.error(f"SubmitOrder DENIED: {reason}.")
