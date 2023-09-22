@@ -16,6 +16,9 @@ jobs:
         arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.9", "3.10", "3.11"]
+    defaults:
+      run:
+        shell: bash
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
@@ -62,13 +65,8 @@ jobs:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Setup poetry output (Linux, macOS)
-        if: (runner.os == 'Linux') || (runner.os == 'macOS')
+      - name: Setup poetry output
         run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
-
-      - name: Setup poetry output (Windows)
-        if: runner.os == 'Windows'
-        run: echo "dir=$(poetry config cache-dir)" | Out-File -FilePath $env:GITHUB_ENV -Append >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
