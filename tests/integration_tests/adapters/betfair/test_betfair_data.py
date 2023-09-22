@@ -27,7 +27,6 @@ from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -232,18 +231,13 @@ def test_market_bsp(data_client, mock_data_engine_process):
         "OrderBookDeltas": 11,
         "InstrumentStatusUpdate": 9,
         "BetfairTicker": 8,
-        "GenericData": 8,
+        "GenericData": 30,
         "InstrumentClose": 1,
     }
-    assert result == expected
+    assert dict(result) == expected
 
     # Assert - Count of generic data messages
-    sp_deltas = [
-        d
-        for deltas in mock_call_args
-        if isinstance(deltas, GenericData)
-        for d in deltas.data.deltas
-    ]
+    sp_deltas = [deltas.data for deltas in mock_call_args if isinstance(deltas, GenericData)]
     assert len(sp_deltas) == 30
 
 
@@ -455,29 +449,23 @@ def test_bsp_deltas_apply(data_client, instrument):
         asks=[(0.0010000, 55.81)],
     )
 
-    deltas = [
-        BSPOrderBookDelta(
-            instrument_id=instrument.id,
-            action=BookAction.UPDATE,
-            order=BookOrder(
-                price=Price.from_str("0.990099"),
-                size=Quantity.from_str("2.0"),
-                side=OrderSide.BUY,
-                order_id=1,
-            ),
-            flags=0,
-            sequence=0,
-            ts_event=1667288437852999936,
-            ts_init=1667288437852999936,
-        ),
-    ]
-    bsp_deltas = BSPOrderBookDeltas(
+    bsp_delta = BSPOrderBookDelta(
         instrument_id=instrument.id,
-        deltas=deltas,
+        action=BookAction.UPDATE,
+        order=BookOrder(
+            price=Price.from_str("0.990099"),
+            size=Quantity.from_str("2.0"),
+            side=OrderSide.BUY,
+            order_id=1,
+        ),
+        flags=0,
+        sequence=0,
+        ts_event=1667288437852999936,
+        ts_init=1667288437852999936,
     )
 
     # Act
-    book.apply(bsp_deltas)
+    book.apply(bsp_delta)
 
     # Assert
     assert book.best_ask_price() == betfair_float_to_price(0.001)
