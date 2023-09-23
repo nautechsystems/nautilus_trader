@@ -36,7 +36,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.funcs import class_to_filename
-from nautilus_trader.persistence.funcs import uri_instrument_id
+from nautilus_trader.persistence.funcs import urisafe_instrument_id
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.serializer import register_arrow
@@ -93,7 +93,6 @@ class StreamingFeatherWriter:
         self._per_instrument_writers = {
             "trade_tick",
             "quote_tick",
-            "bar",
             "order_book_delta",
             "ticker",
         }
@@ -104,14 +103,29 @@ class StreamingFeatherWriter:
         self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
         self.missing_writers: set[type] = set()
 
-    def _create_writer(self, cls):
+    @property
+    def is_closed(self) -> bool:
+        """
+        Return whether all file streams are closed.
+
+        Returns
+        -------
+        bool
+
+        """
+        return all(self._files[table_name].closed for table_name in self._files)
+
+    def _create_writer(self, cls: type, table_name: str | None = None):
         if self.include_types is not None and cls.__name__ not in self.include_types:
             return
-        table_name = class_to_filename(cls)
+
+        table_name = class_to_filename(cls) if not table_name else table_name
+
         if table_name in self._writers:
             return
         if table_name in self._per_instrument_writers:
             return
+
         schema = self._schemas[cls]
         full_path = f"{self.path}/{table_name}.feather"
 
@@ -135,7 +149,8 @@ class StreamingFeatherWriter:
         folder = f"{self.path}/{table_name}"
         key = (table_name, obj.instrument_id.value)
         self.fs.makedirs(folder, exist_ok=True)
-        full_path = f"{folder}/{uri_instrument_id(obj.instrument_id.value)}.feather"
+
+        full_path = f"{folder}/{urisafe_instrument_id(obj.instrument_id.value)}.feather"
         f = self.fs.open(full_path, "wb")
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
@@ -173,10 +188,6 @@ class StreamingFeatherWriter:
 
         return metadata
 
-    @property
-    def closed(self) -> bool:
-        return all(self._files[table_name].closed for table_name in self._files)
-
     def write(self, obj: object) -> None:  # noqa: C901
         """
         Write the object to the stream.
@@ -200,17 +211,19 @@ class StreamingFeatherWriter:
         elif isinstance(obj, Instrument):
             if obj.id not in self._instruments:
                 self._instruments[obj.id] = obj
+
         table = class_to_filename(cls)
+        if isinstance(obj, Bar):
+            bar: Bar = obj
+            table += f"_{str(bar.bar_type).lower()}"
+
         if table not in self._writers:
             if table.startswith("genericdata_signal"):
                 self._create_writer(cls=cls)
+            elif table.startswith("bar"):
+                self._create_writer(cls=cls, table_name=table)
             elif table in self._per_instrument_writers:
-                if isinstance(obj, Bar):
-                    bar: Bar = obj
-                    # TODO: Temporary hack to get bars working
-                    key = (table, bar.bar_type.instrument_id.value)
-                else:
-                    key = (table, obj.instrument_id.value)  # type: ignore
+                key = (table, obj.instrument_id.value)  # type: ignore
                 if key not in self._instrument_writers:
                     self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
@@ -347,20 +360,3 @@ def generate_signal_class(name: str, value_type: type) -> type:
     )
 
     return SignalData
-
-
-def read_feather_file(
-    path: str,
-    fs: fsspec.AbstractFileSystem | None = None,
-) -> pa.Table | None:
-    fs = fs or fsspec.filesystem("file")
-    if fs is None:
-        raise FileNotFoundError("`fs` was `None` when a value was expected")
-    if not fs.exists(path):
-        return None
-    try:
-        with fs.open(path) as f:
-            reader = pa.ipc.open_stream(f)
-            return reader.read_all()
-    except (pa.ArrowInvalid, OSError):
-        return None

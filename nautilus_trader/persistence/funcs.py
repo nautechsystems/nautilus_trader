@@ -101,7 +101,7 @@ def class_to_filename(cls: type) -> str:
     return name
 
 
-def uri_instrument_id(instrument_id: str) -> str:
+def urisafe_instrument_id(instrument_id: str) -> str:
     """
     Convert an instrument_id into a valid URI for writing to a file path.
     """
