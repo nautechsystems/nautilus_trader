@@ -27,7 +27,11 @@ class CSVTickDataLoader:
     """
 
     @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
+    def load(
+        file_path: PathLike[str] | str,
+        index_col: str | int = "timestamp",
+        format: str = "mixed",
+    ) -> pd.DataFrame:
         """
         Return the tick pandas.DataFrame loaded from the given csv file.
 
@@ -35,6 +39,10 @@ class CSVTickDataLoader:
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
+        index_col : str | int, default 'timestamp'
+            The index column.
+        format : str, default 'mixed'
+            The timestamp column format.
 
         Returns
         -------
@@ -43,10 +51,10 @@ class CSVTickDataLoader:
         """
         df = pd.read_csv(
             file_path,
-            index_col="timestamp",
+            index_col=index_col,
             parse_dates=True,
         )
-        df.index = pd.to_datetime(df.index, format="mixed")
+        df.index = pd.to_datetime(df.index, format=format)
         return df
 
 

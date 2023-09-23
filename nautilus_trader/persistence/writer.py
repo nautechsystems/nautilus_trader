@@ -205,7 +205,12 @@ class StreamingFeatherWriter:
             if table.startswith("genericdata_signal"):
                 self._create_writer(cls=cls)
             elif table in self._per_instrument_writers:
-                key = (table, obj.instrument_id.value)  # type: ignore
+                if isinstance(obj, Bar):
+                    bar: Bar = obj
+                    # TODO: Temporary hack to get bars working
+                    key = (table, bar.bar_type.instrument_id.value)
+                else:
+                    key = (table, obj.instrument_id.value)  # type: ignore
                 if key not in self._instrument_writers:
                     self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
