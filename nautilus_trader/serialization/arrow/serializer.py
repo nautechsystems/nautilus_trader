@@ -45,8 +45,8 @@ _ARROW_SERIALIZER: dict[type, Callable] = {}
 _ARROW_DESERIALIZER: dict[type, Callable] = {}
 _SCHEMAS: dict[type, pa.Schema] = {}
 
-DATA_OR_EVENTS = Union[Data, Event]
-TABLE_OR_BATCH = Union[pa.Table, pa.RecordBatch]
+DataOrEvent = Union[Data, Event]
+TableOrBatch = Union[pa.Table, pa.RecordBatch]
 
 
 def get_schema(cls: type) -> pa.Schema:
@@ -118,7 +118,7 @@ class ArrowSerializer:
         return data
 
     @staticmethod
-    def rust_objects_to_record_batch(data: list[Data], cls: type) -> TABLE_OR_BATCH:
+    def rust_objects_to_record_batch(data: list[Data], cls: type) -> TableOrBatch:
         processed = ArrowSerializer._unpack_container_objects(cls, data)
         batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
         reader = pa.ipc.open_stream(BytesIO(batches_bytes))
@@ -127,12 +127,15 @@ class ArrowSerializer:
 
     @staticmethod
     def serialize(
-        data: DATA_OR_EVENTS,
-        cls: Optional[type[DATA_OR_EVENTS]] = None,
+        data: DataOrEvent,
+        cls: Optional[type[DataOrEvent]] = None,
     ) -> pa.RecordBatch:
         if isinstance(data, GenericData):
             data = data.data
         cls = cls or type(data)
+        if cls is None:
+            raise RuntimeError("`cls` was `None` when a value was expected")
+
         delegate = _ARROW_SERIALIZER.get(cls)
         if delegate is None:
             if cls in RUST_SERIALIZERS:
@@ -147,7 +150,7 @@ class ArrowSerializer:
         return batch
 
     @staticmethod
-    def serialize_batch(data: list[DATA_OR_EVENTS], cls: type[DATA_OR_EVENTS]) -> pa.Table:
+    def serialize_batch(data: list[DataOrEvent], cls: type[DataOrEvent]) -> pa.Table:
         """
         Serialize the given instrument to `Parquet` specification bytes.
 
@@ -209,7 +212,7 @@ class ArrowSerializer:
         return delegate(batch)
 
     @staticmethod
-    def _deserialize_rust(cls: type, table: pa.Table) -> list[DATA_OR_EVENTS]:
+    def _deserialize_rust(cls: type, table: pa.Table) -> list[DataOrEvent]:
         Wrangler = {
             QuoteTick: QuoteTickDataWrangler,
             TradeTick: TradeTickDataWrangler,
@@ -222,8 +225,8 @@ class ArrowSerializer:
         return ticks
 
 
-def make_dict_serializer(schema: pa.Schema):
-    def inner(data: list[DATA_OR_EVENTS]):
+def make_dict_serializer(schema: pa.Schema) -> Callable[[list[DataOrEvent]], pa.RecordBatch]:
+    def inner(data: list[DataOrEvent]) -> pa.RecordBatch:
         if not isinstance(data, list):
             data = [data]
         dicts = [d.to_dict(d) for d in data]
@@ -233,7 +236,7 @@ def make_dict_serializer(schema: pa.Schema):
 
 
 def make_dict_deserializer(cls):
-    def inner(table: pa.Table) -> list[DATA_OR_EVENTS]:
+    def inner(table: pa.Table) -> list[DataOrEvent]:
         assert isinstance(table, (pa.Table, pa.RecordBatch))
         return [cls.from_dict(d) for d in table.to_pylist()]
 
