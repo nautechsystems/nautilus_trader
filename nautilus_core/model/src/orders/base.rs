@@ -594,7 +594,7 @@ impl OrderCore {
         })
     }
 
-    fn opposite_side(&self, side: OrderSide) -> OrderSide {
+    pub fn opposite_side(side: OrderSide) -> OrderSide {
         match side {
             OrderSide::Buy => OrderSide::Sell,
             OrderSide::Sell => OrderSide::Buy,
@@ -602,7 +602,7 @@ impl OrderCore {
         }
     }
 
-    fn closing_side(&self, side: PositionSide) -> OrderSide {
+    pub fn closing_side(side: PositionSide) -> OrderSide {
         match side {
             PositionSide::Long => OrderSide::Sell,
             PositionSide::Short => OrderSide::Buy,
@@ -611,7 +611,7 @@ impl OrderCore {
         }
     }
 
-    fn signed_decimal_qty(&self) -> Decimal {
+    pub fn signed_decimal_qty(&self) -> Decimal {
         match self.side {
             OrderSide::Buy => self.quantity.as_decimal(),
             OrderSide::Sell => -self.quantity.as_decimal(),
@@ -619,7 +619,7 @@ impl OrderCore {
         }
     }
 
-    fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+    pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
         if side == PositionSide::Flat {
             return false;
         }
@@ -633,11 +633,11 @@ impl OrderCore {
         }
     }
 
-    fn commission(&self, currency: &Currency) -> Option<Money> {
+    pub fn commission(&self, currency: &Currency) -> Option<Money> {
         self.commissions.get(currency).copied()
     }
 
-    fn commissions(&self) -> HashMap<Currency, Money> {
+    pub fn commissions(&self) -> HashMap<Currency, Money> {
         self.commissions.clone()
     }
 }
@@ -674,8 +674,7 @@ mod tests {
     #[case(OrderSide::Sell, OrderSide::Buy)]
     #[case(OrderSide::NoOrderSide, OrderSide::NoOrderSide)]
     fn test_order_opposite_side(#[case] order_side: OrderSide, #[case] expected_side: OrderSide) {
-        let order = MarketOrder::default();
-        let result = order.opposite_side(order_side);
+        let result = OrderCore::opposite_side(order_side);
         assert_eq!(result, expected_side)
     }
 
@@ -684,8 +683,7 @@ mod tests {
     #[case(PositionSide::Short, OrderSide::Buy)]
     #[case(PositionSide::NoPositionSide, OrderSide::NoOrderSide)]
     fn test_closing_side(#[case] position_side: PositionSide, #[case] expected_side: OrderSide) {
-        let order = MarketOrder::default();
-        let result = order.closing_side(position_side);
+        let result = OrderCore::closing_side(position_side);
         assert_eq!(result, expected_side)
     }
 

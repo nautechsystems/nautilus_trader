@@ -48,10 +48,7 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct Money {
     pub raw: i64,
     pub currency: Currency,
