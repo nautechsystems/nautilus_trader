@@ -26,29 +26,28 @@ use crate::Indicator;
 #[repr(C)]
 #[derive(Debug)]
 #[pyclass]
-pub struct ExponentialMovingAverage {
+pub struct SimpleMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
-    pub alpha: f64,
     pub value: f64,
     pub count: usize,
-    has_inputs: bool,
+    pub inputs: Vec<f64>,
     is_initialized: bool,
 }
 
-impl Display for ExponentialMovingAverage {
+impl Display for SimpleMovingAverage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", self.name(), self.period,)
     }
 }
 
-impl Indicator for ExponentialMovingAverage {
+impl Indicator for SimpleMovingAverage {
     fn name(&self) -> String {
-        stringify!(ExponentialMovingAverage).to_string()
+        stringify!(SimpleMovingAverage).to_string()
     }
 
     fn has_inputs(&self) -> bool {
-        self.has_inputs
+        !self.inputs.is_empty()
     }
 
     fn is_initialized(&self) -> bool {
@@ -56,36 +55,36 @@ impl Indicator for ExponentialMovingAverage {
     }
 
     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(self.price_type).into());
+        self.update_raw(tick.extract_price(self.price_type).into())
     }
 
     fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+        self.update_raw((&tick.price).into())
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+        self.update_raw((&bar.close).into())
     }
 
     fn reset(&mut self) {
         self.value = 0.0;
         self.count = 0;
-        self.has_inputs = false;
+        self.inputs.clear();
         self.is_initialized = false;
     }
 }
 
-impl ExponentialMovingAverage {
-    fn update_raw(&mut self, value: f64) {
-        if !self.has_inputs {
-            self.has_inputs = true;
-            self.value = value;
+impl SimpleMovingAverage {
+    pub fn update_raw(&mut self, value: f64) {
+        if self.inputs.len() == self.period {
+            self.inputs.remove(0);
+            self.count -= 1;
         }
-
-        self.value = self.alpha.mul_add(value, (1.0 - self.alpha) * self.value);
+        self.inputs.push(value);
         self.count += 1;
+        let sum = self.inputs.iter().sum::<f64>();
+        self.value = sum / self.count as f64;
 
-        // Initialization logic
         if !self.is_initialized && self.count >= self.period {
             self.is_initialized = true;
         }
@@ -94,36 +93,29 @@ impl ExponentialMovingAverage {
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl ExponentialMovingAverage {
+impl SimpleMovingAverage {
     #[new]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
-            alpha: 2.0 / (period as f64 + 1.0),
             value: 0.0,
             count: 0,
-            has_inputs: false,
+            inputs: Vec::new(),
             is_initialized: false,
         }
     }
 
     #[getter]
     #[pyo3(name = "name")]
-    fn py_name(&self) -> String {
+    pub fn py_name(&self) -> String {
         self.name()
     }
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    pub fn py_period(&self) -> usize {
         self.period
-    }
-
-    #[getter]
-    #[pyo3(name = "alpha")]
-    fn py_alpha(&self) -> f64 {
-        self.alpha
     }
 
     #[getter]
@@ -139,35 +131,14 @@ impl ExponentialMovingAverage {
     }
 
     #[getter]
-    #[pyo3(name = "has_inputs")]
-    fn py_has_inputs(&self) -> bool {
-        self.has_inputs()
-    }
-
-    #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    pub fn py_initialized(&self) -> bool {
         self.is_initialized
     }
 
-    #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.py_update_raw(tick.extract_price(self.price_type).into());
-    }
-
-    #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
-    }
-
-    #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
-    }
-
-    #[pyo3(name = "reset")]
-    fn py_reset(&mut self) {
-        self.reset();
+    #[pyo3(name = "has_inputs")]
+    fn has_inputs_py(&self) -> bool {
+        self.has_inputs()
     }
 
     #[pyo3(name = "update_raw")]
@@ -176,7 +147,7 @@ impl ExponentialMovingAverage {
     }
 
     fn __repr__(&self) -> String {
-        format!("ExponentialMovingAverage({})", self.period)
+        format!("SimpleMovingAverage({})", self.period)
     }
 }
 
@@ -188,20 +159,19 @@ pub mod stubs {
     use nautilus_model::enums::PriceType;
     use rstest::fixture;
 
-    use crate::ema::ExponentialMovingAverage;
+    use crate::sma::SimpleMovingAverage;
 
     #[fixture]
-    pub fn indicator_ema_10() -> ExponentialMovingAverage {
-        ExponentialMovingAverage::new(10, Some(PriceType::Mid))
+    pub fn indicator_sma_10() -> SimpleMovingAverage {
+        SimpleMovingAverage::new(10, Some(PriceType::Mid))
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Test
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use indicator_ema_10;
     use nautilus_model::{
         data::{quote::QuoteTick, trade::TradeTick},
         enums::{AggressorSide, PriceType},
@@ -211,61 +181,52 @@ mod tests {
     use rstest::rstest;
 
     use super::stubs::*;
-    use crate::{ema::ExponentialMovingAverage, Indicator};
+    use crate::{sma::SimpleMovingAverage, Indicator};
 
     #[rstest]
-    fn test_ema_initialized(indicator_ema_10: ExponentialMovingAverage) {
-        let ema = indicator_ema_10;
-        let display_str = format!("{ema}");
-        assert_eq!(display_str, "ExponentialMovingAverage(10)");
-        assert_eq!(ema.period, 10);
-        assert_eq!(ema.price_type, PriceType::Mid);
-        assert_eq!(ema.alpha, 0.18181818181818182);
-        assert_eq!(ema.is_initialized, false);
+    fn test_sma_initialized(indicator_sma_10: SimpleMovingAverage) {
+        let display_str = format!("{indicator_sma_10}");
+        assert_eq!(display_str, "SimpleMovingAverage(10)");
+        assert_eq!(indicator_sma_10.period, 10);
+        assert_eq!(indicator_sma_10.price_type, PriceType::Mid);
+        assert_eq!(indicator_sma_10.value, 0.0);
+        assert_eq!(indicator_sma_10.count, 0);
     }
 
     #[rstest]
-    fn test_one_value_input(indicator_ema_10: ExponentialMovingAverage) {
-        let mut ema = indicator_ema_10;
-        ema.update_raw(1.0);
-        assert_eq!(ema.count, 1);
-        assert_eq!(ema.value, 1.0);
+    fn test_sma_update_raw_exact_period(indicator_sma_10: SimpleMovingAverage) {
+        let mut sma = indicator_sma_10;
+        sma.update_raw(1.0);
+        sma.update_raw(2.0);
+        sma.update_raw(3.0);
+        sma.update_raw(4.0);
+        sma.update_raw(5.0);
+        sma.update_raw(6.0);
+        sma.update_raw(7.0);
+        sma.update_raw(8.0);
+        sma.update_raw(9.0);
+        sma.update_raw(10.0);
+
+        assert!(sma.has_inputs());
+        assert!(sma.is_initialized());
+        assert_eq!(sma.count, 10);
+        assert_eq!(sma.value, 5.5);
     }
 
     #[rstest]
-    fn test_ema_update_raw(indicator_ema_10: ExponentialMovingAverage) {
-        let mut ema = indicator_ema_10;
-        ema.update_raw(1.0);
-        ema.update_raw(2.0);
-        ema.update_raw(3.0);
-        ema.update_raw(4.0);
-        ema.update_raw(5.0);
-        ema.update_raw(6.0);
-        ema.update_raw(7.0);
-        ema.update_raw(8.0);
-        ema.update_raw(9.0);
-        ema.update_raw(10.0);
-
-        assert!(ema.has_inputs());
-        assert!(ema.is_initialized());
-        assert_eq!(ema.count, 10);
-        assert_eq!(ema.value, 6.2393684801212155);
+    fn test_reset(indicator_sma_10: SimpleMovingAverage) {
+        let mut sma = indicator_sma_10;
+        sma.update_raw(1.0);
+        assert_eq!(sma.count, 1);
+        sma.reset();
+        assert_eq!(sma.count, 0);
+        assert_eq!(sma.value, 0.0);
+        assert_eq!(sma.is_initialized, false)
     }
 
     #[rstest]
-    fn test_reset(indicator_ema_10: ExponentialMovingAverage) {
-        let mut ema = indicator_ema_10;
-        ema.update_raw(1.0);
-        assert_eq!(ema.count, 1);
-        ema.reset();
-        assert_eq!(ema.count, 0);
-        assert_eq!(ema.value, 0.0);
-        assert_eq!(ema.is_initialized, false)
-    }
-
-    #[rstest]
-    fn test_handle_quote_tick(indicator_ema_10: ExponentialMovingAverage) {
-        let mut ema = indicator_ema_10;
+    fn test_handle_quote_tick(indicator_sma_10: SimpleMovingAverage) {
+        let mut sma = indicator_sma_10;
         let tick = QuoteTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             bid_price: Price::from("1500.0000"),
@@ -275,14 +236,14 @@ mod tests {
             ts_event: 1,
             ts_init: 0,
         };
-        ema.handle_quote_tick(&tick);
-        assert_eq!(ema.has_inputs(), true);
-        assert_eq!(ema.value, 1501.0);
+        sma.handle_quote_tick(&tick);
+        assert_eq!(sma.count, 1);
+        assert_eq!(sma.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage) {
-        let mut ema = indicator_ema_10;
+    fn test_handle_trade_tick(indicator_sma_10: SimpleMovingAverage) {
+        let mut sma = indicator_sma_10;
         let tick = TradeTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::from("1500.0000"),
@@ -292,8 +253,8 @@ mod tests {
             ts_event: 1,
             ts_init: 0,
         };
-        ema.handle_trade_tick(&tick);
-        assert_eq!(ema.has_inputs(), true);
-        assert_eq!(ema.value, 1500.0);
+        sma.handle_trade_tick(&tick);
+        assert_eq!(sma.count, 1);
+        assert_eq!(sma.value, 1500.0);
     }
 }
