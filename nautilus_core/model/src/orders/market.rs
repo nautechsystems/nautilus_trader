@@ -20,13 +20,14 @@ use std::{
 
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use super::base::{str_hashmap_to_ustr, Order, OrderCore};
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
-        TrailingOffsetType, TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{OrderEvent, OrderInitialized, OrderUpdated},
     identifiers::{
@@ -36,10 +37,10 @@ use crate::{
         venue::Venue, venue_order_id::VenueOrderId,
     },
     orders::base::OrderError,
-    types::{price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct MarketOrder {
     core: OrderCore,
 }
@@ -348,6 +349,9 @@ impl From<OrderInitialized> for MarketOrder {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Python API
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(feature = "python")]
 #[pymethods]
 impl MarketOrder {
@@ -374,7 +378,7 @@ impl MarketOrder {
         tags=None,
     ))]
     #[allow(clippy::too_many_arguments)]
-    pub fn py_new(
+    fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
@@ -416,5 +420,37 @@ impl MarketOrder {
             init_id,
             ts_init,
         )
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "opposite_side")]
+    fn py_opposite_side(side: OrderSide) -> OrderSide {
+        OrderCore::opposite_side(side)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "closing_side")]
+    fn py_closing_side(side: PositionSide) -> OrderSide {
+        OrderCore::closing_side(side)
+    }
+
+    #[pyo3(name = "signed_decimal_qty")]
+    fn py_signed_decimal_qty(&self) -> Decimal {
+        self.signed_decimal_qty()
+    }
+
+    #[pyo3(name = "would_reduce_only")]
+    fn py_would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        self.would_reduce_only(side, position_qty)
+    }
+
+    #[pyo3(name = "commission")]
+    fn py_commission(&self, currency: &Currency) -> Option<Money> {
+        self.commission(currency)
+    }
+
+    #[pyo3(name = "commissions")]
+    fn py_commissions(&self) -> HashMap<Currency, Money> {
+        self.commissions()
     }
 }

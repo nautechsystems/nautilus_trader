@@ -39,7 +39,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct StopMarketOrder {
     core: OrderCore,
     pub trigger_price: Price,

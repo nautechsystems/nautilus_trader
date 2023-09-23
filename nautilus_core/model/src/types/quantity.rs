@@ -45,10 +45,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct Quantity {
     pub raw: u64,
     pub precision: u8,
