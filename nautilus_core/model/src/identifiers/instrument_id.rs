@@ -24,7 +24,7 @@ use std::{
 use anyhow::{anyhow, bail, Result};
 use nautilus_core::{
     python::to_pyvalue_err,
-    string::{cstr_to_str, cstr_to_string, str_to_cstr},
+    string::{cstr_to_str, str_to_cstr},
 };
 use pyo3::{
     prelude::*,
@@ -221,7 +221,7 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
     InstrumentId::new(symbol, venue)
 }
 
-/// Returns any parsing error string from the provided `InstrumentId` value.
+/// Returns any [`InstrumentId`] parsing error from the provided C string pointer.
 ///
 /// # Safety
 ///
@@ -242,8 +242,8 @@ pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *con
 /// - Assumes `ptr` is a valid C string pointer.
 #[cfg(feature = "ffi")]
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from(cstr_to_string(ptr).as_str())
+pub unsafe extern "C" fn instrument_id_from_cstr(ptr: *const c_char) -> InstrumentId {
+    InstrumentId::from(cstr_to_str(ptr))
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.
@@ -304,7 +304,7 @@ mod tests {
 
     use super::InstrumentId;
     use crate::identifiers::{
-        instrument_id::{instrument_id_new_from_cstr, instrument_id_to_cstr},
+        instrument_id::{instrument_id_from_cstr, instrument_id_to_cstr},
         symbol::Symbol,
         venue::Venue,
     };
@@ -349,7 +349,7 @@ mod tests {
         unsafe {
             let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
-            let id2 = instrument_id_new_from_cstr(result);
+            let id2 = instrument_id_from_cstr(result);
             assert_eq!(id, id2);
         }
     }
@@ -359,7 +359,7 @@ mod tests {
         unsafe {
             let id = InstrumentId::new(Symbol::from("ETH/USDT"), Venue::from("BINANCE"));
             let result = instrument_id_to_cstr(&id);
-            let id2 = instrument_id_new_from_cstr(result);
+            let id2 = instrument_id_from_cstr(result);
             assert_eq!(id, id2);
         }
     }

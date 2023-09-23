@@ -28,7 +28,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_eq
 from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new

@@ -132,6 +132,12 @@ impl FromStr for BarType {
     }
 }
 
+impl From<&str> for BarType {
+    fn from(input: &str) -> Self {
+        Self::from_str(input).unwrap()
+    }
+}
+
 impl Display for BarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -543,6 +549,7 @@ mod tests {
             }
         );
         assert_eq!(bar_type.aggregation_source, AggregationSource::External);
+        assert_eq!(bar_type, BarType::from(input));
     }
 
     #[rstest]
