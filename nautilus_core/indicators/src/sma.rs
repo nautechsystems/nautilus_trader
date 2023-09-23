@@ -15,6 +15,8 @@
 
 use std::fmt::Display;
 
+use anyhow::Result;
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -25,7 +27,7 @@ use crate::Indicator;
 
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
 pub struct SimpleMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
@@ -75,6 +77,19 @@ impl Indicator for SimpleMovingAverage {
 }
 
 impl SimpleMovingAverage {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Result<Self> {
+        // Inputs don't require validation, however we return a `Result`
+        // to standardize with other indicators which do need validation.
+        Ok(Self {
+            period,
+            price_type: price_type.unwrap_or(PriceType::Last),
+            value: 0.0,
+            count: 0,
+            inputs: Vec::new(),
+            is_initialized: false,
+        })
+    }
+
     pub fn update_raw(&mut self, value: f64) {
         if self.inputs.len() == self.period {
             self.inputs.remove(0);
@@ -95,49 +110,42 @@ impl SimpleMovingAverage {
 #[pymethods]
 impl SimpleMovingAverage {
     #[new]
-    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        Self {
-            period,
-            price_type: price_type.unwrap_or(PriceType::Last),
-            value: 0.0,
-            count: 0,
-            inputs: Vec::new(),
-            is_initialized: false,
-        }
+    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
+        Self::new(period, price_type).map_err(to_pyvalue_err)
     }
 
     #[getter]
     #[pyo3(name = "name")]
-    pub fn py_name(&self) -> String {
+    fn py_name(&self) -> String {
         self.name()
     }
 
     #[getter]
     #[pyo3(name = "period")]
-    pub fn py_period(&self) -> usize {
+    fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "count")]
-    pub fn py_count(&self) -> usize {
+    fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    pub fn py_value(&self) -> f64 {
+    fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    pub fn py_initialized(&self) -> bool {
+    fn py_initialized(&self) -> bool {
         self.is_initialized
     }
 
     #[pyo3(name = "has_inputs")]
-    fn has_inputs_py(&self) -> bool {
+    fn py_has_inputs(&self) -> bool {
         self.has_inputs()
     }
 
@@ -163,7 +171,7 @@ pub mod stubs {
 
     #[fixture]
     pub fn indicator_sma_10() -> SimpleMovingAverage {
-        SimpleMovingAverage::new(10, Some(PriceType::Mid))
+        SimpleMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
     }
 }
 

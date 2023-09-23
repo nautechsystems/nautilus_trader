@@ -13,6 +13,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
+anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 
 [dev-dependencies]

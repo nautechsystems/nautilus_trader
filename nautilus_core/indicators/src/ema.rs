@@ -15,6 +15,8 @@
 
 use std::fmt::Display;
 
+use anyhow::Result;
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -25,7 +27,7 @@ use crate::Indicator;
 
 #[repr(C)]
 #[derive(Debug)]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
 pub struct ExponentialMovingAverage {
     pub period: usize,
     pub price_type: PriceType,
@@ -76,7 +78,21 @@ impl Indicator for ExponentialMovingAverage {
 }
 
 impl ExponentialMovingAverage {
-    fn update_raw(&mut self, value: f64) {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Result<Self> {
+        // Inputs don't require validation, however we return a `Result`
+        // to standardize with other indicators which do need validation.
+        Ok(Self {
+            period,
+            price_type: price_type.unwrap_or(PriceType::Last),
+            alpha: 2.0 / (period as f64 + 1.0),
+            value: 0.0,
+            count: 0,
+            has_inputs: false,
+            is_initialized: false,
+        })
+    }
+
+    pub fn update_raw(&mut self, value: f64) {
         if !self.has_inputs {
             self.has_inputs = true;
             self.value = value;
@@ -96,16 +112,8 @@ impl ExponentialMovingAverage {
 #[pymethods]
 impl ExponentialMovingAverage {
     #[new]
-    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
-        Self {
-            period,
-            price_type: price_type.unwrap_or(PriceType::Last),
-            alpha: 2.0 / (period as f64 + 1.0),
-            value: 0.0,
-            count: 0,
-            has_inputs: false,
-            is_initialized: false,
-        }
+    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
+        Self::new(period, price_type).map_err(to_pyvalue_err)
     }
 
     #[getter]
@@ -128,13 +136,13 @@ impl ExponentialMovingAverage {
 
     #[getter]
     #[pyo3(name = "count")]
-    pub fn py_count(&self) -> usize {
+    fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    pub fn py_value(&self) -> f64 {
+    fn py_value(&self) -> f64 {
         self.value
     }
 
@@ -192,7 +200,7 @@ pub mod stubs {
 
     #[fixture]
     pub fn indicator_ema_10() -> ExponentialMovingAverage {
-        ExponentialMovingAverage::new(10, Some(PriceType::Mid))
+        ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
     }
 }
 
@@ -288,7 +296,7 @@ mod tests {
             price: Price::from("1500.0000"),
             size: Quantity::from("1.00000000"),
             aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789").unwrap(),
+            trade_id: TradeId::from("123456789"),
             ts_event: 1,
             ts_init: 0,
         };
