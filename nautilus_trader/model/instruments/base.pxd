@@ -71,9 +71,9 @@ cdef class Instrument(Data):
     cdef readonly object margin_maint
     """The maintenance (position) margin rate for the instrument.\n\n:returns: `Decimal`"""
     cdef readonly object maker_fee
-    """The maker fee rate for the instrument.\n\n:returns: `Decimal`"""
+    """The fee rate for liquidity makers as a percentage of order value (where 1.0 is 100%).\n\n:returns: `Decimal`"""
     cdef readonly object taker_fee
-    """The taker fee rate for the instrument.\n\n:returns: `Decimal`"""
+    """The fee rate for liquidity takers as a percentage of order value (where 1.0 is 100%).\n\n:returns: `Decimal`"""
     cdef readonly str tick_scheme_name
     """The tick scheme name.\n\n:returns: `str` or ``None``"""
     cdef readonly dict info
