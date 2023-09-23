@@ -351,22 +351,20 @@ impl QuoteTick {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
-    use nautilus_core::serialization::Serializable;
-    use pyo3::{IntoPy, Python};
-    use rstest::rstest;
+pub mod stubs {
+    use rstest::fixture;
 
     use crate::{
         data::quote::QuoteTick,
-        enums::PriceType,
         identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
 
-    fn create_stub_quote_tick() -> QuoteTick {
+    #[fixture]
+    pub fn quote_tick_ethusdt_binance() -> QuoteTick {
         QuoteTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             bid_price: Price::from("10000.0000"),
@@ -377,10 +375,23 @@ mod tests {
             ts_init: 0,
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_core::serialization::Serializable;
+    use pyo3::{IntoPy, Python};
+    use rstest::rstest;
+
+    use super::stubs::*;
+    use crate::{data::quote::QuoteTick, enums::PriceType};
 
     #[rstest]
-    fn test_to_string() {
-        let tick = create_stub_quote_tick();
+    fn test_to_string(quote_tick_ethusdt_binance: QuoteTick) {
+        let tick = quote_tick_ethusdt_binance;
         assert_eq!(
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,1"
@@ -391,17 +402,21 @@ mod tests {
     #[case(PriceType::Bid, 10_000_000_000_000)]
     #[case(PriceType::Ask, 10_001_000_000_000)]
     #[case(PriceType::Mid, 10_000_500_000_000)]
-    fn test_extract_price(#[case] input: PriceType, #[case] expected: i64) {
-        let tick = create_stub_quote_tick();
+    fn test_extract_price(
+        #[case] input: PriceType,
+        #[case] expected: i64,
+        quote_tick_ethusdt_binance: QuoteTick,
+    ) {
+        let tick = quote_tick_ethusdt_binance;
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
     }
 
     #[rstest]
-    fn test_as_dict() {
+    fn test_as_dict(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
 
-        let tick = create_stub_quote_tick();
+        let tick = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
             let dict_string = tick.as_dict(py).unwrap().to_string();
@@ -411,10 +426,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_dict() {
+    fn test_from_dict(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
 
-        let tick = create_stub_quote_tick();
+        let tick = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
             let dict = tick.as_dict(py).unwrap();
@@ -424,9 +439,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject() {
+    fn test_from_pyobject(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = create_stub_quote_tick();
+        let tick = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
@@ -436,16 +451,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization() {
-        let tick = create_stub_quote_tick();
+    fn test_json_serialization(quote_tick_ethusdt_binance: QuoteTick) {
+        let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_json_bytes().unwrap();
         let deserialized = QuoteTick::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let tick = create_stub_quote_tick();
+    fn test_msgpack_serialization(quote_tick_ethusdt_binance: QuoteTick) {
+        let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_msgpack_bytes().unwrap();
         let deserialized = QuoteTick::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);
