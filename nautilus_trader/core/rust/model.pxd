@@ -719,6 +719,20 @@ cdef extern from "../includes/model.h":
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
 
+    # Returns any [`BarType`] parsing error from the provided C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    const char *bar_type_check_parsing(const char *ptr);
+
+    # Returns a [`BarType`] from a C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    BarType_t bar_type_from_cstr(const char *ptr);
+
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
     uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
@@ -1142,7 +1156,7 @@ cdef extern from "../includes/model.h":
 
     InstrumentId_t instrument_id_new(Symbol_t symbol, Venue_t venue);
 
-    # Returns any parsing error string from the provided `InstrumentId` value.
+    # Returns any [`InstrumentId`] parsing error from the provided C string pointer.
     #
     # # Safety
     #
@@ -1154,7 +1168,7 @@ cdef extern from "../includes/model.h":
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
-    InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
+    InstrumentId_t instrument_id_from_cstr(const char *ptr);
 
     # Returns an [`InstrumentId`] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);

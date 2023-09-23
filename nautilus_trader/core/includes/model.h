@@ -1231,6 +1231,24 @@ struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
 
+/**
+ * Returns any [`BarType`] parsing error from the provided C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+const char *bar_type_check_parsing(const char *ptr);
+
+/**
+ * Returns a [`BarType`] from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct BarType_t bar_type_from_cstr(const char *ptr);
+
 uint8_t bar_type_eq(const struct BarType_t *lhs, const struct BarType_t *rhs);
 
 uint8_t bar_type_lt(const struct BarType_t *lhs, const struct BarType_t *rhs);
@@ -1731,7 +1749,7 @@ uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
 struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
 
 /**
- * Returns any parsing error string from the provided `InstrumentId` value.
+ * Returns any [`InstrumentId`] parsing error from the provided C string pointer.
  *
  * # Safety
  *
@@ -1746,7 +1764,7 @@ const char *instrument_id_check_parsing(const char *ptr);
  *
  * - Assumes `ptr` is a valid C string pointer.
  */
-struct InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
+struct InstrumentId_t instrument_id_from_cstr(const char *ptr);
 
 /**
  * Returns an [`InstrumentId`] as a C string pointer.
