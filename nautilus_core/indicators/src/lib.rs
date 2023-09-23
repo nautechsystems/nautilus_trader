@@ -23,6 +23,7 @@ use pyo3::{prelude::*, types::PyModule, Python};
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<ema::ExponentialMovingAverage>()?;
+    m.add_class::<sma::SimpleMovingAverage>()?;
     Ok(())
 }
 
