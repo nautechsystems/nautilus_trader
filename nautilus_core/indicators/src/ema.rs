@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::Display;
+
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -37,12 +38,7 @@ pub struct ExponentialMovingAverage {
 
 impl Display for ExponentialMovingAverage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({})",
-            self.name(),
-            self.period,
-        )
+        write!(f, "{}({})", self.name(), self.period,)
     }
 }
 
@@ -132,13 +128,13 @@ impl ExponentialMovingAverage {
 
     #[getter]
     #[pyo3(name = "count")]
-    pub fn py_count(&self)->usize{
+    pub fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    pub fn py_value(&self)->f64{
+    pub fn py_value(&self) -> f64 {
         self.value
     }
 
@@ -188,13 +184,14 @@ impl ExponentialMovingAverage {
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-pub mod stubs{
-    use rstest::fixture;
+pub mod stubs {
     use nautilus_model::enums::PriceType;
+    use rstest::fixture;
+
     use crate::ema::ExponentialMovingAverage;
 
     #[fixture]
-    pub fn indicator_ema_10() -> ExponentialMovingAverage{
+    pub fn indicator_ema_10() -> ExponentialMovingAverage {
         ExponentialMovingAverage::new(10, Some(PriceType::Mid))
     }
 }
@@ -204,19 +201,17 @@ pub mod stubs{
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use indicator_ema_10;
+    use nautilus_model::{
+        data::{quote::QuoteTick, trade::TradeTick},
+        enums::{AggressorSide, PriceType},
+        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        types::{price::Price, quantity::Quantity},
+    };
     use rstest::rstest;
-    use nautilus_model::data::quote::QuoteTick;
-    use nautilus_model::data::trade::TradeTick;
-    use nautilus_model::enums::{AggressorSide, PriceType};
-    use nautilus_model::identifiers::instrument_id::InstrumentId;
-    use nautilus_model::identifiers::trade_id::TradeId;
-    use nautilus_model::types::price::Price;
-    use nautilus_model::types::quantity::Quantity;
-    use crate::ema::ExponentialMovingAverage;
-    use crate::Indicator;
 
     use super::stubs::*;
-    use indicator_ema_10;
+    use crate::{ema::ExponentialMovingAverage, Indicator};
 
     #[rstest]
     fn test_ema_initialized(indicator_ema_10: ExponentialMovingAverage) {
@@ -230,7 +225,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_one_value_input(indicator_ema_10: ExponentialMovingAverage){
+    fn test_one_value_input(indicator_ema_10: ExponentialMovingAverage) {
         let mut ema = indicator_ema_10;
         ema.update_raw(1.0);
         assert_eq!(ema.count, 1);
@@ -251,33 +246,25 @@ mod tests {
         ema.update_raw(9.0);
         ema.update_raw(10.0);
 
-
         assert!(ema.has_inputs());
         assert!(ema.is_initialized());
         assert_eq!(ema.count, 10);
         assert_eq!(ema.value, 6.2393684801212155);
     }
 
-
     #[rstest]
-    fn test_reset(
-        indicator_ema_10: ExponentialMovingAverage,
-    ){
+    fn test_reset(indicator_ema_10: ExponentialMovingAverage) {
         let mut ema = indicator_ema_10;
         ema.update_raw(1.0);
         assert_eq!(ema.count, 1);
         ema.reset();
         assert_eq!(ema.count, 0);
         assert_eq!(ema.value, 0.0);
-        assert_eq!(ema.is_initialized,false)
+        assert_eq!(ema.is_initialized, false)
     }
 
-
-
     #[rstest]
-    fn test_handle_quote_tick(
-        indicator_ema_10: ExponentialMovingAverage,
-    ){
+    fn test_handle_quote_tick(indicator_ema_10: ExponentialMovingAverage) {
         let mut ema = indicator_ema_10;
         let tick = QuoteTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
@@ -289,14 +276,12 @@ mod tests {
             ts_init: 0,
         };
         ema.handle_quote_tick(&tick);
-        assert_eq!(ema.has_inputs(),true);
-        assert_eq!(ema.value,1501.0);
+        assert_eq!(ema.has_inputs(), true);
+        assert_eq!(ema.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(
-        indicator_ema_10: ExponentialMovingAverage,
-    ){
+    fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage) {
         let mut ema = indicator_ema_10;
         let tick = TradeTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
@@ -308,7 +293,7 @@ mod tests {
             ts_init: 0,
         };
         ema.handle_trade_tick(&tick);
-        assert_eq!(ema.has_inputs(),true);
-        assert_eq!(ema.value,1500.0);
+        assert_eq!(ema.has_inputs(), true);
+        assert_eq!(ema.value, 1500.0);
     }
 }

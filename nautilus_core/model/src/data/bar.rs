@@ -481,19 +481,21 @@ impl Bar {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
-    use rstest::rstest;
+pub mod stubs {
+    use rstest::fixture;
 
-    use super::*;
     use crate::{
-        enums::BarAggregation,
-        identifiers::{symbol::Symbol, venue::Venue},
+        data::bar::{Bar, BarSpecification, BarType},
+        enums::{AggregationSource, BarAggregation, PriceType},
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+        types::{price::Price, quantity::Quantity},
     };
 
-    fn create_stub_bar() -> Bar {
+    #[fixture]
+    pub fn bar_audusd_sim_minute_bid() -> Bar {
         let instrument_id = InstrumentId {
             symbol: Symbol::new("AUDUSD").unwrap(),
             venue: Venue::new("SIM").unwrap(),
@@ -519,6 +521,20 @@ mod tests {
             ts_init: 1,
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{stubs::*, *};
+    use crate::{
+        enums::BarAggregation,
+        identifiers::{symbol::Symbol, venue::Venue},
+    };
 
     #[rstest]
     fn test_bar_spec_string_reprs() {
@@ -731,10 +747,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict() {
+    fn test_as_dict(bar_audusd_sim_minute_bid: Bar) {
         pyo3::prepare_freethreaded_python();
 
-        let bar = create_stub_bar();
+        let bar = bar_audusd_sim_minute_bid;
 
         Python::with_gil(|py| {
             let dict_string = bar.as_dict(py).unwrap().to_string();
@@ -744,10 +760,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_from_dict() {
+    fn test_as_from_dict(bar_audusd_sim_minute_bid: Bar) {
         pyo3::prepare_freethreaded_python();
 
-        let bar = create_stub_bar();
+        let bar = bar_audusd_sim_minute_bid;
 
         Python::with_gil(|py| {
             let dict = bar.as_dict(py).unwrap();
@@ -757,9 +773,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject() {
+    fn test_from_pyobject(bar_audusd_sim_minute_bid: Bar) {
         pyo3::prepare_freethreaded_python();
-        let bar = create_stub_bar();
+        let bar = bar_audusd_sim_minute_bid;
 
         Python::with_gil(|py| {
             let bar_pyobject = bar.into_py(py);
@@ -769,16 +785,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization() {
-        let bar = create_stub_bar();
+    fn test_json_serialization(bar_audusd_sim_minute_bid: Bar) {
+        let bar = bar_audusd_sim_minute_bid;
         let serialized = bar.as_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let bar = create_stub_bar();
+    fn test_msgpack_serialization(bar_audusd_sim_minute_bid: Bar) {
+        let bar = bar_audusd_sim_minute_bid;
         let serialized = bar.as_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);

@@ -14,14 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::fmt::Display;
-use nautilus_model::{
-    enums::{PriceType}
-};
 
+use nautilus_model::{
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    enums::PriceType,
+};
 use pyo3::prelude::*;
-use nautilus_model::data::bar::Bar;
-use nautilus_model::data::quote::QuoteTick;
-use nautilus_model::data::trade::TradeTick;
+
 use crate::Indicator;
 
 #[repr(C)]
@@ -38,12 +37,7 @@ pub struct SimpleMovingAverage {
 
 impl Display for SimpleMovingAverage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}({})",
-            self.name(),
-            self.period,
-        )
+        write!(f, "{}({})", self.name(), self.period,)
     }
 }
 
@@ -53,7 +47,7 @@ impl Indicator for SimpleMovingAverage {
     }
 
     fn has_inputs(&self) -> bool {
-        self.inputs.len() > 0
+        !self.inputs.is_empty()
     }
 
     fn is_initialized(&self) -> bool {
@@ -80,19 +74,18 @@ impl Indicator for SimpleMovingAverage {
     }
 }
 
-
-impl SimpleMovingAverage{
-    pub fn update_raw(&mut self,value: f64){
-        if self.inputs.len() == self.period{
+impl SimpleMovingAverage {
+    pub fn update_raw(&mut self, value: f64) {
+        if self.inputs.len() == self.period {
             self.inputs.remove(0);
-            self.count -=1;
+            self.count -= 1;
         }
         self.inputs.push(value);
         self.count += 1;
         let sum = self.inputs.iter().sum::<f64>();
         self.value = sum / self.count as f64;
 
-        if !self.is_initialized && self.count >= self.period{
+        if !self.is_initialized && self.count >= self.period {
             self.is_initialized = true;
         }
     }
@@ -101,7 +94,6 @@ impl SimpleMovingAverage{
 #[cfg(feature = "python")]
 #[pymethods]
 impl SimpleMovingAverage {
-
     #[new]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self {
@@ -116,36 +108,36 @@ impl SimpleMovingAverage {
 
     #[getter]
     #[pyo3(name = "name")]
-    pub fn py_name(&self) -> String{
+    pub fn py_name(&self) -> String {
         self.name()
     }
 
     #[getter]
     #[pyo3(name = "period")]
-    pub fn py_period(&self) -> usize{
+    pub fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "count")]
-    pub fn py_count(&self)->usize{
+    pub fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    pub fn py_value(&self)->f64{
+    pub fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    pub fn py_initialized(&self) -> bool{
+    pub fn py_initialized(&self) -> bool {
         self.is_initialized
     }
 
-    #[pyo3(name= "has_inputs")]
-    fn has_inputs_py(&self) -> bool{
+    #[pyo3(name = "has_inputs")]
+    fn has_inputs_py(&self) -> bool {
         self.has_inputs()
     }
 
@@ -159,19 +151,18 @@ impl SimpleMovingAverage {
     }
 }
 
-
-
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-pub mod stubs{
-    use rstest::fixture;
+pub mod stubs {
     use nautilus_model::enums::PriceType;
+    use rstest::fixture;
+
     use crate::sma::SimpleMovingAverage;
 
     #[fixture]
-    pub fn indicator_sma_10() -> SimpleMovingAverage{
+    pub fn indicator_sma_10() -> SimpleMovingAverage {
         SimpleMovingAverage::new(10, Some(PriceType::Mid))
     }
 }
@@ -180,21 +171,20 @@ pub mod stubs{
 // Test
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests{
+mod tests {
+    use nautilus_model::{
+        data::{quote::QuoteTick, trade::TradeTick},
+        enums::{AggressorSide, PriceType},
+        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        types::{price::Price, quantity::Quantity},
+    };
     use rstest::rstest;
-    use nautilus_model::data::quote::QuoteTick;
-    use nautilus_model::data::trade::TradeTick;
-    use nautilus_model::enums::{AggressorSide, PriceType};
-    use nautilus_model::identifiers::instrument_id::InstrumentId;
-    use nautilus_model::identifiers::trade_id::TradeId;
-    use nautilus_model::types::price::Price;
-    use nautilus_model::types::quantity::Quantity;
-    use crate::Indicator;
-    use crate::sma::SimpleMovingAverage;
+
     use super::stubs::*;
+    use crate::{sma::SimpleMovingAverage, Indicator};
 
     #[rstest]
-    fn test_sma_initialized(indicator_sma_10: SimpleMovingAverage){
+    fn test_sma_initialized(indicator_sma_10: SimpleMovingAverage) {
         let display_str = format!("{indicator_sma_10}");
         assert_eq!(display_str, "SimpleMovingAverage(10)");
         assert_eq!(indicator_sma_10.period, 10);
@@ -204,7 +194,7 @@ mod tests{
     }
 
     #[rstest]
-    fn test_sma_update_raw_exact_period(indicator_sma_10: SimpleMovingAverage){
+    fn test_sma_update_raw_exact_period(indicator_sma_10: SimpleMovingAverage) {
         let mut sma = indicator_sma_10;
         sma.update_raw(1.0);
         sma.update_raw(2.0);
@@ -223,24 +213,19 @@ mod tests{
         assert_eq!(sma.value, 5.5);
     }
 
-   #[rstest]
-    fn test_reset(
-        indicator_sma_10: SimpleMovingAverage,
-    ){
+    #[rstest]
+    fn test_reset(indicator_sma_10: SimpleMovingAverage) {
         let mut sma = indicator_sma_10;
         sma.update_raw(1.0);
         assert_eq!(sma.count, 1);
         sma.reset();
         assert_eq!(sma.count, 0);
         assert_eq!(sma.value, 0.0);
-        assert_eq!(sma.is_initialized,false)
+        assert_eq!(sma.is_initialized, false)
     }
 
-
     #[rstest]
-    fn test_handle_quote_tick(
-        indicator_sma_10: SimpleMovingAverage,
-    ){
+    fn test_handle_quote_tick(indicator_sma_10: SimpleMovingAverage) {
         let mut sma = indicator_sma_10;
         let tick = QuoteTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
@@ -257,9 +242,7 @@ mod tests{
     }
 
     #[rstest]
-    fn test_handle_trade_tick(
-        indicator_sma_10: SimpleMovingAverage,
-    ){
+    fn test_handle_trade_tick(indicator_sma_10: SimpleMovingAverage) {
         let mut sma = indicator_sma_10;
         let tick = TradeTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
@@ -274,6 +257,4 @@ mod tests{
         assert_eq!(sma.count, 1);
         assert_eq!(sma.value, 1500.0);
     }
-
-
 }
