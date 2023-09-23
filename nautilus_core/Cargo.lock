@@ -3647,8 +3647,8 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 
 [[package]]
 name = "tungstenite"
-version = "0.20.0"
-source = "git+https://github.com/snapview/tungstenite-rs#53914c1180dfb40e2286fc7929d68a1a92f80971"
+version = "0.20.1"
+source = "git+https://github.com/snapview/tungstenite-rs#219075edaaaf503c66ef625f95bee8b4eb5b939c"
 dependencies = [
  "byteorder",
  "bytes",
