@@ -12,10 +12,53 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-use nautilus_model::enums::PriceType;
+use nautilus_model::{
+    data::{quote::QuoteTick, trade::TradeTick},
+    enums::{AggressorSide, PriceType},
+    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    types::{price::Price, quantity::Quantity},
+};
 use rstest::fixture;
 
-use crate::average::{ema::ExponentialMovingAverage, sma::SimpleMovingAverage};
+use crate::{
+    average::{
+        ema::ExponentialMovingAverage, sma::SimpleMovingAverage,
+    },
+};
+
+////////////////////////////////////////////////////////////////////////////////
+// Common
+////////////////////////////////////////////////////////////////////////////////
+#[fixture]
+pub fn quote_tick() -> QuoteTick {
+    QuoteTick {
+        instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        bid_price: Price::from("1500.0000"),
+        ask_price: Price::from("1502.0000"),
+        bid_size: Quantity::from("1.00000000"),
+        ask_size: Quantity::from("1.00000000"),
+        ts_event: 1,
+        ts_init: 0,
+    }
+}
+
+#[fixture]
+pub fn trade_tick() -> TradeTick {
+    TradeTick {
+        instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+        price: Price::from("1500.0000"),
+        size: Quantity::from("1.00000000"),
+        aggressor_side: AggressorSide::Buyer,
+        trade_id: TradeId::from("123456789"),
+        ts_event: 1,
+        ts_init: 0,
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Average
+////////////////////////////////////////////////////////////////////////////////
+
 
 #[fixture]
 pub fn indicator_sma_10() -> SimpleMovingAverage {

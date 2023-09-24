@@ -166,9 +166,7 @@ impl SimpleMovingAverage {
 mod tests {
     use nautilus_model::{
         data::{quote::QuoteTick, trade::TradeTick},
-        enums::{AggressorSide, PriceType},
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-        types::{price::Price, quantity::Quantity},
+        enums::PriceType,
     };
     use rstest::rstest;
 
@@ -216,35 +214,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(indicator_sma_10: SimpleMovingAverage) {
+    fn test_handle_quote_tick(indicator_sma_10: SimpleMovingAverage, quote_tick: QuoteTick) {
         let mut sma = indicator_sma_10;
-        let tick = QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            bid_price: Price::from("1500.0000"),
-            ask_price: Price::from("1502.0000"),
-            bid_size: Quantity::from("1.00000000"),
-            ask_size: Quantity::from("1.00000000"),
-            ts_event: 1,
-            ts_init: 0,
-        };
-        sma.handle_quote_tick(&tick);
+        sma.handle_quote_tick(&quote_tick);
         assert_eq!(sma.count, 1);
         assert_eq!(sma.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(indicator_sma_10: SimpleMovingAverage) {
+    fn test_handle_trade_tick(indicator_sma_10: SimpleMovingAverage, trade_tick: TradeTick) {
         let mut sma = indicator_sma_10;
-        let tick = TradeTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            price: Price::from("1500.0000"),
-            size: Quantity::from("1.00000000"),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: 1,
-            ts_init: 0,
-        };
-        sma.handle_trade_tick(&tick);
+        sma.handle_trade_tick(&trade_tick);
         assert_eq!(sma.count, 1);
         assert_eq!(sma.value, 1500.0);
     }

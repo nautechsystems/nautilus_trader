@@ -195,9 +195,7 @@ impl ExponentialMovingAverage {
 mod tests {
     use nautilus_model::{
         data::{quote::QuoteTick, trade::TradeTick},
-        enums::{AggressorSide, PriceType},
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-        types::{price::Price, quantity::Quantity},
+        enums::PriceType,
     };
     use rstest::rstest;
 
@@ -254,35 +252,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(indicator_ema_10: ExponentialMovingAverage) {
+    fn test_handle_quote_tick(indicator_ema_10: ExponentialMovingAverage, quote_tick: QuoteTick) {
         let mut ema = indicator_ema_10;
-        let tick = QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            bid_price: Price::from("1500.0000"),
-            ask_price: Price::from("1502.0000"),
-            bid_size: Quantity::from("1.00000000"),
-            ask_size: Quantity::from("1.00000000"),
-            ts_event: 1,
-            ts_init: 0,
-        };
-        ema.handle_quote_tick(&tick);
+        ema.handle_quote_tick(&quote_tick);
         assert_eq!(ema.has_inputs(), true);
         assert_eq!(ema.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage) {
+    fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage, trade_tick: TradeTick) {
         let mut ema = indicator_ema_10;
-        let tick = TradeTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            price: Price::from("1500.0000"),
-            size: Quantity::from("1.00000000"),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::from("123456789"),
-            ts_event: 1,
-            ts_init: 0,
-        };
-        ema.handle_trade_tick(&tick);
+        ema.handle_trade_tick(&trade_tick);
         assert_eq!(ema.has_inputs(), true);
         assert_eq!(ema.value, 1500.0);
     }
