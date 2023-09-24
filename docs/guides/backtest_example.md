@@ -1,6 +1,6 @@
 # Complete Backtest Example
 
-This notebook runs through a complete backtest example using raw data (external to Nautilus) through to a single backtest run.
+This example runs through how to load raw data (external to Nautilus) into the data catalog, through to a single 'one-shot' backtest run.
 
 ## Imports
 
