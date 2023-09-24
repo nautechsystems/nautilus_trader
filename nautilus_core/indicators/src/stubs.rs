@@ -21,9 +21,8 @@ use nautilus_model::{
 use rstest::fixture;
 
 use crate::{
-    average::{
-        ema::ExponentialMovingAverage, sma::SimpleMovingAverage,
-    },
+    average::{ema::ExponentialMovingAverage, sma::SimpleMovingAverage},
+    ratio::efficiency_ratio::EfficiencyRatio,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -68,4 +67,9 @@ pub fn indicator_sma_10() -> SimpleMovingAverage {
 #[fixture]
 pub fn indicator_ema_10() -> ExponentialMovingAverage {
     ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn efficiency_ratio_10() -> EfficiencyRatio {
+    EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
 }

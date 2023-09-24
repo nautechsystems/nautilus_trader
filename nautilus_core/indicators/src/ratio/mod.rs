@@ -13,19 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{prelude::*, types::PyModule, Python};
-
-pub mod average;
-pub mod indicator;
-pub mod ratio;
-
-#[cfg(test)]
-mod stubs;
-
-/// Loaded as nautilus_pyo3.indicators
-#[pymodule]
-pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<average::ema::ExponentialMovingAverage>()?;
-    m.add_class::<average::sma::SimpleMovingAverage>()?;
-    Ok(())
-}
+pub mod efficiency_ratio;
