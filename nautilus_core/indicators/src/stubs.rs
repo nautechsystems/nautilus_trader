@@ -24,6 +24,7 @@ use crate::{
     average::{ema::ExponentialMovingAverage, sma::SimpleMovingAverage},
     ratio::efficiency_ratio::EfficiencyRatio,
 };
+use crate::average::ama::AdaptiveMovingAverage;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Common
@@ -58,6 +59,10 @@ pub fn trade_tick() -> TradeTick {
 // Average
 ////////////////////////////////////////////////////////////////////////////////
 
+#[fixture]
+pub fn indicator_ama_10() -> AdaptiveMovingAverage {
+    AdaptiveMovingAverage::new(10, 2, 30, Some(PriceType::Mid)).unwrap()
+}
 
 #[fixture]
 pub fn indicator_sma_10() -> SimpleMovingAverage {

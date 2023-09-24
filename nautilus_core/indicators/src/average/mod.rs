@@ -13,5 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod ama;
 pub mod ema;
 pub mod sma;
