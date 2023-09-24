@@ -79,7 +79,7 @@ class TestBacktestConfig:
 
         result = c.query
         assert result == {
-            "cls": QuoteTick,
+            "data_cls": QuoteTick,
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
             "start": 1580398089820000000,
@@ -265,8 +265,8 @@ class TestBacktestConfigParsing:
                 ("catalog",),
                 {},
                 (
-                    "8485d8c61bb15514769412bc4c0fb0a662617b3245d751c40e3627a1b6762ba0",  # unix
-                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # windows
+                    "8485d8c61bb15514769412bc4c0fb0a662617b3245d751c40e3627a1b6762ba0",  # UNIX
+                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # Windows
                 ),
             ),
             (
