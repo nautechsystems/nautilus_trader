@@ -56,16 +56,6 @@ def list_schemas() -> dict[type, pa.Schema]:
     return _SCHEMAS
 
 
-def _clear_all(**kwargs):
-    # Used for testing
-    global _CLS_TO_TABLE, _SCHEMAS, _PARTITION_KEYS, _CHUNK
-    if kwargs.get("force", False):
-        _PARTITION_KEYS = {}
-        _SCHEMAS = {}
-        _CLS_TO_TABLE = {}  # type: dict[type, type]
-        _CHUNK = set()
-
-
 def register_arrow(
     data_cls: type,
     schema: pa.Schema | None,
