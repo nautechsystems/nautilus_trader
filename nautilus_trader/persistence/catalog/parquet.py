@@ -70,7 +70,7 @@ _DEFAULT_FS_PROTOCOL = "file"
 
 class ParquetDataCatalog(BaseDataCatalog):
     """
-    Provides a queryable data catalog persisted to files in parquet format.
+    Provides a queryable data catalog persisted to files in Parquet (Arrow) format.
 
     Parameters
     ----------
@@ -89,7 +89,13 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     Warnings
     --------
-    The data catalog is not threadsafe.
+    The data catalog is not threadsafe. Using it in a multithreaded environment can lead to
+    unexpected behavior.
+
+    Notes
+    -----
+    For more details about `fsspec` and its filesystem protocols, see
+    https://filesystem-spec.readthedocs.io/en/latest/.
 
     """
 
