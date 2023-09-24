@@ -1,6 +1,6 @@
 # Complete Backtest Example
 
-This notebook runs through a complete backtest example using raw data (external to Nautilus) to a single backtest run.
+This notebook runs through a complete backtest example using raw data (external to Nautilus) through to a single backtest run.
 
 ## Imports
 
@@ -11,19 +11,20 @@ import datetime
 import os
 import shutil
 from decimal import Decimal
+from pathlib import Path
 
 import fsspec
 import pandas as pd
+
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.objects import Price, Quantity
-
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.backtest.node import BacktestNode, BacktestVenueConfig, BacktestDataConfig, BacktestRunConfig, BacktestEngineConfig
-from nautilus_trader.config import ImportableStrategyConfig
+from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from nautilus_trader.persistence.external.core import process_files, write_objects
-from nautilus_trader.persistence.external.readers import TextReader
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.test_kit.providers import CSVTickDataLoader
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
 ```
 
 ## Getting some raw data
@@ -39,12 +40,12 @@ Once you have downloaded the data, set the variable `DATA_DIR` below to the dire
 DATA_DIR = "~/Downloads/"
 ```
 
-Run the cell below; you should see the files that you downloaded:
+Then place the data archive into a `/"HISTDATA"` directory and run the cell below; you should see the files that you downloaded:
 
 ```python
-fs = fsspec.filesystem('file')
-raw_files = fs.glob(f"{DATA_DIR}/HISTDATA*")
-assert raw_files, f"Unable to find any histdata files in directory {DATA_DIR}"
+path = Path(DATA_DIR).expanduser() / "HISTDATA"
+raw_files = list(path.iterdir())
+assert raw_files, f"Unable to find any histdata files in directory {path}"
 raw_files
 ```
 
@@ -59,31 +60,25 @@ We have chosen parquet as the storage format for the following reasons:
 
 ## Loading data into the catalog
 
-We can load data from various sources into the data catalog using helper methods in the `nautilus_trader.persistence.external.readers` module. The module contains methods for reading various data formats (CSV, JSON, text), minimising the amount of code required to get data loaded correctly into the data catalog.
+The FX data from `histdata` is stored in CSV/text format, with fields `timestamp, bid_price, ask_price`.
+Firstly, we need to load this raw data into a `pandas.DataFrame` which has a compatible schema for Nautilus quote ticks.
 
-The FX data from `histdata` is stored in CSV/text format, with fields `timestamp, bid_price, ask_price`. To load the data into the catalog, we simply write a function that converts each row into a Nautilus object (in this case, a `QuoteTick`). For this example, we will use the `TextReader` helper, which allows reading and applying a parsing function line by line.
-
-Then, we simply instantiate a `ParquetDataCatalog` (passing in a directory where to store the data, by default we will just use the current directory) and pass our parsing function wrapping in the Reader class to `process_files`. We also need to know about which instrument this data is for; in this example, we will simply use one of the Nautilus test helpers to create a FX instrument.
-
-It should only take a couple of minutes to load the data (depending on how many months).
-
+Then we can create Nautilus `QuoteTick` objects by processing the DataFrame with a `QuoteTickDataWrangler`.
 
 ```python
-def parser(line):
-    ts, bid, ask, idx = line.split(b",")
-    dt = pd.Timestamp(datetime.datetime.strptime(ts.decode(), "%Y%m%d %H%M%S%f"), tz='UTC')
-    yield QuoteTick(
-        instrument_id=AUDUSD.id,
-        bid_price=Price.from_str(bid.decode()),
-        ask_price=Price.from_str(ask.decode()),
-        bid_size=Quantity.from_int(100_000),
-        ask_size=Quantity.from_int(100_000),
-        ts_event=dt_to_unix_nanos(dt),
-        ts_init=dt_to_unix_nanos(dt),
-    )
+# Here we just take the first data file found and load into a pandas DataFrame
+df = CSVTickDataLoader.load(raw_files[0], index_col=0, format="%Y%m%d %H%M%S%f")
+df.columns = ["bid_price", "ask_price", "size"]
+
+# Process quote ticks using a wrangler
+EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
+wrangler = QuoteTickDataWrangler(EURUSD)
+
+ticks = wrangler.process(df)
 ```
 
-We'll set up a catalog in the current working directory.
+Next, we simply instantiate a `ParquetDataCatalog` (passing in a directory where to store the data, by default we will just use the current directory).
+We can then write the instrument and tick data to the catalog, it should only take a couple of minutes to load the data (depending on how many months).
 
 ```python
 CATALOG_PATH = os.getcwd() + "/catalog"
@@ -92,40 +87,31 @@ CATALOG_PATH = os.getcwd() + "/catalog"
 if os.path.exists(CATALOG_PATH):
     shutil.rmtree(CATALOG_PATH)
 os.mkdir(CATALOG_PATH)
+
+# Create a catalog instance
+catalog = ParquetDataCatalog(CATALOG_PATH)
 ```
 
 ```python
-AUDUSD = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-
-catalog = ParquetDataCatalog(CATALOG_PATH)
-
-process_files(
-    glob_path=f"{DATA_DIR}/HISTDATA*.zip",
-    reader=TextReader(line_parser=parser),
-    catalog=catalog,
-)
-
-# Also manually write the AUD/USD instrument to the catalog
-write_objects(catalog, [AUDUSD])
+# Write instrument and ticks to catalog (this currently takes a minute - investigating)
+catalog.write_data([EURUSD])
+catalog.write_data(ticks)
 ```
 
 ## Using the Data Catalog 
 
-Once data has been loaded into the catalog, the `catalog` instance can be used for loading data for backtests, or simple for research purposes. It contains various methods to pull data from the catalog, like `quote_ticks` (show below).
+Once data has been loaded into the catalog, the `catalog` instance can be used for loading data for backtests, or simply for research purposes. 
+It contains various methods to pull data from the catalog, such as `.instruments(...)` and `quote_ticks(...)` (show below).
 
 ```python
 catalog.instruments()
 ```
 
 ```python
-import pandas as pd
-from nautilus_trader.core.datetime import dt_to_unix_nanos
+start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz="UTC"))
+end =  dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz="UTC"))
 
-
-start = dt_to_unix_nanos(pd.Timestamp('2020-01-01', tz='UTC'))
-end =  dt_to_unix_nanos(pd.Timestamp('2020-01-02', tz='UTC'))
-
-catalog.quote_ticks(start=start, end=end)
+catalog.quote_ticks(instrument_ids=[EURUSD.id.value], start=start, end=end)
 ```
 
 ## Configuring backtests
@@ -137,24 +123,24 @@ Nautilus uses a `BacktestRunConfig` object, which allows configuring a backtest 
 ```python
 instrument = catalog.instruments(as_nautilus=True)[0]
 
-venues_config=[
+venue_configs = [
     BacktestVenueConfig(
         name="SIM",
         oms_type="HEDGING",
         account_type="MARGIN",
         base_currency="USD",
         starting_balances=["1_000_000 USD"],
-    )
+    ),
 ]
 
-data_config=[
+data_configs = [
     BacktestDataConfig(
         catalog_path=str(ParquetDataCatalog.from_env().path),
         data_cls=QuoteTick,
         instrument_id=instrument.id.value,
-        start_time=1580398089820000000,
-        end_time=1580504394501000000,
-    )
+        start_time=start,
+        end_time=end,
+    ),
 ]
 
 strategies = [
@@ -173,8 +159,8 @@ strategies = [
 
 config = BacktestRunConfig(
     engine=BacktestEngineConfig(strategies=strategies),
-    data=data_config,
-    venues=venues_config,
+    data=data_configs,
+    venues=venue_configs,
 )
 
 ```
@@ -185,4 +171,5 @@ config = BacktestRunConfig(
 node = BacktestNode(configs=[config])
 
 results = node.run()
+results
 ```
