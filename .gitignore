@@ -32,6 +32,7 @@
 __pycache__
 _build/
 build/
+catalog/
 data_catalog/
 dist/
 env/
