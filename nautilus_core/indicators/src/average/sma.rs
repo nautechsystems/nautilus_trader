@@ -214,11 +214,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(indicator_sma_10: SimpleMovingAverage, quote_tick: QuoteTick) {
+    fn test_handle_quote_tick_single(indicator_sma_10: SimpleMovingAverage, quote_tick: QuoteTick) {
         let mut sma = indicator_sma_10;
         sma.handle_quote_tick(&quote_tick);
         assert_eq!(sma.count, 1);
         assert_eq!(sma.value, 1501.0);
+    }
+
+    #[rstest]
+    fn test_handle_quote_tick_multi(indicator_sma_10: SimpleMovingAverage) {
+        let mut sma = indicator_sma_10;
+        let tick1 = quote_tick("1500.0", "1502.0");
+        let tick2 = quote_tick("1502.0", "1504.0");
+
+        sma.handle_quote_tick(&tick1);
+        sma.handle_quote_tick(&tick2);
+        assert_eq!(sma.count, 2);
+        assert_eq!(sma.value, 1502.0);
     }
 
     #[rstest]

@@ -13,28 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 use nautilus_model::{
-    data::{quote::QuoteTick, trade::TradeTick},
-    enums::{AggressorSide, PriceType},
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    data::{
+        bar::{Bar, BarSpecification, BarType},
+        quote::QuoteTick,
+        trade::TradeTick,
+    },
+    enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
+    identifiers::{instrument_id::InstrumentId, symbol::Symbol, trade_id::TradeId, venue::Venue},
     types::{price::Price, quantity::Quantity},
 };
-use rstest::fixture;
+use rstest::*;
 
 use crate::{
-    average::{ema::ExponentialMovingAverage, sma::SimpleMovingAverage},
+    average::{
+        ama::AdaptiveMovingAverage, ema::ExponentialMovingAverage, sma::SimpleMovingAverage,
+    },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
-use crate::average::ama::AdaptiveMovingAverage;
 
 ////////////////////////////////////////////////////////////////////////////////
 // Common
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
-pub fn quote_tick() -> QuoteTick {
+pub fn quote_tick(
+    #[default("1500")] bid_price: &str,
+    #[default("1502")] ask_price: &str,
+) -> QuoteTick {
     QuoteTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-        bid_price: Price::from("1500.0000"),
-        ask_price: Price::from("1502.0000"),
+        bid_price: Price::from(bid_price),
+        ask_price: Price::from(ask_price),
         bid_size: Quantity::from("1.00000000"),
         ask_size: Quantity::from("1.00000000"),
         ts_event: 1,
@@ -52,6 +60,34 @@ pub fn trade_tick() -> TradeTick {
         trade_id: TradeId::from("123456789"),
         ts_event: 1,
         ts_init: 0,
+    }
+}
+
+#[fixture]
+pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> Bar {
+    let instrument_id = InstrumentId {
+        symbol: Symbol::new("ETHUSDT-PERP.BINANCE").unwrap(),
+        venue: Venue::new("BINANCE").unwrap(),
+    };
+    let bar_spec = BarSpecification {
+        step: 1,
+        aggregation: BarAggregation::Minute,
+        price_type: PriceType::Bid,
+    };
+    let bar_type = BarType {
+        instrument_id,
+        spec: bar_spec,
+        aggregation_source: AggregationSource::External,
+    };
+    Bar {
+        bar_type: bar_type,
+        open: Price::from("1500.0"),
+        high: Price::from("1550.0"),
+        low: Price::from("1495.0"),
+        close: Price::from(close_price),
+        volume: Quantity::from("100000"),
+        ts_event: 0,
+        ts_init: 1,
     }
 }
 

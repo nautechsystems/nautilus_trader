@@ -22,8 +22,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::indicator::Indicator;
-use crate::ratio::efficiency_ratio::EfficiencyRatio;
+use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
 
 /// An indicator which calculates an adaptive moving average (AMA) across a
 /// rolling window. Developed by Perry Kaufman, the AMA is a moving average
@@ -123,12 +122,12 @@ impl AdaptiveMovingAverage {
         })
     }
 
-    pub fn alpha_diff(&self)->f64{
-        self._alpha_fast-self._alpha_slow
+    pub fn alpha_diff(&self) -> f64 {
+        self._alpha_fast - self._alpha_slow
     }
 
     pub fn update_raw(&mut self, value: f64) {
-        if !self.has_inputs{
+        if !self.has_inputs {
             self._prior_value = Some(value);
             self._efficiency_ratio.update_raw(value);
             self.value = value;
@@ -138,9 +137,11 @@ impl AdaptiveMovingAverage {
         self._efficiency_ratio.update_raw(value);
         self._prior_value = Some(self.value);
         // calculate the smoothing constant
-        let smoothing_constant = (self._efficiency_ratio.value *self.alpha_diff() +self._alpha_slow).powi(2);
+        let smoothing_constant =
+            (self._efficiency_ratio.value * self.alpha_diff() + self._alpha_slow).powi(2);
         // calculate the AMA
-        self.value = self._prior_value.unwrap() + smoothing_constant * (value - self._prior_value.unwrap());
+        self.value =
+            self._prior_value.unwrap() + smoothing_constant * (value - self._prior_value.unwrap());
         if self._efficiency_ratio.is_initialized() {
             self.is_initialized = true;
         }
@@ -160,9 +161,8 @@ impl AdaptiveMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
     use rstest::rstest;
-    use nautilus_model::data::quote::QuoteTick;
-    use nautilus_model::data::trade::TradeTick;
 
     use crate::{average::ama::AdaptiveMovingAverage, indicator::Indicator, stubs::*};
 
@@ -176,20 +176,20 @@ mod tests {
     }
 
     #[rstest]
-    fn test_value_with_one_input(mut indicator_ama_10: AdaptiveMovingAverage){
+    fn test_value_with_one_input(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
-        assert_eq!(indicator_ama_10.value,1.0);
+        assert_eq!(indicator_ama_10.value, 1.0);
     }
 
     #[rstest]
-    fn test_value_with_two_inputs(mut indicator_ama_10: AdaptiveMovingAverage){
+    fn test_value_with_two_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
         assert_eq!(indicator_ama_10.value, 1.4444444444444442);
     }
 
     #[rstest]
-    fn test_value_with_three_inputs(mut indicator_ama_10: AdaptiveMovingAverage){
+    fn test_value_with_three_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
         indicator_ama_10.update_raw(3.0);
@@ -197,15 +197,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset(mut indicator_ama_10: AdaptiveMovingAverage){
-        for _ in 0..10{
+    fn test_reset(mut indicator_ama_10: AdaptiveMovingAverage) {
+        for _ in 0..10 {
             indicator_ama_10.update_raw(1.0);
         }
         assert_eq!(indicator_ama_10.is_initialized, true);
         indicator_ama_10.reset();
-        assert_eq!(indicator_ama_10.is_initialized,false);
-        assert_eq!(indicator_ama_10.has_inputs,false);
-        assert_eq!(indicator_ama_10.value,0.0);
+        assert_eq!(indicator_ama_10.is_initialized, false);
+        assert_eq!(indicator_ama_10.has_inputs, false);
+        assert_eq!(indicator_ama_10.value, 0.0);
     }
 
     #[rstest]
@@ -220,10 +220,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(
-        mut indicator_ama_10: AdaptiveMovingAverage,
-        quote_tick: QuoteTick
-    ){
+    fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, quote_tick: QuoteTick) {
         indicator_ama_10.handle_quote_tick(&quote_tick);
         assert_eq!(indicator_ama_10.has_inputs, true);
         assert_eq!(indicator_ama_10.is_initialized, false);
@@ -233,11 +230,22 @@ mod tests {
     #[rstest]
     fn test_handle_trade_tick_update(
         mut indicator_ama_10: AdaptiveMovingAverage,
-        trade_tick: TradeTick
-    ){
+        trade_tick: TradeTick,
+    ) {
         indicator_ama_10.handle_trade_tick(&trade_tick);
         assert_eq!(indicator_ama_10.has_inputs, true);
         assert_eq!(indicator_ama_10.is_initialized, false);
         assert_eq!(indicator_ama_10.value, 1500.0);
+    }
+
+    #[rstest]
+    fn handle_handle_bar(
+        mut indicator_ama_10: AdaptiveMovingAverage,
+        bar_ethusdt_binance_minute_bid: Bar,
+    ) {
+        indicator_ama_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        assert_eq!(indicator_ama_10.has_inputs, true);
+        assert_eq!(indicator_ama_10.is_initialized, false);
+        assert_eq!(indicator_ama_10.value, 1522.0);
     }
 }

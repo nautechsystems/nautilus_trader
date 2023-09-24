@@ -256,4 +256,24 @@ mod tests {
         assert_eq!(efficiency_ratio_10.is_initialized, false);
         assert_eq!(efficiency_ratio_10.value, 0.0);
     }
+
+    #[rstest]
+    fn test_handle_quote_tick(mut efficiency_ratio_10: EfficiencyRatio) {
+        let quote_tick1 = quote_tick("1500.0", "1502.0");
+        let quote_tick2 = quote_tick("1502.0", "1504.0");
+
+        efficiency_ratio_10.handle_quote_tick(&quote_tick1);
+        efficiency_ratio_10.handle_quote_tick(&quote_tick2);
+        assert_eq!(efficiency_ratio_10.value, 1.0);
+    }
+
+    #[rstest]
+    fn test_handle_bar(mut efficiency_ratio_10: EfficiencyRatio) {
+        let bar1 = bar_ethusdt_binance_minute_bid("1500.0");
+        let bar2 = bar_ethusdt_binance_minute_bid("1510.0");
+
+        efficiency_ratio_10.handle_bar(&bar1);
+        efficiency_ratio_10.handle_bar(&bar2);
+        assert_eq!(efficiency_ratio_10.value, 1.0);
+    }
 }
