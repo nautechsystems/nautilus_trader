@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from nautilus_trader.serialization.base import register_serializable_object
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
@@ -29,7 +31,7 @@ class TestObject:
         self.value = value
 
     @staticmethod
-    def from_dict(values: dict):
+    def from_dict(values: dict) -> TestObject:
         return TestObject(values["value"])
 
     @staticmethod
