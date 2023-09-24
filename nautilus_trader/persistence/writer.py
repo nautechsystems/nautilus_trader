@@ -236,7 +236,7 @@ class StreamingFeatherWriter:
             writer: RecordBatchStreamWriter = self._instrument_writers[(table, obj.instrument_id.value)]  # type: ignore
         else:
             writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
-        serialized = ArrowSerializer.serialize_batch([obj], cls=cls)
+        serialized = ArrowSerializer.serialize_batch([obj], data_cls=cls)
         if not serialized:
             return
         try:
@@ -353,7 +353,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
         },
     )
     register_arrow(
-        cls=SignalData,
+        data_cls=SignalData,
         serializer=serialize_signal,
         deserializer=deserialize_signal,
         schema=schema,
