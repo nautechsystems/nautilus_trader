@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 
 import pandas as pd
 
@@ -22,8 +21,6 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.loaders import TardisQuoteDataLoader
-from nautilus_trader.persistence.loaders import TardisTradeDataLoader
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
@@ -31,7 +28,6 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
-from tests import TEST_DATA_DIR
 
 
 AUDUSD_SIM = TestIdStubs.audusd_id()
@@ -332,72 +328,3 @@ class TestBarDataWranglerHeaderless:
         assert bars[0].volume == Quantity.from_str("36304.2")
         assert bars[0].ts_event == 1637971200000000000
         assert bars[0].ts_init == 1637971200000000000
-
-
-class TestTardisQuoteDataWrangler:
-    def setup(self):
-        # Fixture Setup
-        self.clock = TestClock()
-
-    def test_tick_data(self):
-        # Arrange, Act
-        path = os.path.join(TEST_DATA_DIR, "tardis_quotes.csv")
-        ticks = TardisQuoteDataLoader.load(path)
-
-        # Assert
-        assert len(ticks) == 9999
-
-    def test_pre_process_with_tick_data(self):
-        # Arrange
-        instrument = TestInstrumentProvider.btcusdt_binance()
-        wrangler = QuoteTickDataWrangler(instrument=instrument)
-        path = os.path.join(TEST_DATA_DIR, "tardis_quotes.csv")
-        data = TardisQuoteDataLoader.load(path)
-
-        # Act
-        ticks = wrangler.process(
-            data,
-            ts_init_delta=1_000_501,
-        )
-
-        # Assert
-        assert len(ticks) == 9999
-        assert ticks[0].bid_price == Price.from_str("9681.92")
-        assert ticks[0].ask_price == Price.from_str("9682.00")
-        assert ticks[0].bid_size == Quantity.from_str("0.670000")
-        assert ticks[0].ask_size == Quantity.from_str("0.840000")
-        assert ticks[0].ts_event == 1582329603502092000
-        assert ticks[0].ts_init == 1582329603503092501
-
-
-class TestTardisTradeDataWrangler:
-    def setup(self):
-        # Fixture Setup
-        self.clock = TestClock()
-
-    def test_tick_data(self):
-        # Arrange, Act
-        path = os.path.join(TEST_DATA_DIR, "tardis_trades.csv")
-        ticks = TardisTradeDataLoader.load(path)
-
-        # Assert
-        assert len(ticks) == 9999
-
-    def test_process(self):
-        # Arrange
-        instrument = TestInstrumentProvider.btcusdt_binance()
-        wrangler = TradeTickDataWrangler(instrument=instrument)
-        path = os.path.join(TEST_DATA_DIR, "tardis_trades.csv")
-        data = TardisTradeDataLoader.load(path)
-
-        # Act
-        ticks = wrangler.process(data)
-
-        # Assert
-        assert len(ticks) == 9999
-        assert ticks[0].price == Price.from_str("9682.00")
-        assert ticks[0].size == Quantity.from_str("0.132000")
-        assert ticks[0].aggressor_side == AggressorSide.BUYER
-        assert ticks[0].trade_id == TradeId("42377944")
-        assert ticks[0].ts_event == 1582329602418379000
-        assert ticks[0].ts_init == 1582329602418379000
