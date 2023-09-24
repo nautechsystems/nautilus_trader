@@ -65,7 +65,7 @@ class CSVBarDataLoader:
     @staticmethod
     def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
-        Return the bar pandas.DataFrame loaded from the given csv file.
+        Return the bar `pandas.DataFrame` loaded from the given CSV `file_path`.
 
         Parameters
         ----------
@@ -97,7 +97,7 @@ class ParquetTickDataLoader:
         timestamp_column: str = "timestamp",
     ) -> pd.DataFrame:
         """
-        Return the tick pandas.DataFrame loaded from the given parquet file.
+        Return the tick `pandas.DataFrame` loaded from the given Parquet `file_path`.
 
         Parameters
         ----------
@@ -124,12 +124,12 @@ class ParquetBarDataLoader:
     @staticmethod
     def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
-        Return the bar pandas.DataFrame loaded from the given parquet file.
+        Return the bar `pandas.DataFrame` loaded from the given Parquet `file_path`.
 
         Parameters
         ----------
         file_path : str, path object or file-like object
-            The path to the parquet file.
+            The path to the Parquet file.
 
         Returns
         -------
