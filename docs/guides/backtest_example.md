@@ -68,7 +68,7 @@ Then we can create Nautilus `QuoteTick` objects by processing the DataFrame with
 ```python
 # Here we just take the first data file found and load into a pandas DataFrame
 df = CSVTickDataLoader.load(raw_files[0], index_col=0, format="%Y%m%d %H%M%S%f")
-df.columns = ["bid_price", "ask_price", "size"]
+df.columns = ["bid_price", "ask_price"]
 
 # Process quote ticks using a wrangler
 EURUSD = TestInstrumentProvider.default_fx_ccy("EUR/USD")
@@ -101,7 +101,7 @@ catalog.write_data(ticks)
 ## Using the Data Catalog 
 
 Once data has been loaded into the catalog, the `catalog` instance can be used for loading data for backtests, or simply for research purposes. 
-It contains various methods to pull data from the catalog, such as `.instruments(...)` and `quote_ticks(...)` (show below).
+It contains various methods to pull data from the catalog, such as `.instruments(...)` and `quote_ticks(...)` (shown below).
 
 ```python
 catalog.instruments()
