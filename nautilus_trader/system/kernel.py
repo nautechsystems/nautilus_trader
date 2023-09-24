@@ -49,6 +49,7 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import ControllerFactory
 from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
@@ -74,6 +75,7 @@ from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.trading.controller import Controller
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
 
@@ -334,6 +336,19 @@ class NautilusKernel:
 
         if self._load_state:
             self._trader.load()
+
+        # Add controller
+        if self._config.controller:
+            self._controller: Controller = ControllerFactory.create(
+                config=self._config.controller,
+                trader=self._trader,
+            )
+            self._controller.register_base(
+                cache=self._cache,
+                msgbus=self._msgbus,
+                clock=self._clock,
+                logger=self._logger,
+            )
 
         # Setup stream writer
         self._writer: StreamingFeatherWriter | None = None
@@ -715,6 +730,7 @@ class NautilusKernel:
         self._emulator.start()
         self._initialize_portfolio()
         self._trader.start()
+        self._controller.start()
 
     async def start_async(self) -> None:
         """
@@ -754,6 +770,8 @@ class NautilusKernel:
         Stop the Nautilus system kernel.
         """
         self.log.info("STOPPING...")
+
+        self._controller.stop()
 
         if self._trader.is_running:
             self._trader.stop()

@@ -184,6 +184,8 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         The strategy configurations for the node.
     actors : list[ImportableActorConfig]
         The actor configurations for the node.
+    controller : Controller
+        A trader controller.
     load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_state : bool, default True

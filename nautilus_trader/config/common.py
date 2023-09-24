@@ -507,6 +507,37 @@ class StrategyFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
+class ImportableControllerConfig(NautilusConfig, frozen=True):
+    controller_path: str
+    config_path: str
+    config: dict
+
+
+class ControllerConfig(NautilusConfig, kw_only=True, frozen=True):
+    """
+    The base model for all trading strategy configurations.
+    """
+
+
+class ControllerFactory:
+    @staticmethod
+    def create(
+        config: ImportableControllerConfig,
+        trader,
+    ):
+        from nautilus_trader.trading.trader import Trader
+
+        PyCondition.type(trader, Trader, "trader")
+
+        controller_cls = resolve_path(config.controller_path)
+        config_cls = resolve_path(config.config_path)
+        config = config_cls(**config.config)
+        return controller_cls(
+            config=config,
+            trader=trader,
+        )
+
+
 class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
     """
     The base model for all execution algorithm configurations.
@@ -670,6 +701,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the kernel.
+    controller : Controller
+        A trader controller.
     load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_state : bool, default True
@@ -702,6 +735,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     catalog: Optional[DataCatalogConfig] = None
     actors: list[ImportableActorConfig] = []
     strategies: list[ImportableStrategyConfig] = []
+    controller: Optional[ImportableControllerConfig] = None
     exec_algorithms: list[ImportableExecAlgorithmConfig] = []
     load_state: bool = False
     save_state: bool = False
