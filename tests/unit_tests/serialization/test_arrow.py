@@ -51,7 +51,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 CATALOG_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/unit_tests/persistence/data_catalog")
 
 
-def _reset(catalog: ParquetDataCatalog):
+def _reset(catalog: ParquetDataCatalog) -> None:
     """
     Cleanup resources before each test run.
     """
@@ -111,9 +111,9 @@ class TestArrowSerializer:
         # TODO - Can't compare rust vs python types?
         # assert deserialized == expected
         self.catalog.write_data([obj])
-        df = self.catalog.query(cls=cls)
+        df = self.catalog.query(data_cls=cls)
         assert len(df) in (1, 2)
-        nautilus = self.catalog.query(cls=cls, as_dataframe=False)[0]
+        nautilus = self.catalog.query(data_cls=cls, as_dataframe=False)[0]
         assert nautilus.ts_init == 0
         return True
 
@@ -144,7 +144,7 @@ class TestArrowSerializer:
         )
 
         serialized = ArrowSerializer.serialize(delta)
-        [deserialized] = ArrowSerializer.deserialize(cls=OrderBookDelta, batch=serialized)
+        [deserialized] = ArrowSerializer.deserialize(data_cls=OrderBookDelta, batch=serialized)
 
         # Assert
         OrderBookDeltas(
@@ -197,7 +197,7 @@ class TestArrowSerializer:
         )
 
         serialized = ArrowSerializer.serialize(deltas)
-        deserialized = ArrowSerializer.deserialize(cls=OrderBookDeltas, batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=OrderBookDeltas, batch=serialized)
 
         # Assert
         # assert deserialized == deltas.deltas
@@ -261,7 +261,7 @@ class TestArrowSerializer:
         )
 
         serialized = ArrowSerializer.serialize(deltas)
-        deserialized = ArrowSerializer.deserialize(cls=OrderBookDeltas, batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=OrderBookDeltas, batch=serialized)
 
         # Assert
         # assert deserialized == deltas.deltas # TODO - rust vs python types
@@ -277,7 +277,10 @@ class TestArrowSerializer:
         event = TestEventStubs.component_state_changed()
 
         serialized = ArrowSerializer.serialize(event)
-        [deserialized] = ArrowSerializer.deserialize(cls=ComponentStateChanged, batch=serialized)
+        [deserialized] = ArrowSerializer.deserialize(
+            data_cls=ComponentStateChanged,
+            batch=serialized,
+        )
 
         # Assert
         assert deserialized == event
@@ -288,7 +291,7 @@ class TestArrowSerializer:
         event = TestEventStubs.trading_state_changed()
 
         serialized = ArrowSerializer.serialize(event)
-        [deserialized] = ArrowSerializer.deserialize(cls=TradingStateChanged, batch=serialized)
+        [deserialized] = ArrowSerializer.deserialize(data_cls=TradingStateChanged, batch=serialized)
 
         # Assert
         assert deserialized == event
@@ -303,8 +306,8 @@ class TestArrowSerializer:
         ],
     )
     def test_serialize_and_deserialize_account_state(self, event):
-        serialized = ArrowSerializer.serialize(event, cls=AccountState)
-        [deserialized] = ArrowSerializer.deserialize(cls=AccountState, batch=serialized)
+        serialized = ArrowSerializer.serialize(event, data_cls=AccountState)
+        [deserialized] = ArrowSerializer.deserialize(data_cls=AccountState, batch=serialized)
 
         # Assert
         assert deserialized == event
@@ -445,7 +448,7 @@ class TestArrowSerializer:
     def test_serialize_and_deserialize_instruments(self, instrument):
         serialized = ArrowSerializer.serialize(instrument)
         assert serialized
-        deserialized = ArrowSerializer.deserialize(cls=type(instrument), batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=type(instrument), batch=serialized)
 
         # Assert
         assert deserialized == [instrument]

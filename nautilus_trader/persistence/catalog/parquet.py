@@ -168,32 +168,32 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     # -- WRITING ----------------------------------------------------------------------------------
 
-    def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
+    def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         assert len(data) > 0
-        assert all(type(obj) is cls for obj in data)  # same type
-        table = self.serializer.serialize_batch(data, cls=cls)
+        assert all(type(obj) is data_cls for obj in data)  # same type
+        table = self.serializer.serialize_batch(data, data_cls=data_cls)
         assert table is not None
         if isinstance(table, pa.RecordBatch):
             table = pa.Table.from_batches([table])
         return table
 
-    def _make_path(self, cls: type[Data], instrument_id: str | None = None) -> str:
+    def _make_path(self, data_cls: type[Data], instrument_id: str | None = None) -> str:
         if instrument_id is not None:
             assert isinstance(instrument_id, str), "instrument_id must be a string"
             clean_instrument_id = urisafe_instrument_id(instrument_id)
-            return f"{self.path}/data/{class_to_filename(cls)}/{clean_instrument_id}"
+            return f"{self.path}/data/{class_to_filename(data_cls)}/{clean_instrument_id}"
         else:
-            return f"{self.path}/data/{class_to_filename(cls)}"
+            return f"{self.path}/data/{class_to_filename(data_cls)}"
 
     def write_chunk(
         self,
         data: list[Data],
-        cls: type[Data],
+        data_cls: type[Data],
         instrument_id: str | None = None,
         **kwargs: Any,
     ) -> None:
-        table = self._objects_to_table(data, cls=cls)
-        path = self._make_path(cls=cls, instrument_id=instrument_id)
+        table = self._objects_to_table(data, data_cls=data_cls)
+        path = self._make_path(data_cls=data_cls, instrument_id=instrument_id)
         kw = dict(**self.dataset_kwargs, **kwargs)
 
         if "partitioning" not in kw:
@@ -233,7 +233,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
             self.write_chunk(
                 data=list(single_type),
-                cls=name_to_cls[cls_name],
+                data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
                 **kwargs,
             )
@@ -242,7 +242,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
@@ -250,9 +250,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data | GenericData]:
-        if cls in (OrderBookDelta, QuoteTick, TradeTick, Bar):
+        if data_cls in (OrderBookDelta, QuoteTick, TradeTick, Bar):
             data = self.query_rust(
-                cls=cls,
+                data_cls=data_cls,
                 instrument_ids=instrument_ids,
                 bar_types=bar_types,
                 start=start,
@@ -262,7 +262,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
         else:
             data = self.query_pyarrow(
-                cls=cls,
+                data_cls=data_cls,
                 instrument_ids=instrument_ids,
                 start=start,
                 end=end,
@@ -270,17 +270,17 @@ class ParquetDataCatalog(BaseDataCatalog):
                 **kwargs,
             )
 
-        if not is_nautilus_class(cls):
+        if not is_nautilus_class(data_cls):
             # Special handling for generic data
             data = [
-                GenericData(data_type=DataType(cls, metadata=kwargs.get("metadata")), data=d)
+                GenericData(data_type=DataType(data_cls, metadata=kwargs.get("metadata")), data=d)
                 for d in data
             ]
         return data
 
     def backend_session(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
@@ -290,8 +290,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> DataBackendSession:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
-        name = cls.__name__
-        file_prefix = class_to_filename(cls)
+        name = data_cls.__name__
+        file_prefix = class_to_filename(data_cls)
         data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
 
         if session is None:
@@ -326,7 +326,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query_rust(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
@@ -335,7 +335,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> list[Data]:
         session = self.backend_session(
-            cls=cls,
+            data_cls=data_cls,
             instrument_ids=instrument_ids,
             bar_types=bar_types,
             start=start,
@@ -355,14 +355,14 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query_pyarrow(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
         **kwargs: Any,
     ) -> list[Data]:
-        file_prefix = class_to_filename(cls)
+        file_prefix = class_to_filename(data_cls)
         dataset_path = f"{self.path}/data/{file_prefix}"
         if not self.fs.exists(dataset_path):
             return []
@@ -376,12 +376,12 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         assert (
             table is not None
-        ), f"No table found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+        ), f"No table found for {data_cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
         assert (
             table.num_rows
-        ), f"No rows found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+        ), f"No rows found for {data_cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
 
-        return self._handle_table_nautilus(table, cls=cls)
+        return self._handle_table_nautilus(table, data_cls=data_cls)
 
     def _load_pyarrow_table(
         self,
@@ -442,11 +442,11 @@ class ParquetDataCatalog(BaseDataCatalog):
     @staticmethod
     def _handle_table_nautilus(
         table: pa.Table | pd.DataFrame,
-        cls: type,
+        data_cls: type,
     ) -> list[Data]:
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
-        data = ArrowSerializer.deserialize(cls=cls, batch=table)
+        data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
         # TODO (bm/cs) remove when pyo3 objects are used everywhere.
         module = data[0].__class__.__module__
         if "builtins" in module:
@@ -456,7 +456,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 "TradeTick": TradeTick,
                 "QuoteTick": QuoteTick,
                 "Bar": Bar,
-            }.get(cls.__name__, cls.__name__)
+            }.get(data_cls.__name__, data_cls.__name__)
             data = cython_cls.from_pyo3(data)
         return data
 
@@ -473,7 +473,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         for cls in subclasses:
             try:
                 df = self.query(
-                    cls=cls,
+                    data_cls=cls,
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
@@ -548,8 +548,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 continue
             # Apply post read fixes
             try:
-                cls = class_mapping[cls_name]
-                objs = self._handle_table_nautilus(table=table, cls=cls)
+                data_cls = class_mapping[cls_name]
+                objs = self._handle_table_nautilus(table=table, data_cls=data_cls)
                 data[cls_name].extend(objs)
             except Exception as e:
                 if raise_on_failed_deserialize:
