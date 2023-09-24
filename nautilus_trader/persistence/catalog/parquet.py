@@ -84,6 +84,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
+    show_query_paths : bool, default False
+        If globed query paths should be printed to stdout.
 
     Warnings
     --------
@@ -97,6 +99,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
+        show_query_paths: bool = False,
     ) -> None:
         self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
         self.fs_storage_options = fs_storage_options or {}
@@ -106,6 +109,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
         self.serializer = ArrowSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
+        self.show_query_paths = show_query_paths
 
         path = make_path_posix(str(path))
 
@@ -297,8 +301,10 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # TODO (bm) - fix this glob, query once on catalog creation?
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
-        print(glob_path)
         dirs = self.fs.glob(glob_path)
+        if self.show_query_paths:
+            print(dirs)
+
         for idx, fn in enumerate(dirs):
             assert self.fs.exists(fn)
             if instrument_ids and not any(urisafe_instrument_id(x) in fn for x in instrument_ids):
