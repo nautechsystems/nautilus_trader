@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from os import PathLike
 
 import pandas as pd
@@ -23,7 +22,7 @@ import pandas as pd
 
 class CSVTickDataLoader:
     """
-    Provides a means of loading tick data pandas DataFrames from CSV files.
+    Provides a generic tick data CSV file loader.
     """
 
     @staticmethod
@@ -33,7 +32,7 @@ class CSVTickDataLoader:
         format: str = "mixed",
     ) -> pd.DataFrame:
         """
-        Return the tick pandas.DataFrame loaded from the given csv file.
+        Return a tick `pandas.DataFrame` loaded from the given CSV `file_path`.
 
         Parameters
         ----------
@@ -60,7 +59,7 @@ class CSVTickDataLoader:
 
 class CSVBarDataLoader:
     """
-    Provides a means of loading bar data pandas DataFrames from CSV files.
+    Provides a generic bar data CSV file loader.
     """
 
     @staticmethod
@@ -87,82 +86,9 @@ class CSVBarDataLoader:
         return df
 
 
-def _ts_parser(time_in_secs: str) -> datetime:
-    return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
-
-
-class TardisTradeDataLoader:
-    """
-    Provides a means of loading trade data pandas DataFrames from Tardis CSV files.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the trade pandas.DataFrame loaded from the given csv file.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_csv(
-            file_path,
-            index_col="local_timestamp",
-            date_parser=_ts_parser,
-            parse_dates=True,
-        )
-        df = df.rename(columns={"id": "trade_id", "amount": "quantity"})
-        df["side"] = df.side.str.upper()
-        df = df[["symbol", "trade_id", "price", "quantity", "side"]]
-
-        return df
-
-
-class TardisQuoteDataLoader:
-    """
-    Provides a means of loading quote data pandas DataFrames from Tardis CSV files.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the quote pandas.DataFrame loaded from the given csv file.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_csv(
-            file_path,
-            index_col="local_timestamp",
-            date_parser=_ts_parser,
-            parse_dates=True,
-        )
-        df = df.rename(
-            columns={
-                "ask_amount": "ask_size",
-                "bid_amount": "bid_size",
-            },
-        )
-
-        return df[["bid_price", "ask_price", "bid_size", "ask_size"]]
-
-
 class ParquetTickDataLoader:
     """
-    Provides a means of loading tick data pandas DataFrames from Parquet files.
+    Provides a generic tick data Parquet file loader.
     """
 
     @staticmethod
@@ -192,7 +118,7 @@ class ParquetTickDataLoader:
 
 class ParquetBarDataLoader:
     """
-    Provides a means of loading bar data pandas DataFrames from parquet files.
+    Provides a generic bar data Parquet file loader.
     """
 
     @staticmethod
