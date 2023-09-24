@@ -23,7 +23,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::Indicator;
+use crate::indicator::Indicator;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -189,27 +189,10 @@ impl ExponentialMovingAverage {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use nautilus_model::enums::PriceType;
-    use rstest::fixture;
-
-    use crate::ema::ExponentialMovingAverage;
-
-    #[fixture]
-    pub fn indicator_ema_10() -> ExponentialMovingAverage {
-        ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use indicator_ema_10;
     use nautilus_model::{
         data::{quote::QuoteTick, trade::TradeTick},
         enums::{AggressorSide, PriceType},
@@ -218,8 +201,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::{ema::ExponentialMovingAverage, Indicator};
+    use crate::{average::ema::ExponentialMovingAverage, indicator::Indicator, stubs::*};
 
     #[rstest]
     fn test_ema_initialized(indicator_ema_10: ExponentialMovingAverage) {

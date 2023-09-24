@@ -23,7 +23,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::Indicator;
+use crate::indicator::Indicator;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -160,22 +160,6 @@ impl SimpleMovingAverage {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use nautilus_model::enums::PriceType;
-    use rstest::fixture;
-
-    use crate::sma::SimpleMovingAverage;
-
-    #[fixture]
-    pub fn indicator_sma_10() -> SimpleMovingAverage {
-        SimpleMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Test
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -188,8 +172,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::{sma::SimpleMovingAverage, Indicator};
+    use crate::{average::sma::SimpleMovingAverage, indicator::Indicator, stubs::*};
 
     #[rstest]
     fn test_sma_initialized(indicator_sma_10: SimpleMovingAverage) {

@@ -12,19 +12,17 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+use nautilus_model::enums::PriceType;
+use rstest::fixture;
 
-use pyo3::{prelude::*, types::PyModule, Python};
+use crate::average::{ema::ExponentialMovingAverage, sma::SimpleMovingAverage};
 
-pub mod average;
-pub mod indicator;
+#[fixture]
+pub fn indicator_sma_10() -> SimpleMovingAverage {
+    SimpleMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
 
-#[cfg(test)]
-mod stubs;
-
-/// Loaded as nautilus_pyo3.indicators
-#[pymodule]
-pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<average::ema::ExponentialMovingAverage>()?;
-    m.add_class::<average::sma::SimpleMovingAverage>()?;
-    Ok(())
+#[fixture]
+pub fn indicator_ema_10() -> ExponentialMovingAverage {
+    ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
 }

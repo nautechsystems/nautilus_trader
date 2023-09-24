@@ -13,18 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{prelude::*, types::PyModule, Python};
+use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 
-pub mod average;
-pub mod indicator;
-
-#[cfg(test)]
-mod stubs;
-
-/// Loaded as nautilus_pyo3.indicators
-#[pymodule]
-pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<average::ema::ExponentialMovingAverage>()?;
-    m.add_class::<average::sma::SimpleMovingAverage>()?;
-    Ok(())
+pub trait Indicator {
+    fn name(&self) -> String;
+    fn has_inputs(&self) -> bool;
+    fn is_initialized(&self) -> bool;
+    fn handle_quote_tick(&mut self, tick: &QuoteTick);
+    fn handle_trade_tick(&mut self, tick: &TradeTick);
+    fn handle_bar(&mut self, bar: &Bar);
+    fn reset(&mut self);
 }
