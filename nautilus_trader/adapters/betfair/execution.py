@@ -46,7 +46,6 @@ from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
-from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
@@ -105,8 +104,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    market_filter : dict
-        The market filter.
     instrument_provider : BetfairInstrumentProvider
         The instrument provider.
 
@@ -121,7 +118,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
         instrument_provider: BetfairInstrumentProvider,
     ) -> None:
         super().__init__(
@@ -131,8 +127,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -225,11 +220,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # We have a response, check list length and grab first entry
         assert len(orders) == 1, f"More than one order found for {venue_order_id}"
         order: CurrentOrderSummary = orders[0]
-        instrument = self._instrument_provider.get_betting_instrument(
-            market_id=str(order.market_id),
-            selection_id=str(order.selection_id),
-            handicap=parse_handicap(order.handicap),
-        )
+        instrument = self._cache.instrument(instrument_id)
         venue_order_id = VenueOrderId(str(order.bet_id))
 
         report: OrderStatusReport = bet_to_order_status_report(

@@ -42,6 +42,7 @@ from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
 from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -85,10 +86,14 @@ class BetfairTestStubs:
         return TraderId("001")
 
     @staticmethod
-    def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
+    def instrument_provider(
+        betfair_client,
+        config: Optional[BetfairInstrumentProviderConfig] = None,
+    ) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=TestComponentStubs.logger(),
+            config=config or BetfairInstrumentProviderConfig(),
         )
 
     @staticmethod

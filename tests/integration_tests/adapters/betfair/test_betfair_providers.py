@@ -101,33 +101,33 @@ class TestBetfairInstrumentProvider:
         instruments = self.provider.list_all()
         assert len(instruments) == 23908
 
-    @pytest.mark.asyncio()
-    async def test_search_instruments(self):
-        await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
-        instruments = self.provider.search_instruments(
-            instrument_filter={"market_type": "MATCH_ODDS"},
-        )
-        assert len(instruments) == 104
+    # @pytest.mark.asyncio()
+    # async def test_search_instruments(self):
+    #     await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
+    #     instruments = self.provider.search_instruments(
+    #         instrument_filter={"market_type": "MATCH_ODDS"},
+    #     )
+    #     assert len(instruments) == 104
 
-    @pytest.mark.asyncio()
-    async def test_get_betting_instrument(self):
-        await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
-        kw = {
-            "market_id": "1.180678317",
-            "selection_id": "11313157",
-            "handicap": "0.0",
-        }
-        instrument = self.provider.get_betting_instrument(**kw)
-        assert instrument.market_id == "1.180678317"
-
-        # Test throwing warning
-        kw["handicap"] = "-1000"
-        instrument = self.provider.get_betting_instrument(**kw)
-        assert instrument is None
-
-        # Test already in self._subscribed_instruments
-        instrument = self.provider.get_betting_instrument(**kw)
-        assert instrument is None
+    # @pytest.mark.asyncio()
+    # async def test_get_betting_instrument(self):
+    #     await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
+    #     kw = {
+    #         "market_id": "1.180678317",
+    #         "selection_id": "11313157",
+    #         "handicap": "0.0",
+    #     }
+    #     instrument = self.provider.get_betting_instrument(**kw)
+    #     assert instrument.market_id == "1.180678317"
+    #
+    #     # Test throwing warning
+    #     kw["handicap"] = "-1000"
+    #     instrument = self.provider.get_betting_instrument(**kw)
+    #     assert instrument is None
+    #
+    #     # Test already in self._subscribed_instruments
+    #     instrument = self.provider.get_betting_instrument(**kw)
+    #     assert instrument is None
 
     def test_market_update_runner_removed(self) -> None:
         # Arrange

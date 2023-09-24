@@ -65,8 +65,6 @@ class BetfairDataClient(LiveMarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    market_filter : dict
-        The market filter.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
     strict_handling : bool
@@ -82,16 +80,14 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
-        instrument_provider: Optional[BetfairInstrumentProvider] = None,
+        instrument_provider: BetfairInstrumentProvider,
         strict_handling: bool = False,
     ):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
