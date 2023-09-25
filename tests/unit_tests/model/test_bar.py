@@ -309,6 +309,38 @@ class TestBarType:
         assert repr(bar_type) == "BarType(AUD/USD.SIM-1-MINUTE-BID-EXTERNAL)"
 
     @pytest.mark.parametrize(
+        ("input", "expected_err"),
+        [
+            [
+                "AUD/USD.-0-0-0-0",
+                "Error parsing `BarType` from 'AUD/USD.-0-0-0-0', invalid token: 'AUD/USD.' at position 0",
+            ],
+            [
+                "AUD/USD.SIM-a-0-0-0",
+                "Error parsing `BarType` from 'AUD/USD.SIM-a-0-0-0', invalid token: 'a' at position 1",
+            ],
+            [
+                "AUD/USD.SIM-1000-a-0-0",
+                "Error parsing `BarType` from 'AUD/USD.SIM-1000-a-0-0', invalid token: 'a' at position 2",
+            ],
+            [
+                "AUD/USD.SIM-1000-TICK-a-0",
+                "Error parsing `BarType` from 'AUD/USD.SIM-1000-TICK-a-0', invalid token: 'a' at position 3",
+            ],
+            [
+                "AUD/USD.SIM-1000-TICK-LAST-a",
+                "Error parsing `BarType` from 'AUD/USD.SIM-1000-TICK-LAST-a', invalid token: 'a' at position 4",
+            ],
+        ],
+    )
+    def test_bar_type_from_str_with_invalid_values(self, input: str, expected_err: str) -> None:
+        # Arrange, Act
+        with pytest.raises(ValueError) as exc_info:
+            BarType.from_str(input)
+
+        assert str(exc_info.value) == expected_err
+
+    @pytest.mark.parametrize(
         "value",
         ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
     )

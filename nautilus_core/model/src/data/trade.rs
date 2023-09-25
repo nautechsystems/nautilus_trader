@@ -317,13 +317,11 @@ impl TradeTick {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
-    use nautilus_core::serialization::Serializable;
-    use pyo3::{IntoPy, Python};
-    use rstest::rstest;
+pub mod stubs {
+    use rstest::fixture;
 
     use crate::{
         data::trade::TradeTick,
@@ -332,7 +330,8 @@ mod tests {
         types::{price::Price, quantity::Quantity},
     };
 
-    fn create_stub_trade_tick() -> TradeTick {
+    #[fixture]
+    pub fn trade_tick_ethusdt_buyer() -> TradeTick {
         TradeTick {
             instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             price: Price::from("10000.0000"),
@@ -343,10 +342,23 @@ mod tests {
             ts_init: 0,
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_core::serialization::Serializable;
+    use pyo3::{IntoPy, Python};
+    use rstest::rstest;
+
+    use super::stubs::*;
+    use crate::{data::trade::TradeTick, enums::AggressorSide};
 
     #[rstest]
-    fn test_to_string() {
-        let tick = create_stub_trade_tick();
+    fn test_to_string(trade_tick_ethusdt_buyer: TradeTick) {
+        let tick = trade_tick_ethusdt_buyer;
         assert_eq!(
             tick.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,1"
@@ -372,10 +384,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict() {
+    fn test_as_dict(trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
 
-        let tick = create_stub_trade_tick();
+        let tick = trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let dict_string = tick.as_dict(py).unwrap().to_string();
@@ -385,10 +397,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_dict() {
+    fn test_from_dict(trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
 
-        let tick = create_stub_trade_tick();
+        let tick = trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let dict = tick.as_dict(py).unwrap();
@@ -398,9 +410,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject() {
+    fn test_from_pyobject(trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = create_stub_trade_tick();
+        let tick = trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
@@ -410,16 +422,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization() {
-        let tick = create_stub_trade_tick();
+    fn test_json_serialization(trade_tick_ethusdt_buyer: TradeTick) {
+        let tick = trade_tick_ethusdt_buyer;
         let serialized = tick.as_json_bytes().unwrap();
         let deserialized = TradeTick::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let tick = create_stub_trade_tick();
+    fn test_msgpack_serialization(trade_tick_ethusdt_buyer: TradeTick) {
+        let tick = trade_tick_ethusdt_buyer;
         let serialized = tick.as_msgpack_bytes().unwrap();
         let deserialized = TradeTick::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);

@@ -268,7 +268,7 @@ class BacktestNode:
             else:
                 bar_type = None
             session = catalog.backend_session(
-                cls=config.data_type,
+                data_cls=config.data_type,
                 instrument_ids=[config.instrument_id]
                 if config.instrument_id and not bar_type
                 else [],

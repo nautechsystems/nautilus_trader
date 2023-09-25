@@ -1958,6 +1958,7 @@ dependencies = [
 name = "nautilus-indicators"
 version = "0.10.0"
 dependencies = [
+ "anyhow",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
