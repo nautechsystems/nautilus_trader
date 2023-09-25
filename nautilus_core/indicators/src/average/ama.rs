@@ -33,15 +33,17 @@ use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
 #[derive(Debug)]
 #[pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")]
 pub struct AdaptiveMovingAverage {
-    /// the period for the internal `EfficiencyRatio` indicator.
+    /// The period for the internal `EfficiencyRatio` indicator.
     pub period_efficiency_ratio: usize,
-    /// the period for the fast smoothing constant (> 0)
+    /// The period for the fast smoothing constant (> 0).
     pub period_fast: usize,
-    /// the period for the slow smoothing constant (> 0 < `period_fast`)
+    /// The period for the slow smoothing constant (> 0 < `period_fast`).
     pub period_slow: usize,
-    /// price type used for calculations
+    /// The price type used for calculations.
     pub price_type: PriceType,
+    /// The last indicator value.
     pub value: f64,
+    /// The input count for the indicator.
     pub count: usize,
     _efficiency_ratio: EfficiencyRatio,
     _prior_value: Option<f64>,
