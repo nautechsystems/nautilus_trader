@@ -23,7 +23,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::Indicator;
+use crate::indicator::Indicator;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -189,37 +189,17 @@ impl ExponentialMovingAverage {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use nautilus_model::enums::PriceType;
-    use rstest::fixture;
-
-    use crate::ema::ExponentialMovingAverage;
-
-    #[fixture]
-    pub fn indicator_ema_10() -> ExponentialMovingAverage {
-        ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use indicator_ema_10;
     use nautilus_model::{
-        data::{quote::QuoteTick, trade::TradeTick},
-        enums::{AggressorSide, PriceType},
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
-        types::{price::Price, quantity::Quantity},
+        data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+        enums::PriceType,
     };
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::{ema::ExponentialMovingAverage, Indicator};
+    use crate::{average::ema::ExponentialMovingAverage, indicator::Indicator, stubs::*};
 
     #[rstest]
     fn test_ema_initialized(indicator_ema_10: ExponentialMovingAverage) {
@@ -272,36 +252,43 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(indicator_ema_10: ExponentialMovingAverage) {
+    fn test_handle_quote_tick_single(
+        indicator_ema_10: ExponentialMovingAverage,
+        quote_tick: QuoteTick,
+    ) {
         let mut ema = indicator_ema_10;
-        let tick = QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            bid_price: Price::from("1500.0000"),
-            ask_price: Price::from("1502.0000"),
-            bid_size: Quantity::from("1.00000000"),
-            ask_size: Quantity::from("1.00000000"),
-            ts_event: 1,
-            ts_init: 0,
-        };
-        ema.handle_quote_tick(&tick);
+        ema.handle_quote_tick(&quote_tick);
         assert_eq!(ema.has_inputs(), true);
         assert_eq!(ema.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage) {
+    fn test_handle_quote_tick_multi(mut indicator_ema_10: ExponentialMovingAverage) {
+        let tick1 = quote_tick("1500.0", "1502.0");
+        let tick2 = quote_tick("1502.0", "1504.0");
+
+        indicator_ema_10.handle_quote_tick(&tick1);
+        indicator_ema_10.handle_quote_tick(&tick2);
+        assert_eq!(indicator_ema_10.count, 2);
+        assert_eq!(indicator_ema_10.value, 1501.3636363636363);
+    }
+
+    #[rstest]
+    fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage, trade_tick: TradeTick) {
         let mut ema = indicator_ema_10;
-        let tick = TradeTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            price: Price::from("1500.0000"),
-            size: Quantity::from("1.00000000"),
-            aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::from("123456789"),
-            ts_event: 1,
-            ts_init: 0,
-        };
-        ema.handle_trade_tick(&tick);
+        ema.handle_trade_tick(&trade_tick);
         assert_eq!(ema.has_inputs(), true);
         assert_eq!(ema.value, 1500.0);
+    }
+
+    #[rstest]
+    fn handle_handle_bar(
+        mut indicator_ema_10: ExponentialMovingAverage,
+        bar_ethusdt_binance_minute_bid: Bar,
+    ) {
+        indicator_ema_10.handle_bar(&bar_ethusdt_binance_minute_bid);
+        assert_eq!(indicator_ema_10.has_inputs, true);
+        assert_eq!(indicator_ema_10.is_initialized, false);
+        assert_eq!(indicator_ema_10.value, 1522.0);
     }
 }
