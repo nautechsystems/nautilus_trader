@@ -338,8 +338,8 @@ pub mod stubs {
             size: Quantity::from("1.00000000"),
             aggressor_side: AggressorSide::Buyer,
             trade_id: TradeId::new("123456789").unwrap(),
-            ts_event: 1,
-            ts_init: 0,
+            ts_event: 0,
+            ts_init: 1,
         }
     }
 }
@@ -361,7 +361,7 @@ mod tests {
         let tick = trade_tick_ethusdt_buyer;
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,1"
+            "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
         );
     }
 
@@ -374,8 +374,8 @@ mod tests {
             "size": "1.00000000",
             "aggressor_side": "BUYER",
             "trade_id": "123456789",
-            "ts_event": 1,
-            "ts_init": 0
+            "ts_event": 0,
+            "ts_init": 1
         }"#;
 
         let tick: TradeTick = serde_json::from_str(raw_string).unwrap();
@@ -391,7 +391,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let dict_string = tick.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 1, 'ts_init': 0}"#;
+            let expected_string = r#"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}"#;
             assert_eq!(dict_string, expected_string);
         });
     }
