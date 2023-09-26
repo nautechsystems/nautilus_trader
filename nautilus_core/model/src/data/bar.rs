@@ -511,7 +511,7 @@ pub mod stubs {
             aggregation_source: AggregationSource::External,
         };
         Bar {
-            bar_type: bar_type,
+            bar_type,
             open: Price::from("1.00001"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),
@@ -722,7 +722,7 @@ mod tests {
             aggregation_source: AggregationSource::External,
         };
         let bar1 = Bar {
-            bar_type: bar_type,
+            bar_type,
             open: Price::from("1.00001"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),
