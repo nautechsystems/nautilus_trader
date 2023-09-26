@@ -35,7 +35,7 @@ use crate::{
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
 pub struct TradeTick {
     /// The trade instrument ID.
     pub instrument_id: InstrumentId,
@@ -104,19 +104,17 @@ impl TradeTick {
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str)
-            .map_err(to_pyvalue_err)
-            .unwrap();
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
 
         let price_py: &PyAny = obj.getattr("price")?;
         let price_raw: i64 = price_py.getattr("raw")?.extract()?;
         let price_prec: u8 = price_py.getattr("precision")?.extract()?;
-        let price = Price::from_raw(price_raw, price_prec);
+        let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let size_py: &PyAny = obj.getattr("size")?;
         let size_raw: u64 = size_py.getattr("raw")?.extract()?;
         let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-        let size = Quantity::from_raw(size_raw, size_prec);
+        let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
 
         let aggressor_side_obj: &PyAny = obj.getattr("aggressor_side")?.extract()?;
         let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
@@ -124,9 +122,7 @@ impl TradeTick {
 
         let trade_id_obj: &PyAny = obj.getattr("trade_id")?.extract()?;
         let trade_id_str = trade_id_obj.getattr("value")?.extract()?;
-        let trade_id = TradeId::from_str(trade_id_str)
-            .map_err(to_pyvalue_err)
-            .unwrap();
+        let trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
 
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
         let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;

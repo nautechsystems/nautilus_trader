@@ -200,7 +200,7 @@ impl BarType {
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
 pub struct Bar {
     /// The bar type for this bar.
     pub bar_type: BarType,
@@ -285,24 +285,24 @@ impl Bar {
         let open_py: &PyAny = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
         let open_raw: i64 = open_py.getattr("raw")?.extract()?;
-        let open = Price::from_raw(open_raw, price_prec);
+        let open = Price::from_raw(open_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let high_py: &PyAny = obj.getattr("high")?;
         let high_raw: i64 = high_py.getattr("raw")?.extract()?;
-        let high = Price::from_raw(high_raw, price_prec);
+        let high = Price::from_raw(high_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let low_py: &PyAny = obj.getattr("low")?;
         let low_raw: i64 = low_py.getattr("raw")?.extract()?;
-        let low = Price::from_raw(low_raw, price_prec);
+        let low = Price::from_raw(low_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let close_py: &PyAny = obj.getattr("close")?;
         let close_raw: i64 = close_py.getattr("raw")?.extract()?;
-        let close = Price::from_raw(close_raw, price_prec);
+        let close = Price::from_raw(close_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let volume_py: &PyAny = obj.getattr("volume")?;
         let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
-        let volume = Quantity::from_raw(volume_raw, volume_prec);
+        let volume = Quantity::from_raw(volume_raw, volume_prec).map_err(to_pyvalue_err)?;
 
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
         let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
