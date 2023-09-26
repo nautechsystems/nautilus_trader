@@ -371,8 +371,8 @@ pub mod stubs {
             ask_price: Price::from("10001.0000"),
             bid_size: Quantity::from("1.00000000"),
             ask_size: Quantity::from("1.00000000"),
-            ts_event: 1,
-            ts_init: 0,
+            ts_event: 0,
+            ts_init: 1,
         }
     }
 }
@@ -394,7 +394,7 @@ mod tests {
         let tick = quote_tick_ethusdt_binance;
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,1"
+            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
         );
     }
 
@@ -420,7 +420,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let dict_string = tick.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 1, 'ts_init': 0}"#;
+            let expected_string = r#"{'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}"#;
             assert_eq!(dict_string, expected_string);
         });
     }
