@@ -24,7 +24,6 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
-from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import BookAction
@@ -151,7 +150,8 @@ class TestArrowSerializer:
         self.catalog.write_data([delta])
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 1
-        assert isinstance(deserialized[0], RustOrderBookDelta)
+        assert isinstance(deltas[0], OrderBookDelta)
+        assert not isinstance(deserialized[0], OrderBookDelta)  # TODO: Add legacy wrangler
 
     def test_serialize_and_deserialize_order_book_deltas(self):
         # Arrange

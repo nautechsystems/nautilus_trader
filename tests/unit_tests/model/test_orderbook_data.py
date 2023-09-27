@@ -102,11 +102,11 @@ class TestOrderBookDelta:
         assert isinstance(hash(delta), int)
         assert (
             str(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: Buy, price: 10.0, size: 5, order_id: 1 }}, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
         assert (
             repr(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder {{ side: Buy, price: 10.0, size: 5, order_id: 1 }}, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
 
     def test_with_null_book_order(self):
@@ -125,11 +125,11 @@ class TestOrderBookDelta:
         assert isinstance(hash(delta), int)
         assert (
             str(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder { side: NoOrderSide, price: 0, size: 0, order_id: 0 }, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
         assert (
             repr(delta)
-            == f"OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder {{ side: NoOrderSide, price: 0, size: 0, order_id: 0 }}, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
+            == "OrderBookDelta(instrument_id=AUD/USD.SIM, action=CLEAR, order=BookOrder { side: NoOrderSide, price: 0, size: 0, order_id: 0 }, flags=32, sequence=123456789, ts_event=0, ts_init=1000000000)"  # noqa
         )
 
     def test_clear_delta(self):
@@ -281,16 +281,14 @@ class TestOrderBookDeltas:
 
         # Act, Assert
         assert isinstance(hash(deltas), int)
-
-        # TODO(cs): String format TBD
-        # assert (
-        #     str(deltas)
-        #     == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(10.0, 5.0, BUY, 1), sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(10.0, 15.0, BUY, 2), sequence=0, ts_event=0, ts_init=0)], sequence=0, ts_event=0, ts_init=0)"  # noqa
-        # )
-        # assert (
-        #     repr(deltas)
-        #     == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(10.0, 5.0, BUY, 1), sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(10.0, 15.0, BUY, 2), sequence=0, ts_event=0, ts_init=0)], sequence=0, ts_event=0, ts_init=0)"  # noqa
-        # )
+        assert (
+            str(deltas)
+            == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 15, order_id: 2 }, flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
+        )
+        assert (
+            repr(deltas)
+            == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 5, order_id: 1 }, flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder { side: Buy, price: 10.0, size: 15, order_id: 2 }, flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
+        )
 
     def test_to_dict(self):
         # Arrange
@@ -337,16 +335,12 @@ class TestOrderBookDeltas:
         result = OrderBookDeltas.to_dict(deltas)
 
         # Assert
-        # TODO(cs): TBD
         assert result
-        # assert result == {
-        #     "type": "OrderBookDeltas",
-        #     "instrument_id": "AUD/USD.SIM",
-        #     "deltas": b'[{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","price":10.0,"size":5.0,"side":"BUY","order_id":"1","sequence":0,"ts_event":0,"ts_init":0},{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","price":10.0,"size":15.0,"side":"BUY","order_id":"2","sequence":0,"ts_event":0,"ts_init":0}]',  # noqa
-        #     "sequence": 0,
-        #     "ts_event": 0,
-        #     "ts_init": 0,
-        # }
+        assert result == {
+            "type": "OrderBookDeltas",
+            "instrument_id": "AUD/USD.SIM",
+            "deltas": b'[{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","order":{"side":"BUY","price":"10.0","size":"5","order_id":1},"flags":0,"sequence":0,"ts_event":0,"ts_init":0},{"type":"OrderBookDelta","instrument_id":"AUD/USD.SIM","action":"ADD","order":{"side":"BUY","price":"10.0","size":"15","order_id":2},"flags":0,"sequence":1,"ts_event":0,"ts_init":0}]',  # noqa
+        }
 
     def test_from_dict_returns_expected_dict(self):
         # Arrange

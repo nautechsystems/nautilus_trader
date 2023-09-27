@@ -13,7 +13,17 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from cpython.mem cimport PyMem_Free
+from cpython.pycapsule cimport PyCapsule_GetPointer
+
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.core cimport CVec
+
+
+cdef inline void capsule_destructor(object capsule):
+    cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+    PyMem_Free(cvec[0].ptr) # de-allocate buffer
+    PyMem_Free(cvec) # de-allocate cvec
 
 
 cdef class DataType:

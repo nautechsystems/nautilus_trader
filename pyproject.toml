@@ -105,7 +105,7 @@ pytest-xdist = { version = "^3.3.1", extras = ["psutil"] }
 optional = true
 
 [tool.poetry.group.docs.dependencies]
-numpydoc = "^1.5.0"
+numpydoc = "^1.6.0"
 linkify-it-py = "^2.0.0"
 myst-parser = "^0.18.1"
 sphinx_comments = "^0.0.3"

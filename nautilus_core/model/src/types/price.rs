@@ -68,10 +68,9 @@ impl Price {
         })
     }
 
-    #[must_use]
-    pub fn from_raw(raw: i64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
-        Self { raw, precision }
+    pub fn from_raw(raw: i64, precision: u8) -> Result<Self> {
+        check_fixed_precision(precision)?;
+        Ok(Self { raw, precision })
     }
 
     #[must_use]
@@ -601,8 +600,7 @@ impl Price {
     #[staticmethod]
     #[pyo3(name = "from_raw")]
     fn py_from_raw(raw: i64, precision: u8) -> PyResult<Price> {
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Price::from_raw(raw, precision))
+        Price::from_raw(raw, precision).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -663,7 +661,7 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
-    Price::from_raw(raw, precision)
+    Price::from_raw(raw, precision).unwrap()
 }
 
 #[cfg(feature = "ffi")]
@@ -708,7 +706,7 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Price::from_raw(1, 10);
+        let _ = Price::from_raw(1, 10).unwrap();
     }
 
     #[rstest]

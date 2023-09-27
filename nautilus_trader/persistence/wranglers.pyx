@@ -52,12 +52,12 @@ cdef inline list capsule_to_data_list(object capsule):
 
     cdef uint64_t i
     for i in range(0, data.len):
-        if ptr[i].tag == Data_t_Tag.TRADE:
-            objects.append(TradeTick.from_mem_c(ptr[i].trade))
+        if ptr[i].tag == Data_t_Tag.DELTA:
+            objects.append(OrderBookDelta.from_mem_c(ptr[i].delta))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
             objects.append(QuoteTick.from_mem_c(ptr[i].quote))
-        elif ptr[i].tag == Data_t_Tag.DELTA:
-            objects.append(OrderBookDelta.from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.TRADE:
+            objects.append(TradeTick.from_mem_c(ptr[i].trade))
         elif ptr[i].tag == Data_t_Tag.BAR:
             objects.append(Bar.from_mem_c(ptr[i].bar))
 

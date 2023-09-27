@@ -144,8 +144,8 @@ impl DecodeFromRecordBatch for TradeTick {
         // Map record batch rows to vector of objects
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let price = Price::from_raw(price_values.value(i), price_precision);
-                let size = Quantity::from_raw(size_values.value(i), size_precision);
+                let price = Price::from_raw(price_values.value(i), price_precision).unwrap();
+                let size = Quantity::from_raw(size_values.value(i), size_precision).unwrap();
                 let aggressor_side_value = aggressor_side_values.value(i);
                 let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
                     .ok_or_else(|| {
