@@ -163,6 +163,36 @@ class TestTrader:
         # Assert
         assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "READY"}
 
+    def test_start_strategy_when_not_exists(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            self.trader.start_strategy(StrategyId("UNKNOWN-000"))
+
+    def test_start_strategy(self):
+        # Arrange
+        strategy = Strategy()
+        self.trader.add_strategy(strategy)
+
+        # Act
+        self.trader.start_strategy(strategy.id)
+
+        # Assert
+        assert strategy.is_running
+        assert self.trader.strategy_states() == {strategy.id: "RUNNING"}
+
+    def test_start_strategy_when_already_started(self):
+        # Arrange
+        strategy = Strategy()
+        self.trader.add_strategy(strategy)
+        self.trader.start_strategy(strategy.id)
+
+        # Act
+        self.trader.start_strategy(strategy.id)
+
+        # Assert
+        assert strategy.is_running
+        assert self.trader.strategy_states() == {strategy.id: "RUNNING"}
+
     def test_add_strategies_with_no_order_id_tags(self):
         # Arrange
         strategies = [Strategy(), Strategy()]
