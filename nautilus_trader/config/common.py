@@ -508,6 +508,20 @@ class StrategyFactory:
 
 
 class ImportableControllerConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for a controller instance.
+
+    Parameters
+    ----------
+    controller_path : str
+        The fully qualified name of the controller class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : dict[str, Any]
+        The controller configuration.
+
+    """
+
     controller_path: str
     config_path: str
     config: dict
@@ -520,6 +534,10 @@ class ControllerConfig(NautilusConfig, kw_only=True, frozen=True):
 
 
 class ControllerFactory:
+    """
+    Provides controller creation from importable configurations.
+    """
+
     @staticmethod
     def create(
         config: ImportableControllerConfig,
@@ -701,8 +719,10 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the kernel.
-    controller : Controller
-        A trader controller.
+    exec_algorithms : list[ImportableExecAlgorithmConfig]
+        The execution algorithm configurations for the kernel.
+    controller : ImportableControllerConfig, optional
+        The trader controller for the kernel.
     load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_state : bool, default True
@@ -735,8 +755,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     catalog: Optional[DataCatalogConfig] = None
     actors: list[ImportableActorConfig] = []
     strategies: list[ImportableStrategyConfig] = []
-    controller: Optional[ImportableControllerConfig] = None
     exec_algorithms: list[ImportableExecAlgorithmConfig] = []
+    controller: Optional[ImportableControllerConfig] = None
     load_state: bool = False
     save_state: bool = False
     loop_debug: bool = False

@@ -247,7 +247,6 @@ class TestBacktestEngine:
 
     def test_controller(self):
         # Arrange - Controller class
-
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=False),
             controller=ImportableControllerConfig(
@@ -259,7 +258,6 @@ class TestBacktestEngine:
         engine = self.create_engine(config=config)
 
         # Act
-        assert not engine.kernel.trader.strategies()
         engine.run()
 
         # Assert

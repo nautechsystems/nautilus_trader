@@ -37,6 +37,7 @@ cdef class Trader(Component):
     cdef list _actors
     cdef list _strategies
     cdef list _exec_algorithms
+    cdef bint _has_controller
 
     cpdef list actors(self)
     cpdef list strategies(self)

@@ -341,8 +341,9 @@ class NautilusKernel:
             self._trader.load()
 
         # Add controller
+        self._controller: Controller | None = None
         if self._config.controller:
-            self._controller: Controller = ControllerFactory.create(
+            self._controller = ControllerFactory.create(
                 config=self._config.controller,
                 trader=self._trader,
             )
@@ -733,7 +734,9 @@ class NautilusKernel:
         self._emulator.start()
         self._initialize_portfolio()
         self._trader.start()
-        self._controller.start()
+
+        if self._controller:
+            self._controller.start()
 
     async def start_async(self) -> None:
         """
@@ -774,7 +777,8 @@ class NautilusKernel:
         """
         self.log.info("STOPPING...")
 
-        self._controller.stop()
+        if self._controller:
+            self._controller.stop()
 
         if self._trader.is_running:
             self._trader.stop()
