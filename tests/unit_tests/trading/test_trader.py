@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Any
 
 import pytest
 
@@ -55,7 +56,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestTrader:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(self.clock, bypass=True)
@@ -150,25 +151,68 @@ class TestTrader:
             logger=self.logger,
         )
 
-    def test_initialize_trader(self):
+    def test_initialize_trader(self) -> None:
         # Arrange, Act, Assert
         assert self.trader.id == TraderId("TESTER-000")
         assert self.trader.is_initialized
         assert len(self.trader.strategy_states()) == 0
 
-    def test_add_strategy(self):
+    def test_add_strategy(self) -> None:
         # Arrange, Act
         self.trader.add_strategy(Strategy())
 
         # Assert
         assert self.trader.strategy_states() == {StrategyId("Strategy-000"): "READY"}
 
-    def test_start_strategy_when_not_exists(self):
+    def test_start_actor_when_not_exists(self) -> None:
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            self.trader.start_actor(ComponentId("UNKNOWN-000"))
+
+    def test_start_actor(self) -> None:
+        # Arrange
+        actor = Actor()
+        self.trader.add_actor(actor)
+
+        # Act
+        self.trader.start_actor(actor.id)
+
+        # Assert
+        assert actor.is_running
+        assert self.trader.actor_states() == {actor.id: "RUNNING"}
+
+    def test_start_actor_when_already_started(self) -> None:
+        # Arrange
+        actor = Actor()
+        self.trader.add_actor(actor)
+        self.trader.start_actor(actor.id)
+
+        # Act
+        self.trader.start_actor(actor.id)
+
+        # Assert
+        assert actor.is_running
+        assert self.trader.actor_states() == {actor.id: "RUNNING"}
+
+    def test_remove_actor(self) -> None:
+        # Arrange
+        actor = Actor()
+        self.trader.add_actor(actor)
+        self.trader.start_actor(actor.id)
+
+        # Act
+        self.trader.remove_actor(actor.id)
+
+        # Assert
+        assert not actor.is_running
+        assert self.trader.actors() == []
+
+    def test_start_strategy_when_not_exists(self) -> None:
         # Arrange, Act, Assert
         with pytest.raises(ValueError):
             self.trader.start_strategy(StrategyId("UNKNOWN-000"))
 
-    def test_start_strategy(self):
+    def test_start_strategy(self) -> None:
         # Arrange
         strategy = Strategy()
         self.trader.add_strategy(strategy)
@@ -180,7 +224,7 @@ class TestTrader:
         assert strategy.is_running
         assert self.trader.strategy_states() == {strategy.id: "RUNNING"}
 
-    def test_start_strategy_when_already_started(self):
+    def test_start_strategy_when_already_started(self) -> None:
         # Arrange
         strategy = Strategy()
         self.trader.add_strategy(strategy)
@@ -193,7 +237,20 @@ class TestTrader:
         assert strategy.is_running
         assert self.trader.strategy_states() == {strategy.id: "RUNNING"}
 
-    def test_add_strategies_with_no_order_id_tags(self):
+    def test_remove_strategy(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        self.trader.add_strategy(strategy)
+        self.trader.start_strategy(strategy.id)
+
+        # Act
+        self.trader.remove_strategy(strategy.id)
+
+        # Assert
+        assert not strategy.is_running
+        assert self.trader.strategies() == []
+
+    def test_add_strategies_with_no_order_id_tags(self) -> None:
         # Arrange
         strategies = [Strategy(), Strategy()]
 
@@ -206,7 +263,7 @@ class TestTrader:
             StrategyId("Strategy-001"): "READY",
         }
 
-    def test_add_strategies_with_duplicate_order_id_tags_raises_runtime_error(self):
+    def test_add_strategies_with_duplicate_order_id_tags_raises_runtime_error(self) -> None:
         # Arrange
         config = MyStrategyConfig(
             instrument_id=USDJPY_SIM.id.value,
@@ -218,7 +275,7 @@ class TestTrader:
         with pytest.raises(RuntimeError):
             self.trader.add_strategies(strategies)
 
-    def test_add_strategies(self):
+    def test_add_strategies(self) -> None:
         # Arrange
         strategies = [
             Strategy(StrategyConfig(order_id_tag="001")),
@@ -234,7 +291,7 @@ class TestTrader:
             StrategyId("Strategy-002"): "READY",
         }
 
-    def test_clear_strategies(self):
+    def test_clear_strategies(self) -> None:
         # Arrange
         strategies = [
             Strategy(StrategyConfig(order_id_tag="001")),
@@ -248,7 +305,7 @@ class TestTrader:
         # Assert
         assert self.trader.strategy_states() == {}
 
-    def test_add_actor(self):
+    def test_add_actor(self) -> None:
         # Arrange
         config = ActorConfig(component_id="MyPlugin-01")
         actor = Actor(config)
@@ -259,7 +316,7 @@ class TestTrader:
         # Assert
         assert self.trader.actor_ids() == [ComponentId("MyPlugin-01")]
 
-    def test_add_actors(self):
+    def test_add_actors(self) -> None:
         # Arrange
         actors = [
             Actor(ActorConfig(component_id="MyPlugin-01")),
@@ -275,7 +332,7 @@ class TestTrader:
             ComponentId("MyPlugin-02"),
         ]
 
-    def test_clear_actors(self):
+    def test_clear_actors(self) -> None:
         # Arrange
         actors = [
             Actor(ActorConfig(component_id="MyPlugin-01")),
@@ -289,7 +346,7 @@ class TestTrader:
         # Assert
         assert self.trader.actor_ids() == []
 
-    def test_get_strategy_states(self):
+    def test_get_strategy_states(self) -> None:
         # Arrange
         strategies = [
             Strategy(StrategyConfig(order_id_tag="001")),
@@ -307,7 +364,7 @@ class TestTrader:
         assert status[StrategyId("Strategy-002")] == "READY"
         assert len(status) == 2
 
-    def test_add_exec_algorithm(self):
+    def test_add_exec_algorithm(self) -> None:
         # Arrange
         exec_algorithm = ExecAlgorithm()
 
@@ -319,7 +376,7 @@ class TestTrader:
         assert self.trader.exec_algorithms() == [exec_algorithm]
         assert self.trader.exec_algorithm_states() == {exec_algorithm.id: "READY"}
 
-    def test_change_exec_algorithms(self):
+    def test_change_exec_algorithms(self) -> None:
         # Arrange
         exec_algorithm1 = ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="001"))
         exec_algorithm2 = ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="002"))
@@ -336,7 +393,7 @@ class TestTrader:
             exec_algorithm2.id: "READY",
         }
 
-    def test_clear_exec_algorithms(self):
+    def test_clear_exec_algorithms(self) -> None:
         # Arrange
         exec_algorithms = [
             ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="001")),
@@ -353,7 +410,7 @@ class TestTrader:
         assert self.trader.exec_algorithms() == []
         assert self.trader.exec_algorithm_states() == {}
 
-    def test_change_strategies(self):
+    def test_change_strategies(self) -> None:
         # Arrange
         strategy1 = Strategy(StrategyConfig(order_id_tag="003"))
         strategy2 = Strategy(StrategyConfig(order_id_tag="004"))
@@ -368,7 +425,7 @@ class TestTrader:
         assert strategy2.id in self.trader.strategy_states()
         assert len(self.trader.strategy_states()) == 2
 
-    def test_start_a_trader(self):
+    def test_start_a_trader(self) -> None:
         # Arrange
         strategies = [
             Strategy(StrategyConfig(order_id_tag="001")),
@@ -386,7 +443,7 @@ class TestTrader:
         assert strategy_states[StrategyId("Strategy-001")] == "RUNNING"
         assert strategy_states[StrategyId("Strategy-002")] == "RUNNING"
 
-    def test_stop_a_running_trader(self):
+    def test_stop_a_running_trader(self) -> None:
         # Arrange
         strategies = [
             Strategy(StrategyConfig(order_id_tag="001")),
@@ -405,9 +462,9 @@ class TestTrader:
         assert strategy_states[StrategyId("Strategy-001")] == "STOPPED"
         assert strategy_states[StrategyId("Strategy-002")] == "STOPPED"
 
-    def test_subscribe_to_msgbus_topic_adds_subscription(self):
+    def test_subscribe_to_msgbus_topic_adds_subscription(self) -> None:
         # Arrange
-        consumer = []
+        consumer: list[Any] = []
 
         # Act
         self.trader.subscribe("events*", consumer.append)
@@ -417,9 +474,9 @@ class TestTrader:
         assert "events*" in self.msgbus.topics()
         assert self.msgbus.subscriptions("events*")[-1].handler == consumer.append
 
-    def test_unsubscribe_from_msgbus_topic_removes_subscription(self):
+    def test_unsubscribe_from_msgbus_topic_removes_subscription(self) -> None:
         # Arrange
-        consumer = []
+        consumer: list[Any] = []
         self.trader.subscribe("events*", consumer.append)
 
         # Act
