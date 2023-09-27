@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.trading.strategy import Strategy
@@ -20,10 +22,22 @@ from nautilus_trader.trading.trader import Trader
 
 
 class Controller(Actor):
+    """
+    The base class for all trader controllers.
+
+    Parameters
+    ----------
+    trader : Trader
+        The reference to the trader instance to control.
+    config : ActorConfig, optional
+        The configuratuon for the controller
+
+    """
+
     def __init__(
         self,
         trader: Trader,
-        config: ActorConfig,
+        config: ActorConfig | None = None,
     ) -> None:
         if config is None:
             config = ActorConfig()
@@ -31,6 +45,10 @@ class Controller(Actor):
 
         self.trader = trader
 
+    def create_actor(self, actor: Actor) -> None:
+        self.trader.add_actor(actor)
+        actor.start()
+
     def create_strategy(self, strategy: Strategy) -> None:
         self.trader.add_strategy(strategy)
-        strategy.on_start()
+        strategy.start()
