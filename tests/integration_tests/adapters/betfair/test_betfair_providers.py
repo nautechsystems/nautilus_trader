@@ -23,6 +23,7 @@ from betfair_parser.spec.streaming.mcm import MarketChange
 
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import load_markets
 from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
@@ -47,6 +48,7 @@ class TestBetfairInstrumentProvider:
         self.provider = BetfairInstrumentProvider(
             client=self.client,
             logger=TestComponentStubs.logger(),
+            config=BetfairInstrumentProviderConfig(),
         )
 
     @pytest.mark.asyncio()
