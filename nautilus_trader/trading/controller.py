@@ -12,22 +12,43 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-"""
-The `trading` subpackage groups all trading domain specific components and tooling.
 
-This is a top-level package where the majority of users will interface with the
-framework. Custom trading strategies can be implemented by inheriting from the
-`Strategy` base class.
+from __future__ import annotations
 
-"""
-
-from nautilus_trader.trading.controller import Controller
+from nautilus_trader.common.actor import Actor
+from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
 
 
-__all__ = [
-    "Controller",
-    "Strategy",
-    "Trader",
-]
+class Controller(Actor):
+    """
+    The base class for all trader controllers.
+
+    Parameters
+    ----------
+    trader : Trader
+        The reference to the trader instance to control.
+    config : ActorConfig, optional
+        The configuratuon for the controller
+
+    """
+
+    def __init__(
+        self,
+        trader: Trader,
+        config: ActorConfig | None = None,
+    ) -> None:
+        if config is None:
+            config = ActorConfig()
+        super().__init__(config=config)
+
+        self.trader = trader
+
+    def create_actor(self, actor: Actor) -> None:
+        self.trader.add_actor(actor)
+        actor.start()
+
+    def create_strategy(self, strategy: Strategy) -> None:
+        self.trader.add_strategy(strategy)
+        strategy.start()

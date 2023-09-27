@@ -271,6 +271,34 @@ cdef class Strategy(Actor):
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
         self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
+    cpdef void change_id(self, StrategyId strategy_id):
+        """
+        Change the strategies identifier to the given `strategy_id`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The new strategy ID to change to.
+
+        """
+        Condition.not_none(strategy_id, "strategy_id")
+
+        self.id = strategy_id
+
+    cpdef void change_order_id_tag(self, str order_id_tag):
+        """
+        Change the order identifier tag to the given `order_id_tag`.
+
+        Parameters
+        ----------
+        order_id_tag : str
+            The new order ID tag to change to.
+
+        """
+        Condition.valid_string(order_id_tag, "order_id_tag")
+
+        self.order_id_tag = order_id_tag
+
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):

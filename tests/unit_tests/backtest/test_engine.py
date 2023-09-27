@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import sys
 import tempfile
 from decimal import Decimal
@@ -25,6 +26,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import ImportableControllerConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -243,6 +245,24 @@ class TestBacktestEngine:
         # Assert
         assert engine1.kernel.instance_id.value == instance_id
         assert engine2.kernel.instance_id.value != instance_id
+
+    def test_controller(self):
+        # Arrange - Controller class
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            controller=ImportableControllerConfig(
+                controller_path="nautilus_trader.test_kit.mocks.controller:MyController",
+                config_path="nautilus_trader.test_kit.mocks.controller:ControllerConfig",
+                config={},
+            ),
+        )
+        engine = self.create_engine(config=config)
+
+        # Act
+        engine.run()
+
+        # Assert
+        assert len(engine.kernel.trader.strategies()) == 1
 
 
 class TestBacktestEngineCashAccount:
