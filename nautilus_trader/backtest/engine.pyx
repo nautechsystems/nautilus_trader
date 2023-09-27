@@ -30,6 +30,7 @@ from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.system.kernel import NautilusKernel
+from nautilus_trader.trading.trader import Trader
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -87,7 +88,6 @@ from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.trading.strategy cimport Strategy
-from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class BacktestEngine:
