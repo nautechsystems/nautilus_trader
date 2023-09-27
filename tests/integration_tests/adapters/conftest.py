@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 from pytest_mock import MockerFixture
@@ -227,7 +227,7 @@ def components(data_engine, exec_engine, risk_engine, strategy):
 def _collect_events(msgbus, filter_types: Optional[tuple[type, ...]] = None):
     events = []
 
-    def handler(event: Event):
+    def handler(event: Event) -> None:
         if filter_types is None or isinstance(event, filter_types):
             events.append(event)
 
@@ -236,23 +236,23 @@ def _collect_events(msgbus, filter_types: Optional[tuple[type, ...]] = None):
 
 
 @pytest.fixture()
-def events(msgbus) -> list[Event]:
+def events(msgbus: MessageBus) -> list[Event]:
     return _collect_events(msgbus, filter_types=None)
 
 
 @pytest.fixture()
-def fill_events(msgbus):
+def fill_events(msgbus: MessageBus) -> list[Event]:
     return _collect_events(msgbus, filter_types=(OrderFilled,))
 
 
 @pytest.fixture()
-def cancel_events(msgbus):
+def cancel_events(msgbus: MessageBus) -> list[Event]:
     return _collect_events(msgbus, filter_types=(OrderCanceled,))
 
 
 @pytest.fixture()
-def messages(msgbus):
-    messages = []
+def messages(msgbus: MessageBus) -> list[Any]:
+    messages: list[Any] = []
     msgbus.subscribe("*", handler=messages.append)
     return messages
 

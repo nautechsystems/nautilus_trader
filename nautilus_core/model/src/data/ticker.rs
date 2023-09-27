@@ -29,7 +29,7 @@ use crate::identifiers::instrument_id::InstrumentId;
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
 pub struct Ticker {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,

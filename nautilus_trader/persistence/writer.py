@@ -161,14 +161,7 @@ class StreamingFeatherWriter:
     ) -> dict[bytes, bytes]:
         instrument = self._instruments[obj.instrument_id]
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
-        if isinstance(obj, (TradeTick, QuoteTick)):
-            metadata.update(
-                {
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
-                },
-            )
-        elif isinstance(obj, OrderBookDelta):
+        if isinstance(obj, OrderBookDelta):
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),
@@ -176,15 +169,31 @@ class StreamingFeatherWriter:
                 },
             )
         elif isinstance(obj, OrderBookDeltas):
-            obj.deltas[0]
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),
                     b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
+        elif isinstance(obj, (QuoteTick, TradeTick)):
+            metadata.update(
+                {
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
+                },
+            )
+        elif isinstance(obj, Bar):
+            metadata.update(
+                {
+                    b"bar_type": str(obj.bar_type).encode(),
+                    b"price_precision": str(instrument.price_precision).encode(),
+                    b"size_precision": str(instrument.size_precision).encode(),
+                },
+            )
         else:
-            raise NotImplementedError
+            raise NotImplementedError(
+                f"type '{(type(obj)).__name__}' not currently supported for writing feather files.",
+            )
 
         return metadata
 
@@ -236,7 +245,7 @@ class StreamingFeatherWriter:
             writer: RecordBatchStreamWriter = self._instrument_writers[(table, obj.instrument_id.value)]  # type: ignore
         else:
             writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
-        serialized = ArrowSerializer.serialize_batch([obj], cls=cls)
+        serialized = ArrowSerializer.serialize_batch([obj], data_cls=cls)
         if not serialized:
             return
         try:
@@ -353,7 +362,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
         },
     )
     register_arrow(
-        cls=SignalData,
+        data_cls=SignalData,
         serializer=serialize_signal,
         deserializer=deserialize_signal,
         schema=schema,

@@ -200,11 +200,11 @@ pub extern "C" fn bar_new_from_raw(
 ) -> Bar {
     Bar {
         bar_type,
-        open: Price::from_raw(open, price_prec),
-        high: Price::from_raw(high, price_prec),
-        low: Price::from_raw(low, price_prec),
-        close: Price::from_raw(close, price_prec),
-        volume: Quantity::from_raw(volume, size_prec),
+        open: Price::from_raw(open, price_prec).unwrap(),
+        high: Price::from_raw(high, price_prec).unwrap(),
+        low: Price::from_raw(low, price_prec).unwrap(),
+        close: Price::from_raw(close, price_prec).unwrap(),
+        volume: Quantity::from_raw(volume, size_prec).unwrap(),
         ts_event,
         ts_init,
     }

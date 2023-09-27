@@ -43,10 +43,10 @@ pub extern "C" fn quote_tick_new(
 ) -> QuoteTick {
     QuoteTick::new(
         instrument_id,
-        Price::from_raw(bid_price_raw, bid_price_prec),
-        Price::from_raw(ask_price_raw, ask_price_prec),
-        Quantity::from_raw(bid_size_raw, bid_size_prec),
-        Quantity::from_raw(ask_size_raw, ask_size_prec),
+        Price::from_raw(bid_price_raw, bid_price_prec).unwrap(),
+        Price::from_raw(ask_price_raw, ask_price_prec).unwrap(),
+        Quantity::from_raw(bid_size_raw, bid_size_prec).unwrap(),
+        Quantity::from_raw(ask_size_raw, ask_size_prec).unwrap(),
         ts_event,
         ts_init,
     )

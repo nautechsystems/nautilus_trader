@@ -16,6 +16,7 @@
 import datetime
 import sys
 from decimal import Decimal
+from typing import ClassVar
 
 import fsspec
 import pyarrow.dataset as ds
@@ -44,10 +45,10 @@ from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 
 
 class TestPersistenceCatalog:
-    fs_protocol = "file"
+    FS_PROTOCOL: ClassVar["str"] = "file"
 
     def setup(self) -> None:
-        self.catalog = data_catalog_setup(protocol=self.fs_protocol)
+        self.catalog = data_catalog_setup(protocol=self.FS_PROTOCOL)
         self.fs: fsspec.AbstractFileSystem = self.catalog.fs
 
     def test_list_data_types(self, betfair_catalog: ParquetDataCatalog) -> None:
