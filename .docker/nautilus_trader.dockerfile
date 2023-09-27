@@ -36,7 +36,7 @@ COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
 RUN poetry install --only main --all-extras
 RUN poetry build -f wheel
-RUN python -m pip install ./dist/*whl --force
+RUN python -m pip install ./dist/*whl --force --no-deps
 RUN find /usr/local/lib/python3.11/site-packages -name "*.pyc" -exec rm -f {} \;
 
 # Final application image
