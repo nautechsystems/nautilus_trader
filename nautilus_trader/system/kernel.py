@@ -332,6 +332,9 @@ class NautilusKernel:
             clock=self._clock,
             logger=self._logger,
             loop=self._loop,
+            config={
+                "has_controller": self._config.controller is not None,
+            },
         )
 
         if self._load_state:

@@ -15,5 +15,4 @@ class Controller(Actor):
 
     def create_strategy(self, strategy: Strategy):
         self.trader.add_strategy(strategy)
-        strategy.start()
         strategy.on_start()

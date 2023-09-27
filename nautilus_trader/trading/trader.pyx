@@ -122,6 +122,7 @@ cdef class Trader(Component):
         self._actors = []
         self._strategies = []
         self._exec_algorithms = []
+        self._has_controller = config.get("has_controller")
 
     cpdef list actors(self):
         """
@@ -384,7 +385,7 @@ cdef class Trader(Component):
         Condition.true(not strategy.is_running, "strategy.state was RUNNING")
         Condition.true(not strategy.is_disposed, "strategy.state was DISPOSED")
 
-        if self.is_running:
+        if self.is_running and not self._has_controller:
             self._log.error("Cannot add a strategy to a running trader.")
             return
 

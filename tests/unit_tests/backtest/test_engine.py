@@ -259,10 +259,11 @@ class TestBacktestEngine:
         engine = self.create_engine(config=config)
 
         # Act
+        assert not engine.kernel.trader.strategies()
         engine.run()
 
         # Assert
-        # assert engine.iteration == 8000
+        assert len(engine.kernel.trader.strategies()) == 1
 
 
 class TestBacktestEngineCashAccount:
