@@ -38,6 +38,7 @@ from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -74,6 +75,8 @@ cdef class Strategy(Actor):
         Clock clock,
         Logger logger,
     )
+    cpdef void change_id(self, StrategyId strategy_id)
+    cpdef void change_order_id_tag(self, str order_id_tag)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 

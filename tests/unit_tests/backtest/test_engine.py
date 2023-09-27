@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import sys
 import tempfile
 from decimal import Decimal
@@ -248,7 +249,7 @@ class TestBacktestEngine:
     def test_controller(self):
         # Arrange - Controller class
         config = BacktestEngineConfig(
-            logging=LoggingConfig(bypass_logging=False),
+            logging=LoggingConfig(bypass_logging=True),
             controller=ImportableControllerConfig(
                 controller_path="nautilus_trader.test_kit.mocks.controller:MyController",
                 config_path="nautilus_trader.test_kit.mocks.controller:ControllerConfig",
