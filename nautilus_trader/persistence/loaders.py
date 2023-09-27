@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from os import PathLike
 
 import pandas as pd
@@ -23,18 +22,26 @@ import pandas as pd
 
 class CSVTickDataLoader:
     """
-    Provides a means of loading tick data pandas DataFrames from CSV files.
+    Provides a generic tick data CSV file loader.
     """
 
     @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
+    def load(
+        file_path: PathLike[str] | str,
+        index_col: str | int = "timestamp",
+        format: str = "mixed",
+    ) -> pd.DataFrame:
         """
-        Return the tick pandas.DataFrame loaded from the given csv file.
+        Return a tick `pandas.DataFrame` loaded from the given CSV `file_path`.
 
         Parameters
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
+        index_col : str | int, default 'timestamp'
+            The index column.
+        format : str, default 'mixed'
+            The timestamp column format.
 
         Returns
         -------
@@ -43,22 +50,22 @@ class CSVTickDataLoader:
         """
         df = pd.read_csv(
             file_path,
-            index_col="timestamp",
+            index_col=index_col,
             parse_dates=True,
         )
-        df.index = pd.to_datetime(df.index, format="mixed")
+        df.index = pd.to_datetime(df.index, format=format)
         return df
 
 
 class CSVBarDataLoader:
     """
-    Provides a means of loading bar data pandas DataFrames from CSV files.
+    Provides a generic bar data CSV file loader.
     """
 
     @staticmethod
     def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
-        Return the bar pandas.DataFrame loaded from the given csv file.
+        Return the bar `pandas.DataFrame` loaded from the given CSV `file_path`.
 
         Parameters
         ----------
@@ -79,82 +86,9 @@ class CSVBarDataLoader:
         return df
 
 
-def _ts_parser(time_in_secs: str) -> datetime:
-    return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
-
-
-class TardisTradeDataLoader:
-    """
-    Provides a means of loading trade data pandas DataFrames from Tardis CSV files.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the trade pandas.DataFrame loaded from the given csv file.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_csv(
-            file_path,
-            index_col="local_timestamp",
-            date_parser=_ts_parser,
-            parse_dates=True,
-        )
-        df = df.rename(columns={"id": "trade_id", "amount": "quantity"})
-        df["side"] = df.side.str.upper()
-        df = df[["symbol", "trade_id", "price", "quantity", "side"]]
-
-        return df
-
-
-class TardisQuoteDataLoader:
-    """
-    Provides a means of loading quote data pandas DataFrames from Tardis CSV files.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the quote pandas.DataFrame loaded from the given csv file.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_csv(
-            file_path,
-            index_col="local_timestamp",
-            date_parser=_ts_parser,
-            parse_dates=True,
-        )
-        df = df.rename(
-            columns={
-                "ask_amount": "ask_size",
-                "bid_amount": "bid_size",
-            },
-        )
-
-        return df[["bid_price", "ask_price", "bid_size", "ask_size"]]
-
-
 class ParquetTickDataLoader:
     """
-    Provides a means of loading tick data pandas DataFrames from Parquet files.
+    Provides a generic tick data Parquet file loader.
     """
 
     @staticmethod
@@ -163,7 +97,7 @@ class ParquetTickDataLoader:
         timestamp_column: str = "timestamp",
     ) -> pd.DataFrame:
         """
-        Return the tick pandas.DataFrame loaded from the given parquet file.
+        Return the tick `pandas.DataFrame` loaded from the given Parquet `file_path`.
 
         Parameters
         ----------
@@ -184,18 +118,18 @@ class ParquetTickDataLoader:
 
 class ParquetBarDataLoader:
     """
-    Provides a means of loading bar data pandas DataFrames from parquet files.
+    Provides a generic bar data Parquet file loader.
     """
 
     @staticmethod
     def load(file_path: PathLike[str] | str) -> pd.DataFrame:
         """
-        Return the bar pandas.DataFrame loaded from the given parquet file.
+        Return the bar `pandas.DataFrame` loaded from the given Parquet `file_path`.
 
         Parameters
         ----------
         file_path : str, path object or file-like object
-            The path to the parquet file.
+            The path to the Parquet file.
 
         Returns
         -------

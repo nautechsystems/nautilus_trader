@@ -507,6 +507,55 @@ class StrategyFactory:
         return strategy_cls(config=config_cls(**config.config))
 
 
+class ImportableControllerConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for a controller instance.
+
+    Parameters
+    ----------
+    controller_path : str
+        The fully qualified name of the controller class.
+    config_path : str
+        The fully qualified name of the config class.
+    config : dict[str, Any]
+        The controller configuration.
+
+    """
+
+    controller_path: str
+    config_path: str
+    config: dict
+
+
+class ControllerConfig(NautilusConfig, kw_only=True, frozen=True):
+    """
+    The base model for all trading strategy configurations.
+    """
+
+
+class ControllerFactory:
+    """
+    Provides controller creation from importable configurations.
+    """
+
+    @staticmethod
+    def create(
+        config: ImportableControllerConfig,
+        trader,
+    ):
+        from nautilus_trader.trading.trader import Trader
+
+        PyCondition.type(trader, Trader, "trader")
+
+        controller_cls = resolve_path(config.controller_path)
+        config_cls = resolve_path(config.config_path)
+        config = config_cls(**config.config)
+        return controller_cls(
+            config=config,
+            trader=trader,
+        )
+
+
 class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
     """
     The base model for all execution algorithm configurations.
@@ -670,6 +719,10 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]
         The strategy configurations for the kernel.
+    exec_algorithms : list[ImportableExecAlgorithmConfig]
+        The execution algorithm configurations for the kernel.
+    controller : ImportableControllerConfig, optional
+        The trader controller for the kernel.
     load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_state : bool, default True
@@ -703,6 +756,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     actors: list[ImportableActorConfig] = []
     strategies: list[ImportableStrategyConfig] = []
     exec_algorithms: list[ImportableExecAlgorithmConfig] = []
+    controller: Optional[ImportableControllerConfig] = None
     load_state: bool = False
     save_state: bool = False
     loop_debug: bool = False

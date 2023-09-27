@@ -31,7 +31,7 @@ from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
@@ -66,7 +66,7 @@ PARSE_TYPES = Union[
     OrderBookDeltas,
     TradeTick,
     BetfairTicker,
-    BSPOrderBookDeltas,
+    BSPOrderBookDelta,
     BetfairStartingPrice,
 ]
 
@@ -103,7 +103,7 @@ def market_change_to_updates(  # noqa: C901
 
     # Handle market data updates
     book_updates: list[OrderBookDeltas] = []
-    bsp_book_updates: list[BSPOrderBookDeltas] = []
+    bsp_book_updates: list[BSPOrderBookDelta] = []
     for rc in mc.rc:
         instrument_id = betfair_instrument_id(
             market_id=mc.id,
@@ -151,13 +151,13 @@ def market_change_to_updates(  # noqa: C901
         # BSP order book deltas
         bsp_deltas = runner_change_to_bsp_order_book_deltas(rc, instrument_id, ts_event, ts_init)
         if bsp_deltas is not None:
-            bsp_book_updates.append(bsp_deltas)
+            bsp_book_updates.extend(bsp_deltas)
 
     # Finally, merge book_updates and bsp_book_updates as they can be split over multiple rc's
     if book_updates and not mc.img:
         updates.extend(_merge_order_book_deltas(book_updates))
     if bsp_book_updates:
-        updates.extend(_merge_order_book_deltas(bsp_book_updates))
+        updates.extend(bsp_book_updates)
 
     return updates
 
@@ -466,15 +466,15 @@ def runner_change_to_bsp_order_book_deltas(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[BSPOrderBookDeltas]:
+) -> Optional[list[BSPOrderBookDelta]]:
     if not (rc.spb or rc.spl):
         return None
     bsp_instrument_id = make_bsp_instrument_id(instrument_id)
-    deltas: list[OrderBookDelta] = []
+    deltas: list[BSPOrderBookDelta] = []
 
     for spb in rc.spb:
         book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
-        delta = OrderBookDelta(
+        delta = BSPOrderBookDelta(
             bsp_instrument_id,
             BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
             book_order,
@@ -485,7 +485,7 @@ def runner_change_to_bsp_order_book_deltas(
 
     for spl in rc.spl:
         book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
-        delta = OrderBookDelta(
+        delta = BSPOrderBookDelta(
             bsp_instrument_id,
             BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
             book_order,
@@ -494,7 +494,7 @@ def runner_change_to_bsp_order_book_deltas(
         )
         deltas.append(delta)
 
-    return BSPOrderBookDeltas(bsp_instrument_id, deltas)
+    return deltas
 
 
 def _merge_order_book_deltas(all_deltas: list[OrderBookDeltas]):

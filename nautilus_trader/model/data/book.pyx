@@ -12,15 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-from typing import Optional
 
-from libc.stdint cimport uint8_t
-from libc.stdint cimport uint64_t
+from typing import Optional
 
 import msgspec
 
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
+from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport book_order_debug_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_eq
 from nautilus_trader.core.rust.model cimport book_order_exposure
@@ -31,6 +38,7 @@ from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.model.data.base cimport capsule_destructor
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport book_action_from_str
@@ -240,7 +248,7 @@ cdef class BookOrder:
 
 cdef class OrderBookDelta(Data):
     """
-    Represents a single difference on an `OrderBook`.
+    Represents a single update/difference on an `OrderBook`.
 
     Parameters
     ----------
@@ -249,7 +257,7 @@ cdef class OrderBookDelta(Data):
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
     order : BookOrder
-        The order to apply.
+        The order for the delta.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -257,7 +265,8 @@ cdef class OrderBookDelta(Data):
     flags : uint8_t, default 0 (no flags)
         A combination of packet end with matching engine status.
     sequence : uint64_t, default 0
-        The unique sequence number for the update. If default 0 then will increment the `sequence`.
+        The unique sequence number for the update.
+        If default 0 then will increment the `sequence`.
     """
 
     def __init__(
@@ -534,6 +543,48 @@ cdef class OrderBookDelta(Data):
             ts_init=ts_init,
             sequence=sequence,
         )
+
+    # SAFETY: Do NOT deallocate the capsule here
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_list_c(object capsule):
+        cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+        cdef OrderBookDelta_t* ptr = <OrderBookDelta_t*>data.ptr
+        cdef list deltas = []
+
+        cdef uint64_t i
+        for i in range(0, data.len):
+            deltas.append(OrderBookDelta.from_mem_c(ptr[i]))
+
+        return deltas
+
+    @staticmethod
+    cdef inline list_to_capsule_c(list items):
+        # Create a C struct buffer
+        cdef uint64_t len_ = len(items)
+        cdef OrderBookDelta_t * data = <OrderBookDelta_t *> PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        cdef uint64_t i
+        for i in range(len_):
+            data[i] = (<OrderBookDelta> items[i])._mem
+        if not data:
+            raise MemoryError()
+
+        # Create CVec
+        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Create PyCapsule
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
+
+    @staticmethod
+    def list_from_capsule(capsule) -> list[QuoteTick]:
+        return OrderBookDelta.capsule_to_list_c(capsule)
+
+    @staticmethod
+    def capsule_from_list(list items):
+        return OrderBookDelta.list_to_capsule_c(items)
 
     @staticmethod
     def from_dict(dict values) -> OrderBookDelta:

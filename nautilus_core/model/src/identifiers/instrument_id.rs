@@ -21,10 +21,10 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use nautilus_core::{
     python::to_pyvalue_err,
-    string::{cstr_to_string, str_to_cstr},
+    string::{cstr_to_str, str_to_cstr},
 };
 use pyo3::{
     prelude::*,
@@ -32,10 +32,12 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 use serde::{Deserialize, Deserializer, Serialize};
-use thiserror;
 
 use crate::identifiers::{symbol::Symbol, venue::Venue};
 
+/// Represents a valid instrument ID.
+///
+/// The symbol and venue combination should uniquely identify the instrument.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Default)]
 #[cfg_attr(
@@ -43,14 +45,10 @@ use crate::identifiers::{symbol::Symbol, venue::Venue};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct InstrumentId {
+    /// The instruments ticker symbol.
     pub symbol: Symbol,
+    /// The instruments trading venue.
     pub venue: Venue,
-}
-
-#[derive(thiserror::Error, Debug)]
-#[error("Error parsing `InstrumentId` from '{input}'")]
-pub struct InstrumentIdParseError {
-    input: String,
 }
 
 impl InstrumentId {
@@ -64,17 +62,22 @@ impl InstrumentId {
 }
 
 impl FromStr for InstrumentId {
-    type Err = InstrumentIdParseError;
+    type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> Result<Self> {
         match s.rsplit_once('.') {
             Some((symbol_part, venue_part)) => Ok(Self {
-                symbol: Symbol::new(symbol_part).unwrap(), // Implement error handling
-                venue: Venue::new(venue_part).unwrap(),    // Implement error handling
+                symbol: Symbol::new(symbol_part)
+                    .map_err(|e| anyhow!(err_message(s, e.to_string())))?,
+                venue: Venue::new(venue_part)
+                    .map_err(|e| anyhow!(err_message(s, e.to_string())))?,
             }),
-            None => Err(InstrumentIdParseError {
-                input: s.to_string(),
-            }),
+            None => {
+                bail!(err_message(
+                    s,
+                    "Missing '.' separator between symbol and venue components".to_string()
+                ))
+            }
         }
     }
 }
@@ -115,6 +118,10 @@ impl<'de> Deserialize<'de> for InstrumentId {
         InstrumentId::from_str(&instrument_id_str)
             .map_err(|err| serde::de::Error::custom(err.to_string()))
     }
+}
+
+fn err_message(s: &str, e: String) -> String {
+    format!("Error parsing `InstrumentId` from '{s}': {e}")
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -214,6 +221,20 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
     InstrumentId::new(symbol, venue)
 }
 
+/// Returns any [`InstrumentId`] parsing error from the provided C string pointer.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *const c_char {
+    match InstrumentId::from_str(cstr_to_str(ptr)) {
+        Ok(_) => str_to_cstr(""),
+        Err(e) => str_to_cstr(&e.to_string()),
+    }
+}
+
 /// Returns a Nautilus identifier from a C string pointer.
 ///
 /// # Safety
@@ -221,8 +242,8 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// - Assumes `ptr` is a valid C string pointer.
 #[cfg(feature = "ffi")]
 #[no_mangle]
-pub unsafe extern "C" fn instrument_id_new_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from(cstr_to_string(ptr).as_str())
+pub unsafe extern "C" fn instrument_id_from_cstr(ptr: *const c_char) -> InstrumentId {
+    InstrumentId::from(cstr_to_str(ptr))
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.
@@ -264,10 +285,10 @@ pub mod stubs {
     }
 
     #[fixture]
-    pub fn audusd_sim(aud_usd: Symbol, simulation: Venue) -> InstrumentId {
+    pub fn audusd_sim(aud_usd: Symbol, sim: Venue) -> InstrumentId {
         InstrumentId {
             symbol: aud_usd,
-            venue: simulation,
+            venue: sim,
         }
     }
 }
@@ -283,9 +304,7 @@ mod tests {
 
     use super::InstrumentId;
     use crate::identifiers::{
-        instrument_id::{
-            instrument_id_new_from_cstr, instrument_id_to_cstr, InstrumentIdParseError,
-        },
+        instrument_id::{instrument_id_from_cstr, instrument_id_to_cstr},
         symbol::Symbol,
         venue::Venue,
     };
@@ -303,24 +322,9 @@ mod tests {
         assert!(result.is_err());
 
         let error = result.unwrap_err();
-        assert!(matches!(error, InstrumentIdParseError { .. }));
         assert_eq!(
             error.to_string(),
-            "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE'"
-        );
-    }
-
-    #[ignore] // Cannot implement yet due Betfair instrument IDs
-    #[rstest]
-    fn test_instrument_id_parse_failure_multiple_dots() {
-        let result = InstrumentId::from_str("ETH.USDT.BINANCE");
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert!(matches!(error, InstrumentIdParseError { .. }));
-        assert_eq!(
-            error.to_string(),
-            "Error parsing `InstrumentId` from 'ETH.USDT.BINANCE'"
+            "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE': Missing '.' separator between symbol and venue components"
         );
     }
 
@@ -345,7 +349,7 @@ mod tests {
         unsafe {
             let id = InstrumentId::from("ETH/USDT.BINANCE");
             let result = instrument_id_to_cstr(&id);
-            let id2 = instrument_id_new_from_cstr(result);
+            let id2 = instrument_id_from_cstr(result);
             assert_eq!(id, id2);
         }
     }
@@ -355,7 +359,7 @@ mod tests {
         unsafe {
             let id = InstrumentId::new(Symbol::from("ETH/USDT"), Venue::from("BINANCE"));
             let result = instrument_id_to_cstr(&id);
-            let id2 = instrument_id_new_from_cstr(result);
+            let id2 = instrument_id_from_cstr(result);
             assert_eq!(id, id2);
         }
     }

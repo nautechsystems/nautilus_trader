@@ -25,7 +25,7 @@ from betfair_parser.spec.streaming.status import Status
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -261,7 +261,7 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
-            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDeltas)):
+            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDelta)):
                 # Not a regular data type
                 generic_data = GenericData(
                     DataType(data.__class__, {"instrument_id": data.instrument_id}),

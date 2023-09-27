@@ -26,10 +26,11 @@ from nautilus_trader.core.rust.model cimport component_id_hash
 from nautilus_trader.core.rust.model cimport component_id_new
 from nautilus_trader.core.rust.model cimport exec_algorithm_id_hash
 from nautilus_trader.core.rust.model cimport exec_algorithm_id_new
+from nautilus_trader.core.rust.model cimport instrument_id_check_parsing
+from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_hash
 from nautilus_trader.core.rust.model cimport instrument_id_is_synthetic
 from nautilus_trader.core.rust.model cimport instrument_id_new
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_id_to_cstr
 from nautilus_trader.core.rust.model cimport interned_string_stats
 from nautilus_trader.core.rust.model cimport order_list_id_hash
@@ -252,7 +253,7 @@ cdef class InstrumentId(Identifier):
         return self.to_str()
 
     def __setstate__(self, state):
-        self._mem = instrument_id_new_from_cstr(
+        self._mem = instrument_id_from_cstr(
             pystr_to_cstr(state),
         )
 
@@ -272,8 +273,14 @@ cdef class InstrumentId(Identifier):
 
     @staticmethod
     cdef InstrumentId from_str_c(str value):
+        Condition.valid_string(value, "value")
+
+        cdef str parse_err = cstr_to_pystr(instrument_id_check_parsing(pystr_to_cstr(value)))
+        if parse_err:
+            raise ValueError(parse_err)
+
         cdef InstrumentId instrument_id = InstrumentId.__new__(InstrumentId)
-        instrument_id._mem = instrument_id_new_from_cstr(pystr_to_cstr(value))
+        instrument_id._mem = instrument_id_from_cstr(pystr_to_cstr(value))
         return instrument_id
 
     cdef str to_str(self):

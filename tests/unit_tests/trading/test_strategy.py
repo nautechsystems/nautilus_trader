@@ -17,6 +17,7 @@ from datetime import datetime
 from datetime import timedelta
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 import pytz
 
@@ -808,6 +809,51 @@ class TestStrategy:
 
         # Assert
         assert strategy.clock.timer_count == 0
+
+    def test_start_when_manage_gtd_reactivates_timers(self):
+        # Arrange
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("100.00"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+        )
+        order2 = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("101.00"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=11),
+        )
+
+        strategy.submit_order(order1)
+        strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        strategy.clock.cancel_timers()  # <-- Simulate restart
+        strategy.start()
+
+        # Assert
+        assert strategy.clock.timer_count == 2
+        assert strategy.clock.timer_names == [
+            "GTD-EXPIRY:O-19700101-0000-000-None-1",
+            "GTD-EXPIRY:O-19700101-0000-000-None-2",
+        ]
 
     def test_submit_order_when_duplicate_id_then_denies(self):
         # Arrange

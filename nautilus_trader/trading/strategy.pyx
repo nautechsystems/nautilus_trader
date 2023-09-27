@@ -271,6 +271,34 @@ cdef class Strategy(Actor):
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
         self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
+    cpdef void change_id(self, StrategyId strategy_id):
+        """
+        Change the strategies identifier to the given `strategy_id`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The new strategy ID to change to.
+
+        """
+        Condition.not_none(strategy_id, "strategy_id")
+
+        self.id = strategy_id
+
+    cpdef void change_order_id_tag(self, str order_id_tag):
+        """
+        Change the order identifier tag to the given `order_id_tag`.
+
+        Parameters
+        ----------
+        order_id_tag : str
+            The new order ID tag to change to.
+
+        """
+        Condition.valid_string(order_id_tag, "order_id_tag")
+
+        self.order_id_tag = order_id_tag
+
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
@@ -294,9 +322,15 @@ cdef class Strategy(Actor):
         cdef int order_id_count = len(client_order_ids)
         cdef int order_list_id_count = len(order_list_ids)
         self.order_factory.set_client_order_id_count(order_id_count)
+        self.log.info(
+            f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.",
+            LogColor.BLUE,
+        )
         self.order_factory.set_order_list_id_count(order_list_id_count)
-        self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
-        self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
+        self.log.info(
+            f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.",
+            LogColor.BLUE,
+        )
 
         cdef list open_orders = self.cache.orders_open(
             venue=None,
@@ -304,10 +338,10 @@ cdef class Strategy(Actor):
             strategy_id=self.id,
         )
 
-        cdef Order order
-        for order in open_orders:
-            if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
-                self._set_gtd_expiry(order)
+        if self.manage_gtd_expiry:
+            for order in open_orders:
+                if order.time_in_force == TimeInForce.GTD and not self._has_gtd_expiry_timer(order.client_order_id):
+                    self._set_gtd_expiry(order)
 
         self.on_start()
 
@@ -606,7 +640,7 @@ cdef class Strategy(Actor):
         if command is None:
             return
 
-        if order.is_emulated_c():
+        if order.is_emulated_c() or order.emulation_trigger != TriggerType.NO_TRIGGER:
             self._send_emulator_command(command)
         elif order.exec_algorithm_id is not None and order.is_active_local_c():
             self._send_algo_command(command, order.exec_algorithm_id)
@@ -1064,15 +1098,16 @@ cdef class Strategy(Actor):
         return timer_name in self._clock.timer_names
 
     cdef void _set_gtd_expiry(self, Order order):
-        self._log.info(
-            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
-            LogColor.BLUE,
-        )
         cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
         self._clock.set_time_alert_ns(
             name=timer_name,
             alert_time_ns=order.expire_time_ns,
             callback=self._expire_gtd_order,
+        )
+
+        self._log.info(
+            f"Set managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
+            LogColor.BLUE,
         )
 
     cpdef void _expire_gtd_order(self, TimeEvent event):

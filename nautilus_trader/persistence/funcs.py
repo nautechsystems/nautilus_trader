@@ -15,6 +15,13 @@
 
 from __future__ import annotations
 
+import re
+
+from nautilus_trader.core.inspect import is_nautilus_class
+
+
+INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
+GENERIC_DATA_PREFIX = "genericdata_"
 
 # Taken from https://github.com/dask/dask/blob/261bf174931580230717abca93fe172e166cc1e8/dask/utils.py
 byte_sizes = {
@@ -43,6 +50,7 @@ def parse_bytes(s: float | str) -> int:
     if not any(char.isdigit() for char in s):
         s = "1" + s
 
+    i = 0
     for i in range(len(s) - 1, -1, -1):
         if not s[i].isalpha():
             break
@@ -63,3 +71,51 @@ def parse_bytes(s: float | str) -> int:
 
     result = n * multiplier
     return int(result)
+
+
+def clean_windows_key(s: str) -> str:
+    """
+    Clean characters that are illegal on Windows from the string `s`.
+    """
+    for ch in INVALID_WINDOWS_CHARS:
+        if ch in s:
+            s = s.replace(ch, "-")
+    return s
+
+
+def camel_to_snake_case(s: str) -> str:
+    """
+    Convert the given string from camel to snake case.
+    """
+    return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
+
+
+def class_to_filename(cls: type) -> str:
+    """
+    Convert the given class to a filename.
+    """
+    filename_mappings = {"OrderBookDeltas": "OrderBookDelta"}
+    name = f"{camel_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
+    if not is_nautilus_class(cls):
+        name = f"{GENERIC_DATA_PREFIX}{name}"
+    return name
+
+
+def urisafe_instrument_id(instrument_id: str) -> str:
+    """
+    Convert an instrument_id into a valid URI for writing to a file path.
+    """
+    return instrument_id.replace("/", "")
+
+
+def combine_filters(*filters):
+    filters = tuple(x for x in filters if x is not None)
+    if len(filters) == 0:
+        return
+    elif len(filters) == 1:
+        return filters[0]
+    else:
+        expr = filters[0]
+        for f in filters[1:]:
+            expr = expr & f
+        return expr

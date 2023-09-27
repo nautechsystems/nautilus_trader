@@ -14,15 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
 use ustr::Ustr;
 
+/// Represents a valid ticker symbol ID for a tradable financial market instrument.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -30,6 +31,7 @@ use ustr::Ustr;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Symbol {
+    /// The ticker symbol ID value.
     pub value: Ustr,
 }
 
@@ -80,8 +82,7 @@ impl From<&str> for Symbol {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    Symbol::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    Symbol::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]

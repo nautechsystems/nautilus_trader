@@ -25,5 +25,4 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
    :hidden:
    
    backtest_example.md
-   loading_external_data.md
 ```

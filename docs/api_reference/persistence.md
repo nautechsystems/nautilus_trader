@@ -29,31 +29,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.persistence.external.readers
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.persistence.streaming.batching
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.persistence.streaming.engine
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.persistence.streaming.writer
+.. automodule:: nautilus_trader.persistence.writer
    :show-inheritance:
    :inherited-members:
    :members:

@@ -17,7 +17,7 @@ import pytest
 
 from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
 from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
-from nautilus_trader.persistence.catalog.parquet.core import ParquetDataCatalog
+from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from tests import TEST_DATA_DIR
 
@@ -33,7 +33,7 @@ def fixture_data_catalog() -> ParquetDataCatalog:
 
 
 @pytest.fixture(name="betfair_catalog")
-def fixture_betfair_catalog(data_catalog) -> ParquetDataCatalog:
+def fixture_betfair_catalog(data_catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     fn = TEST_DATA_DIR + "/betfair/1.166564490.bz2"
 
     # Write betting instruments

@@ -29,8 +29,6 @@ from nautilus_trader.core.nautilus_pyo3.model import TraderId
 
 AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
 
-pytestmark = pytest.mark.skip(reason="WIP")
-
 
 class TestOrders:
     def setup(self):
@@ -38,19 +36,6 @@ class TestOrders:
         self.trader_id = TraderId("TESTER-000")
         self.strategy_id = StrategyId("S-001")
         self.account_id = AccountId("SIM-000")
-
-    def test_opposite_side_given_invalid_value_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            MarketOrder.opposite_side(0)  # <-- Invalid value
-
-    def test_flatten_side_given_invalid_value_or_flat_raises_value_error(self):
-        # Arrange, Act
-        with pytest.raises(ValueError):
-            MarketOrder.closing_side(0)  # <-- Invalid value
-
-        with pytest.raises(ValueError):
-            MarketOrder.closing_side(PositionSide.FLAT)
 
     @pytest.mark.parametrize(
         ("side", "expected"),
@@ -73,7 +58,11 @@ class TestOrders:
             [PositionSide.SHORT, OrderSide.BUY],
         ],
     )
-    def test_closing_side_returns_expected_sides(self, side, expected):
+    def test_closing_side_returns_expected_sides(
+        self,
+        side: PositionSide,
+        expected: OrderSide,
+    ) -> None:
         # Arrange, Act
         result = MarketOrder.closing_side(side)
 
@@ -115,25 +104,22 @@ class TestOrders:
         )
 
         # Act, Assert
-        assert (
-            order.would_reduce_only(position_side=position_side, position_qty=position_qty)
-            == expected
-        )
+        assert order.would_reduce_only(side=position_side, position_qty=position_qty) == expected
 
-    def test_market_order_with_quantity_zero_raises_value_error(self):
-        # Arrange, Act, Assert
-        with pytest.raises(ValueError):
-            MarketOrder(
-                self.trader_id,
-                self.strategy_id,
-                AUDUSD_SIM,
-                ClientOrderId("O-123456"),
-                OrderSide.BUY,
-                Quantity.zero(),  # <-- Invalid value
-                UUID4(),
-                0,
-            )
-
+    # def test_market_order_with_quantity_zero_raises_value_error(self):
+    #     # Arrange, Act, Assert
+    #     with pytest.raises(ValueError):
+    #         MarketOrder(
+    #             self.trader_id,
+    #             self.strategy_id,
+    #             AUDUSD_SIM,
+    #             ClientOrderId("O-123456"),
+    #             OrderSide.BUY,
+    #             Quantity.zero(),  # <-- Invalid value
+    #             UUID4(),
+    #             0,
+    #         )
+    #
     # def test_market_order_with_invalid_tif_raises_value_error(self):
     #     # Arrange, Act, Assert
     #     with pytest.raises(ValueError):

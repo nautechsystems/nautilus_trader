@@ -262,7 +262,7 @@ def order_cancel_to_cancel_order_params(
     )
 
 
-def order_cancel_all_to_betfair(instrument: BettingInstrument):
+def order_cancel_all_to_betfair(instrument: BettingInstrument) -> dict[str, str]:
     """
     Convert a CancelAllOrders command into the data required by BetfairClient.
     """

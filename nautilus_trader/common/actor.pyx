@@ -34,7 +34,7 @@ from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
-from nautilus_trader.persistence.streaming.writer import generate_signal_class
+from nautilus_trader.persistence.writer import generate_signal_class
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t

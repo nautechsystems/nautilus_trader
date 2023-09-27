@@ -27,6 +27,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport as_utc_index
+from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport Data_t
@@ -51,12 +52,12 @@ cdef inline list capsule_to_data_list(object capsule):
 
     cdef uint64_t i
     for i in range(0, data.len):
-        if ptr[i].tag == Data_t_Tag.TRADE:
-            objects.append(TradeTick.from_mem_c(ptr[i].trade))
+        if ptr[i].tag == Data_t_Tag.DELTA:
+            objects.append(OrderBookDelta.from_mem_c(ptr[i].delta))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
             objects.append(QuoteTick.from_mem_c(ptr[i].quote))
-        elif ptr[i].tag == Data_t_Tag.DELTA:
-            objects.append(OrderBookDelta.from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.TRADE:
+            objects.append(TradeTick.from_mem_c(ptr[i].trade))
         elif ptr[i].tag == Data_t_Tag.BAR:
             objects.append(Bar.from_mem_c(ptr[i].bar))
 
@@ -125,7 +126,7 @@ cdef class QuoteTickDataWrangler:
         if "ask_size" not in data.columns:
             data["ask_size"] = float(default_volume)
 
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([dt_to_unix_nanos(dt) for dt in data.index], dtype=np.uint64)  # noqa
         cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
 
         return list(map(
@@ -357,8 +358,7 @@ cdef class TradeTickDataWrangler:
         Condition.false(data.empty, "data.empty")
 
         data = as_utc_index(data)
-
-        cdef uint64_t[:] ts_events = np.ascontiguousarray([secs_to_nanos(dt.timestamp()) for dt in data.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([dt_to_unix_nanos(dt) for dt in data.index], dtype=np.uint64)  # noqa
         cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
 
         if is_raw:
