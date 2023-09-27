@@ -124,9 +124,9 @@ class Trader(Component):
         self._risk_engine = risk_engine
         self._exec_engine = exec_engine
 
-        self._actors: list[Actor] = []
-        self._strategies: list[Strategy] = []
-        self._exec_algorithms: list[ExecAlgorithm] = []
+        self._actors: dict[ComponentId, Actor] = {}
+        self._strategies: dict[StrategyId, Strategy] = {}
+        self._exec_algorithms: dict[ExecAlgorithmId, ExecAlgorithm] = {}
         self._has_controller: bool = config.get("has_controller", False)
 
     def actors(self) -> list[Actor]:
@@ -138,7 +138,7 @@ class Trader(Component):
         list[Actor]
 
         """
-        return self._actors
+        return list(self._actors.values())
 
     def strategies(self) -> list[Strategy]:
         """
@@ -149,7 +149,7 @@ class Trader(Component):
         list[Strategy]
 
         """
-        return self._strategies
+        return list(self._strategies.values())
 
     def exec_algorithms(self) -> list[ExecAlgorithm]:
         """
@@ -160,7 +160,7 @@ class Trader(Component):
         list[ExecAlgorithms]
 
         """
-        return self._exec_algorithms
+        return list(self._exec_algorithms.values())
 
     def actor_ids(self) -> list[ComponentId]:
         """
@@ -171,7 +171,7 @@ class Trader(Component):
         list[ComponentId]
 
         """
-        return sorted([actor.id for actor in self._actors])
+        return sorted(self._actors.keys())
 
     def strategy_ids(self) -> list[StrategyId]:
         """
@@ -182,7 +182,7 @@ class Trader(Component):
         list[StrategyId]
 
         """
-        return sorted([s.id for s in self._strategies])
+        return sorted(self._strategies.keys())
 
     def exec_algorithm_ids(self) -> list[ExecAlgorithmId]:
         """
@@ -193,7 +193,7 @@ class Trader(Component):
         list[ExecAlgorithmId]
 
         """
-        return sorted([e.id for e in self._exec_algorithms])
+        return sorted(self._exec_algorithms.keys())
 
     def actor_states(self) -> dict[ComponentId, str]:
         """
@@ -204,7 +204,7 @@ class Trader(Component):
         dict[ComponentId, str]
 
         """
-        return {a.id: a.state.name for a in self._actors}
+        return {k: v.state.name for k, v in self._actors.items()}
 
     def strategy_states(self) -> dict[StrategyId, str]:
         """
@@ -215,7 +215,7 @@ class Trader(Component):
         dict[StrategyId, str]
 
         """
-        return {s.id: s.state.name for s in self._strategies}
+        return {k: v.state.name for k, v in self._strategies.items()}
 
     def exec_algorithm_states(self) -> dict[ExecAlgorithmId, str]:
         """
@@ -226,62 +226,59 @@ class Trader(Component):
         dict[ExecAlgorithmId, str]
 
         """
-        return {e.id: e.state.name for e in self._exec_algorithms}
+        return {k: v.state.name for k, v in self._exec_algorithms.items()}
 
     # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     def _start(self) -> None:
-        if not self._strategies:
-            self._log.warning("No strategies loaded.")
-
-        for actor in self._actors:
+        for actor in self._actors.values():
             actor.start()
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             strategy.start()
 
-        for exec_algorithm in self._exec_algorithms:
+        for exec_algorithm in self._exec_algorithms.values():
             exec_algorithm.start()
 
     def _stop(self) -> None:
-        for actor in self._actors:
+        for actor in self._actors.values():
             if actor.is_running:
                 actor.stop()
             else:
                 self._log.warning(f"{actor} already stopped.")
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             if strategy.is_running:
                 strategy.stop()
             else:
                 self._log.warning(f"{strategy} already stopped.")
 
-        for exec_algorithm in self._exec_algorithms:
+        for exec_algorithm in self._exec_algorithms.values():
             if exec_algorithm.is_running:
                 exec_algorithm.stop()
             else:
                 self._log.warning(f"{exec_algorithm} already stopped.")
 
     def _reset(self) -> None:
-        for actor in self._actors:
+        for actor in self._actors.values():
             actor.reset()
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             strategy.reset()
 
-        for exec_algorithm in self._exec_algorithms:
+        for exec_algorithm in self._exec_algorithms.values():
             exec_algorithm.reset()
 
         self._portfolio.reset()
 
     def _dispose(self) -> None:
-        for actor in self._actors:
+        for actor in self._actors.values():
             actor.dispose()
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             strategy.dispose()
 
-        for exec_algorithm in self._exec_algorithms:
+        for exec_algorithm in self._exec_algorithms.values():
             exec_algorithm.dispose()
 
     # --------------------------------------------------------------------------------------------------
@@ -310,7 +307,7 @@ class Trader(Component):
             self._log.error("Cannot add component to a running trader.")
             return
 
-        if actor in self._actors:
+        if actor.id in self._actors:
             raise RuntimeError(
                 f"Already registered an actor with ID {actor.id}, "
                 "try specifying a different `component_id`.",
@@ -329,7 +326,7 @@ class Trader(Component):
             logger=self._log.get_logger(),
         )
 
-        self._actors.append(actor)
+        self._actors[actor.id] = actor
 
         self._log.info(f"Registered Component {actor}.")
 
@@ -378,7 +375,7 @@ class Trader(Component):
             self._log.error("Cannot add a strategy to a running trader.")
             return
 
-        if strategy in self._strategies:
+        if strategy.id in self._strategies:
             raise RuntimeError(
                 f"Already registered a strategy with ID {strategy.id}, "
                 "try specifying a different `strategy_id`.",
@@ -390,7 +387,7 @@ class Trader(Component):
             clock = self._clock.__class__()
 
         # Confirm strategy ID
-        order_id_tags: list[str] = [s.order_id_tag for s in self._strategies]
+        order_id_tags: list[str] = [s.order_id_tag for s in self._strategies.values()]
         if strategy.order_id_tag in (None, str(None)):
             order_id_tag = f"{len(order_id_tags):03d}"
             # Assign strategy `order_id_tag`
@@ -417,7 +414,7 @@ class Trader(Component):
 
         self._exec_engine.register_oms_type(strategy)
         self._exec_engine.register_external_order_claims(strategy)
-        self._strategies.append(strategy)
+        self._strategies[strategy.id] = strategy
 
         self._log.info(f"Registered Strategy {strategy}.")
 
@@ -466,7 +463,7 @@ class Trader(Component):
             self._log.error("Cannot add an execution algorithm to a running trader.")
             return
 
-        if exec_algorithm in self._exec_algorithms:
+        if exec_algorithm.id in self._exec_algorithms:
             raise RuntimeError(
                 f"Already registered an execution algorithm with ID {exec_algorithm.id}, "
                 "try specifying a different `exec_algorithm_id`.",
@@ -487,7 +484,7 @@ class Trader(Component):
             logger=self._log.get_logger(),
         )
 
-        self._exec_algorithms.append(exec_algorithm)
+        self._exec_algorithms[exec_algorithm.id] = exec_algorithm
 
         self._log.info(f"Registered ExecAlgorithm {exec_algorithm}.")
 
@@ -511,6 +508,31 @@ class Trader(Component):
         for exec_algorithm in exec_algorithms:
             self.add_exec_algorithm(exec_algorithm)
 
+    def start_strategy(self, strategy_id: StrategyId) -> None:
+        """
+        Start the strategy with the given `strategy_id`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy ID to start.
+
+        Raises
+        ------
+        ValueError:
+            If a strategy with the given `strategy_id` is not found.
+
+        """
+        strategy = self._strategies.get(strategy_id)
+        if strategy is None:
+            raise ValueError(f"Cannot start strategy, {strategy_id} not found.")
+
+        if strategy.is_running:
+            self._log.warning(f"Strategy {strategy_id} already running.")
+            return
+
+        strategy.start()
+
     def clear_actors(self) -> None:
         """
         Dispose and clear all actors held by the trader.
@@ -525,7 +547,7 @@ class Trader(Component):
             self._log.error("Cannot clear the actors of a running trader.")
             return
 
-        for actor in self._actors:
+        for actor in self._actors.values():
             actor.dispose()
 
         self._actors.clear()
@@ -545,7 +567,7 @@ class Trader(Component):
             self._log.error("Cannot clear the strategies of a running trader.")
             return
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             strategy.dispose()
 
         self._strategies.clear()
@@ -565,7 +587,7 @@ class Trader(Component):
             self._log.error("Cannot clear the execution algorithm of a running trader.")
             return
 
-        for exec_algorithm in self._exec_algorithms:
+        for exec_algorithm in self._exec_algorithms.values():
             exec_algorithm.dispose()
 
         self._exec_algorithms.clear()
@@ -603,20 +625,20 @@ class Trader(Component):
         """
         Save all actor and strategy states to the cache.
         """
-        for actor in self._actors:
+        for actor in self._actors.values():
             self._cache.update_actor(actor)
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             self._cache.update_strategy(strategy)
 
     def load(self) -> None:
         """
         Load all actor and strategy states from the cache.
         """
-        for actor in self._actors:
+        for actor in self._actors.values():
             self._cache.load_actor(actor)
 
-        for strategy in self._strategies:
+        for strategy in self._strategies.values():
             self._cache.load_strategy(strategy)
 
     def check_residuals(self) -> None:
