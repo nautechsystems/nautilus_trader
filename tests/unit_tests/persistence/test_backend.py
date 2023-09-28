@@ -20,7 +20,7 @@ import pandas as pd
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
-from nautilus_trader.persistence.wranglers import list_from_capsule
+from nautilus_trader.model.data.base import capsule_to_list
 
 
 def test_backend_session_order_book() -> None:
@@ -35,7 +35,7 @@ def test_backend_session_order_book() -> None:
 
     ticks = []
     for chunk in result:
-        ticks.extend(list_from_capsule(chunk))
+        ticks.extend(capsule_to_list(chunk))
 
     # Assert
     assert len(ticks) == 1077
@@ -54,7 +54,7 @@ def test_backend_session_quotes() -> None:
 
     ticks = []
     for chunk in result:
-        ticks.extend(list_from_capsule(chunk))
+        ticks.extend(capsule_to_list(chunk))
 
     # Assert
     assert len(ticks) == 9500
@@ -74,7 +74,7 @@ def test_backend_session_trades() -> None:
 
     ticks = []
     for chunk in result:
-        ticks.extend(list_from_capsule(chunk))
+        ticks.extend(capsule_to_list(chunk))
 
     # Assert
     assert len(ticks) == 100
@@ -93,7 +93,7 @@ def test_backend_session_bars() -> None:
 
     bars = []
     for chunk in result:
-        bars.extend(list_from_capsule(chunk))
+        bars.extend(capsule_to_list(chunk))
 
     # Assert
     assert len(bars) == 10
@@ -114,7 +114,7 @@ def test_backend_session_multiple_types() -> None:
 
     ticks = []
     for chunk in result:
-        ticks.extend(list_from_capsule(chunk))
+        ticks.extend(capsule_to_list(chunk))
 
     # Assert
     assert len(ticks) == 9600
