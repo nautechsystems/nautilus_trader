@@ -94,8 +94,12 @@ impl DataBackendSession {
         Ok(())
     }
 
-    // Query a file for all it's records. the caller must specify `T` to indicate
-    // the kind of data expected from this query.
+    /// Query a file for all it's records. the caller must specify `T` to indicate
+    /// the kind of data expected from this query.
+    ///
+    /// # Safety
+    /// The file data must be ordered by the ts_init in ascending order for this
+    /// to work correctly.
     pub async fn add_file_default_query<T>(
         &mut self,
         table_name: &str,
@@ -114,7 +118,7 @@ impl DataBackendSession {
 
         let batch_stream = self
             .session_ctx
-            .sql(&format!("SELECT * FROM {} ORDER BY ts_init", &table_name))
+            .sql(&format!("SELECT * FROM {}", &table_name))
             .await?
             .execute_stream()
             .await?;
