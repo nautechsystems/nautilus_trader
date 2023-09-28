@@ -194,6 +194,33 @@ class TestTrader:
         assert actor.is_running
         assert self.trader.actor_states() == {actor.id: "RUNNING"}
 
+    def test_stop_actor(self) -> None:
+        # Arrange
+        actor = Actor()
+        self.trader.add_actor(actor)
+        self.trader.start_actor(actor.id)
+
+        # Act
+        self.trader.stop_actor(actor.id)
+
+        # Assert
+        assert not actor.is_running
+        assert self.trader.actor_states() == {actor.id: "STOPPED"}
+
+    def test_stop_actor_when_already_stopped(self) -> None:
+        # Arrange
+        actor = Actor()
+        self.trader.add_actor(actor)
+        self.trader.start_actor(actor.id)
+        self.trader.stop_actor(actor.id)
+
+        # Act
+        self.trader.stop_actor(actor.id)
+
+        # Assert
+        assert not actor.is_running
+        assert self.trader.actor_states() == {actor.id: "STOPPED"}
+
     def test_remove_actor(self) -> None:
         # Arrange
         actor = Actor()
@@ -236,6 +263,33 @@ class TestTrader:
         # Assert
         assert strategy.is_running
         assert self.trader.strategy_states() == {strategy.id: "RUNNING"}
+
+    def test_stop(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        self.trader.add_strategy(strategy)
+        self.trader.start_strategy(strategy.id)
+
+        # Act
+        self.trader.stop_strategy(strategy.id)
+
+        # Assert
+        assert not strategy.is_running
+        assert self.trader.strategy_states() == {strategy.id: "STOPPED"}
+
+    def test_stop_strategy_when_already_stopped(self) -> None:
+        # Arrange
+        strategy = Strategy()
+        self.trader.add_strategy(strategy)
+        self.trader.start_strategy(strategy.id)
+        self.trader.stop_strategy(strategy.id)
+
+        # Act
+        self.trader.stop_strategy(strategy.id)
+
+        # Assert
+        assert not strategy.is_running
+        assert self.trader.strategy_states() == {strategy.id: "STOPPED"}
 
     def test_remove_strategy(self) -> None:
         # Arrange
