@@ -39,7 +39,7 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-async def main(instrument_config):
+async def main(instrument_config: BetfairInstrumentProviderConfig):
     # Connect to Betfair client early to load instruments and account currency
     logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
@@ -51,9 +51,6 @@ async def main(instrument_config):
     await client.connect()
 
     # Find instruments for a particular market_id
-    BetfairInstrumentProviderConfig(
-        event_type_ids=["7522"],
-    )
     provider = get_cached_betfair_instrument_provider(
         client=client,
         logger=logger,
@@ -65,8 +62,6 @@ async def main(instrument_config):
 
     # Determine account currency - used in execution client
     account = await client.get_account_details()
-
-    instrument_config = BetfairInstrumentProviderConfig()
 
     # Configure trading node
     config = TradingNodeConfig(
@@ -133,8 +128,8 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    instrument_config = BetfairInstrumentProviderConfig(
+    config = BetfairInstrumentProviderConfig(
         market_ids=["1.218654011"],
     )
-    node = asyncio.run(main(instrument_config=instrument_config))
+    node = asyncio.run(main(instrument_config=config))
     node.dispose()

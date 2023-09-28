@@ -323,7 +323,7 @@ def runner_change_to_order_book_snapshot(
     ]
 
     # Bids are available to back (atb)
-    for bid in rc.atb:
+    for bid in rc.atb or []:
         book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
         delta = OrderBookDelta(
             instrument_id,
@@ -335,7 +335,7 @@ def runner_change_to_order_book_snapshot(
         deltas.append(delta)
 
     # Asks are available to back (atl)
-    for ask in rc.atl:
+    for ask in rc.atl or []:
         book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
         delta = OrderBookDelta(
             instrument_id,
@@ -400,7 +400,7 @@ def runner_change_to_order_book_deltas(
     deltas: list[OrderBookDelta] = []
 
     # Bids are available to back (atb)
-    for bid in rc.atb:
+    for bid in rc.atb or []:
         book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
         delta = OrderBookDelta(
             instrument_id,
@@ -412,7 +412,7 @@ def runner_change_to_order_book_deltas(
         deltas.append(delta)
 
     # Asks are available to back (atl)
-    for ask in rc.atl:
+    for ask in rc.atl or []:
         book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
 
         delta = OrderBookDelta(
