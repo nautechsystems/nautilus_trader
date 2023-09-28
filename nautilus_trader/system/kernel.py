@@ -771,6 +771,9 @@ class NautilusKernel:
 
         self._trader.start()
 
+        if self._controller:
+            self._controller.start()
+
     async def stop(self) -> None:
         """
         Stop the Nautilus system kernel.
