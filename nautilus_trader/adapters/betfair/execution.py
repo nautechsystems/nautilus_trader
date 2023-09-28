@@ -556,7 +556,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             raise RuntimeError
 
     async def _handle_order_stream_update(self, order_change_message: OCM) -> None:
-        for market in order_change_message.oc:
+        for market in order_change_message.oc or []:
             for selection in market.orc:
                 for unmatched_order in selection.uo:
                     await self._check_order_update(unmatched_order=unmatched_order)

@@ -189,7 +189,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_market_ids.add(instrument.market_id)
         self._subscribed_instrument_ids.add(instrument.id)
         if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
-            self.create_task(self.delayed_subscribe(delay=5))
+            self.create_task(self.delayed_subscribe(delay=3))
             self.subscription_status = SubscriptionStatus.PENDING_STARTUP
         elif self.subscription_status == SubscriptionStatus.PENDING_STARTUP:
             pass

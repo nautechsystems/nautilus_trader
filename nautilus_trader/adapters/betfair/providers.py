@@ -97,6 +97,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     async def load_all_async(self, filters: Optional[dict] = None):
         currency = await self.get_account_currency()
+        filters = filters or {}
 
         self._log.info(f"Loading markets with market_filter={self._config}")
         markets: list[FlattenedMarket] = await load_markets(
