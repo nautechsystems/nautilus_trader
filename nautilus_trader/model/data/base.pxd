@@ -20,6 +20,8 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
 
 
+cpdef list capsule_to_list(capsule)
+
 cdef inline void capsule_destructor(object capsule):
     cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
     PyMem_Free(cvec[0].ptr) # de-allocate buffer

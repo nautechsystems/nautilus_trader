@@ -45,13 +45,13 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
 from nautilus_trader.persistence.funcs import urisafe_instrument_id
-from nautilus_trader.persistence.wranglers import list_from_capsule
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
@@ -355,7 +355,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Gather data
         data = []
         for chunk in result:
-            data.extend(list_from_capsule(chunk))
+            data.extend(capsule_to_list(chunk))
 
         return data
 
