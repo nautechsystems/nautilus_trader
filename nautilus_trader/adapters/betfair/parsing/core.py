@@ -12,17 +12,17 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import typing
 from typing import Optional
 
 import fsspec
 import msgspec
+from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import Connection
+from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import Status
-from betfair_parser.spec.streaming.mcm import MCM
-from betfair_parser.spec.streaming.mcm import MarketDefinition
-from betfair_parser.util import iter_stream
+from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
@@ -54,6 +54,18 @@ class BetfairParser:
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
         return updates
+
+
+def iter_stream(file_like: typing.BinaryIO):
+    for line in file_like:
+        yield stream_decode(line)
+        # try:
+        #     data = stream_decode(line)
+        # except (msgspec.DecodeError, msgspec.ValidationError) as e:
+        #     print("ERR", e)
+        #     print(msgspec.json.decode(line))
+        #     raise e
+        # yield data
 
 
 def parse_betfair_file(uri: str):  # noqa

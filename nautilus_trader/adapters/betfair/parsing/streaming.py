@@ -19,12 +19,12 @@ from typing import Optional, Union
 
 import pandas as pd
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
-from betfair_parser.spec.streaming.mcm import MarketChange
-from betfair_parser.spec.streaming.mcm import MarketDefinition
-from betfair_parser.spec.streaming.mcm import Runner
-from betfair_parser.spec.streaming.mcm import RunnerChange
-from betfair_parser.spec.streaming.mcm import RunnerStatus
-from betfair_parser.spec.streaming.mcm import _PriceVolume
+from betfair_parser.spec.streaming import MarketChange
+from betfair_parser.spec.streaming import MarketDefinition
+from betfair_parser.spec.streaming import RunnerChange
+from betfair_parser.spec.streaming import RunnerDefinition
+from betfair_parser.spec.streaming import RunnerStatus
+from betfair_parser.spec.streaming.type_definitions import _PV
 
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
@@ -211,7 +211,7 @@ def market_definition_to_instrument_closes(
 
 
 def runner_to_instrument_close(
-    runner: Runner,
+    runner: RunnerDefinition,
     market_id: str,
     ts_event: int,
     ts_init: int,
@@ -259,7 +259,7 @@ def market_definition_to_betfair_starting_prices(
 
 
 def runner_to_betfair_starting_price(
-    runner: Runner,
+    runner: RunnerDefinition,
     market_id: str,
     ts_event: int,
     ts_init: int,
@@ -280,7 +280,7 @@ def runner_to_betfair_starting_price(
         return None
 
 
-def _price_volume_to_book_order(pv: _PriceVolume, side: OrderSide) -> BookOrder:
+def _price_volume_to_book_order(pv: _PV, side: OrderSide) -> BookOrder:
     price = betfair_float_to_price(pv.price)
     order_id = int(price.as_double() * 10**price.precision)
     return BookOrder(

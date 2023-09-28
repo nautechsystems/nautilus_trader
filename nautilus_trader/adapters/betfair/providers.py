@@ -26,7 +26,7 @@ from betfair_parser.spec.common import encode as bf_encode
 from betfair_parser.spec.navigation import FlattenedMarket
 from betfair_parser.spec.navigation import Navigation
 from betfair_parser.spec.navigation import flatten_nav_tree
-from betfair_parser.spec.streaming.mcm import MarketDefinition
+from betfair_parser.spec.streaming import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME

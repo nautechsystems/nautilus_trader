@@ -28,12 +28,12 @@ from betfair_parser.spec.common import EndpointType
 from betfair_parser.spec.common import Request
 from betfair_parser.spec.common import encode
 from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import MatchedOrder
+from betfair_parser.spec.streaming import Order
+from betfair_parser.spec.streaming import OrderMarketChange
+from betfair_parser.spec.streaming import OrderRunnerChange
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.ocm import OCM
-from betfair_parser.spec.streaming.ocm import MatchedOrder
-from betfair_parser.spec.streaming.ocm import OrderAccountChange
-from betfair_parser.spec.streaming.ocm import OrderChanges
-from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
@@ -576,13 +576,13 @@ class BetfairStreaming:
             clk="1",
             pt=0,
             oc=[
-                OrderAccountChange(
+                OrderMarketChange(
                     id="1",
                     orc=[
-                        OrderChanges(
+                        OrderRunnerChange(
                             id=1,
                             uo=[
-                                UnmatchedOrder(
+                                Order(
                                     id=order_id,
                                     p=price,
                                     s=size,
