@@ -53,21 +53,21 @@ class TestBetfairInstrumentProvider:
 
     @pytest.mark.asyncio()
     async def test_load_markets(self):
-        markets = await load_markets(self.client, market_filter={})
+        markets = await load_markets(self.client)
         assert len(markets) == 13227
 
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
+        markets = await load_markets(self.client, event_type_names=["Basketball"])
         assert len(markets) == 302
 
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Tennis"})
+        markets = await load_markets(self.client, event_type_names=["Tennis"])
         assert len(markets) == 1958
 
-        markets = await load_markets(self.client, market_filter={"market_id": "1.177125728"})
+        markets = await load_markets(self.client, market_ids=["1.177125728"])
         assert len(markets) == 1
 
     @pytest.mark.asyncio()
     async def test_load_markets_metadata(self):
-        markets = await load_markets(self.client, market_filter={"event_type_name": "Basketball"})
+        markets = await load_markets(self.client, event_type_names=["Basketball"])
         market_metadata = await load_markets_metadata(client=self.client, markets=markets)
         assert len(market_metadata) == 169
 
@@ -94,12 +94,12 @@ class TestBetfairInstrumentProvider:
 
     @pytest.mark.asyncio()
     async def test_load_all(self):
-        await self.provider.load_all_async({"event_type_name": "Tennis"})
+        await self.provider.load_all_async({"event_type_names": ["Tennis"]})
         assert len(self.provider.list_all()) == 4711
 
     @pytest.mark.asyncio()
     async def test_list_all(self):
-        await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
+        await self.provider.load_all_async({"event_type_names": ["Basketball"]})
         instruments = self.provider.list_all()
         assert len(instruments) == 23908
 

@@ -173,7 +173,7 @@ def market_definition_to_instrument_status_updates(
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            selection_id=str(runner.runner_id),
+            selection_id=str(runner.id),
             selection_handicap=parse_handicap(runner.handicap),
         )
         key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
@@ -218,7 +218,7 @@ def runner_to_instrument_close(
 ) -> Optional[InstrumentClose]:
     instrument_id: InstrumentId = betfair_instrument_id(
         market_id=market_id,
-        selection_id=str(runner.runner_id),
+        selection_id=str(runner.id),
         selection_handicap=parse_handicap(runner.handicap),
     )
 
@@ -267,7 +267,7 @@ def runner_to_betfair_starting_price(
     if runner.bsp is not None:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            selection_id=str(runner.runner_id),
+            selection_id=str(runner.id),
             selection_handicap=parse_handicap(runner.handicap),
         )
         return BetfairStartingPrice(
