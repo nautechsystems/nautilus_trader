@@ -20,7 +20,6 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from cpython.pycapsule cimport PyCapsule_GetPointer
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
