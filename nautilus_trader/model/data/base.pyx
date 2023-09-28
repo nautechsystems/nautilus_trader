@@ -13,9 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.mem cimport PyMem_Free
 from cpython.pycapsule cimport PyCapsule_GetPointer
-from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
