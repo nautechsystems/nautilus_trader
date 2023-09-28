@@ -151,7 +151,7 @@ class TestArrowSerializer:
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 1
         assert isinstance(deltas[0], OrderBookDelta)
-        assert not isinstance(deserialized[0], OrderBookDelta)  # TODO: Add legacy wrangler
+        assert not isinstance(deserialized[0], OrderBookDelta)  # TODO: Legacy wrangler
 
     def test_serialize_and_deserialize_order_book_deltas(self):
         # Arrange

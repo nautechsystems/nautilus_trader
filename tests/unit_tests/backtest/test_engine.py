@@ -83,7 +83,7 @@ class TestBacktestEngine:
             BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
         )
 
-    def create_engine(self, config: Optional[BacktestEngineConfig] = None):
+    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),
@@ -643,14 +643,14 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89,
+            1_011_166.89,
             USD,
         )
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
         pickled = self.engine.dump_pickled_data()
-        assert 5060610 <= len(pickled) <= 5060654
+        assert 5_060_610 <= len(pickled) <= 5_060_654
 
     def test_load_pickled_data(self):
         # Arrange
@@ -679,6 +679,6 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89,
+            1_011_166.89,
             USD,
         )

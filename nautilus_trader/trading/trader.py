@@ -294,10 +294,10 @@ class Trader(Component):
 
         Raises
         ------
-        KeyError
-            If `component.id` already exists in the trader.
         ValueError
-            If `component.state` is ``RUNNING`` or ``DISPOSED``.
+            If `actor.state` is ``RUNNING`` or ``DISPOSED``.
+        RuntimeError
+            If `actor.id` already exists in the trader.
 
         """
         PyCondition.true(not actor.is_running, "actor.state was RUNNING")
@@ -310,7 +310,7 @@ class Trader(Component):
         if actor.id in self._actors:
             raise RuntimeError(
                 f"Already registered an actor with ID {actor.id}, "
-                "try specifying a different `component_id`.",
+                "try specifying a different actor ID.",
             )
 
         if isinstance(self._clock, LiveClock):
@@ -361,10 +361,10 @@ class Trader(Component):
 
         Raises
         ------
-        KeyError
-            If `strategy.id` already exists in the trader.
         ValueError
             If `strategy.state` is ``RUNNING`` or ``DISPOSED``.
+        RuntimeError
+            If `strategy.id` already exists in the trader.
 
         """
         PyCondition.not_none(strategy, "strategy")
@@ -378,7 +378,7 @@ class Trader(Component):
         if strategy.id in self._strategies:
             raise RuntimeError(
                 f"Already registered a strategy with ID {strategy.id}, "
-                "try specifying a different `strategy_id`.",
+                "try specifying a different strategy ID.",
             )
 
         if isinstance(self._clock, LiveClock):
@@ -508,6 +508,33 @@ class Trader(Component):
         for exec_algorithm in exec_algorithms:
             self.add_exec_algorithm(exec_algorithm)
 
+    def start_actor(self, actor_id: ComponentId) -> None:
+        """
+        Start the actor with the given `actor_id`.
+
+        Parameters
+        ----------
+        actor_id : ComponentId
+            The component ID to start.
+
+        Raises
+        ------
+        ValueError:
+            If an actor with the given `actor_id` is not found.
+
+        """
+        PyCondition.not_none(actor_id, "actor_id")
+
+        actor = self._actors.get(actor_id)
+        if actor is None:
+            raise ValueError(f"Cannot start actor, {actor_id} not found.")
+
+        if actor.is_running:
+            self._log.warning(f"Actor {actor_id} already running.")
+            return
+
+        actor.start()
+
     def start_strategy(self, strategy_id: StrategyId) -> None:
         """
         Start the strategy with the given `strategy_id`.
@@ -523,6 +550,8 @@ class Trader(Component):
             If a strategy with the given `strategy_id` is not found.
 
         """
+        PyCondition.not_none(strategy_id, "strategy_id")
+
         strategy = self._strategies.get(strategy_id)
         if strategy is None:
             raise ValueError(f"Cannot start strategy, {strategy_id} not found.")
@@ -532,6 +561,116 @@ class Trader(Component):
             return
 
         strategy.start()
+
+    def stop_actor(self, actor_id: ComponentId) -> None:
+        """
+        Stop the actor with the given `actor_id`.
+
+        Parameters
+        ----------
+        actor_id : ComponentId
+            The actor ID to stop.
+
+        Raises
+        ------
+        ValueError:
+            If an actor with the given `actor_id` is not found.
+
+        """
+        PyCondition.not_none(actor_id, "actor_id")
+
+        actor = self._actors.get(actor_id)
+        if actor is None:
+            raise ValueError(f"Cannot stop actor, {actor_id} not found.")
+
+        if not actor.is_running:
+            self._log.warning(f"Actor {actor_id} not running.")
+            return
+
+        actor.stop()
+
+    def stop_strategy(self, strategy_id: StrategyId) -> None:
+        """
+        Stop the strategy with the given `strategy_id`.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy ID to stop.
+
+        Raises
+        ------
+        ValueError:
+            If a strategy with the given `strategy_id` is not found.
+
+        """
+        PyCondition.not_none(strategy_id, "strategy_id")
+
+        strategy = self._strategies.get(strategy_id)
+        if strategy is None:
+            raise ValueError(f"Cannot stop strategy, {strategy_id} not found.")
+
+        if not strategy.is_running:
+            self._log.warning(f"Strategy {strategy_id} not running.")
+            return
+
+        strategy.stop()
+
+    def remove_actor(self, actor_id: ComponentId) -> None:
+        """
+        Remove the actor with the given `actor_id`.
+
+        Will stop the actor first if state is ``RUNNING``.
+
+        Parameters
+        ----------
+        actor_id : ComponentId
+            The actor ID to remove.
+
+        Raises
+        ------
+        ValueError:
+            If an actor with the given `actor_id` is not found.
+
+        """
+        PyCondition.not_none(actor_id, "actor_id")
+
+        actor = self._actors.get(actor_id)
+        if actor is None:
+            raise ValueError(f"Cannot remove actor, {actor_id} not found.")
+
+        if actor.is_running:
+            actor.stop()
+
+        self._actors.pop(actor_id)
+
+    def remove_strategy(self, strategy_id: StrategyId) -> None:
+        """
+        Remove the strategy with the given `strategy_id`.
+
+        Will stop the strategy first if state is ``RUNNING``.
+
+        Parameters
+        ----------
+        strategy_id : StrategyId
+            The strategy ID to remove.
+
+        Raises
+        ------
+        ValueError:
+            If a strategy with the given `strategy_id` is not found.
+
+        """
+        PyCondition.not_none(strategy_id, "strategy_id")
+
+        strategy = self._strategies.get(strategy_id)
+        if strategy is None:
+            raise ValueError(f"Cannot remove strategy, {strategy_id} not found.")
+
+        if strategy.is_running:
+            strategy.stop()
+
+        self._strategies.pop(strategy_id)
 
     def clear_actors(self) -> None:
         """
