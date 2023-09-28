@@ -22,8 +22,8 @@ from unittest.mock import patch
 import msgspec
 import pytest
 from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import MatchedOrder
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.ocm import MatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION

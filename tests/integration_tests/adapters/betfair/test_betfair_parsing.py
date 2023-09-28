@@ -37,11 +37,11 @@ from betfair_parser.spec.common import OrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import decode
 from betfair_parser.spec.common import encode
+from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import BestAvailableToBack
+from betfair_parser.spec.streaming import MarketChange
+from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.mcm import MCM
-from betfair_parser.spec.streaming.mcm import BestAvailableToBack
-from betfair_parser.spec.streaming.mcm import MarketChange
-from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 # fmt: off
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME

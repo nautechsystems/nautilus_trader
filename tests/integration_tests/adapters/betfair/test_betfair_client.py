@@ -43,7 +43,7 @@ from betfair_parser.spec.betting.type_definitions import PlaceInstruction
 from betfair_parser.spec.betting.type_definitions import ReplaceInstruction
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import Response
-from betfair_parser.spec.common import RPCError
+from betfair_parser.spec.common.messages import RPCError
 from betfair_parser.spec.identity import Login
 from betfair_parser.spec.identity import _LoginParams
 from betfair_parser.spec.navigation import Menu

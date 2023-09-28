@@ -18,8 +18,8 @@ import sys
 
 import msgspec
 import pytest
-from betfair_parser.spec.streaming.mcm import MCM
-from betfair_parser.spec.streaming.mcm import MarketChange
+from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import MarketChange
 
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
