@@ -32,6 +32,7 @@ from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import Connection
 from betfair_parser.spec.streaming import Order as UnmatchedOrder
 from betfair_parser.spec.streaming import Status
+from betfair_parser.spec.streaming import StatusErrorCode
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.accounting.factory import AccountFactory
@@ -820,9 +821,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         return None
 
     def _handle_status_message(self, update: Status):
-        if update.statusCode == "FAILURE" and update.connectionClosed:
+        if update.is_error and update.connection_closed:
             self._log.warning(str(update))
-            if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
+            if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")

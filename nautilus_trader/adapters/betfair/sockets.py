@@ -61,7 +61,6 @@ class BetfairStreamClient:
         self.is_connected: bool = False
         self.disconnecting: bool = False
         self._loop = asyncio.get_event_loop()
-        self._watch_stream_task: Optional[asyncio.Task] = None
 
     async def connect(self):
         if not self._http_client.session_token:
@@ -92,10 +91,6 @@ class BetfairStreamClient:
         """
         Actions to be performed post connection.
         """
-        self._watch_stream_task = self._loop.create_task(
-            self.watch_stream(),
-            name="watch_stream",
-        )
 
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
@@ -109,13 +104,6 @@ class BetfairStreamClient:
         """
         Actions to be performed post disconnection.
         """
-        # Override to implement additional disconnection related behavior
-        # (canceling ping tasks etc.).
-        self._watch_stream_task.cancel()
-        try:
-            await self._watch_stream_task
-        except asyncio.CancelledError:
-            return
 
     async def send(self, message: bytes):
         self._log.debug(f"[SEND] {message.decode()}")
