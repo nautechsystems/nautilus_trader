@@ -648,10 +648,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 continue
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
                 self._log.info(f"{self._account_summary}", LogColor.GREEN)
-                free = self._account_summary[currency]["FullAvailableFunds"]
+                # free = self._account_summary[currency]["FullAvailableFunds"]
                 locked = self._account_summary[currency]["FullMaintMarginReq"]
-                # total = self._account_summary[currency]["NetLiquidation"]
-                total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
+                total = self._account_summary[currency]["NetLiquidation"]
+                if total - locked < locked:
+                    total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
                 free = total - locked
                 account_balance = AccountBalance(
                     total=Money(total, Currency.from_str(currency)),
