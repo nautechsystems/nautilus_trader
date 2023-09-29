@@ -407,8 +407,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        if not start:
-            limit = self._cache.bar_capacity
+        if not start and limit == 0:
+            limit = 1000
 
         if not end:
             end = pd.Timestamp.utcnow()
