@@ -565,12 +565,13 @@ class BetfairStreaming:
         sr=0,
         sc=0,
         avp=0,
-        order_id: str = "248485109136",
+        order_id: int = 248485109136,
         client_order_id: str = "",
         mb: Optional[list[MatchedOrder]] = None,
         ml: Optional[list[MatchedOrder]] = None,
     ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
+        assert isinstance(order_id, int)
         return OCM(
             id=1,
             clk="1",

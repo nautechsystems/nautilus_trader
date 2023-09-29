@@ -585,7 +585,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 venue_orders = {o.venue_order_id: o for o in orders}
                 for unmatched_order in selection.uo:
                     # We can match on venue_order_id here
-                    order = venue_orders.get(VenueOrderId(unmatched_order.id))
+                    order = venue_orders.get(VenueOrderId(str(unmatched_order.id)))
                     if order is not None:
                         continue  # Order exists
                     self._log.error(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=} ")
