@@ -25,7 +25,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 derive_builder = "0.12.0"
 evalexpr = "11.1.0"
-indexmap = "2.0.1"
+indexmap = "2.0.2"
 tabled = "0.12.2"
 thousands = "0.2.0"
 
