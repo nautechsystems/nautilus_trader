@@ -16,21 +16,33 @@
 pub mod bar;
 #[cfg(feature = "ffi")]
 pub mod bar_api;
+#[cfg(feature = "python")]
+pub mod bar_py;
 pub mod delta;
 #[cfg(feature = "ffi")]
 pub mod delta_api;
+#[cfg(feature = "python")]
+pub mod delta_py;
 pub mod order;
 #[cfg(feature = "ffi")]
 pub mod order_api;
+#[cfg(feature = "python")]
+pub mod order_py;
 pub mod quote;
 #[cfg(feature = "ffi")]
 pub mod quote_api;
+#[cfg(feature = "python")]
+pub mod quote_py;
 pub mod ticker;
 #[cfg(feature = "ffi")]
 pub mod ticker_api;
+#[cfg(feature = "python")]
+pub mod ticker_py;
 pub mod trade;
 #[cfg(feature = "ffi")]
 pub mod trade_api;
+#[cfg(feature = "python")]
+pub mod trade_py;
 
 use nautilus_core::time::UnixNanos;
 

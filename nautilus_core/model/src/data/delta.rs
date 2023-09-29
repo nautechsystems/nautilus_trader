@@ -14,15 +14,15 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::HashMap,
     fmt::{Display, Formatter},
-    hash::{Hash, Hasher},
+    hash::Hash,
     str::FromStr,
 };
 
 use indexmap::IndexMap;
 use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::order::{BookOrder, OrderId, NULL_ORDER};
@@ -36,7 +36,7 @@ use crate::{
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct OrderBookDelta {
     /// The instrument ID for the book.
     pub instrument_id: InstrumentId,
@@ -180,175 +180,20 @@ impl Display for OrderBookDelta {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl OrderBookDelta {
-    #[new]
-    fn py_new(
-        instrument_id: InstrumentId,
-        action: BookAction,
-        order: BookOrder,
-        flags: u8,
-        sequence: u64,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new(
-            instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
-            ts_event,
-            ts_init,
-        )
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    #[getter]
-    fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    fn action(&self) -> BookAction {
-        self.action
-    }
-
-    #[getter]
-    fn order(&self) -> BookOrder {
-        self.order
-    }
-
-    #[getter]
-    fn flags(&self) -> u8 {
-        self.flags
-    }
-
-    #[getter]
-    fn sequence(&self) -> u64 {
-        self.sequence
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
-    /// Return a dictionary representation of the object.
-    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
-        Ok(py_dict)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Extract to JSON string
-        let json_str: String = PyModule::import(py, "json")?
-            .call_method("dumps", (values,), None)?
-            .extract()?;
-
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
-        Ok(instance)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(
-        instrument_id: &InstrumentId,
-        price_precision: u8,
-        size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            instrument_id,
-            price_precision,
-            size_precision,
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
-        for (k, v) in Self::get_fields() {
-            py_dict.set_item(k, v)?;
-        }
-
-        Ok(py_dict)
-    }
-
-    #[staticmethod]
-    fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
-    use rstest::rstest;
+pub mod stubs {
+    use rstest::fixture;
 
     use super::*;
     use crate::{
-        enums::OrderSide,
+        identifiers::instrument_id::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
 
-    fn create_stub_delta() -> OrderBookDelta {
+    #[fixture]
+    pub fn stub_delta() -> OrderBookDelta {
         let instrument_id = InstrumentId::from("AAPL.NASDAQ");
         let action = BookAction::Add;
         let price = Price::from("100.00");
@@ -371,6 +216,20 @@ mod tests {
             ts_init,
         )
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{stubs::*, *};
+    use crate::{
+        enums::OrderSide,
+        types::{price::Price, quantity::Quantity},
+    };
 
     #[rstest]
     fn test_new() {
@@ -410,8 +269,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_display() {
-        let delta = create_stub_delta();
+    fn test_display(stub_delta: OrderBookDelta) {
+        let delta = stub_delta;
         assert_eq!(
             format!("{}", delta),
             "AAPL.NASDAQ,ADD,100.00,10,BUY,123456,0,1,1,2".to_string()
@@ -419,54 +278,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let delta = create_stub_delta();
-
-        Python::with_gil(|py| {
-            let dict_string = delta.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.NASDAQ', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}"#;
-            assert_eq!(dict_string, expected_string);
-        });
-    }
-
-    #[rstest]
-    fn test_from_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let delta = create_stub_delta();
-
-        Python::with_gil(|py| {
-            let dict = delta.as_dict(py).unwrap();
-            let parsed = OrderBookDelta::from_dict(py, dict).unwrap();
-            assert_eq!(parsed, delta);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject() {
-        pyo3::prepare_freethreaded_python();
-        let delta = create_stub_delta();
-
-        Python::with_gil(|py| {
-            let delta_pyobject = delta.into_py(py);
-            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
-            assert_eq!(parsed_delta, delta);
-        });
-    }
-
-    #[rstest]
-    fn test_json_serialization() {
-        let delta = create_stub_delta();
+    fn test_json_serialization(stub_delta: OrderBookDelta) {
+        let delta = stub_delta;
         let serialized = delta.as_json_bytes().unwrap();
         let deserialized = OrderBookDelta::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, delta);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let delta = create_stub_delta();
+    fn test_msgpack_serialization(stub_delta: OrderBookDelta) {
+        let delta = stub_delta;
         let serialized = delta.as_msgpack_bytes().unwrap();
         let deserialized = OrderBookDelta::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, delta);

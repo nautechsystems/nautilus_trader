@@ -14,15 +14,15 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::HashMap,
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
+    hash::Hash,
     str::FromStr,
 };
 
 use indexmap::IndexMap;
 use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror;
 
@@ -36,7 +36,7 @@ use crate::{
 /// method/rule and price type.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
     pub step: usize,
@@ -56,7 +56,7 @@ impl Display for BarSpecification {
 /// aggregation source.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
 pub struct BarType {
     /// The bar types instrument ID.
     pub instrument_id: InstrumentId,
@@ -167,40 +167,11 @@ impl<'de> Deserialize<'de> for BarType {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl BarType {
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-}
-
 /// Represents an aggregated bar.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.data")]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct Bar {
     /// The bar type for this bar.
     pub bar_type: BarType,
@@ -322,161 +293,6 @@ impl Display for Bar {
             "{},{},{},{},{},{},{}",
             self.bar_type, self.open, self.high, self.low, self.close, self.volume, self.ts_event
         )
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-#[allow(clippy::too_many_arguments)]
-impl Bar {
-    #[new]
-    fn py_new(
-        bar_type: BarType,
-        open: Price,
-        high: Price,
-        low: Price,
-        close: Price,
-        volume: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    #[getter]
-    fn bar_type(&self) -> BarType {
-        self.bar_type
-    }
-
-    #[getter]
-    fn open(&self) -> Price {
-        self.open
-    }
-
-    #[getter]
-    fn high(&self) -> Price {
-        self.high
-    }
-
-    #[getter]
-    fn low(&self) -> Price {
-        self.low
-    }
-
-    #[getter]
-    fn close(&self) -> Price {
-        self.close
-    }
-
-    #[getter]
-    fn volume(&self) -> Quantity {
-        self.volume
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
-    /// Return a dictionary representation of the object.
-    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
-        Ok(py_dict)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Extract to JSON string
-        let json_str: String = PyModule::import(py, "json")?
-            .call_method("dumps", (values,), None)?
-            .extract()?;
-
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
-        Ok(instance)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(
-        bar_type: &BarType,
-        price_precision: u8,
-        size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            bar_type,
-            price_precision,
-            size_precision,
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
-        for (k, v) in Self::get_fields() {
-            py_dict.set_item(k, v)?;
-        }
-
-        Ok(py_dict)
-    }
-
-    #[staticmethod]
-    fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
 
@@ -744,44 +560,6 @@ mod tests {
         };
         assert_eq!(bar1, bar1);
         assert_ne!(bar1, bar2);
-    }
-
-    #[rstest]
-    fn test_as_dict(bar_audusd_sim_minute_bid: Bar) {
-        pyo3::prepare_freethreaded_python();
-
-        let bar = bar_audusd_sim_minute_bid;
-
-        Python::with_gil(|py| {
-            let dict_string = bar.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-BID-EXTERNAL', 'open': '1.00001', 'high': '1.00004', 'low': '1.00002', 'close': '1.00003', 'volume': '100000', 'ts_event': 0, 'ts_init': 1}"#;
-            assert_eq!(dict_string, expected_string);
-        });
-    }
-
-    #[rstest]
-    fn test_as_from_dict(bar_audusd_sim_minute_bid: Bar) {
-        pyo3::prepare_freethreaded_python();
-
-        let bar = bar_audusd_sim_minute_bid;
-
-        Python::with_gil(|py| {
-            let dict = bar.as_dict(py).unwrap();
-            let parsed = Bar::from_dict(py, dict).unwrap();
-            assert_eq!(parsed, bar);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject(bar_audusd_sim_minute_bid: Bar) {
-        pyo3::prepare_freethreaded_python();
-        let bar = bar_audusd_sim_minute_bid;
-
-        Python::with_gil(|py| {
-            let bar_pyobject = bar.into_py(py);
-            let parsed_bar = Bar::from_pyobject(bar_pyobject.as_ref(py)).unwrap();
-            assert_eq!(parsed_bar, bar);
-        });
     }
 
     #[rstest]
