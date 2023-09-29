@@ -826,7 +826,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")
-                self._loop.create_task(self.stream.reconnect())
+                self._loop.create_task(self.stream.connect())
 
 
 def create_trade_id(uo: UnmatchedOrder) -> TradeId:

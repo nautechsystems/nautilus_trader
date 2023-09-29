@@ -44,7 +44,7 @@ async def test_connect_and_disconnect(socket_server):
     # Act, Assert
     await eventually(lambda: client.is_alive)
     await client.disconnect()
-    # await eventually(lambda: not client.is_alive)
+    await eventually(lambda: not client.is_alive, timeout=5.0)
 
 
 @pytest.mark.asyncio()
@@ -100,6 +100,7 @@ async def test_reconnect_after_close(closing_socket_server):
 
     # Act
     await asyncio.sleep(2)
+    await client.disconnect()
 
     # Assert
     await eventually(lambda: store == [b"connected"] * 2)

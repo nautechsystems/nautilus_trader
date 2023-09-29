@@ -297,4 +297,4 @@ class BetfairDataClient(LiveMarketDataClient):
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")
-                self.create_task(self._stream.reconnect())
+                self.create_task(self._stream.connect())
