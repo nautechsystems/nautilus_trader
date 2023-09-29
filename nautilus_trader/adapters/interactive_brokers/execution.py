@@ -732,6 +732,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
 
+    async def handle_order_status_report(self, ib_order: IBOrder):
+        report = await self._parse_ib_order_to_order_status_report(ib_order)
+        self._send_order_status_report(report)
+
     def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState):
         if not order.orderRef:
             self._log.warning(
@@ -739,10 +743,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
         if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
-            # report = await self._parse_ib_order_to_order_status_report(order)
-            self._log.warning(
-                "Placeholder to claim external Orders during runtime using OrderStatusReport.",
-            )
+            self.create_task(self.handle_order_status_report(order))
             return
 
         if order.whatIf and order_state.status == "PreSubmitted":
