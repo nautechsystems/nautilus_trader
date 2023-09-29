@@ -350,7 +350,7 @@ async def test_replace_orders_single(betfair_client):
         method="SportsAPING/v1.0/replaceOrders",
         params=_ReplaceOrdersParams(
             market_id="1.179082386",
-            instructions=[ReplaceInstruction(bet_id="240718603398", new_price=2.0)],
+            instructions=[ReplaceInstruction(bet_id=240718603398, new_price=2.0)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
             async_=False,
@@ -382,7 +382,7 @@ async def test_cancel_orders(betfair_client):
         params=_CancelOrdersParams(
             market_id="1.179082386",
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
-            instructions=[CancelInstruction(bet_id="228302937743")],
+            instructions=[CancelInstruction(bet_id=228302937743)],
         ),
     )
     assert request == expected

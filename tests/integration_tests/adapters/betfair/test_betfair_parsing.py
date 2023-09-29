@@ -270,7 +270,7 @@ class TestBetfairParsingStreaming:
         result = [book.count for book in books.values()]
         assert result == book_count
 
-    def test_betfair_trade_sizes(self):
+    def test_betfair_trade_sizes(self):  # noqa: C901
         mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
         parser = BetfairParser()
         trade_ticks: dict[InstrumentId, list[TradeTick]] = defaultdict(list)
@@ -283,9 +283,10 @@ class TestBetfairParsingStreaming:
             for rc in [rc for mc in mcm.mc for rc in mc.rc]:
                 if rc.id not in betfair_tv:
                     betfair_tv[rc.id] = {}
-                for trd in rc.trd:
-                    if trd.volume > betfair_tv[rc.id].get(trd.price, 0):
-                        betfair_tv[rc.id][trd.price] = trd.volume
+                if rc.trd is not None:
+                    for trd in rc.trd:
+                        if trd.volume > betfair_tv[rc.id].get(trd.price, 0):
+                            betfair_tv[rc.id][trd.price] = trd.volume
 
         for selection_id in betfair_tv:
             for price in betfair_tv[selection_id]:
@@ -361,7 +362,7 @@ class TestBetfairParsing:
         )
         expected = ReplaceOrders.with_params(
             market_id="1.179082386",
-            instructions=[ReplaceInstruction(bet_id="1", new_price=1.35)],
+            instructions=[ReplaceInstruction(bet_id=1, new_price=1.35)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
             async_=False,
@@ -379,7 +380,7 @@ class TestBetfairParsing:
         )
         expected = CancelOrders.with_params(
             market_id="1.179082386",
-            instructions=[CancelInstruction(bet_id="228302937743", size_reduction=None)],
+            instructions=[CancelInstruction(bet_id=228302937743, size_reduction=None)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
         )
         assert result == expected

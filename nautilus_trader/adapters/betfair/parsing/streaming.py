@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import math
 from collections import defaultdict
 from datetime import datetime
 from typing import Optional, Union
@@ -104,54 +105,60 @@ def market_change_to_updates(  # noqa: C901
     # Handle market data updates
     book_updates: list[OrderBookDeltas] = []
     bsp_book_updates: list[BSPOrderBookDelta] = []
-    for rc in mc.rc:
-        instrument_id = betfair_instrument_id(
-            market_id=mc.id,
-            selection_id=str(rc.id),
-            selection_handicap=parse_handicap(rc.hc),
-        )
+    if mc.rc is not None:
+        for rc in mc.rc:
+            instrument_id = betfair_instrument_id(
+                market_id=mc.id,
+                selection_id=str(rc.id),
+                selection_handicap=parse_handicap(rc.hc),
+            )
 
-        # Order book data
-        if mc.img:
-            # Full snapshot, replace order book
-            snapshot = runner_change_to_order_book_snapshot(
+            # Order book data
+            if mc.img:
+                # Full snapshot, replace order book
+                snapshot = runner_change_to_order_book_snapshot(
+                    rc,
+                    instrument_id,
+                    ts_event,
+                    ts_init,
+                )
+                if snapshot is not None:
+                    updates.append(snapshot)
+            else:
+                # Delta update
+                deltas = runner_change_to_order_book_deltas(rc, instrument_id, ts_event, ts_init)
+                if deltas is not None:
+                    book_updates.append(deltas)
+
+            # Trade ticks
+            if rc.trd:
+                if instrument_id not in traded_volumes:
+                    traded_volumes[instrument_id] = {}
+                updates.extend(
+                    runner_change_to_trade_ticks(
+                        rc,
+                        traded_volumes[instrument_id],
+                        instrument_id,
+                        ts_event,
+                        ts_init,
+                    ),
+                )
+
+            # BetfairTicker
+            if any((rc.ltp, rc.tv, rc.spn, rc.spf)):
+                updates.append(
+                    runner_change_to_betfair_ticker(rc, instrument_id, ts_event, ts_init),
+                )
+
+            # BSP order book deltas
+            bsp_deltas = runner_change_to_bsp_order_book_deltas(
                 rc,
                 instrument_id,
                 ts_event,
                 ts_init,
             )
-            if snapshot is not None:
-                updates.append(snapshot)
-        else:
-            # Delta update
-            deltas = runner_change_to_order_book_deltas(rc, instrument_id, ts_event, ts_init)
-            if deltas is not None:
-                book_updates.append(deltas)
-
-        # Trade ticks
-        if rc.trd:
-            if instrument_id not in traded_volumes:
-                traded_volumes[instrument_id] = {}
-            updates.extend(
-                runner_change_to_trade_ticks(
-                    rc,
-                    traded_volumes[instrument_id],
-                    instrument_id,
-                    ts_event,
-                    ts_init,
-                ),
-            )
-
-        # BetfairTicker
-        if any((rc.ltp, rc.tv, rc.spn, rc.spf)):
-            updates.append(
-                runner_change_to_betfair_ticker(rc, instrument_id, ts_event, ts_init),
-            )
-
-        # BSP order book deltas
-        bsp_deltas = runner_change_to_bsp_order_book_deltas(rc, instrument_id, ts_event, ts_init)
-        if bsp_deltas is not None:
-            bsp_book_updates.extend(bsp_deltas)
+            if bsp_deltas is not None:
+                bsp_book_updates.extend(bsp_deltas)
 
     # Finally, merge book_updates and bsp_book_updates as they can be split over multiple rc's
     if book_updates and not mc.img:
@@ -323,28 +330,30 @@ def runner_change_to_order_book_snapshot(
     ]
 
     # Bids are available to back (atb)
-    for bid in rc.atb or []:
-        book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
-        delta = OrderBookDelta(
-            instrument_id,
-            BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
-            book_order,
-            ts_event,
-            ts_init,
-        )
-        deltas.append(delta)
+    if rc.atb is not None:
+        for bid in rc.atb:
+            book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
+            delta = OrderBookDelta(
+                instrument_id,
+                BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
+                book_order,
+                ts_event,
+                ts_init,
+            )
+            deltas.append(delta)
 
     # Asks are available to back (atl)
-    for ask in rc.atl or []:
-        book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
-        delta = OrderBookDelta(
-            instrument_id,
-            BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
-            book_order,
-            ts_event,
-            ts_init,
-        )
-        deltas.append(delta)
+    if rc.atl is not None:
+        for ask in rc.atl:
+            book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
+            delta = OrderBookDelta(
+                instrument_id,
+                BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
+                book_order,
+                ts_event,
+                ts_init,
+            )
+            deltas.append(delta)
 
     return OrderBookDeltas(instrument_id, deltas)
 
@@ -400,29 +409,31 @@ def runner_change_to_order_book_deltas(
     deltas: list[OrderBookDelta] = []
 
     # Bids are available to back (atb)
-    for bid in rc.atb or []:
-        book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
-        delta = OrderBookDelta(
-            instrument_id,
-            BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
-            book_order,
-            ts_event,
-            ts_init,
-        )
-        deltas.append(delta)
+    if rc.atb is not None:
+        for bid in rc.atb:
+            book_order = _price_volume_to_book_order(bid, OrderSide.BUY)
+            delta = OrderBookDelta(
+                instrument_id,
+                BookAction.UPDATE if bid.volume > 0.0 else BookAction.DELETE,
+                book_order,
+                ts_event,
+                ts_init,
+            )
+            deltas.append(delta)
 
     # Asks are available to back (atl)
-    for ask in rc.atl or []:
-        book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
+    if rc.atl is not None:
+        for ask in rc.atl:
+            book_order = _price_volume_to_book_order(ask, OrderSide.SELL)
 
-        delta = OrderBookDelta(
-            instrument_id,
-            BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
-            book_order,
-            ts_event,
-            ts_init,
-        )
-        deltas.append(delta)
+            delta = OrderBookDelta(
+                instrument_id,
+                BookAction.UPDATE if ask.volume > 0.0 else BookAction.DELETE,
+                book_order,
+                ts_event,
+                ts_init,
+            )
+            deltas.append(delta)
 
     if not deltas:
         return None
@@ -446,9 +457,9 @@ def runner_change_to_betfair_ticker(
         last_traded_price = runner.ltp
     if runner.tv:
         traded_volume = runner.tv
-    if runner.spn and runner.spn not in ("NaN", "Infinity"):
+    if runner.spn is not None and not math.isnan(runner.spn) and runner.spn != math.inf:
         starting_price_near = runner.spn
-    if runner.spf and runner.spf not in ("NaN", "Infinity"):
+    if runner.spf is not None and not math.isnan(runner.spf) and runner.spf != math.inf:
         starting_price_far = runner.spf
     return BetfairTicker(
         instrument_id=instrument_id,
@@ -472,27 +483,29 @@ def runner_change_to_bsp_order_book_deltas(
     bsp_instrument_id = make_bsp_instrument_id(instrument_id)
     deltas: list[BSPOrderBookDelta] = []
 
-    for spb in rc.spb:
-        book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
-        delta = BSPOrderBookDelta(
-            bsp_instrument_id,
-            BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
-            book_order,
-            ts_event,
-            ts_init,
-        )
-        deltas.append(delta)
+    if rc.spb is not None:
+        for spb in rc.spb:
+            book_order = _price_volume_to_book_order(spb, OrderSide.SELL)
+            delta = BSPOrderBookDelta(
+                bsp_instrument_id,
+                BookAction.DELETE if spb.volume == 0.0 else BookAction.UPDATE,
+                book_order,
+                ts_event,
+                ts_init,
+            )
+            deltas.append(delta)
 
-    for spl in rc.spl:
-        book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
-        delta = BSPOrderBookDelta(
-            bsp_instrument_id,
-            BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
-            book_order,
-            ts_event,
-            ts_init,
-        )
-        deltas.append(delta)
+    if rc.spl is not None:
+        for spl in rc.spl:
+            book_order = _price_volume_to_book_order(spl, OrderSide.BUY)
+            delta = BSPOrderBookDelta(
+                bsp_instrument_id,
+                BookAction.DELETE if spl.volume == 0.0 else BookAction.UPDATE,
+                book_order,
+                ts_event,
+                ts_init,
+            )
+            deltas.append(delta)
 
     return deltas
 

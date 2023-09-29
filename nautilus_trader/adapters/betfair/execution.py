@@ -632,7 +632,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle update containing "E" (executable) order update.
         """
-        venue_order_id = VenueOrderId(unmatched_order.id)
+        venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
         order = self._cache.order(client_order_id)
         instrument = self._cache.instrument(order.instrument_id)

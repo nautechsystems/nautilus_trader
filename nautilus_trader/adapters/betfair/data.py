@@ -284,11 +284,12 @@ class BetfairDataClient(LiveMarketDataClient):
         if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
-        for mc in update.mc:
-            if mc.con:
-                self._log.warning(
-                    "Conflated stream - consuming data too slow (data received is delayed)",
-                )
+        if update.mc is not None:
+            for mc in update.mc:
+                if mc.con:
+                    self._log.warning(
+                        "Conflated stream - consuming data too slow (data received is delayed)",
+                    )
 
     def _handle_status_message(self, update: Status):
         if update.status_code == "FAILURE" and update.connection_closed:

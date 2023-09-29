@@ -30,6 +30,7 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
@@ -75,14 +76,15 @@ def instrument_list(mock_load_markets_metadata):
     loop = asyncio.get_event_loop()
     logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
-    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, filters={})
+    market_ids = BetfairDataProvider.market_ids()
+    config = BetfairInstrumentProviderConfig(market_ids=market_ids)
+    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, config=config)
 
     # Load instruments
-    market_ids = BetfairDataProvider.market_ids()
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
     mock_load_markets_metadata.return_value = [c for c in catalog if c.market_id in market_ids]
     t = loop.create_task(
-        instrument_provider.load_all_async(market_filter={"market_id": market_ids}),
+        instrument_provider.load_all_async(),
     )
     loop.run_until_complete(t)
 
