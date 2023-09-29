@@ -1127,23 +1127,26 @@ class InteractiveBrokersClient(Component, EWrapper):
     def historicalData(self, req_id: int, bar: BarData):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if request := self.requests.get(req_id=req_id):
-            is_request = True
+            bar_type = BarType.from_str(request.name)
+            bar = self._ib_bar_to_nautilus_bar(
+                bar_type=bar_type,
+                bar=bar,
+                ts_init=self._ib_bar_to_ts_init(bar, bar_type),
+            )
+            if bar:
+                request.result.append(bar)
         elif request := self.subscriptions.get(req_id=req_id):
-            is_request = False
+            bar = self._process_bar_data(
+                bar_type_str=request.name,
+                bar=bar,
+                handle_revised_bars=False,
+                historical=True,
+            )
+            if bar:
+                self._handle_data(bar)
         else:
             self._log.debug(f"Received {bar=} on {req_id=}")
             return
-
-        bar = self._process_bar_data(
-            bar_type_str=request.name,
-            bar=bar,
-            handle_revised_bars=False,
-            historical=True,
-        )
-        if bar and is_request:
-            request.result.append(bar)
-        elif bar:
-            self._handle_data(bar)
 
     def historicalDataEnd(self, req_id: int, start: str, end: str):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
@@ -1249,14 +1252,34 @@ class InteractiveBrokersClient(Component, EWrapper):
                 return None  # Wait for bar to close
 
             if historical:
-                ts_init = (
-                    pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value
-                    + pd.Timedelta(bar_type.spec.timedelta).value
-                )
+                ts_init = self._ib_bar_to_ts_init(bar, bar_type)
                 if ts_init >= self._clock.timestamp_ns():
                     return None  # The bar is incomplete
 
         # Process the bar
+        bar = self._ib_bar_to_nautilus_bar(
+            bar_type=bar_type,
+            bar=bar,
+            ts_init=ts_init,
+            is_revision=not is_new_bar,
+        )
+        return bar
+
+    @staticmethod
+    def _ib_bar_to_ts_init(bar: BarData, bar_type: BarType) -> int:
+        ts_init = (
+            pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value
+            + pd.Timedelta(bar_type.spec.timedelta).value
+        )
+        return ts_init
+
+    def _ib_bar_to_nautilus_bar(
+        self,
+        bar_type: BarType,
+        bar: BarData,
+        ts_init: int,
+        is_revision: bool = False,
+    ) -> Bar:
         instrument = self._cache.instrument(bar_type.instrument_id)
         bar = Bar(
             bar_type=bar_type,
@@ -1267,7 +1290,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             volume=instrument.make_qty(0 if bar.volume == -1 else bar.volume),
             ts_event=pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value,
             ts_init=ts_init,
-            is_revision=not is_new_bar,
+            is_revision=is_revision,
         )
         return bar
 
