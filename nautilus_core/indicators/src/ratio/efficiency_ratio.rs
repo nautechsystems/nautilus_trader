@@ -60,15 +60,15 @@ impl Indicator for EfficiencyRatio {
     }
 
     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(self.price_type).into())
+        self.update_raw(tick.extract_price(self.price_type).into());
     }
 
     fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into())
+        self.update_raw((&tick.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into())
+        self.update_raw((&bar.close).into());
     }
 
     fn reset(&mut self) {
@@ -170,22 +170,22 @@ mod tests {
 
     #[rstest]
     fn test_efficiency_ratio_initialized(efficiency_ratio_10: EfficiencyRatio) {
-        let display_str = format!("{}", efficiency_ratio_10);
+        let display_str = format!("{efficiency_ratio_10}");
         assert_eq!(display_str, "EfficiencyRatio(10)");
         assert_eq!(efficiency_ratio_10.period, 10);
-        assert_eq!(efficiency_ratio_10.is_initialized, false);
+        assert!(!efficiency_ratio_10.is_initialized);
     }
 
     #[rstest]
     fn test_with_correct_number_of_required_inputs(mut efficiency_ratio_10: EfficiencyRatio) {
         for i in 1..10 {
-            efficiency_ratio_10.update_raw(i as f64);
+            efficiency_ratio_10.update_raw(f64::from(i));
         }
         assert_eq!(efficiency_ratio_10.inputs.len(), 9);
-        assert_eq!(efficiency_ratio_10.is_initialized, false);
+        assert!(!efficiency_ratio_10.is_initialized);
         efficiency_ratio_10.update_raw(1.0);
         assert_eq!(efficiency_ratio_10.inputs.len(), 10);
-        assert_eq!(efficiency_ratio_10.is_initialized, true);
+        assert!(efficiency_ratio_10.is_initialized);
     }
 
     #[rstest]
@@ -231,7 +231,7 @@ mod tests {
         efficiency_ratio_10.update_raw(1.00010);
         efficiency_ratio_10.update_raw(1.00030);
         efficiency_ratio_10.update_raw(1.00020);
-        assert_eq!(efficiency_ratio_10.value, 0.3333333333333333);
+        assert_eq!(efficiency_ratio_10.value, 0.333_333_333_333_333_3);
     }
 
     #[rstest]
@@ -243,17 +243,17 @@ mod tests {
         efficiency_ratio_10.update_raw(1.00012);
         efficiency_ratio_10.update_raw(1.00005);
         efficiency_ratio_10.update_raw(1.00015);
-        assert_eq!(efficiency_ratio_10.value, 0.42857142857215363);
+        assert_eq!(efficiency_ratio_10.value, 0.428_571_428_572_153_63);
     }
 
     #[rstest]
     fn test_reset(mut efficiency_ratio_10: EfficiencyRatio) {
         for i in 1..=10 {
-            efficiency_ratio_10.update_raw(i as f64);
+            efficiency_ratio_10.update_raw(f64::from(i));
         }
-        assert_eq!(efficiency_ratio_10.is_initialized, true);
+        assert!(efficiency_ratio_10.is_initialized);
         efficiency_ratio_10.reset();
-        assert_eq!(efficiency_ratio_10.is_initialized, false);
+        assert!(!efficiency_ratio_10.is_initialized);
         assert_eq!(efficiency_ratio_10.value, 0.0);
     }
 
