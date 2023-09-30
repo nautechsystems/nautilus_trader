@@ -67,7 +67,8 @@ async def test_client_send_recv(socket_server):
     await client.disconnect()
 
     # Assert
-    assert store == [b"connected"] + [b"hello"] * 2
+    await eventually(lambda: store == [b"connected"] + [b"hello"] * 2)
+    await asyncio.sleep(0.1)
 
 
 # @pytest.mark.asyncio()
