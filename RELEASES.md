@@ -12,7 +12,8 @@ Released on TBD (UTC).
 - Added `RiskEngine` min/max instrument notional limit checks
 - Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
-- Decythonized `Trader` :tada
+- Implemented Binance `WebSocketClient` live subscribe and unsubscribe
+- Decythonized `Trader`
 
 ### Breaking Changes
 - Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
