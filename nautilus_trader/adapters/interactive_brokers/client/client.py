@@ -76,6 +76,8 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 
 
@@ -741,14 +743,14 @@ class InteractiveBrokersClient(Component, EWrapper):
             return
 
         instrument_id = InstrumentId.from_str(subscription.name[0])
-        instrument = self._cache.instrument(instrument_id)
+        self._cache.instrument(instrument_id)
         ts_event = pd.Timestamp.fromtimestamp(time, "UTC").value
         quote_tick = QuoteTick(
             instrument_id=instrument_id,
-            bid_price=instrument.make_price(bid_price),
-            ask_price=instrument.make_price(ask_price),
-            bid_size=instrument.make_qty(bid_size),
-            ask_size=instrument.make_qty(ask_size),
+            bid_price=Price.from_str(str(bid_price)),
+            ask_price=Price.from_str(str(ask_price)),
+            bid_size=Quantity.from_str(str(bid_size)),
+            ask_size=Quantity.from_str(str(ask_size)),
             ts_event=ts_event,
             ts_init=max(
                 self._clock.timestamp_ns(),
@@ -777,12 +779,12 @@ class InteractiveBrokersClient(Component, EWrapper):
             return
 
         instrument_id = InstrumentId.from_str(subscription.name[0])
-        instrument = self._cache.instrument(instrument_id)
+        self._cache.instrument(instrument_id)
         ts_event = pd.Timestamp.fromtimestamp(time, "UTC").value
         trade_tick = TradeTick(
             instrument_id=instrument_id,
-            price=instrument.make_price(price),
-            size=instrument.make_qty(size),
+            price=Price.from_str(str(price)),
+            size=Quantity.from_str(str(size)),
             aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=generate_trade_id(ts_event=ts_event, price=price, size=size),
             ts_event=ts_event,
@@ -1127,23 +1129,26 @@ class InteractiveBrokersClient(Component, EWrapper):
     def historicalData(self, req_id: int, bar: BarData):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if request := self.requests.get(req_id=req_id):
-            is_request = True
+            bar_type = BarType.from_str(request.name)
+            bar = self._ib_bar_to_nautilus_bar(
+                bar_type=bar_type,
+                bar=bar,
+                ts_init=self._ib_bar_to_ts_init(bar, bar_type),
+            )
+            if bar:
+                request.result.append(bar)
         elif request := self.subscriptions.get(req_id=req_id):
-            is_request = False
+            bar = self._process_bar_data(
+                bar_type_str=request.name,
+                bar=bar,
+                handle_revised_bars=False,
+                historical=True,
+            )
+            if bar:
+                self._handle_data(bar)
         else:
             self._log.debug(f"Received {bar=} on {req_id=}")
             return
-
-        bar = self._process_bar_data(
-            bar_type_str=request.name,
-            bar=bar,
-            handle_revised_bars=False,
-            historical=True,
-        )
-        if bar and is_request:
-            request.result.append(bar)
-        elif bar:
-            self._handle_data(bar)
 
     def historicalDataEnd(self, req_id: int, start: str, end: str):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
@@ -1249,25 +1254,45 @@ class InteractiveBrokersClient(Component, EWrapper):
                 return None  # Wait for bar to close
 
             if historical:
-                ts_init = (
-                    pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value
-                    + pd.Timedelta(bar_type.spec.timedelta).value
-                )
+                ts_init = self._ib_bar_to_ts_init(bar, bar_type)
                 if ts_init >= self._clock.timestamp_ns():
                     return None  # The bar is incomplete
 
         # Process the bar
-        instrument = self._cache.instrument(bar_type.instrument_id)
-        bar = Bar(
+        bar = self._ib_bar_to_nautilus_bar(
             bar_type=bar_type,
-            open=instrument.make_price(bar.open),
-            high=instrument.make_price(bar.high),
-            low=instrument.make_price(bar.low),
-            close=instrument.make_price(bar.close),
-            volume=instrument.make_qty(0 if bar.volume == -1 else bar.volume),
-            ts_event=pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value,
+            bar=bar,
             ts_init=ts_init,
             is_revision=not is_new_bar,
+        )
+        return bar
+
+    @staticmethod
+    def _ib_bar_to_ts_init(bar: BarData, bar_type: BarType) -> int:
+        ts_init = (
+            pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value
+            + pd.Timedelta(bar_type.spec.timedelta).value
+        )
+        return ts_init
+
+    def _ib_bar_to_nautilus_bar(
+        self,
+        bar_type: BarType,
+        bar: BarData,
+        ts_init: int,
+        is_revision: bool = False,
+    ) -> Bar:
+        self._cache.instrument(bar_type.instrument_id)
+        bar = Bar(
+            bar_type=bar_type,
+            open=Price.from_str(str(bar.open)),
+            high=Price.from_str(str(bar.high)),
+            low=Price.from_str(str(bar.low)),
+            close=Price.from_str(str(bar.close)),
+            volume=Quantity.from_str(str(0 if bar.volume == -1 else bar.volume)),
+            ts_event=pd.Timestamp.fromtimestamp(int(bar.date), "UTC").value,
+            ts_init=ts_init,
+            is_revision=is_revision,
         )
         return bar
 
@@ -1308,15 +1333,15 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         if request := self.requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
-            instrument = self._cache.instrument(instrument_id)
+            self._cache.instrument(instrument_id)
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, "UTC").value
                 quote_tick = QuoteTick(
                     instrument_id=instrument_id,
-                    bid_price=instrument.make_price(tick.priceBid),
-                    ask_price=instrument.make_price(tick.priceAsk),
-                    bid_size=instrument.make_qty(tick.sizeBid),
-                    ask_size=instrument.make_qty(tick.sizeAsk),
+                    bid_price=Price.from_str(str(tick.priceBid)),
+                    ask_price=Price.from_str(str(tick.priceAsk)),
+                    bid_size=Quantity.from_str(str(tick.sizeBid)),
+                    ask_size=Quantity.from_str(str(tick.sizeAsk)),
                     ts_event=ts_event,
                     ts_init=ts_event,
                 )
@@ -1334,13 +1359,13 @@ class InteractiveBrokersClient(Component, EWrapper):
     def _process_trade_ticks(self, req_id: int, ticks: list):
         if request := self.requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
-            instrument = self._cache.instrument(instrument_id)
+            self._cache.instrument(instrument_id)
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, "UTC").value
                 trade_tick = TradeTick(
                     instrument_id=instrument_id,
-                    price=instrument.make_price(tick.price),
-                    size=instrument.make_qty(tick.size),
+                    price=Price.from_str(str(tick.price)),
+                    size=Quantity.from_str(str(tick.size)),
                     aggressor_side=AggressorSide.NO_AGGRESSOR,
                     trade_id=generate_trade_id(ts_event=ts_event, price=tick.price, size=tick.size),
                     ts_event=ts_event,
@@ -1407,14 +1432,14 @@ class InteractiveBrokersClient(Component, EWrapper):
         if not (subscription := self.subscriptions.get(req_id=req_id)):
             return
         bar_type = BarType.from_str(subscription.name)
-        instrument = self._cache.instrument(bar_type.instrument_id)
+        self._cache.instrument(bar_type.instrument_id)
         bar = Bar(
             bar_type=bar_type,
-            open=instrument.make_price(open_),
-            high=instrument.make_price(high),
-            low=instrument.make_price(low),
-            close=instrument.make_price(close),
-            volume=instrument.make_qty(0 if volume == -1 else volume),
+            open=Price.from_str(str(open_)),
+            high=Price.from_str(str(high)),
+            low=Price.from_str(str(low)),
+            close=Price.from_str(str(close)),
+            volume=Price.from_str(str(0 if volume == -1 else volume)),
             ts_event=pd.Timestamp.fromtimestamp(time, "UTC").value,
             ts_init=self._clock.timestamp_ns(),
             is_revision=False,
