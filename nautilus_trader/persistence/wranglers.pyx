@@ -20,7 +20,11 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
+from nautilus_trader.model.enums import book_action_from_str
+from nautilus_trader.model.enums import order_side_from_str
+
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -35,10 +39,138 @@ from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
+from nautilus_trader.model.enums_c cimport BookAction
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+
+
+cdef class OrderBookDeltaDataWrangler:
+    """
+    Provides a means of building lists of Nautilus `OrderBookDelta` objects.
+
+    Parameters
+    ----------
+    instrument : Instrument
+        The instrument for the data wrangler.
+
+    """
+
+    def __init__(self, Instrument instrument not None):
+        self.instrument = instrument
+
+    def process(self, data: pd.DataFrame, ts_init_delta: int=0, bint is_raw=False):
+        """
+        Process the given order book dataset into Nautilus `OrderBookDelta` objects.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            The data to process.
+        ts_init_delta : int
+            The difference in nanoseconds between the data timestamps and the
+            `ts_init` value. Can be used to represent/simulate latency between
+            the data source and the Nautilus system.
+        is_raw : bool, default False
+            If the data is scaled to the Nautilus fixed precision.
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
+
+        """
+        Condition.not_none(data, "data")
+        Condition.false(data.empty, "data.empty")
+
+        data = as_utc_index(data)
+        cdef uint64_t[:] ts_events = np.ascontiguousarray([dt_to_unix_nanos(dt) for dt in data.index], dtype=np.uint64)  # noqa
+        cdef uint64_t[:] ts_inits = np.ascontiguousarray([ts_event + ts_init_delta for ts_event in ts_events], dtype=np.uint64)  # noqa
+
+        if is_raw:
+            return list(map(
+                self._build_delta_from_raw,
+                data["action"].apply(book_action_from_str),
+                data["side"].apply(order_side_from_str),
+                data["price"],
+                data["size"],
+                data["order_id"],
+                data["flags"],
+                data["sequence"],
+                ts_events,
+                ts_inits,
+            ))
+        else:
+            return list(map(
+                self._build_delta,
+                data["action"].apply(book_action_from_str),
+                data["side"].apply(order_side_from_str),
+                data["price"],
+                data["size"],
+                data["order_id"],
+                data["flags"],
+                data["sequence"],
+                ts_events,
+                ts_inits,
+            ))
+
+    # cpdef method for Python wrap() (called with map)
+    cpdef OrderBookDelta _build_delta_from_raw(
+        self,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint64_t size_raw,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        return OrderBookDelta.from_raw_c(
+            self.instrument.id,
+            action,
+            side,
+            price_raw,
+            self.instrument.price_precision,
+            size_raw,
+            self.instrument.size_precision,
+            order_id,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+
+    # cpdef method for Python wrap() (called with map)
+    cpdef OrderBookDelta _build_delta(
+        self,
+        BookAction action,
+        OrderSide side,
+        double price,
+        double size,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        return OrderBookDelta.from_raw_c(
+            self.instrument.id,
+            action,
+            side,
+            int(price * 1e9),
+            self.instrument.price_precision,
+            int(size * 1e9),
+            self.instrument.size_precision,
+            order_id,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
 
 
 cdef class QuoteTickDataWrangler:
