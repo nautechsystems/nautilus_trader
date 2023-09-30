@@ -57,15 +57,15 @@ impl Indicator for SimpleMovingAverage {
     }
 
     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(self.price_type).into())
+        self.update_raw(tick.extract_price(self.price_type).into());
     }
 
     fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into())
+        self.update_raw((&tick.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into())
+        self.update_raw((&bar.close).into());
     }
 
     fn reset(&mut self) {
@@ -210,7 +210,7 @@ mod tests {
         sma.reset();
         assert_eq!(sma.count, 0);
         assert_eq!(sma.value, 0.0);
-        assert_eq!(sma.is_initialized, false)
+        assert!(!sma.is_initialized);
     }
 
     #[rstest]

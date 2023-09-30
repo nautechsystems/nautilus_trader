@@ -65,9 +65,9 @@ impl SocketConfig {
         Self {
             url,
             mode,
-            heartbeat,
             suffix,
             handler,
+            heartbeat,
         }
     }
 }
@@ -608,7 +608,7 @@ counter = Counter()",
         });
 
         let config = SocketConfig {
-            url: format!("127.0.0.1:{}", server.port).to_string(),
+            url: format!("127.0.0.1:{}", server.port),
             handler: handler.clone(),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),

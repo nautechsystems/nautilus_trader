@@ -124,6 +124,7 @@ impl AdaptiveMovingAverage {
         })
     }
 
+    #[must_use]
     pub fn alpha_diff(&self) -> f64 {
         self._alpha_fast - self._alpha_slow
     }
@@ -138,12 +139,19 @@ impl AdaptiveMovingAverage {
         }
         self._efficiency_ratio.update_raw(value);
         self._prior_value = Some(self.value);
-        // calculate the smoothing constant
-        let smoothing_constant =
-            (self._efficiency_ratio.value * self.alpha_diff() + self._alpha_slow).powi(2);
-        // calculate the AMA
-        self.value =
-            self._prior_value.unwrap() + smoothing_constant * (value - self._prior_value.unwrap());
+
+        // Calculate the smoothing constant
+        let smoothing_constant = self
+            ._efficiency_ratio
+            .value
+            .mul_add(self.alpha_diff(), self._alpha_slow)
+            .powi(2);
+
+        // Calculate the AMA
+        self.value = smoothing_constant.mul_add(
+            value - self._prior_value.unwrap(),
+            self._prior_value.unwrap(),
+        );
         if self._efficiency_ratio.is_initialized() {
             self.is_initialized = true;
         }
@@ -173,8 +181,8 @@ mod tests {
         let display_str = format!("{indicator_ama_10}");
         assert_eq!(display_str, "AdaptiveMovingAverage(10,2,30)");
         assert_eq!(indicator_ama_10.name(), "AdaptiveMovingAverage");
-        assert_eq!(indicator_ama_10.has_inputs(), false);
-        assert_eq!(indicator_ama_10.is_initialized(), false);
+        assert!(!indicator_ama_10.has_inputs());
+        assert!(!indicator_ama_10.is_initialized());
     }
 
     #[rstest]
@@ -187,7 +195,7 @@ mod tests {
     fn test_value_with_two_inputs(mut indicator_ama_10: AdaptiveMovingAverage) {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
-        assert_eq!(indicator_ama_10.value, 1.4444444444444442);
+        assert_eq!(indicator_ama_10.value, 1.444_444_444_444_444_2);
     }
 
     #[rstest]
@@ -195,7 +203,7 @@ mod tests {
         indicator_ama_10.update_raw(1.0);
         indicator_ama_10.update_raw(2.0);
         indicator_ama_10.update_raw(3.0);
-        assert_eq!(indicator_ama_10.value, 2.135802469135802);
+        assert_eq!(indicator_ama_10.value, 2.135_802_469_135_802);
     }
 
     #[rstest]
@@ -203,10 +211,10 @@ mod tests {
         for _ in 0..10 {
             indicator_ama_10.update_raw(1.0);
         }
-        assert_eq!(indicator_ama_10.is_initialized, true);
+        assert!(indicator_ama_10.is_initialized);
         indicator_ama_10.reset();
-        assert_eq!(indicator_ama_10.is_initialized, false);
-        assert_eq!(indicator_ama_10.has_inputs, false);
+        assert!(!indicator_ama_10.is_initialized);
+        assert!(!indicator_ama_10.has_inputs);
         assert_eq!(indicator_ama_10.value, 0.0);
     }
 
@@ -216,16 +224,16 @@ mod tests {
         for _ in 0..9 {
             ama.update_raw(1.0);
         }
-        assert_eq!(ama.is_initialized, false);
+        assert!(!ama.is_initialized);
         ama.update_raw(1.0);
-        assert_eq!(ama.is_initialized, true);
+        assert!(ama.is_initialized);
     }
 
     #[rstest]
     fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, quote_tick: QuoteTick) {
         indicator_ama_10.handle_quote_tick(&quote_tick);
-        assert_eq!(indicator_ama_10.has_inputs, true);
-        assert_eq!(indicator_ama_10.is_initialized, false);
+        assert!(indicator_ama_10.has_inputs);
+        assert!(!indicator_ama_10.is_initialized);
         assert_eq!(indicator_ama_10.value, 1501.0);
     }
 
@@ -235,8 +243,8 @@ mod tests {
         trade_tick: TradeTick,
     ) {
         indicator_ama_10.handle_trade_tick(&trade_tick);
-        assert_eq!(indicator_ama_10.has_inputs, true);
-        assert_eq!(indicator_ama_10.is_initialized, false);
+        assert!(indicator_ama_10.has_inputs);
+        assert!(!indicator_ama_10.is_initialized);
         assert_eq!(indicator_ama_10.value, 1500.0);
     }
 
@@ -246,8 +254,8 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_ama_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_ama_10.has_inputs, true);
-        assert_eq!(indicator_ama_10.is_initialized, false);
+        assert!(indicator_ama_10.has_inputs);
+        assert!(!indicator_ama_10.is_initialized);
         assert_eq!(indicator_ama_10.value, 1522.0);
     }
 }

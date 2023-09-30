@@ -105,7 +105,7 @@ impl DoubleExponentialMovingAverage {
         self._ema1.update_raw(value);
         self._ema2.update_raw(self._ema1.value);
 
-        self.value = 2.0 * self._ema1.value - self._ema2.value;
+        self.value = 2.0f64.mul_add(self._ema1.value, -self._ema2.value);
         self.count += 1;
 
         if !self.is_initialized && self.count >= self.period {
@@ -200,11 +200,11 @@ mod tests {
 
     #[rstest]
     fn test_dema_initialized(indicator_dema_10: DoubleExponentialMovingAverage) {
-        let display_str = format!("{}", indicator_dema_10);
+        let display_str = format!("{indicator_dema_10}");
         assert_eq!(display_str, "DoubleExponentialMovingAverage(period=10)");
         assert_eq!(indicator_dema_10.period, 10);
-        assert_eq!(indicator_dema_10.is_initialized, false);
-        assert_eq!(indicator_dema_10.has_inputs, false);
+        assert!(!indicator_dema_10.is_initialized);
+        assert!(!indicator_dema_10.has_inputs);
     }
 
     #[rstest]
@@ -218,17 +218,17 @@ mod tests {
         indicator_dema_10.update_raw(1.0);
         indicator_dema_10.update_raw(2.0);
         indicator_dema_10.update_raw(3.0);
-        assert_eq!(indicator_dema_10.value, 1.9045830202854994);
+        assert_eq!(indicator_dema_10.value, 1.904_583_020_285_499_4);
     }
 
     #[rstest]
     fn test_initialized_with_required_input(mut indicator_dema_10: DoubleExponentialMovingAverage) {
         for i in 1..10 {
-            indicator_dema_10.update_raw(i as f64);
+            indicator_dema_10.update_raw(f64::from(i));
         }
-        assert_eq!(indicator_dema_10.is_initialized, false);
+        assert!(!indicator_dema_10.is_initialized);
         indicator_dema_10.update_raw(10.0);
-        assert_eq!(indicator_dema_10.is_initialized, true);
+        assert!(indicator_dema_10.is_initialized);
     }
 
     #[rstest]
@@ -256,8 +256,8 @@ mod tests {
     ) {
         indicator_dema_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(indicator_dema_10.value, 1522.0);
-        assert_eq!(indicator_dema_10.has_inputs, true);
-        assert_eq!(indicator_dema_10.is_initialized, false);
+        assert!(indicator_dema_10.has_inputs);
+        assert!(!indicator_dema_10.is_initialized);
     }
 
     #[rstest]
@@ -267,7 +267,7 @@ mod tests {
         indicator_dema_10.reset();
         assert_eq!(indicator_dema_10.value, 0.0);
         assert_eq!(indicator_dema_10.count, 0);
-        assert_eq!(indicator_dema_10.has_inputs, false);
-        assert_eq!(indicator_dema_10.is_initialized, false);
+        assert!(!indicator_dema_10.has_inputs);
+        assert!(!indicator_dema_10.is_initialized);
     }
 }

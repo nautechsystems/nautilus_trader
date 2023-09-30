@@ -81,7 +81,7 @@ pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> B
         aggregation_source: AggregationSource::External,
     };
     Bar {
-        bar_type: bar_type,
+        bar_type,
         open: Price::from("1500.0"),
         high: Price::from("1550.0"),
         low: Price::from("1495.0"),

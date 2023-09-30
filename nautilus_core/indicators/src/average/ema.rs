@@ -208,8 +208,8 @@ mod tests {
         assert_eq!(display_str, "ExponentialMovingAverage(10)");
         assert_eq!(ema.period, 10);
         assert_eq!(ema.price_type, PriceType::Mid);
-        assert_eq!(ema.alpha, 0.18181818181818182);
-        assert_eq!(ema.is_initialized, false);
+        assert_eq!(ema.alpha, 0.181_818_181_818_181_82);
+        assert!(!ema.is_initialized);
     }
 
     #[rstest]
@@ -237,7 +237,7 @@ mod tests {
         assert!(ema.has_inputs());
         assert!(ema.is_initialized());
         assert_eq!(ema.count, 10);
-        assert_eq!(ema.value, 6.2393684801212155);
+        assert_eq!(ema.value, 6.239_368_480_121_215_5);
     }
 
     #[rstest]
@@ -248,7 +248,7 @@ mod tests {
         ema.reset();
         assert_eq!(ema.count, 0);
         assert_eq!(ema.value, 0.0);
-        assert_eq!(ema.is_initialized, false)
+        assert!(!ema.is_initialized);
     }
 
     #[rstest]
@@ -258,7 +258,7 @@ mod tests {
     ) {
         let mut ema = indicator_ema_10;
         ema.handle_quote_tick(&quote_tick);
-        assert_eq!(ema.has_inputs(), true);
+        assert!(ema.has_inputs());
         assert_eq!(ema.value, 1501.0);
     }
 
@@ -270,14 +270,14 @@ mod tests {
         indicator_ema_10.handle_quote_tick(&tick1);
         indicator_ema_10.handle_quote_tick(&tick2);
         assert_eq!(indicator_ema_10.count, 2);
-        assert_eq!(indicator_ema_10.value, 1501.3636363636363);
+        assert_eq!(indicator_ema_10.value, 1_501.363_636_363_636_3);
     }
 
     #[rstest]
     fn test_handle_trade_tick(indicator_ema_10: ExponentialMovingAverage, trade_tick: TradeTick) {
         let mut ema = indicator_ema_10;
         ema.handle_trade_tick(&trade_tick);
-        assert_eq!(ema.has_inputs(), true);
+        assert!(ema.has_inputs());
         assert_eq!(ema.value, 1500.0);
     }
 
@@ -287,8 +287,8 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_ema_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_ema_10.has_inputs, true);
-        assert_eq!(indicator_ema_10.is_initialized, false);
+        assert!(indicator_ema_10.has_inputs);
+        assert!(!indicator_ema_10.is_initialized);
         assert_eq!(indicator_ema_10.value, 1522.0);
     }
 }
