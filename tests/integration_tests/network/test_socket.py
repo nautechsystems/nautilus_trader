@@ -22,9 +22,6 @@ from nautilus_trader.core.nautilus_pyo3.network import SocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
-pytestmark = pytest.mark.skip(reason="WIP")
-
-
 def _config(socket_server, handler):
     host, port = socket_server
     server_url = f"{host}:{port}"
@@ -67,7 +64,8 @@ async def test_client_send_recv(socket_server):
     await client.disconnect()
 
     # Assert
-    assert store == [b"connected"] + [b"hello"] * 2
+    await eventually(lambda: store == [b"connected"] + [b"hello"] * 2)
+    await asyncio.sleep(0.1)
 
 
 # @pytest.mark.asyncio()

@@ -32,6 +32,7 @@ PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
 UNIQUE_ID = itertools.count()
+USE_SSL = True
 
 
 class BetfairStreamClient:
@@ -55,6 +56,7 @@ class BetfairStreamClient:
         self.host = host or HOST
         self.port = port or PORT
         self.crlf = crlf or CRLF
+        self.use_ssl = USE_SSL
         self.encoding = encoding or ENCODING
         self._client: Optional[SocketClient] = None
         self.unique_id = next(UNIQUE_ID)
@@ -72,55 +74,44 @@ class BetfairStreamClient:
             return
 
         self._log.info("Connecting betfair socket client..")
-        self._client = await SocketClient.connect(
-            SocketConfig(
-                url=f"{self.host}:{self.port}",
-                handler=self.handler,
-                ssl=True,
-                suffix=self.crlf,
-            ),
+        config = SocketConfig(
+            url=f"{self.host}:{self.port}",
+            handler=self.handler,
+            ssl=self.use_ssl,
+            suffix=self.crlf,
         )
-
-        self._log.debug("Running post connect")
-        await self.post_connection()
+        self._client = await SocketClient.connect(
+            config,
+            self.post_connection,
+            self.post_reconnection,
+            self.post_disconnection,
+        )
 
         self.is_connected = True
         self._log.info("Connected.")
 
-    async def post_connection(self):
-        """
-        Actions to be performed post connection.
-        """
-        self._watch_stream_task = self._loop.create_task(
-            self.watch_stream(),
-            name="watch_stream",
-        )
-
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
         self.disconnecting = True
-        self._client.close()
-        await self.post_disconnection()
+        self._client.disconnect()
         self.is_connected = False
         self._log.info("Disconnected.")
+
+    async def post_connection(self) -> None:
+        """
+        Actions to be performed post connection.
+        """
+
+    async def post_reconnection(self) -> None:
+        """
+        Actions to be performed post connection.
+        """
+        raise NotImplementedError("Not implemented for betfair socket, use post_connection")
 
     async def post_disconnection(self) -> None:
         """
         Actions to be performed post disconnection.
         """
-        # Override to implement additional disconnection related behavior
-        # (canceling ping tasks etc.).
-        self._watch_stream_task.cancel()
-        try:
-            await self._watch_stream_task
-        except asyncio.CancelledError:
-            return
-
-    async def reconnect(self):
-        self._log.info("Triggering reconnect..")
-        await self.disconnect()
-        await self.connect()
-        self._log.info("Reconnected.")
 
     async def send(self, message: bytes):
         self._log.debug(f"[SEND] {message.decode()}")
