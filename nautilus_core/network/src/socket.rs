@@ -15,7 +15,8 @@
 
 use std::{io, sync::Arc, time::Duration};
 
-use pyo3::{exceptions::PyException, prelude::*, PyObject, Python};
+use nautilus_core::python::to_pyruntime_err;
+use pyo3::{prelude::*, PyObject, Python};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -34,26 +35,26 @@ type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 
-/// Configuration for TCP socket connection
-#[pyclass]
+/// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
 pub struct SocketConfig {
-    /// Url to connect to
+    /// The URL to connect to.
     url: String,
-    /// Connection mode is plain or TLS
+    /// The connection mode {Plain, TLS}.
     mode: Mode,
-    /// Sequence of bytes that separate lines
+    /// The sequence of bytes which separates lines.
     suffix: Vec<u8>,
-    /// Python function to handle incoming messages
+    /// The Python function to handle incoming messages.
     handler: PyObject,
-    /// Optional heartbeat with period and beat message
+    /// The optional heartbeat with period and beat message.
     heartbeat: Option<(u64, Vec<u8>)>,
 }
 
 #[pymethods]
 impl SocketConfig {
     #[new]
-    fn new(
+    fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
@@ -86,7 +87,7 @@ impl SocketConfig {
 /// The client uses a suffix to separate messages on the byte stream. It is
 /// appended to all sent messages and heartbeats. It is also used the split
 /// the received byte stream.
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
 struct SocketClientInner {
     config: SocketConfig,
     read_task: task::JoinHandle<()>,
@@ -219,7 +220,7 @@ impl SocketClientInner {
         // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
-                debug!("Abort heart beat task");
+                debug!("Abort heartbeat task");
                 handle.abort();
             }
         }
@@ -230,7 +231,7 @@ impl SocketClientInner {
         debug!("Closed connection");
     }
 
-    /// Reconnect with server
+    /// Reconnect with server.
     ///
     /// Make a new connection with server. Use the new read and write halves
     /// to update the shared writer and the read and heartbeat tasks.
@@ -287,7 +288,7 @@ impl Drop for SocketClientInner {
     }
 }
 
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
 pub struct SocketClient {
     writer: SharedTcpWriter,
     controller_task: task::JoinHandle<()>,
@@ -296,7 +297,7 @@ pub struct SocketClient {
 }
 
 impl SocketClient {
-    pub async fn connect_client(
+    pub async fn connect(
         config: SocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
@@ -315,8 +316,8 @@ impl SocketClient {
 
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
-                Ok(_) => debug!("Called post_connection handler"),
-                Err(e) => error!("Error calling post_connection handler: {e}"),
+                Ok(_) => debug!("Called `post_connection` handler"),
+                Err(e) => error!("Error calling `post_connection` handler: {e}"),
             });
         }
 
@@ -331,8 +332,8 @@ impl SocketClient {
     /// Set disconnect mode to true.
     ///
     /// Controller task will periodically check the disconnect mode
-    /// and shutdown the client if it is alive
-    pub async fn disconnect_client(&self) {
+    /// and shutdown the client if it is not alive.
+    pub async fn disconnect(&self) {
         *self.disconnect_mode.lock().await = true;
     }
 
@@ -370,9 +371,9 @@ impl SocketClient {
                             debug!("Reconnected successfully");
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => debug!("Called post_reconnection handler"),
+                                    Ok(_) => debug!("Called `post_reconnection` handler"),
                                     Err(e) => {
-                                        error!("Error calling post_reconnection handler: {e}");
+                                        error!("Error calling `post_reconnection` handler: {e}");
                                     }
                                 });
                             }
@@ -387,9 +388,9 @@ impl SocketClient {
                         inner.shutdown().await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => debug!("Called post_reconnection handler"),
+                                Ok(_) => debug!("Called `post_disconnection` handler"),
                                 Err(e) => {
-                                    error!("Error calling post_reconnection handler: {e}");
+                                    error!("Error calling `post_disconnection` handler: {e}");
                                 }
                             });
                         }
@@ -408,9 +409,11 @@ impl SocketClient {
     /// Create a socket client.
     ///
     /// # Safety
+    ///
     /// - Throws an Exception if it is unable to make socket connection
     #[staticmethod]
-    fn connect(
+    #[pyo3(name = "connect")]
+    fn py_connect(
         config: SocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
@@ -418,32 +421,14 @@ impl SocketClient {
         py: Python<'_>,
     ) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Self::connect_client(
+            Self::connect(
                 config,
                 post_connection,
                 post_reconnection,
                 post_disconnection,
             )
             .await
-            .map_err(|e| {
-                PyException::new_err(format!(
-                    "Unable to make socket connection because of error: {e}",
-                ))
-            })
-        })
-    }
-
-    /// Send bytes data to the connection.
-    ///
-    /// # Safety
-    /// - Throws an Exception if it is not able to send data
-    fn send<'py>(slf: PyRef<'_, Self>, mut data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
-        let writer = slf.writer.clone();
-        data.extend(&slf.suffix);
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut writer = writer.lock().await;
-            writer.write_all(&data).await?;
-            Ok(())
+            .map_err(to_pyruntime_err)
         })
     }
 
@@ -452,12 +437,15 @@ impl SocketClient {
     /// The connection is not completely closed the till all references
     /// to the client are gone and the client is dropped.
     ///
-    /// #Safety
+    /// # Safety
+    ///
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
-    fn disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    #[pyo3(name = "disconnect")]
+    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let disconnect_mode = slf.disconnect_mode.clone();
         debug!("Setting disconnect mode to true");
+
         pyo3_asyncio::tokio::future_into_py(py, async move {
             *disconnect_mode.lock().await = true;
             Ok(())
@@ -477,6 +465,27 @@ impl SocketClient {
     #[getter]
     fn is_alive(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
+    }
+
+    /// Send bytes data to the connection.
+    ///
+    /// # Safety
+    ///
+    /// - Throws an Exception if it is not able to send data.
+    #[pyo3(name = "send")]
+    fn py_send<'py>(
+        slf: PyRef<'_, Self>,
+        mut data: Vec<u8>,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let writer = slf.writer.clone();
+        data.extend(&slf.suffix);
+
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut writer = writer.lock().await;
+            writer.write_all(&data).await?;
+            Ok(())
+        })
     }
 }
 
@@ -605,7 +614,7 @@ counter = Counter()",
             suffix: b"\r\n".to_vec(),
             heartbeat: None,
         };
-        let client: SocketClient = SocketClient::connect_client(config, None, None, None)
+        let client: SocketClient = SocketClient::connect(config, None, None, None)
             .await
             .unwrap();
 
@@ -657,7 +666,7 @@ counter = Counter()",
         assert_eq!(count_value, N + N);
 
         // Shutdown client and wait for read task to terminate
-        client.disconnect_client().await;
+        client.disconnect().await;
         sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }

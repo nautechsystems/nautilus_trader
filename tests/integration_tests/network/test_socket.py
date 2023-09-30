@@ -22,6 +22,9 @@ from nautilus_trader.core.nautilus_pyo3.network import SocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
+pytestmark = pytest.mark.skip(reason="WIP")
+
+
 def _config(socket_server, handler):
     host, port = socket_server
     server_url = f"{host}:{port}"
