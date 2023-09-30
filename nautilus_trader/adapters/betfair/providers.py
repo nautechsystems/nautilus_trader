@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import time
+from collections.abc import Iterable
 from typing import Optional, Union
 
 import msgspec.json
@@ -26,20 +27,27 @@ from betfair_parser.spec.common import encode as bf_encode
 from betfair_parser.spec.navigation import FlattenedMarket
 from betfair_parser.spec.navigation import Navigation
 from betfair_parser.spec.navigation import flatten_nav_tree
-from betfair_parser.spec.streaming.mcm import MarketDefinition
+from betfair_parser.spec.streaming import MarketDefinition
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
 from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
-from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
-from nautilus_trader.model.instruments import Instrument
+
+
+class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
+    event_type_ids: Optional[list[str]] = None
+    event_ids: Optional[list[str]] = None
+    market_ids: Optional[list[str]] = None
+    event_country_codes: Optional[list[str]] = None
+    market_market_types: Optional[list[str]] = None
+    event_type_names: Optional[list[str]] = None
 
 
 class BetfairInstrumentProvider(InstrumentProvider):
@@ -61,24 +69,17 @@ class BetfairInstrumentProvider(InstrumentProvider):
         self,
         client: Optional[BetfairHttpClient],
         logger: Logger,
-        filters: Optional[dict] = None,
-        config: Optional[InstrumentProviderConfig] = None,
+        config: BetfairInstrumentProviderConfig,
     ):
-        if config is None:
-            config = InstrumentProviderConfig(
-                load_all=True,
-                filters=filters,
-            )
+        assert config is not None, "Must pass config to BetfairInstrumentProvider"
         super().__init__(
             venue=BETFAIR_VENUE,
             logger=logger,
             config=config,
         )
-
+        self._config = config
         self._client = client
-        self._cache: dict[InstrumentId, BettingInstrument] = {}
         self._account_currency = None
-        self._missing_instruments: set[BettingInstrument] = set()
 
     async def load_ids_async(
         self,
@@ -94,25 +95,21 @@ class BetfairInstrumentProvider(InstrumentProvider):
     ):
         raise NotImplementedError
 
-    @classmethod
-    def from_instruments(
-        cls,
-        instruments: list[Instrument],
-        logger: Optional[Logger] = None,
-    ):
-        logger = logger or Logger(LiveClock())
-        instance = cls(client=None, logger=logger)
-        instance.add_bulk(instruments)
-        return instance
-
-    async def load_all_async(self, market_filter: Optional[dict] = None):
+    async def load_all_async(self, filters: Optional[dict] = None):
         currency = await self.get_account_currency()
-        market_filter = market_filter or self._filters
+        filters = filters or {}
 
-        self._log.info(f"Loading markets with market_filter={market_filter}")
+        self._log.info(f"Loading markets with market_filter={self._config}")
         markets: list[FlattenedMarket] = await load_markets(
             self._client,
-            market_filter=market_filter,
+            event_type_ids=filters.get("event_type_ids") or self._config.event_type_ids,
+            event_ids=filters.get("event_ids") or self._config.event_ids,
+            market_ids=filters.get("market_ids") or self._config.market_ids,
+            event_country_codes=filters.get("event_country_codes")
+            or self._config.event_country_codes,
+            market_market_types=filters.get("market_market_types")
+            or self._config.market_market_types,
+            event_type_names=filters.get("event_type_names") or self._config.event_type_names,
         )
 
         self._log.info(f"Found {len(markets)} markets, loading metadata")
@@ -128,59 +125,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
 
         self._log.info(f"{len(instruments)} Instruments created")
-
-    def load_markets(self, market_filter: Optional[dict] = None):
-        """
-        Search for betfair markets.
-
-        Useful for debugging / interactive use
-
-        """
-        return load_markets(client=self._client, market_filter=market_filter)
-
-    def search_instruments(self, instrument_filter: Optional[dict] = None):
-        """
-        Search for instruments within the cache.
-
-        Useful for debugging / interactive use
-
-        """
-        instruments = self.list_all()
-        if instrument_filter:
-            instruments = [
-                ins
-                for ins in instruments
-                if all(getattr(ins, k) == v for k, v in instrument_filter.items())
-            ]
-        return instruments
-
-    def get_betting_instrument(
-        self,
-        market_id: str,
-        selection_id: str,
-        handicap: str,
-    ) -> BettingInstrument:
-        """
-        Return a betting instrument with performance friendly lookup.
-        """
-        key = (market_id, selection_id, handicap)
-        if key not in self._cache:
-            instrument_filter = {
-                "market_id": market_id,
-                "selection_id": selection_id,
-                "selection_handicap": parse_handicap(handicap),
-            }
-            instruments = self.search_instruments(instrument_filter=instrument_filter)
-            count = len(instruments)
-            if count < 1:
-                key = (market_id, selection_id, parse_handicap(handicap))
-                if key not in self._missing_instruments:
-                    self._log.warning(f"Found 0 instrument for filter: {instrument_filter}")
-                    self._missing_instruments.add(key)
-                return
-            # assert count == 1, f"Wrong number of instruments: {len(instruments)} for filter: {instrument_filter}"
-            self._cache[key] = instruments[0]
-        return self._cache[key]
 
     async def get_account_currency(self) -> str:
         if self._account_currency is None:
@@ -204,9 +148,9 @@ def market_catalog_to_instruments(
             venue_name=BETFAIR_VENUE.value,
             event_type_id=str(market_catalog.event_type.id),
             event_type_name=market_catalog.event_type.name,
-            competition_id=market_catalog.competition.id if market_catalog.competition else "",
+            competition_id=str(market_catalog.competition.id) if market_catalog.competition else "",
             competition_name=market_catalog.competition.name if market_catalog.competition else "",
-            event_id=market_catalog.event.id,
+            event_id=str(market_catalog.event.id),
             event_name=market_catalog.event.name,
             event_country_code=market_catalog.event.country_code or "",
             event_open_date=pd.Timestamp(market_catalog.event.open_date),
@@ -236,7 +180,7 @@ def market_definition_to_instruments(
     for runner in market_definition.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=market_definition.event_type_id,
+            event_type_id=str(market_definition.event_type_id.value),
             event_type_name=market_definition.event_type_name,
             competition_id=market_definition.competition_id,
             competition_name=market_definition.competition_name,
@@ -244,14 +188,14 @@ def market_definition_to_instruments(
             event_name=market_definition.event_name,
             event_country_code=market_definition.country_code,
             event_open_date=pd.Timestamp(market_definition.open_date),
-            betting_type=market_definition.betting_type,
+            betting_type=market_definition.betting_type.name,
             market_id=market_definition.market_id,
             market_name=market_definition.market_name,
             market_start_time=pd.Timestamp(market_definition.market_time)
             if market_definition.market_time
             else pd.Timestamp(0, tz="UTC"),
             market_type=market_definition.market_type,
-            selection_id=str(runner.selection_id or runner.id),
+            selection_id=str(runner.id),
             selection_name=runner.name or "",
             selection_handicap=parse_handicap(runner.hc),
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
@@ -291,19 +235,31 @@ VALID_MARKET_FILTER_KEYS = (
 )
 
 
+def check_market_filter_keys(keys: Iterable[str]) -> None:
+    for key in keys:
+        if key not in VALID_MARKET_FILTER_KEYS:
+            raise ValueError(f"Invalid market filter key: {key}")
+
+
 async def load_markets(
     client: BetfairHttpClient,
-    market_filter: Optional[dict] = None,
+    event_type_ids: Optional[list[str]] = None,
+    event_ids: Optional[list[str]] = None,
+    market_ids: Optional[list[str]] = None,
+    event_country_codes: Optional[list[str]] = None,
+    market_market_types: Optional[list[str]] = None,
+    event_type_names: Optional[list[str]] = None,
 ) -> list[FlattenedMarket]:
-    if isinstance(market_filter, dict):
-        # This code gets called from search instruments which may pass selection_id/handicap which don't exist here,
-        # only the market_id is relevant, so we just drop these two fields
-        market_filter = {
-            k: v
-            for k, v in market_filter.items()
-            if k not in ("selection_id", "selection_handicap")
-        }
-    assert all(k in VALID_MARKET_FILTER_KEYS for k in (market_filter or []))
+    market_filter = {
+        "event_type_id": event_type_ids,
+        "event_id": event_ids,
+        "market_id": market_ids,
+        "market_marketType": market_market_types,
+        "event_countryCode": event_country_codes,
+        "event_type_name": event_type_names,
+    }
+    market_filter = {k: v for k, v in market_filter.items() if v is not None}
+    check_market_filter_keys(market_filter.keys())
     navigation: Navigation = await client.list_navigation()
     markets = flatten_nav_tree(navigation, **market_filter)
     return markets

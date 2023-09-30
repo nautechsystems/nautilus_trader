@@ -63,7 +63,6 @@ class BetfairStreamClient:
         self.is_connected: bool = False
         self.disconnecting: bool = False
         self._loop = asyncio.get_event_loop()
-        self._watch_stream_task: Optional[asyncio.Task] = None
 
     async def connect(self):
         if not self._http_client.session_token:
@@ -125,21 +124,6 @@ class BetfairStreamClient:
             "appKey": self._http_client.app_key,
             "session": self._http_client.session_token,
         }
-
-    # TODO - remove when we get socket reconnect in rust.
-    async def watch_stream(self) -> None:
-        """
-        Ensure socket stream is connected.
-        """
-        while True:
-            try:
-                if self.disconnecting:
-                    return
-                if not self.is_connected:
-                    await self.connect()
-                await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                return
 
 
 class BetfairOrderStreamClient(BetfairStreamClient):

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from betfair_parser.spec.streaming.mcm import MarketStatus as BetfairMarketStatus
+from betfair_parser.spec.betting import MarketStatus as BetfairMarketStatus
 
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
@@ -29,7 +29,7 @@ BETFAIR_BOOK_TYPE = BookType.L2_MBP
 CLOSE_PRICE_WINNER = Price(1.0, precision=BETFAIR_PRICE_PRECISION)
 CLOSE_PRICE_LOSER = Price(0.0, precision=BETFAIR_PRICE_PRECISION)
 
-MARKET_STATUS_MAPPING: dict[tuple[BetfairMarketStatus, bool], MarketStatus] = {
+MARKET_STATUS_MAPPING: dict[tuple[MarketStatus, bool], MarketStatus] = {
     (BetfairMarketStatus.OPEN, False): MarketStatus.PRE_OPEN,
     (BetfairMarketStatus.OPEN, True): MarketStatus.OPEN,
     (BetfairMarketStatus.SUSPENDED, False): MarketStatus.PAUSE,

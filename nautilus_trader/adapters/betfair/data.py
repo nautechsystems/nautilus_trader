@@ -17,10 +17,10 @@ import asyncio
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import Connection
+from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.mcm import MCM
-from betfair_parser.spec.streaming.status import Connection
-from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
@@ -65,8 +65,6 @@ class BetfairDataClient(LiveMarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    market_filter : dict
-        The market filter.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
     strict_handling : bool
@@ -82,16 +80,14 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
-        instrument_provider: Optional[BetfairInstrumentProvider] = None,
+        instrument_provider: BetfairInstrumentProvider,
         strict_handling: bool = False,
     ):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -193,7 +189,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_market_ids.add(instrument.market_id)
         self._subscribed_instrument_ids.add(instrument.id)
         if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
-            self.create_task(self.delayed_subscribe(delay=5))
+            self.create_task(self.delayed_subscribe(delay=3))
             self.subscription_status = SubscriptionStatus.PENDING_STARTUP
         elif self.subscription_status == SubscriptionStatus.PENDING_STARTUP:
             pass
@@ -288,11 +284,12 @@ class BetfairDataClient(LiveMarketDataClient):
         if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
-        for mc in update.mc:
-            if mc.con:
-                self._log.warning(
-                    "Conflated stream - consuming data too slow (data received is delayed)",
-                )
+        if update.mc is not None:
+            for mc in update.mc:
+                if mc.con:
+                    self._log.warning(
+                        "Conflated stream - consuming data too slow (data received is delayed)",
+                    )
 
     def _handle_status_message(self, update: Status):
         if update.status_code == "FAILURE" and update.connection_closed:
