@@ -61,7 +61,6 @@ class BetfairStreamClient:
         self.is_connected: bool = False
         self.disconnecting: bool = False
         self._loop = asyncio.get_event_loop()
-        self._watch_stream_task: Optional[asyncio.Task] = None
 
     async def connect(self):
         if not self._http_client.session_token:
@@ -72,6 +71,7 @@ class BetfairStreamClient:
             return
 
         self._log.info("Connecting betfair socket client..")
+
         self._client = await SocketClient.connect(
             SocketConfig(
                 url=f"{self.host}:{self.port}",
@@ -91,15 +91,11 @@ class BetfairStreamClient:
         """
         Actions to be performed post connection.
         """
-        self._watch_stream_task = self._loop.create_task(
-            self.watch_stream(),
-            name="watch_stream",
-        )
 
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
         self.disconnecting = True
-        self._client.close()
+        self._client.disconnect()
         await self.post_disconnection()
         self.is_connected = False
         self._log.info("Disconnected.")
@@ -108,19 +104,6 @@ class BetfairStreamClient:
         """
         Actions to be performed post disconnection.
         """
-        # Override to implement additional disconnection related behavior
-        # (canceling ping tasks etc.).
-        self._watch_stream_task.cancel()
-        try:
-            await self._watch_stream_task
-        except asyncio.CancelledError:
-            return
-
-    async def reconnect(self):
-        self._log.info("Triggering reconnect..")
-        await self.disconnect()
-        await self.connect()
-        self._log.info("Reconnected.")
 
     async def send(self, message: bytes):
         self._log.debug(f"[SEND] {message.decode()}")
@@ -134,21 +117,6 @@ class BetfairStreamClient:
             "appKey": self._http_client.app_key,
             "session": self._http_client.session_token,
         }
-
-    # TODO - remove when we get socket reconnect in rust.
-    async def watch_stream(self) -> None:
-        """
-        Ensure socket stream is connected.
-        """
-        while True:
-            try:
-                if self.disconnecting:
-                    return
-                if not self.is_connected:
-                    await self.connect()
-                await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                return
 
 
 class BetfairOrderStreamClient(BetfairStreamClient):
