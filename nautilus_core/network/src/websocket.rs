@@ -19,6 +19,7 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use nautilus_core::python::to_pyruntime_err;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes, PyObject, Python};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
@@ -414,7 +415,7 @@ impl WebSocketClient {
     /// This is particularly useful for check why a `send` failed. It could
     /// because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
-    /// delay
+    /// delay.
     #[getter]
     fn is_alive(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
@@ -424,7 +425,7 @@ impl WebSocketClient {
     ///
     /// # Safety
     ///
-    /// - Throws an Exception if it is not able to send data
+    /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send_text")]
     fn py_send_text<'py>(
         slf: PyRef<'_, Self>,
@@ -432,11 +433,13 @@ impl WebSocketClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let writer = slf.writer.clone();
+        debug!("Sending {:?}", data);
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
-            guard.send(Message::Text(data)).await.map_err(|e| {
-                PyException::new_err(format!("Unable to send data because of error: {e}"))
-            })
+            guard
+                .send(Message::Text(data))
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 
@@ -444,15 +447,17 @@ impl WebSocketClient {
     ///
     /// # Safety
     ///
-    /// - Throws an Exception if it is not able to send data
+    /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send")]
     fn py_send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let writer = slf.writer.clone();
+        debug!("Sending {:?}", String::from_utf8(data.clone()));
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
-            guard.send(Message::Binary(data)).await.map_err(|e| {
-                PyException::new_err(format!("Unable to send data because of error: {e}"))
-            })
+            guard
+                .send(Message::Binary(data))
+                .await
+                .map_err(to_pyruntime_err)
         })
     }
 }
