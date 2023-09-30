@@ -37,17 +37,17 @@ from betfair_parser.spec.common import OrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import decode
 from betfair_parser.spec.common import encode
+from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import BestAvailableToBack
+from betfair_parser.spec.streaming import MarketChange
+from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.mcm import MCM
-from betfair_parser.spec.streaming.mcm import BestAvailableToBack
-from betfair_parser.spec.streaming.mcm import MarketChange
-from betfair_parser.spec.streaming.mcm import MarketDefinition
 
 # fmt: off
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
@@ -170,7 +170,7 @@ class TestBetfairParsingStreaming:
         raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'  # noqa
         mc = msgspec.json.decode(raw, type=MarketChange)
         result = Counter([upd.__class__.__name__ for upd in market_change_to_updates(mc, {}, 0, 0)])
-        expected = Counter({"BSPOrderBookDeltas": 12, "OrderBookDeltas": 1})
+        expected = Counter({"BSPOrderBookDelta": 12, "OrderBookDeltas": 1})
         assert result == expected
 
     def test_market_change_ticker(self):
@@ -209,7 +209,7 @@ class TestBetfairParsingStreaming:
             ("1.166564490.bz2", 2504),
             ("1.166811431.bz2", 17838),
             ("1.180305278.bz2", 15153),
-            ("1.206064380.bz2", 50166),
+            ("1.206064380.bz2", 51851),
         ],
     )
     def test_parsing_streaming_file(self, filename, num_msgs):
@@ -224,19 +224,20 @@ class TestBetfairParsingStreaming:
     def test_parsing_streaming_file_message_counts(self):
         mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
         parser = BetfairParser()
-        updates = Counter([x.__class__.__name__ for mcm in mcms for x in parser.parse(mcm)])
+        updates = [x for mcm in mcms for x in parser.parse(mcm)]
+        counts = Counter([x.__class__.__name__ for x in updates])
         expected = Counter(
             {
                 "OrderBookDeltas": 40525,
                 "BetfairTicker": 4658,
                 "TradeTick": 3487,
-                "BSPOrderBookDeltas": 1139,
+                "BSPOrderBookDelta": 2824,
                 "InstrumentStatusUpdate": 260,
                 "BetfairStartingPrice": 72,
                 "InstrumentClose": 25,
             },
         )
-        assert updates == expected
+        assert counts == expected
 
     @pytest.mark.parametrize(
         ("filename", "book_count"),
@@ -258,7 +259,7 @@ class TestBetfairParsingStreaming:
         for update in [x for mcm in mcms for x in parser.parse(mcm)]:
             if isinstance(update, OrderBookDeltas) and not isinstance(
                 update,
-                BSPOrderBookDeltas,
+                BSPOrderBookDelta,
             ):
                 instrument_id = update.instrument_id
                 if instrument_id not in books:
@@ -269,7 +270,7 @@ class TestBetfairParsingStreaming:
         result = [book.count for book in books.values()]
         assert result == book_count
 
-    def test_betfair_trade_sizes(self):
+    def test_betfair_trade_sizes(self):  # noqa: C901
         mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
         parser = BetfairParser()
         trade_ticks: dict[InstrumentId, list[TradeTick]] = defaultdict(list)
@@ -282,9 +283,10 @@ class TestBetfairParsingStreaming:
             for rc in [rc for mc in mcm.mc for rc in mc.rc]:
                 if rc.id not in betfair_tv:
                     betfair_tv[rc.id] = {}
-                for trd in rc.trd:
-                    if trd.volume > betfair_tv[rc.id].get(trd.price, 0):
-                        betfair_tv[rc.id][trd.price] = trd.volume
+                if rc.trd is not None:
+                    for trd in rc.trd:
+                        if trd.volume > betfair_tv[rc.id].get(trd.price, 0):
+                            betfair_tv[rc.id][trd.price] = trd.volume
 
         for selection_id in betfair_tv:
             for price in betfair_tv[selection_id]:
@@ -360,7 +362,7 @@ class TestBetfairParsing:
         )
         expected = ReplaceOrders.with_params(
             market_id="1.179082386",
-            instructions=[ReplaceInstruction(bet_id="1", new_price=1.35)],
+            instructions=[ReplaceInstruction(bet_id=1, new_price=1.35)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
             async_=False,
@@ -378,7 +380,7 @@ class TestBetfairParsing:
         )
         expected = CancelOrders.with_params(
             market_id="1.179082386",
-            instructions=[CancelInstruction(bet_id="228302937743", size_reduction=None)],
+            instructions=[CancelInstruction(bet_id=228302937743, size_reduction=None)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
         )
         assert result == expected
@@ -651,7 +653,7 @@ class TestBetfairParsing:
         single_instrument_bsp_updates = [
             upd
             for upd in updates
-            if isinstance(upd, BSPOrderBookDeltas)
+            if isinstance(upd, BSPOrderBookDelta)
             and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-0.0-BSP.BETFAIR")
         ]
         assert len(single_instrument_bsp_updates) == 1

@@ -10,7 +10,10 @@ Released on TBD (UTC).
 - Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
+- Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
+- Implemented Binance `WebSocketClient` live subscribe and unsubscribe
+- Decythonized `Trader`
 
 ### Breaking Changes
 - Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
@@ -23,6 +26,7 @@ Released on TBD (UTC).
 - Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed open position snapshots race condition (added `open_only` flag)
 - Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
+- Fixed Binance Futures fee rates for backtesting
 
 ---
 

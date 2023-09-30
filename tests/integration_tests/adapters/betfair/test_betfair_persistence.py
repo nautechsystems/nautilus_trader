@@ -15,7 +15,6 @@
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
 from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.data import BookOrder
@@ -35,30 +34,26 @@ class TestBetfairPersistence:
 
     def test_bsp_delta_serialize(self):
         # Arrange
-        bsp_delta = BSPOrderBookDeltas(
+        bsp_delta = BSPOrderBookDelta(
             instrument_id=self.instrument.id,
-            deltas=[
-                BSPOrderBookDelta(
-                    instrument_id=self.instrument.id,
-                    action=BookAction.UPDATE,
-                    order=BookOrder(
-                        price=Price.from_str("0.990099"),
-                        size=Quantity.from_str("60.07"),
-                        side=OrderSide.BUY,
-                        order_id=1,
-                    ),
-                    ts_event=1635313844283000000,
-                    ts_init=1635313844283000000,
-                ),
-            ],
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                price=Price.from_str("0.990099"),
+                size=Quantity.from_str("60.07"),
+                side=OrderSide.BUY,
+                order_id=1,
+            ),
+            ts_event=1635313844283000000,
+            ts_init=1635313844283000000,
         )
 
         # Act
-        values = bsp_delta.to_dict(bsp_delta)
+        self.catalog.write_data([bsp_delta, bsp_delta])
+        values = self.catalog.generic_data(BSPOrderBookDelta)
 
         # Assert
-        assert bsp_delta.from_dict(values) == bsp_delta
-        assert values["type"] == "BSPOrderBookDeltas"
+        assert len(values) == 2
+        assert values[1] == bsp_delta
 
     def test_betfair_starting_price_to_from_dict(self):
         # Arrange

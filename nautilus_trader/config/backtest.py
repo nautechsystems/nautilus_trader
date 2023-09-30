@@ -98,7 +98,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             filter_expr = self.filter_expr
 
         return {
-            "cls": self.data_type,
+            "data_cls": self.data_type,
             "instrument_ids": [self.instrument_id] if self.instrument_id else None,
             "start": self.start_time,
             "end": self.end_time,
@@ -181,9 +181,13 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
     strategies : list[ImportableStrategyConfig]
-        The strategy configurations for the node.
+        The strategy configurations for the kernel.
     actors : list[ImportableActorConfig]
-        The actor configurations for the node.
+        The actor configurations for the kernel.
+    exec_algorithms : list[ImportableExecAlgorithmConfig]
+        The execution algorithm configurations for the kernel.
+    controller : ImportableControllerConfig, optional
+        The trader controller for the kernel.
     load_state : bool, default True
         If trading strategy state should be loaded from the database on start.
     save_state : bool, default True

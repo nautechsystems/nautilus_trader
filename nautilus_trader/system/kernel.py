@@ -49,6 +49,7 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StrategyFactory
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import ControllerFactory
 from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
@@ -74,6 +75,7 @@ from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.trading.controller import Controller
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
 
@@ -330,10 +332,27 @@ class NautilusKernel:
             clock=self._clock,
             logger=self._logger,
             loop=self._loop,
+            config={
+                "has_controller": self._config.controller is not None,
+            },
         )
 
         if self._load_state:
             self._trader.load()
+
+        # Add controller
+        self._controller: Controller | None = None
+        if self._config.controller:
+            self._controller = ControllerFactory.create(
+                config=self._config.controller,
+                trader=self._trader,
+            )
+            self._controller.register_base(
+                cache=self._cache,
+                msgbus=self._msgbus,
+                clock=self._clock,
+                logger=self._logger,
+            )
 
         # Setup stream writer
         self._writer: StreamingFeatherWriter | None = None
@@ -372,7 +391,7 @@ class NautilusKernel:
         self.log.info(f"Initialized in {build_time_ms}ms.")
 
     def __del__(self) -> None:
-        if hasattr(self, "_writer") and self._writer and not self._writer.closed:
+        if hasattr(self, "_writer") and self._writer and not self._writer.is_closed:
             self._writer.close()
 
     def _setup_loop(self) -> None:
@@ -716,6 +735,9 @@ class NautilusKernel:
         self._initialize_portfolio()
         self._trader.start()
 
+        if self._controller:
+            self._controller.start()
+
     async def start_async(self) -> None:
         """
         Start the Nautilus system kernel in an asynchronous context with an event loop.
@@ -749,11 +771,17 @@ class NautilusKernel:
 
         self._trader.start()
 
+        if self._controller:
+            self._controller.start()
+
     async def stop(self) -> None:
         """
         Stop the Nautilus system kernel.
         """
         self.log.info("STOPPING...")
+
+        if self._controller:
+            self._controller.stop()
 
         if self._trader.is_running:
             self._trader.stop()

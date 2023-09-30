@@ -15,6 +15,7 @@
 
 from typing import Optional
 
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
@@ -40,7 +41,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, frozen=True):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    market_filter: Optional[tuple] = None
+    instrument_config: Optional[BetfairInstrumentProviderConfig] = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
@@ -65,4 +66,4 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     password: Optional[str] = None
     app_key: Optional[str] = None
     cert_dir: Optional[str] = None
-    market_filter: Optional[tuple] = None
+    instrument_config: Optional[BetfairInstrumentProviderConfig] = None

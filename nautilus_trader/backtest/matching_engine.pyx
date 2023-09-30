@@ -625,6 +625,9 @@ cdef class OrderMatchingEngine:
         self._book.update_quote_tick(tick)
         self.iterate(tick.ts_init)
 
+        self._last_bid_bar = None
+        self._last_ask_bar = None
+
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void process_order(self, Order order, AccountId account_id):

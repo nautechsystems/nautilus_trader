@@ -1273,7 +1273,7 @@ class TestTimeBarAggregator:
                 event.handle()
 
         # Assert
-        assert clock.timestamp_ns() == 1610064046674000128
+        assert clock.timestamp_ns() == 1610064046674000000
         assert aggregator.interval_ns == 1_000_000_000
         assert aggregator.next_close_ns == 1610064047000000000
         assert handler[0].open == Price.from_str("39432.99")

@@ -15,9 +15,9 @@
 
 use std::{
     cmp,
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::HashMap,
     fmt::{Display, Formatter},
-    hash::{Hash, Hasher},
+    hash::Hash,
     str::FromStr,
 };
 
@@ -27,7 +27,7 @@ use nautilus_core::{
     correctness::check_u8_equal, python::to_pyvalue_err, serialization::Serializable,
     time::UnixNanos,
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -39,7 +39,8 @@ use crate::{
 /// Represents a single quote tick in a financial market.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[pyclass]
+#[serde(tag = "type")]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
@@ -119,29 +120,27 @@ impl QuoteTick {
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str)
-            .map_err(to_pyvalue_err)
-            .unwrap();
+        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
 
         let bid_price_py: &PyAny = obj.getattr("bid_price")?;
         let bid_price_raw: i64 = bid_price_py.getattr("raw")?.extract()?;
         let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
-        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
+        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?;
 
         let ask_price_py: &PyAny = obj.getattr("ask_price")?;
         let ask_price_raw: i64 = ask_price_py.getattr("raw")?.extract()?;
         let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
-        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
+        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?;
 
         let bid_size_py: &PyAny = obj.getattr("bid_size")?;
         let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
         let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
-        let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec);
+        let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?;
 
         let ask_size_py: &PyAny = obj.getattr("ask_size")?;
         let ask_size_raw: u64 = ask_size_py.getattr("raw")?.extract()?;
         let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
-        let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec);
+        let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?;
 
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
         let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
@@ -166,7 +165,22 @@ impl QuoteTick {
             PriceType::Mid => Price::from_raw(
                 (self.bid_price.raw + self.ask_price.raw) / 2,
                 cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
-            ),
+            )
+            .unwrap(), // Already a valid `Price`
+            _ => panic!("Cannot extract with price type {price_type}"),
+        }
+    }
+
+    #[must_use]
+    pub fn extract_volume(&self, price_type: PriceType) -> Quantity {
+        match price_type {
+            PriceType::Bid => self.bid_size,
+            PriceType::Ask => self.ask_size,
+            PriceType::Mid => Quantity::from_raw(
+                (self.bid_size.raw + self.ask_size.raw) / 2,
+                cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
+            )
+            .unwrap(), // Already a valid `Quantity`
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
@@ -190,163 +204,29 @@ impl Display for QuoteTick {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Python API
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl QuoteTick {
-    #[new]
-    fn py_new(
-        instrument_id: InstrumentId,
-        bid_price: Price,
-        ask_price: Price,
-        bid_size: Quantity,
-        ask_size: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> PyResult<Self> {
-        Self::new(
-            instrument_id,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            ts_event,
-            ts_init,
-        )
-        .map_err(to_pyvalue_err)
-    }
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
+    use crate::{
+        data::quote::QuoteTick,
+        identifiers::instrument_id::InstrumentId,
+        types::{price::Price, quantity::Quantity},
+    };
+
+    #[fixture]
+    pub fn quote_tick_ethusdt_binance() -> QuoteTick {
+        QuoteTick {
+            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+            bid_price: Price::from("10000.0000"),
+            ask_price: Price::from("10001.0000"),
+            bid_size: Quantity::from("1.00000000"),
+            ask_size: Quantity::from("1.00000000"),
+            ts_event: 0,
+            ts_init: 1,
         }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    #[getter]
-    fn instrument_id(&self) -> InstrumentId {
-        self.instrument_id
-    }
-
-    #[getter]
-    fn bid_price(&self) -> Price {
-        self.bid_price
-    }
-
-    #[getter]
-    fn ask_price(&self) -> Price {
-        self.ask_price
-    }
-
-    #[getter]
-    fn bid_size(&self) -> Quantity {
-        self.bid_size
-    }
-
-    #[getter]
-    fn ask_size(&self) -> Quantity {
-        self.ask_size
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
-    fn extract_price_py(&self, price_type: PriceType) -> PyResult<Price> {
-        Ok(self.extract_price(price_type))
-    }
-
-    /// Return a dictionary representation of the object.
-    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
-        Ok(py_dict)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Extract to JSON string
-        let json_str: String = PyModule::import(py, "json")?
-            .call_method("dumps", (values,), None)?
-            .extract()?;
-
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
-        Ok(instance)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(
-        instrument_id: &InstrumentId,
-        price_precision: u8,
-        size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            instrument_id,
-            price_precision,
-            size_precision,
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
-        for (k, v) in Self::get_fields() {
-            py_dict.set_item(k, v)?;
-        }
-
-        Ok(py_dict)
-    }
-
-    #[staticmethod]
-    fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
 
@@ -359,31 +239,15 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::{
-        data::quote::QuoteTick,
-        enums::PriceType,
-        identifiers::instrument_id::InstrumentId,
-        types::{price::Price, quantity::Quantity},
-    };
-
-    fn create_stub_quote_tick() -> QuoteTick {
-        QuoteTick {
-            instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            bid_price: Price::from("10000.0000"),
-            ask_price: Price::from("10001.0000"),
-            bid_size: Quantity::from("1.00000000"),
-            ask_size: Quantity::from("1.00000000"),
-            ts_event: 1,
-            ts_init: 0,
-        }
-    }
+    use super::stubs::*;
+    use crate::{data::quote::QuoteTick, enums::PriceType};
 
     #[rstest]
-    fn test_to_string() {
-        let tick = create_stub_quote_tick();
+    fn test_to_string(quote_tick_ethusdt_binance: QuoteTick) {
+        let tick = quote_tick_ethusdt_binance;
         assert_eq!(
             tick.to_string(),
-            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,1"
+            "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
         );
     }
 
@@ -391,42 +255,20 @@ mod tests {
     #[case(PriceType::Bid, 10_000_000_000_000)]
     #[case(PriceType::Ask, 10_001_000_000_000)]
     #[case(PriceType::Mid, 10_000_500_000_000)]
-    fn test_extract_price(#[case] input: PriceType, #[case] expected: i64) {
-        let tick = create_stub_quote_tick();
+    fn test_extract_price(
+        #[case] input: PriceType,
+        #[case] expected: i64,
+        quote_tick_ethusdt_binance: QuoteTick,
+    ) {
+        let tick = quote_tick_ethusdt_binance;
         let result = tick.extract_price(input).raw;
         assert_eq!(result, expected);
     }
 
     #[rstest]
-    fn test_as_dict() {
+    fn test_from_pyobject(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-
-        let tick = create_stub_quote_tick();
-
-        Python::with_gil(|py| {
-            let dict_string = tick.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 1, 'ts_init': 0}"#;
-            assert_eq!(dict_string, expected_string);
-        });
-    }
-
-    #[rstest]
-    fn test_from_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let tick = create_stub_quote_tick();
-
-        Python::with_gil(|py| {
-            let dict = tick.as_dict(py).unwrap();
-            let parsed = QuoteTick::from_dict(py, dict).unwrap();
-            assert_eq!(parsed, tick);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject() {
-        pyo3::prepare_freethreaded_python();
-        let tick = create_stub_quote_tick();
+        let tick = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
@@ -436,16 +278,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization() {
-        let tick = create_stub_quote_tick();
+    fn test_json_serialization(quote_tick_ethusdt_binance: QuoteTick) {
+        let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_json_bytes().unwrap();
         let deserialized = QuoteTick::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let tick = create_stub_quote_tick();
+    fn test_msgpack_serialization(quote_tick_ethusdt_binance: QuoteTick) {
+        let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_msgpack_bytes().unwrap();
         let deserialized = QuoteTick::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, tick);

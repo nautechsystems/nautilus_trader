@@ -39,10 +39,7 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct Currency {
     pub code: Ustr,
     pub precision: u8,

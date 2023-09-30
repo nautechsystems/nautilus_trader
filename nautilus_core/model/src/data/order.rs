@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
     fmt::{Display, Formatter},
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable};
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use nautilus_core::serialization::Serializable;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::{quote::QuoteTick, trade::TradeTick};
@@ -48,7 +47,7 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 /// Represents an order in a book.
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct BookOrder {
     /// The order side.
     pub side: OrderSide,
@@ -150,110 +149,24 @@ impl Display for BookOrder {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl BookOrder {
-    #[new]
-    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
-        Self::new(side, price, size, order_id)
-    }
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use rstest::fixture;
 
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
+    use super::*;
+    use crate::types::{price::Price, quantity::Quantity};
 
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
+    #[fixture]
+    pub fn stub_book_order() -> BookOrder {
+        let price = Price::from("100.00");
+        let size = Quantity::from("10");
+        let side = OrderSide::Buy;
+        let order_id = 123456;
 
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    #[getter]
-    fn side(&self) -> OrderSide {
-        self.side
-    }
-
-    #[getter]
-    fn price(&self) -> Price {
-        self.price
-    }
-
-    #[getter]
-    fn size(&self) -> Quantity {
-        self.size
-    }
-
-    #[getter]
-    fn order_id(&self) -> u64 {
-        self.order_id
-    }
-
-    #[pyo3(name = "exposure")]
-    fn py_exposure(&self) -> f64 {
-        self.exposure()
-    }
-
-    #[pyo3(name = "signed_size")]
-    fn py_signed_size(&self) -> f64 {
-        self.signed_size()
-    }
-
-    /// Return a dictionary representation of the object.
-    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
-        Ok(py_dict)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Extract to JSON string
-        let json_str: String = PyModule::import(py, "json")?
-            .call_method("dumps", (values,), None)?
-            .extract()?;
-
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
-        Ok(instance)
-    }
-
-    #[staticmethod]
-    fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
+        BookOrder::new(side, price, size, order_id)
     }
 }
 
@@ -264,20 +177,11 @@ impl BookOrder {
 mod tests {
     use rstest::rstest;
 
-    use super::*;
+    use super::{stubs::*, *};
     use crate::{
         enums::AggressorSide,
         identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
     };
-
-    fn create_stub_book_order() -> BookOrder {
-        let price = Price::from("100.00");
-        let size = Quantity::from("10");
-        let side = OrderSide::Buy;
-        let order_id = 123456;
-
-        BookOrder::new(side, price, size, order_id)
-    }
 
     #[rstest]
     fn test_new() {
@@ -417,43 +321,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let delta = create_stub_book_order();
-
-        Python::with_gil(|py| {
-            let dict_string = delta.as_dict(py).unwrap().to_string();
-            let expected_string =
-                r#"{'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}"#;
-            assert_eq!(dict_string, expected_string);
-        });
-    }
-
-    #[rstest]
-    fn test_from_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let order = create_stub_book_order();
-
-        Python::with_gil(|py| {
-            let dict = order.as_dict(py).unwrap();
-            let parsed = BookOrder::from_dict(py, dict).unwrap();
-            assert_eq!(parsed, order);
-        });
-    }
-
-    #[rstest]
-    fn test_json_serialization() {
-        let order = create_stub_book_order();
+    fn test_json_serialization(stub_book_order: BookOrder) {
+        let order = stub_book_order;
         let serialized = order.as_json_bytes().unwrap();
         let deserialized = BookOrder::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, order);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let order = create_stub_book_order();
+    fn test_msgpack_serialization(stub_book_order: BookOrder) {
+        let order = stub_book_order;
         let serialized = order.as_msgpack_bytes().unwrap();
         let deserialized = BookOrder::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, order);

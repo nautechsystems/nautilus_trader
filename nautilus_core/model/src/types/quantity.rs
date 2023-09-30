@@ -45,10 +45,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
-)]
+#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
 pub struct Quantity {
     pub raw: u64,
     pub precision: u8,
@@ -65,10 +62,9 @@ impl Quantity {
         })
     }
 
-    #[must_use]
-    pub fn from_raw(raw: u64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
-        Self { raw, precision }
+    pub fn from_raw(raw: u64, precision: u8) -> Result<Self> {
+        check_fixed_precision(precision)?;
+        Ok(Self { raw, precision })
     }
 
     #[must_use]
@@ -595,8 +591,7 @@ impl Quantity {
     #[staticmethod]
     #[pyo3(name = "from_raw")]
     fn py_from_raw(raw: u64, precision: u8) -> PyResult<Quantity> {
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Quantity::from_raw(raw, precision))
+        Quantity::from_raw(raw, precision).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -657,7 +652,7 @@ pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
-    Quantity::from_raw(raw, precision)
+    Quantity::from_raw(raw, precision).unwrap()
 }
 
 #[cfg(feature = "ffi")]
@@ -714,7 +709,7 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Quantity::from_raw(1, 10);
+        let _ = Quantity::from_raw(1, 10).unwrap();
     }
 
     #[rstest]

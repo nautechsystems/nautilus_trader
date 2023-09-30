@@ -60,6 +60,12 @@ cdef class OrderBookDelta(Data):
         uint64_t sequence=*,
     )
 
+    @staticmethod
+    cdef list capsule_to_list_c(capsule)
+
+    @staticmethod
+    cdef object list_to_capsule_c(list items)
+
 
 cdef class OrderBookDeltas(Data):
     cdef readonly InstrumentId instrument_id

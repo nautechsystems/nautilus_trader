@@ -17,9 +17,13 @@ use std::{
     collections::hash_map::DefaultHasher,
     ffi::c_char,
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
-use nautilus_core::{string::str_to_cstr, time::UnixNanos};
+use nautilus_core::{
+    string::{cstr_to_str, str_to_cstr},
+    time::UnixNanos,
+};
 
 use super::bar::{Bar, BarSpecification, BarType};
 use crate::{
@@ -95,6 +99,29 @@ pub extern "C" fn bar_type_new(
         spec,
         aggregation_source,
     }
+}
+
+/// Returns any [`BarType`] parsing error from the provided C string pointer.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_char {
+    match BarType::from_str(cstr_to_str(ptr)) {
+        Ok(_) => str_to_cstr(""),
+        Err(e) => str_to_cstr(&e.to_string()),
+    }
+}
+
+/// Returns a [`BarType`] from a C string pointer.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn bar_type_from_cstr(ptr: *const c_char) -> BarType {
+    BarType::from(cstr_to_str(ptr))
 }
 
 #[no_mangle]
@@ -173,11 +200,11 @@ pub extern "C" fn bar_new_from_raw(
 ) -> Bar {
     Bar {
         bar_type,
-        open: Price::from_raw(open, price_prec),
-        high: Price::from_raw(high, price_prec),
-        low: Price::from_raw(low, price_prec),
-        close: Price::from_raw(close, price_prec),
-        volume: Quantity::from_raw(volume, size_prec),
+        open: Price::from_raw(open, price_prec).unwrap(),
+        high: Price::from_raw(high, price_prec).unwrap(),
+        low: Price::from_raw(low, price_prec).unwrap(),
+        close: Price::from_raw(close, price_prec).unwrap(),
+        volume: Quantity::from_raw(volume, size_prec).unwrap(),
         ts_event,
         ts_init,
     }

@@ -366,12 +366,16 @@ class VolatilityMarketMaker(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        # self.cancel_all_orders(self.instrument_id)
-        # self.close_all_positions(self.instrument_id)
+        self.cancel_all_orders(self.instrument_id)
+        self.close_all_positions(self.instrument_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
+        # self.unsubscribe_ticker(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
 
     def on_reset(self) -> None:
         """

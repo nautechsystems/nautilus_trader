@@ -19,6 +19,7 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use nautilus_core::python::to_pyruntime_err;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes, PyObject, Python};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
@@ -237,7 +238,7 @@ impl WebSocketClient {
     ///
     /// Creates an inner client and controller task to reconnect or disconnect
     /// the client. Also assumes ownership of writer from inner client
-    pub async fn connect_client(
+    pub async fn connect(
         url: &str,
         handler: PyObject,
         heartbeat: Option<u64>,
@@ -273,11 +274,11 @@ impl WebSocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
-    pub async fn disconnect_client(&self) {
+    pub async fn disconnect(&self) {
         *self.disconnect_mode.lock().await = true;
     }
 
-    pub async fn send_bytes_client(&self, data: Vec<u8>) -> Result<(), Error> {
+    pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         let mut guard = self.writer.lock().await;
         guard.send(Message::Binary(data)).await
     }
@@ -355,9 +356,11 @@ impl WebSocketClient {
     /// Create a websocket client.
     ///
     /// # Safety
+    ///
     /// - Throws an Exception if it is unable to make websocket connection
     #[staticmethod]
-    fn connect(
+    #[pyo3(name = "connect")]
+    fn py_connect(
         url: String,
         handler: PyObject,
         heartbeat: Option<u64>,
@@ -367,7 +370,7 @@ impl WebSocketClient {
         py: Python<'_>,
     ) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
-            Self::connect_client(
+            Self::connect(
                 &url,
                 handler,
                 heartbeat,
@@ -384,43 +387,17 @@ impl WebSocketClient {
         })
     }
 
-    /// Send text data to the connection.
-    ///
-    /// # Safety
-    /// - Throws an Exception if it is not able to send data
-    fn send_text<'py>(slf: PyRef<'_, Self>, data: String, py: Python<'py>) -> PyResult<&'py PyAny> {
-        let writer = slf.writer.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut guard = writer.lock().await;
-            guard.send(Message::Text(data)).await.map_err(|e| {
-                PyException::new_err(format!("Unable to send data because of error: {e}"))
-            })
-        })
-    }
-
-    /// Send bytes data to the connection.
-    ///
-    /// # Safety
-    /// - Throws an Exception if it is not able to send data
-    fn send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
-        let writer = slf.writer.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
-            let mut guard = writer.lock().await;
-            guard.send(Message::Binary(data)).await.map_err(|e| {
-                PyException::new_err(format!("Unable to send data because of error: {e}"))
-            })
-        })
-    }
-
     /// Closes the client heart beat and reader task.
     ///
     /// The connection is not completely closed the till all references
     /// to the client are gone and the client is dropped.
     ///
-    /// #Safety
+    /// # Safety
+    ///
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
-    fn disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    #[pyo3(name = "disconnect")]
+    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let disconnect_mode = slf.disconnect_mode.clone();
         debug!("Setting disconnect mode to true");
         pyo3_asyncio::tokio::future_into_py(py, async move {
@@ -438,10 +415,50 @@ impl WebSocketClient {
     /// This is particularly useful for check why a `send` failed. It could
     /// because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
-    /// delay
+    /// delay.
     #[getter]
     fn is_alive(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
+    }
+
+    /// Send text data to the connection.
+    ///
+    /// # Safety
+    ///
+    /// - Raises PyRuntimeError if not able to send data.
+    #[pyo3(name = "send_text")]
+    fn py_send_text<'py>(
+        slf: PyRef<'_, Self>,
+        data: String,
+        py: Python<'py>,
+    ) -> PyResult<&'py PyAny> {
+        let writer = slf.writer.clone();
+        debug!("Sending {:?}", data);
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard
+                .send(Message::Text(data))
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    /// Send bytes data to the connection.
+    ///
+    /// # Safety
+    ///
+    /// - Raises PyRuntimeError if not able to send data.
+    #[pyo3(name = "send")]
+    fn py_send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
+        let writer = slf.writer.clone();
+        debug!("Sending {:?}", String::from_utf8(data.clone()));
+        pyo3_asyncio::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard
+                .send(Message::Binary(data))
+                .await
+                .map_err(to_pyruntime_err)
+        })
     }
 }
 
@@ -543,7 +560,7 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let client = WebSocketClient::connect_client(
+        let client = WebSocketClient::connect(
             &format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
             None,
@@ -556,7 +573,7 @@ counter = Counter()",
 
         // Send messages that increment the count
         for _ in 0..N {
-            if client.send_bytes_client(b"ping".to_vec()).await.is_ok() {
+            if client.send_bytes(b"ping".to_vec()).await.is_ok() {
                 success_count += 1;
             };
         }
@@ -585,7 +602,7 @@ counter = Counter()",
         // Send messages that increment the count
         sleep(Duration::from_secs(2)).await;
         for _ in 0..N {
-            if client.send_bytes_client(b"ping".to_vec()).await.is_ok() {
+            if client.send_bytes(b"ping".to_vec()).await.is_ok() {
                 success_count += 1;
             };
         }
@@ -605,7 +622,7 @@ counter = Counter()",
         assert_eq!(success_count, N + N);
 
         // Shutdown client and wait for read task to terminate
-        client.disconnect_client().await;
+        client.disconnect().await;
         sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }

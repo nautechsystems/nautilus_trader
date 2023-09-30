@@ -67,7 +67,7 @@ class TestPersistenceStubs:
             )
 
         register_arrow(
-            cls=NewsEventData,
+            data_cls=NewsEventData,
             serializer=_news_event_to_dict,
             deserializer=_news_event_from_dict,
             # partition_keys=("currency",),

@@ -28,11 +28,12 @@ from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
+from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import Connection
+from betfair_parser.spec.streaming import Order as UnmatchedOrder
+from betfair_parser.spec.streaming import Status
+from betfair_parser.spec.streaming import StatusErrorCode
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.ocm import OCM
-from betfair_parser.spec.streaming.ocm import UnmatchedOrder
-from betfair_parser.spec.streaming.status import Connection
-from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
@@ -46,7 +47,6 @@ from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
-from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
@@ -105,8 +105,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    market_filter : dict
-        The market filter.
     instrument_provider : BetfairInstrumentProvider
         The instrument provider.
 
@@ -121,7 +119,6 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
         instrument_provider: BetfairInstrumentProvider,
     ) -> None:
         super().__init__(
@@ -131,8 +128,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
             base_currency=base_currency,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -225,11 +221,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         # We have a response, check list length and grab first entry
         assert len(orders) == 1, f"More than one order found for {venue_order_id}"
         order: CurrentOrderSummary = orders[0]
-        instrument = self._instrument_provider.get_betting_instrument(
-            market_id=str(order.market_id),
-            selection_id=str(order.selection_id),
-            handicap=parse_handicap(order.handicap),
-        )
+        instrument = self._cache.instrument(instrument_id)
         venue_order_id = VenueOrderId(str(order.bet_id))
 
         report: OrderStatusReport = bet_to_order_status_report(
@@ -565,7 +557,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             raise RuntimeError
 
     async def _handle_order_stream_update(self, order_change_message: OCM) -> None:
-        for market in order_change_message.oc:
+        for market in order_change_message.oc or []:
             for selection in market.orc:
                 for unmatched_order in selection.uo:
                     await self._check_order_update(unmatched_order=unmatched_order)
@@ -593,7 +585,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 venue_orders = {o.venue_order_id: o for o in orders}
                 for unmatched_order in selection.uo:
                     # We can match on venue_order_id here
-                    order = venue_orders.get(VenueOrderId(unmatched_order.id))
+                    order = venue_orders.get(VenueOrderId(str(unmatched_order.id)))
                     if order is not None:
                         continue  # Order exists
                     self._log.error(f"UNKNOWN ORDER NOT IN CACHE: {unmatched_order=} ")
@@ -641,7 +633,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle update containing "E" (executable) order update.
         """
-        venue_order_id = VenueOrderId(unmatched_order.id)
+        venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
         order = self._cache.order(client_order_id)
         instrument = self._cache.instrument(order.instrument_id)
@@ -829,13 +821,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         return None
 
     def _handle_status_message(self, update: Status):
-        if update.statusCode == "FAILURE" and update.connectionClosed:
+        if update.is_error and update.connection_closed:
             self._log.warning(str(update))
-            if update.errorCode == "MAX_CONNECTION_LIMIT_EXCEEDED":
+            if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")
-                self._loop.create_task(self.stream.reconnect())
+                self._loop.create_task(self.stream.connect())
 
 
 def create_trade_id(uo: UnmatchedOrder) -> TradeId:

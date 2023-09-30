@@ -45,13 +45,13 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import combine_filters
-from nautilus_trader.persistence.funcs import uri_instrument_id
-from nautilus_trader.persistence.wranglers import list_from_capsule
+from nautilus_trader.persistence.funcs import urisafe_instrument_id
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
@@ -64,12 +64,13 @@ class FeatherFile(NamedTuple):
     class_name: str
 
 
+_NAUTILUS_PATH = "NAUTILUS_PATH"
 _DEFAULT_FS_PROTOCOL = "file"
 
 
 class ParquetDataCatalog(BaseDataCatalog):
     """
-    Provides a queryable data catalog persisted to files in parquet format.
+    Provides a queryable data catalog persisted to files in Parquet (Arrow) format.
 
     Parameters
     ----------
@@ -83,10 +84,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
+    show_query_paths : bool, default False
+        If globed query paths should be printed to stdout.
 
     Warnings
     --------
-    The catalog is not threadsafe.
+    The data catalog is not threadsafe. Using it in a multithreaded environment can lead to
+    unexpected behavior.
+
+    Notes
+    -----
+    For more details about `fsspec` and its filesystem protocols, see
+    https://filesystem-spec.readthedocs.io/en/latest/.
 
     """
 
@@ -96,6 +105,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
+        show_query_paths: bool = False,
     ) -> None:
         self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
         self.fs_storage_options = fs_storage_options or {}
@@ -105,6 +115,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
         self.serializer = ArrowSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
+        self.show_query_paths = show_query_paths
 
         path = make_path_posix(str(path))
 
@@ -119,10 +130,39 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     @classmethod
     def from_env(cls) -> ParquetDataCatalog:
-        return cls.from_uri(os.environ["NAUTILUS_PATH"] + "/catalog")
+        """
+        Create a data catalog instance by accessing the 'NAUTILUS_PATH' environment
+        variable.
+
+        Returns
+        -------
+        ParquetDataCatalog
+
+        Raises
+        ------
+        OSError
+            If the 'NAUTILUS_PATH' environment variable is not set.
+
+        """
+        if _NAUTILUS_PATH not in os.environ:
+            raise OSError(f"'{_NAUTILUS_PATH}' environment variable is not set.")
+        return cls.from_uri(os.environ[_NAUTILUS_PATH] + "/catalog")
 
     @classmethod
-    def from_uri(cls: type, uri: str) -> ParquetDataCatalog:
+    def from_uri(cls, uri: str) -> ParquetDataCatalog:
+        """
+        Create a data catalog instance from the given `uri`.
+
+        Parameters
+        ----------
+        uri : str
+            The URI string for the backing path.
+
+        Returns
+        -------
+        ParquetDataCatalog
+
+        """
         if "://" not in uri:
             # Assume a local path
             uri = "file://" + uri
@@ -132,33 +172,34 @@ class ParquetDataCatalog(BaseDataCatalog):
         storage_options = parsed.copy()
         return cls(path=path, fs_protocol=protocol, fs_storage_options=storage_options)
 
-    # -- WRITING -----------------------------------------------------------------------------------
-    def _objects_to_table(self, data: list[Data], cls: type) -> pa.Table:
+    # -- WRITING ----------------------------------------------------------------------------------
+
+    def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
         assert len(data) > 0
-        assert all(type(obj) is cls for obj in data)  # same type
-        table = self.serializer.serialize_batch(data, cls=cls)
+        assert all(type(obj) is data_cls for obj in data)  # same type
+        table = self.serializer.serialize_batch(data, data_cls=data_cls)
         assert table is not None
         if isinstance(table, pa.RecordBatch):
             table = pa.Table.from_batches([table])
         return table
 
-    def _make_path(self, cls: type[Data], instrument_id: str | None = None) -> str:
+    def _make_path(self, data_cls: type[Data], instrument_id: str | None = None) -> str:
         if instrument_id is not None:
             assert isinstance(instrument_id, str), "instrument_id must be a string"
-            clean_instrument_id = uri_instrument_id(instrument_id)
-            return f"{self.path}/data/{class_to_filename(cls)}/{clean_instrument_id}"
+            clean_instrument_id = urisafe_instrument_id(instrument_id)
+            return f"{self.path}/data/{class_to_filename(data_cls)}/{clean_instrument_id}"
         else:
-            return f"{self.path}/data/{class_to_filename(cls)}"
+            return f"{self.path}/data/{class_to_filename(data_cls)}"
 
     def write_chunk(
         self,
         data: list[Data],
-        cls: type[Data],
+        data_cls: type[Data],
         instrument_id: str | None = None,
         **kwargs: Any,
     ) -> None:
-        table = self._objects_to_table(data, cls=cls)
-        path = self._make_path(cls=cls, instrument_id=instrument_id)
+        table = self._objects_to_table(data, data_cls=data_cls)
+        path = self._make_path(data_cls=data_cls, instrument_id=instrument_id)
         kw = dict(**self.dataset_kwargs, **kwargs)
 
         if "partitioning" not in kw:
@@ -198,7 +239,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         for (cls_name, instrument_id), single_type in groupby(sorted(data, key=key), key=key):
             self.write_chunk(
                 data=list(single_type),
-                cls=name_to_cls[cls_name],
+                data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
                 **kwargs,
             )
@@ -207,7 +248,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
@@ -215,9 +256,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data | GenericData]:
-        if cls in (OrderBookDelta, QuoteTick, TradeTick, Bar):
+        if data_cls in (OrderBookDelta, QuoteTick, TradeTick, Bar):
             data = self.query_rust(
-                cls=cls,
+                data_cls=data_cls,
                 instrument_ids=instrument_ids,
                 bar_types=bar_types,
                 start=start,
@@ -227,7 +268,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             )
         else:
             data = self.query_pyarrow(
-                cls=cls,
+                data_cls=data_cls,
                 instrument_ids=instrument_ids,
                 start=start,
                 end=end,
@@ -235,17 +276,17 @@ class ParquetDataCatalog(BaseDataCatalog):
                 **kwargs,
             )
 
-        if not is_nautilus_class(cls):
+        if not is_nautilus_class(data_cls):
             # Special handling for generic data
             data = [
-                GenericData(data_type=DataType(cls, metadata=kwargs.get("metadata")), data=d)
+                GenericData(data_type=DataType(data_cls, metadata=kwargs.get("metadata")), data=d)
                 for d in data
             ]
         return data
 
     def backend_session(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
@@ -255,8 +296,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> DataBackendSession:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
-        name = cls.__name__
-        file_prefix = class_to_filename(cls)
+        name = data_cls.__name__
+        file_prefix = class_to_filename(data_cls)
         data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
 
         if session is None:
@@ -266,13 +307,15 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         # TODO (bm) - fix this glob, query once on catalog creation?
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
-        print(glob_path)
         dirs = self.fs.glob(glob_path)
+        if self.show_query_paths:
+            print(dirs)
+
         for idx, fn in enumerate(dirs):
             assert self.fs.exists(fn)
-            if instrument_ids and not any(uri_instrument_id(id_) in fn for id_ in instrument_ids):
+            if instrument_ids and not any(urisafe_instrument_id(x) in fn for x in instrument_ids):
                 continue
-            if bar_types and not any(uri_instrument_id(id_) in fn for id_ in bar_types):
+            if bar_types and not any(urisafe_instrument_id(x) in fn for x in bar_types):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
@@ -289,7 +332,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def query_rust(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         bar_types: list[str] | None = None,
         start: TimestampLike | None = None,
@@ -298,7 +341,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> list[Data]:
         session = self.backend_session(
-            cls=cls,
+            data_cls=data_cls,
             instrument_ids=instrument_ids,
             bar_types=bar_types,
             start=start,
@@ -312,20 +355,20 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Gather data
         data = []
         for chunk in result:
-            data.extend(list_from_capsule(chunk))
+            data.extend(capsule_to_list(chunk))
 
         return data
 
     def query_pyarrow(
         self,
-        cls: type,
+        data_cls: type,
         instrument_ids: list[str] | None = None,
         start: TimestampLike | None = None,
         end: TimestampLike | None = None,
         filter_expr: str | None = None,
         **kwargs: Any,
     ) -> list[Data]:
-        file_prefix = class_to_filename(cls)
+        file_prefix = class_to_filename(data_cls)
         dataset_path = f"{self.path}/data/{file_prefix}"
         if not self.fs.exists(dataset_path):
             return []
@@ -339,12 +382,12 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         assert (
             table is not None
-        ), f"No table found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+        ), f"No table found for {data_cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
         assert (
             table.num_rows
-        ), f"No rows found for {cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
+        ), f"No rows found for {data_cls=} {instrument_ids=} {filter_expr=} {start=} {end=}"
 
-        return self._handle_table_nautilus(table, cls=cls)
+        return self._handle_table_nautilus(table, data_cls=data_cls)
 
     def _load_pyarrow_table(
         self,
@@ -365,7 +408,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             valid_files = [
                 fn
                 for fn in dataset.files
-                if any(uri_instrument_id(x) in fn for x in instrument_ids)
+                if any(urisafe_instrument_id(x) in fn for x in instrument_ids)
             ]
             dataset = pds.dataset(valid_files, filesystem=self.fs)
 
@@ -405,11 +448,11 @@ class ParquetDataCatalog(BaseDataCatalog):
     @staticmethod
     def _handle_table_nautilus(
         table: pa.Table | pd.DataFrame,
-        cls: type,
+        data_cls: type,
     ) -> list[Data]:
         if isinstance(table, pd.DataFrame):
             table = pa.Table.from_pandas(table)
-        data = ArrowSerializer.deserialize(cls=cls, batch=table)
+        data = ArrowSerializer.deserialize(data_cls=data_cls, batch=table)
         # TODO (bm/cs) remove when pyo3 objects are used everywhere.
         module = data[0].__class__.__module__
         if "builtins" in module:
@@ -419,7 +462,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 "TradeTick": TradeTick,
                 "QuoteTick": QuoteTick,
                 "Bar": Bar,
-            }.get(cls.__name__, cls.__name__)
+            }.get(data_cls.__name__, data_cls.__name__)
             data = cython_cls.from_pyo3(data)
         return data
 
@@ -436,7 +479,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         for cls in subclasses:
             try:
                 df = self.query(
-                    cls=cls,
+                    data_cls=cls,
                     filter_expr=filter_expr,
                     instrument_ids=instrument_ids,
                     raise_on_empty=False,
@@ -497,14 +540,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
         raise_on_failed_deserialize: bool = False,
     ) -> list[Data]:
-        from nautilus_trader.persistence.writer import read_feather_file
-
         class_mapping: dict[str, type] = {class_to_filename(cls): cls for cls in list_schemas()}
         data = defaultdict(list)
         for feather_file in self._list_feather_files(kind=kind, instance_id=instance_id):
             path = feather_file.path
             cls_name = feather_file.class_name
-            table: pa.Table = read_feather_file(path=path, fs=self.fs)
+            table: pa.Table = self._read_feather_file(path=path)
             if table is None or len(table) == 0:
                 continue
 
@@ -513,8 +554,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 continue
             # Apply post read fixes
             try:
-                cls = class_mapping[cls_name]
-                objs = self._handle_table_nautilus(table=table, cls=cls)
+                data_cls = class_mapping[cls_name]
+                objs = self._handle_table_nautilus(table=table, data_cls=data_cls)
                 data[cls_name].extend(objs)
             except Exception as e:
                 if raise_on_failed_deserialize:
@@ -527,7 +568,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         kind: str,
         instance_id: str,
     ) -> Generator[FeatherFile, None, None]:
-        prefix = f"{self.path}/{kind}/{uri_instrument_id(instance_id)}"
+        prefix = f"{self.path}/{kind}/{urisafe_instrument_id(instance_id)}"
 
         # Non-instrument feather files
         for fn in self.fs.glob(f"{prefix}/*.feather"):
@@ -538,3 +579,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         for ins_fn in self.fs.glob(f"{prefix}/**/*.feather"):
             ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
             yield FeatherFile(path=ins_fn, class_name=ins_cls_name)
+
+    def _read_feather_file(
+        self,
+        path: str,
+    ) -> pa.Table | None:
+        if not self.fs.exists(path):
+            return None
+        try:
+            with self.fs.open(path) as f:
+                reader = pa.ipc.open_stream(f)
+                return reader.read_all()
+        except (pa.ArrowInvalid, OSError):
+            return None
