@@ -457,7 +457,6 @@ class BinanceWebSocketClient:
 
         self._log.debug(f"SENDING: {message}")
 
-        # TODO: Currently only working sending text with `json.dumps`
         self._inner.send_text(json.dumps(message))
         self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
 
@@ -481,6 +480,5 @@ class BinanceWebSocketClient:
 
         self._log.debug(f"SENDING: {message}")
 
-        # TODO: Currently only working sending text with `json.dumps`
         self._inner.send_text(json.dumps(message))
         self._log.info(f"Unsubscribed from {stream}.", LogColor.BLUE)
