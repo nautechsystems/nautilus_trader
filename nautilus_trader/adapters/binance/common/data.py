@@ -365,7 +365,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             symbol=bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
-        self._add_subscription_bars(bar_type)
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         # Replace method in child class, for exchange specific data types.
