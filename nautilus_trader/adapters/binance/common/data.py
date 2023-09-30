@@ -386,7 +386,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
@@ -558,6 +558,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # TODO(cs): Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
         wrapper = self._decoder_data_msg_wrapper.decode(raw)
+        if not wrapper.stream:
+            # Control message response
+            return
         try:
             handled = False
             for handler in self._ws_handlers:

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import json
 from typing import Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
@@ -59,8 +60,10 @@ class BinanceWebSocketClient:
         self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
 
-        self._streams_connecting: set[str] = set()
-        self._streams: dict[str, WebSocketClient] = {}
+        self._streams: list[str] = []
+        self._inner: Optional[WebSocketClient] = None
+        self._is_connecting = False
+        self._msg_id: int = 0
 
     @property
     def url(self) -> str:
@@ -84,7 +87,7 @@ class BinanceWebSocketClient:
         str
 
         """
-        return list(self._streams.keys())
+        return self._streams.copy()
 
     @property
     def has_subscriptions(self) -> bool:
@@ -98,38 +101,117 @@ class BinanceWebSocketClient:
         """
         return bool(self._streams)
 
-    async def _connect(self, stream: str) -> None:
-        if stream not in self._streams and stream not in self._streams_connecting:
-            self._streams_connecting.add(stream)
-            await self.connect(stream)
+    async def _subscribe(self, stream: str) -> None:
+        if stream in self._streams:
+            self._log.warning(f"Cannot subscribe to {stream}: already subscribed.")
+            return  # Already subscribed
 
-    async def connect(self, stream: str) -> None:
+        self._streams.append(stream)
+
+        while self._is_connecting and not self._inner:
+            await asyncio.sleep(0.01)
+
+        if self._inner is None:
+            # Make initial connection
+            await self.connect()
+            return
+
+        message = {
+            "method": "SUBSCRIBE",
+            "params": [stream],
+            "id": self._msg_id,
+        }
+        self._msg_id += 1
+
+        self._log.debug(f"SENDING: {message}")
+
+        # TODO: Currently only working sending text with `json.dumps`
+        self._inner.send_text(json.dumps(message))
+        self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
+
+    async def _unsubscribe(self, stream: str) -> None:
+        if stream not in self._streams:
+            self._log.warning(f"Cannot unsubscribe from {stream}: never subscribed.")
+            return  # Not subscribed
+
+        self._streams.remove(stream)
+
+        if self._inner is None:
+            self._log.error(f"Cannot unsubscribe from {stream}: not connected.")
+            return
+
+        message = {
+            "method": "UNSUBSCRIBE",
+            "params": [stream],
+            "id": self._msg_id,
+        }
+        self._msg_id += 1
+
+        self._log.debug(f"SENDING: {message}")
+
+        # TODO: Currently only working sending text with `json.dumps`
+        self._inner.send_text(json.dumps(message))
+        self._log.info(f"Unsubscribed from {stream}.", LogColor.BLUE)
+
+    async def connect(self) -> None:
         """
-        Connect a websocket client to the server for the given `stream`.
+        Connect a websocket client to the server.
         """
-        ws_url = self._base_url + f"/stream?streams={stream}"
+        if not self._streams:
+            self._log.error("Cannot connect: no streams for initial connection.")
+            return
+
+        # Binance expects at least one stream for the initial connection
+        initial_stream = self._streams[0]
+        ws_url = self._base_url + f"/stream?streams={initial_stream}"
 
         self._log.debug(f"Connecting to {ws_url}...")
-        client = await WebSocketClient.connect(
+        self._is_connecting = True
+        self._inner = await WebSocketClient.connect(
             url=ws_url,
             handler=self._handler,
             heartbeat=60,
+            post_reconnection=self.reconnect,
         )
-        self._log.info(f"Connected to {ws_url}.", LogColor.BLUE)
+        self._is_connecting = False
+        self._log.info(f"Connected to {self._base_url}.", LogColor.BLUE)
+        self._log.info(f"Subscribed to {initial_stream}.", LogColor.BLUE)
 
-        self._streams[stream] = client
-        self._streams_connecting.discard(stream)
+    async def reconnect(self) -> None:
+        """
+        Reconnect to the server, re-subscribing to all streams.
+        """
+        if not self._streams:
+            self._log.error("Cannot reconnect: no streams for initial connection.")
+            return
+
+        # Binance expects at least one stream for the initial connection
+        ws_url = self._base_url + f"/stream?streams={self._streams[0]}"
+        self._log.warning(f"Reconnected to {ws_url}.")
+
+        # Re-subscribe to all streams
+        for stream in self._streams:
+            await self._subscribe(stream)
 
     async def disconnect(self) -> None:
         """
         Disconnect the client from the server.
         """
-        client_disconnects = []
-        for stream, client in self._streams.items():
-            self._log.info(f"Disconnecting {stream}...")
-            client_disconnects.append(client.disconnect())
+        if self._inner is None:
+            self._log.warning("Cannot disconnect: not connected.")
+            return
 
-        await asyncio.gather(*client_disconnects)
+        self._log.debug("Disconnecting...")
+        await self._inner.disconnect()
+        self._inner = None
+
+        self._log.info("Disconnected.")
+
+    async def subscribe_listen_key(self, listen_key: str) -> None:
+        """
+        User Data Streams.
+        """
+        await self._subscribe(listen_key)
 
     async def subscribe_agg_trades(self, symbol: str) -> None:
         """
@@ -141,7 +223,7 @@ class BinanceWebSocketClient:
 
         """
         stream = f"{BinanceSymbol(symbol).lower()}@aggTrade"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_trades(self, symbol: str) -> None:
         """
@@ -153,7 +235,7 @@ class BinanceWebSocketClient:
 
         """
         stream = f"{BinanceSymbol(symbol).lower()}@trade"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_bars(
         self,
@@ -186,7 +268,7 @@ class BinanceWebSocketClient:
 
         """
         stream = f"{BinanceSymbol(symbol).lower()}@kline_{interval}"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_mini_ticker(
         self,
@@ -206,7 +288,7 @@ class BinanceWebSocketClient:
             stream = "!miniTicker@arr"
         else:
             stream = f"{BinanceSymbol(symbol).lower()}@miniTicker"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_ticker(
         self,
@@ -226,7 +308,7 @@ class BinanceWebSocketClient:
             stream = "!ticker@arr"
         else:
             stream = f"{BinanceSymbol(symbol).lower()}@ticker"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_book_ticker(
         self,
@@ -245,7 +327,20 @@ class BinanceWebSocketClient:
             stream = "!bookTicker"
         else:
             stream = f"{BinanceSymbol(symbol).lower()}@bookTicker"
-        await self._connect(stream)
+        await self._subscribe(stream)
+
+    async def unsubscribe_book_ticker(
+        self,
+        symbol: Optional[str] = None,
+    ) -> None:
+        """
+        Unsubscribe from individual symbol or all book tickers.
+        """
+        if symbol is None:
+            stream = "!bookTicker"
+        else:
+            stream = f"{BinanceSymbol(symbol).lower()}@bookTicker"
+        await self._unsubscribe(stream)
 
     async def subscribe_partial_book_depth(
         self,
@@ -262,7 +357,7 @@ class BinanceWebSocketClient:
 
         """
         stream = f"{BinanceSymbol(symbol).lower()}@depth{depth}@{speed}ms"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_diff_book_depth(
         self,
@@ -278,7 +373,7 @@ class BinanceWebSocketClient:
 
         """
         stream = f"{BinanceSymbol(symbol).lower()}@depth@{speed}ms"
-        await self._connect(stream)
+        await self._subscribe(stream)
 
     async def subscribe_mark_price(
         self,
@@ -299,4 +394,4 @@ class BinanceWebSocketClient:
             stream = "!markPrice@arr"
         else:
             stream = f"{BinanceSymbol(symbol).lower()}@markPrice@{int(speed / 1000)}s"
-        await self._connect(stream)
+        await self._subscribe(stream)
