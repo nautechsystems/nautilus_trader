@@ -28,12 +28,12 @@ from betfair_parser.spec.common import EndpointType
 from betfair_parser.spec.common import Request
 from betfair_parser.spec.common import encode
 from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import MatchedOrder
+from betfair_parser.spec.streaming import Order
+from betfair_parser.spec.streaming import OrderMarketChange
+from betfair_parser.spec.streaming import OrderRunnerChange
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.ocm import OCM
-from betfair_parser.spec.streaming.ocm import MatchedOrder
-from betfair_parser.spec.streaming.ocm import OrderAccountChange
-from betfair_parser.spec.streaming.ocm import OrderChanges
-from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
@@ -42,6 +42,7 @@ from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
 from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -85,10 +86,14 @@ class BetfairTestStubs:
         return TraderId("001")
 
     @staticmethod
-    def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
+    def instrument_provider(
+        betfair_client,
+        config: Optional[BetfairInstrumentProviderConfig] = None,
+    ) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=TestComponentStubs.logger(),
+            config=config or BetfairInstrumentProviderConfig(),
         )
 
     @staticmethod
@@ -560,24 +565,25 @@ class BetfairStreaming:
         sr=0,
         sc=0,
         avp=0,
-        order_id: str = "248485109136",
+        order_id: int = 248485109136,
         client_order_id: str = "",
         mb: Optional[list[MatchedOrder]] = None,
         ml: Optional[list[MatchedOrder]] = None,
     ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
+        assert isinstance(order_id, int)
         return OCM(
             id=1,
             clk="1",
             pt=0,
             oc=[
-                OrderAccountChange(
+                OrderMarketChange(
                     id="1",
                     orc=[
-                        OrderChanges(
+                        OrderRunnerChange(
                             id=1,
                             uo=[
-                                UnmatchedOrder(
+                                Order(
                                     id=order_id,
                                     p=price,
                                     s=size,
@@ -744,8 +750,6 @@ class BetfairDataProvider:
     @staticmethod
     def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
         instruments: list[BettingInstrument] = []
-        if mcm.market_definition:
-            instruments.extend(market_definition_to_instruments(mcm.market_definition, currency))
         for mc in mcm.mc:
             if mc.market_definition:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
