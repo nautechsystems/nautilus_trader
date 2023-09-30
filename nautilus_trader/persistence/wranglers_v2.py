@@ -37,7 +37,10 @@ from nautilus_trader.model.instruments import Instrument
 
 # fmt: on
 
+
+###################################################################################################
 # These classes are only intended to be used under the hood of the ParquetDataCatalog v2 at this stage
+###################################################################################################
 
 
 class WranglerBase(abc.ABC):

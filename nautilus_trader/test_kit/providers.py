@@ -420,7 +420,11 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def future(symbol: str = "ESZ21", underlying: str = "ES", venue: str = "CME"):
+    def future(
+        symbol: str = "ESZ21",
+        underlying: str = "ES",
+        venue: str = "CME",
+    ) -> FuturesContract:
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
             raw_symbol=Symbol(symbol),
@@ -550,7 +554,7 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str, **kwargs) -> TextFileReader:
+    def read_csv(self, path: str, **kwargs: Any) -> TextFileReader:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return pd.read_csv(f, **kwargs)
