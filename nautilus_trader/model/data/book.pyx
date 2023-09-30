@@ -727,10 +727,6 @@ cdef class OrderBookDelta(Data):
             The UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
             The UNIX timestamp (nanoseconds) when the data object was initialized.
-        ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the data event occurred.
-        ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------
