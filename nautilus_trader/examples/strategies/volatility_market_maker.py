@@ -372,6 +372,10 @@ class VolatilityMarketMaker(Strategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
+        # self.unsubscribe_ticker(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
 
     def on_reset(self) -> None:
         """

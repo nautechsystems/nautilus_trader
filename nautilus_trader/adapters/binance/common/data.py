@@ -383,16 +383,39 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
     async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        await self._ws_client.unsubscribe_ticker(instrument_id.symbol.value)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        await self._ws_client.unsubscribe_trades(instrument_id.symbol.value)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        if not bar_type.spec.is_time_aggregated():
+            self._log.error(
+                f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance.",
+            )
+            return
+
+        resolution = self._enum_parser.parse_internal_bar_agg(bar_type.spec.aggregation)
+        if self._binance_account_type.is_futures and resolution == "s":
+            self._log.error(
+                f"Cannot unsubscribe from {bar_type}. ",
+                "Second interval bars are not aggregated by Binance Futures.",
+            )
+        try:
+            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+        except ValueError:
+            self._log.error(
+                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
+            )
+            return
+
+        await self._ws_client.unsubscribe_bars(
+            symbol=bar_type.instrument_id.symbol.value,
+            interval=interval.value,
+        )
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
