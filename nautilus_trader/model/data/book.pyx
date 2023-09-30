@@ -22,6 +22,7 @@ from cpython.mem cimport PyMem_Malloc
 from cpython.pycapsule cimport PyCapsule_Destructor
 from cpython.pycapsule cimport PyCapsule_GetPointer
 from cpython.pycapsule cimport PyCapsule_New
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
@@ -120,6 +121,26 @@ cdef class BookOrder:
         return cstr_to_pystr(book_order_debug_to_cstr(&self._mem))
 
     @staticmethod
+    cdef BookOrder from_raw_c(
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+    ):
+        cdef BookOrder order = BookOrder.__new__(BookOrder)
+        order._mem = book_order_from_raw(
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+        )
+        return order
+
+    @staticmethod
     cdef BookOrder from_mem_c(BookOrder_t mem):
         cdef BookOrder order = BookOrder.__new__(BookOrder)
         order._mem = mem
@@ -196,6 +217,47 @@ cdef class BookOrder:
         return book_order_signed_size(&self._mem)
 
     @staticmethod
+    def from_raw(
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+    ) -> BookOrder:
+        """
+        Return an book order from the given raw values.
+
+        Parameters
+        ----------
+        side : OrderSide {``BUY``, ``SELL``}
+            The order side.
+        price_raw : int64_t
+            The order raw price (as a scaled fixed precision integer).
+        price_prec : uint8_t
+            The order price precision.
+        size_raw : uint64_t
+            The order raw size (as a scaled fixed precision integer).
+        size_prec : uint8_t
+            The order size precision.
+        order_id : uint64_t
+            The order ID.
+
+        Returns
+        -------
+        BookOrder
+
+        """
+        return BookOrder.from_raw_c(
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+        )
+
+    @staticmethod
     cdef BookOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
         return BookOrder(
@@ -257,7 +319,7 @@ cdef class OrderBookDelta(Data):
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
     order : BookOrder
-        The order for the delta.
+        The book order for the delta.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -488,6 +550,41 @@ cdef class OrderBookDelta(Data):
         return self._mem.ts_init
 
     @staticmethod
+    cdef OrderBookDelta from_raw_c(
+        InstrumentId instrument_id,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        cdef BookOrder_t order_mem = book_order_from_raw(
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+        )
+        cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
+        delta._mem = orderbook_delta_new(
+            instrument_id._mem,
+            action,
+            order_mem,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+        return delta
+
+    @staticmethod
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem):
         cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
         delta._mem = mem
@@ -585,6 +682,75 @@ cdef class OrderBookDelta(Data):
     @staticmethod
     def capsule_from_list(list items):
         return OrderBookDelta.list_to_capsule_c(items)
+
+    @staticmethod
+    def from_raw(
+        InstrumentId instrument_id,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ) -> OrderBookDelta:
+        """
+        Return an order book delta from the given raw values.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The trade instrument ID.
+        action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
+            The order book delta action.
+        side : OrderSide {``BUY``, ``SELL``}
+            The order side.
+        price_raw : int64_t
+            The order raw price (as a scaled fixed precision integer).
+        price_prec : uint8_t
+            The order price precision.
+        size_raw : uint64_t
+            The order raw size (as a scaled fixed precision integer).
+        size_prec : uint8_t
+            The order size precision.
+        order_id : uint64_t
+            The order ID.
+        flags : uint8_t
+            A combination of packet end with matching engine status.
+        sequence : uint64_t
+            The unique sequence number for the update.
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the tick event occurred.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the data event occurred.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+        Returns
+        -------
+        OrderBookDelta
+
+        """
+        return OrderBookDelta.from_raw_c(
+            instrument_id,
+            action,
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
 
     @staticmethod
     def from_dict(dict values) -> OrderBookDelta:

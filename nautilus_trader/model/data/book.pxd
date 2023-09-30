@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
@@ -20,7 +22,9 @@ from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -29,6 +33,16 @@ cdef class BookOrder:
 
     cpdef double exposure(self)
     cpdef double signed_size(self)
+
+    @staticmethod
+    cdef BookOrder from_raw_c(
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+    )
 
     @staticmethod
     cdef BookOrder from_mem_c(BookOrder_t mem)
@@ -42,6 +56,22 @@ cdef class BookOrder:
 
 cdef class OrderBookDelta(Data):
     cdef OrderBookDelta_t _mem
+
+    @staticmethod
+    cdef OrderBookDelta from_raw_c(
+        InstrumentId instrument_id,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    )
 
     @staticmethod
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem)
