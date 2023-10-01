@@ -1341,7 +1341,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                     bid_size=instrument.make_price(tick.sizeBid),
                     ask_size=instrument.make_price(tick.sizeAsk),
                     ts_event=ts_event,
-                    ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
+                    ts_init=ts_event,
                 )
                 request.result.append(quote_tick)
 
@@ -1369,7 +1369,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                     aggressor_side=AggressorSide.NO_AGGRESSOR,
                     trade_id=generate_trade_id(ts_event=ts_event, price=tick.price, size=tick.size),
                     ts_event=ts_event,
-                    ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
+                    ts_init=ts_event,
                 )
                 request.result.append(trade_tick)
 
