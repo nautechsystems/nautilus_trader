@@ -169,7 +169,7 @@ class BinanceOrderBookDeltaDataLoader:
         df = df.set_index("timestamp")
 
         df["instrument_id"] = df["symbol"] + ".BINANCE"
-        df["action"] = df["update_type"].apply(cls.map_actions)
+        df["action"] = df.apply(cls.map_actions, axis=1)
         df["side"] = df["side"].apply(cls.map_sides)
         df["order_id"] = 0  # No order ID for level 2 data
         df["flags"] = df.apply(cls.map_flags, axis=1)
@@ -193,16 +193,18 @@ class BinanceOrderBookDeltaDataLoader:
             "sequence",
         ]
         df = df[columns]
+        assert isinstance(df, pd.DataFrame)
 
         return df
 
     @classmethod
-    def map_actions(cls, action: str) -> str:
-        action = action.lower()
-        if action == "snap":
+    def map_actions(cls, row: pd.Series) -> str:
+        if row.update_type == "snap":
             return "ADD"
+        elif row.size == 0:
+            return "DELETE"
         else:
-            raise RuntimeError(f"unrecognized action '{action}'")
+            return "UPDATE"
 
     @classmethod
     def map_sides(cls, side: str) -> str:
@@ -214,8 +216,8 @@ class BinanceOrderBookDeltaDataLoader:
         else:
             raise RuntimeError(f"unrecognized side '{side}'")
 
-    @staticmethod
-    def map_flags(row: pd.Series) -> int:
+    @classmethod
+    def map_flags(cls, row: pd.Series) -> int:
         if row.update_type == "snap":
             return 42
         else:
