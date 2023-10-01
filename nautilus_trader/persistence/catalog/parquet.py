@@ -21,6 +21,7 @@ import platform
 from collections import defaultdict
 from collections.abc import Generator
 from itertools import groupby
+from os import PathLike
 from pathlib import Path
 from typing import Any, Callable, NamedTuple, Union
 
@@ -74,7 +75,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     Parameters
     ----------
-    path : str
+    path : PathLike[str] | str
         The root path for this data catalog. Must exist and must be an absolute path.
     fs_protocol : str, default 'file'
         The filesystem protocol used by `fsspec` to handle file operations.
@@ -101,7 +102,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     def __init__(
         self,
-        path: str,
+        path: PathLike[str] | str,
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
@@ -117,16 +118,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.dataset_kwargs = dataset_kwargs or {}
         self.show_query_paths = show_query_paths
 
-        path = make_path_posix(str(path))
+        final_path = str(make_path_posix(str(path)))
 
         if (
             isinstance(self.fs, MemoryFileSystem)
             and platform.system() == "Windows"
-            and not path.startswith("/")
+            and not final_path.startswith("/")
         ):
-            path = "/" + path
+            final_path = "/" + final_path
 
-        self.path = str(path)
+        self.path = str(final_path)
 
     @classmethod
     def from_env(cls) -> ParquetDataCatalog:
