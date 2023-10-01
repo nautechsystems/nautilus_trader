@@ -77,7 +77,7 @@ class TestOrderBook:
         # immediately, however we may also delete later.
         skip_deletes = []
         i = 0
-        for i, m in enumerate(TestDataStubs.l3_feed(str(filename))):
+        for i, m in enumerate(TestDataStubs.l3_feed(filename)):
             if m["op"] == "update":
                 book.update(order=m["order"], ts_event=0)
                 try:
