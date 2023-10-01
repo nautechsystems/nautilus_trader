@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import datetime
 from decimal import Decimal
 from typing import Optional
@@ -44,13 +45,21 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
         The instrument ID for the strategy.
     max_trade_size : str
         The max position size per trade (volume on the level can be less).
-    trigger_min_size : float
+    trigger_min_size : float, default 100.0
         The minimum size on the larger side to trigger an order.
-    trigger_imbalance_ratio : float
+    trigger_imbalance_ratio : float, default 0.20
         The ratio of bid:ask volume required to trigger an order (smaller
         value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
         bid volume of 100, we will send a buy order if the ask volume is <
         20).
+    min_seconds_between_triggers : float, default 0.0
+        The minimum time between triggers.
+    book_type : str, default 'L2_MBP'
+        The order book type for the strategy.
+    use_quote_ticks : bool, default False
+        If quote ticks should be used.
+    subscribe_ticker : bool, default False
+        If tickers should be subscribed to.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -119,10 +128,12 @@ class OrderBookImbalance(Strategy):
             self.subscribe_order_book_deltas(self.instrument.id, book_type)
         if self.config.subscribe_ticker:
             self.subscribe_ticker(self.instrument.id)
+
         self._book = OrderBook(
             instrument_id=self.instrument.id,
             book_type=book_type,
         )
+
         self._last_trigger_timestamp = self.clock.utc_now()
 
     def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
@@ -141,6 +152,10 @@ class OrderBookImbalance(Strategy):
         """
         Actions to be performed when a delta is received.
         """
+        if not self._book:
+            self.log.error("No book being maintained.")
+            return
+
         bid = BookOrder(
             price=tick.bid_price.as_double(),
             size=tick.bid_size.as_double(),
@@ -227,5 +242,6 @@ class OrderBookImbalance(Strategy):
         """
         if self.instrument is None:
             return
+
         self.cancel_all_orders(self.instrument.id)
         self.close_all_positions(self.instrument.id)
