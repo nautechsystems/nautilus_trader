@@ -56,6 +56,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence import wranglers_v2
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -67,6 +68,7 @@ from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.data import MyData
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
+from tests import TEST_DATA_DIR
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -316,6 +318,18 @@ class TestBacktestEngineData:
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )
+
+    def test_add_pyo3_data_raises_type_error(self) -> None:
+        # Arrange
+        path = TEST_DATA_DIR + "/truefx-audusd-ticks.csv"
+        df: pd.DataFrame = pd.read_csv(path)
+
+        wrangler = wranglers_v2.QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
+        ticks = wrangler.from_pandas(df)
+
+        # Act, Assert
+        with pytest.raises(TypeError):
+            self.engine.add_data(ticks)
 
     def test_add_generic_data_adds_to_engine(self):
         # Arrange
