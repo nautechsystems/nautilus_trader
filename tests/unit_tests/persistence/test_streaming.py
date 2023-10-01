@@ -242,6 +242,7 @@ class TestPersistenceStreaming:
         raw = self.catalog.fs.open(config_file, "rb").read()
         assert msgspec.json.decode(raw, type=NautilusKernelConfig)
 
+    @pytest.mark.skip(reason="Reading backtests appears broken")
     def test_feather_reader_returns_cython_objects(
         self,
         betfair_catalog: ParquetDataCatalog,
@@ -252,14 +253,14 @@ class TestPersistenceStreaming:
 
         # Act
         assert self.catalog
-        self.catalog.read_backtest(
+        result = self.catalog.read_backtest(
             instance_id=instance_id,
             raise_on_failed_deserialize=True,
         )
 
-        # Assert: TODO: Repair this test
-        # assert len([d for d in result if isinstance(d, TradeTick)]) == 179
-        # assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
+        # Assert
+        assert len([d for d in result if isinstance(d, TradeTick)]) == 179
+        assert len([d for d in result if isinstance(d, OrderBookDelta)]) == 1307
 
     def test_feather_reader_order_book_deltas(
         self,

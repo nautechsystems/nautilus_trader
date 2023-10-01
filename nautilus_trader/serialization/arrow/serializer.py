@@ -97,7 +97,7 @@ def register_arrow(
 
 class ArrowSerializer:
     """
-    Serialize nautilus objects to arrow RecordBatches.
+    Serialize Nautilus objects to arrow RecordBatches.
     """
 
     @staticmethod
