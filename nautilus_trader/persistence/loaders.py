@@ -148,7 +148,11 @@ class BinanceOrderBookDeltaDataLoader:
     """
 
     @classmethod
-    def load(cls, file_path: PathLike[str] | str) -> pd.DataFrame:
+    def load(
+        cls,
+        file_path: PathLike[str] | str,
+        nrows: int | None = None,
+    ) -> pd.DataFrame:
         """
         Return the deltas `pandas.DataFrame` loaded from the given CSV `file_path`.
 
@@ -156,13 +160,15 @@ class BinanceOrderBookDeltaDataLoader:
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
+        nrows : int, optional
+            The maximum number of rows to load.
 
         Returns
         -------
         pd.DataFrame
 
         """
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(file_path, nrows=nrows)
 
         # Convert the timestamp column from milliseconds to UTC datetime
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
