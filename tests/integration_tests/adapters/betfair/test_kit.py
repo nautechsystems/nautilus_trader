@@ -715,7 +715,7 @@ class BetfairDataProvider:
 
     @staticmethod
     def read_lines(filename: str = "1.166811431.bz2") -> list[bytes]:
-        path = pathlib.Path(f"{TEST_DATA_DIR}/betfair/{filename}")
+        path = TEST_DATA_DIR / "betfair" / filename
 
         if path.suffix == ".bz2":
             return bz2.open(path).readlines()
@@ -832,15 +832,15 @@ def betting_instrument_handicap() -> BettingInstrument:
     )
 
 
-def load_betfair_data(catalog: ParquetDataCatalog):
-    fn = TEST_DATA_DIR + "/betfair/1.166564490.bz2"
+def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
+    filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
 
     # Write betting instruments
-    instruments = betting_instruments_from_file(fn)
+    instruments = betting_instruments_from_file(filename)
     catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(fn))
+    data = list(parse_betfair_file(filename))
     catalog.write_data(data)
 
     return catalog

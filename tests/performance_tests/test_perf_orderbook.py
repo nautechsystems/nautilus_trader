@@ -39,7 +39,7 @@ def test_orderbook_updates(benchmark):
         instrument_id=TestIdStubs.audusd_id(),
         book_type=BookType.L3_MBO,
     )
-    filename = TEST_DATA_DIR + "/L3_feed.json"
+    filename = TEST_DATA_DIR / "L3_feed.json"
     feed = TestDataStubs.l3_feed(filename)
     assert len(feed) == 100048  # 100k updates
 

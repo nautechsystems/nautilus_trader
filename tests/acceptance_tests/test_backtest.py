@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from decimal import Decimal
 
 import pandas as pd
@@ -72,7 +71,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
-        interest_rate_data = pd.read_csv(os.path.join(TEST_DATA_DIR, "short-term-interest.csv"))
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
 
@@ -196,9 +195,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
 
-        interest_rate_data = pd.read_csv(
-            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
-        )
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
 
@@ -320,9 +317,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
 
-        interest_rate_data = pd.read_csv(
-            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
-        )
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
 
