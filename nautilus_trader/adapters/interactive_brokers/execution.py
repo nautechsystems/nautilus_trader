@@ -287,7 +287,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_status = map_order_status[ib_order.order_state.status]
         ts_init = self._clock.timestamp_ns()
         price = (
-            None if ib_order.lmtPrice == UNSET_DOUBLE else Price.from_str(str(ib_order.lmtPrice))
+            None if ib_order.lmtPrice == UNSET_DOUBLE else instrument.make_price(ib_order.lmtPrice)
         )
         expire_time = (
             timestring_to_timestamp(ib_order.goodTillDate) if ib_order.tif == "GTD" else None
@@ -314,7 +314,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # contingency_type=,
             expire_time=expire_time,
             price=price,
-            trigger_price=Price.from_str(str(ib_order.auxPrice)),
+            trigger_price=instrument.make_price(ib_order.auxPrice),
             trigger_type=TriggerType.BID_ASK,
             # limit_offset=,
             # trailing_offset=,

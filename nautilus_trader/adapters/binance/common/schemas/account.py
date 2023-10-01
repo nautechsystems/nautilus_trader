@@ -235,7 +235,7 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             else None,
             order_status=order_status,
             price=Price.from_str(self.price),
-            trigger_price=Price.from_str(str(trigger_price)),
+            trigger_price=Price.from_str(str(trigger_price)),  # `decimal.Decimal`
             trigger_type=trigger_type,
             trailing_offset=trailing_offset,
             trailing_offset_type=trailing_offset_type,

@@ -2051,7 +2051,7 @@ class TestRiskEngineWithBettingAccount:
             self.instrument.id,
             side,
             Quantity.from_int(quantity),
-            Price.from_str(str(price)),
+            Price(price, precision=1),
         )
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
