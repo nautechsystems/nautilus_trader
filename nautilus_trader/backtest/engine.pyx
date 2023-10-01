@@ -29,6 +29,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.model.data import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
@@ -578,6 +579,8 @@ cdef class BacktestEngine:
             If `instrument_id` for the data is not found in the cache.
         ValueError
             If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
+        TypeError
+            If `data` is a type provided by Rust pyo3 (cannot add directly to engine yet).
 
         Warnings
         --------
@@ -590,6 +593,12 @@ cdef class BacktestEngine:
         """
         Condition.not_empty(data, "data")
         Condition.list_type(data, Data, "data")
+
+        if isinstance(data[0], NAUTILUS_PYO3_DATA_TYPES):
+            raise TypeError(
+                f"Cannot add data of type `{type(data[0]).__name__}` from pyo3 directly to engine. "
+                "This will supported in a future release.",
+            )
 
         cdef str data_added_str = "data"
 
