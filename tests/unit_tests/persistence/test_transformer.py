@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from io import BytesIO
-from pathlib import Path
 
 import pandas as pd
 import pyarrow as pa
@@ -38,8 +37,8 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
-    path = Path(TEST_DATA_DIR) / "truefx-audusd-ticks.csv"
-    df: pd.DataFrame = pd.read_csv(path)
+    path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+    df = pd.read_csv(path)
 
     # Act
     wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)

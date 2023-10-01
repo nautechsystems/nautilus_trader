@@ -34,14 +34,14 @@ def fixture_data_catalog() -> ParquetDataCatalog:
 
 @pytest.fixture(name="betfair_catalog")
 def fixture_betfair_catalog(data_catalog: ParquetDataCatalog) -> ParquetDataCatalog:
-    fn = TEST_DATA_DIR + "/betfair/1.166564490.bz2"
+    filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
 
     # Write betting instruments
-    instruments = betting_instruments_from_file(fn)
+    instruments = betting_instruments_from_file(filename)
     data_catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(fn))
+    data = list(parse_betfair_file(filename))
     data_catalog.write_data(data)
 
     return data_catalog

@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import typing
-from typing import Optional
+
+from __future__ import annotations
+
+from collections.abc import Generator
+from os import PathLike
+from typing import BinaryIO
 
 import fsspec
 import msgspec
@@ -40,7 +44,7 @@ class BetfairParser:
         self.market_definitions: dict[str, MarketDefinition] = {}
         self.traded_volumes: dict[InstrumentId, dict[float, float]] = {}
 
-    def parse(self, mcm: MCM, ts_init: Optional[int] = None) -> list[PARSE_TYPES]:
+    def parse(self, mcm: MCM, ts_init: int | None = None) -> list[PARSE_TYPES]:
         if isinstance(mcm, (Status, Connection, OCM)):
             return []
         if mcm.is_heartbeat:
@@ -56,7 +60,7 @@ class BetfairParser:
         return updates
 
 
-def iter_stream(file_like: typing.BinaryIO):
+def iter_stream(file_like: BinaryIO):
     for line in file_like:
         yield stream_decode(line)
         # try:
@@ -68,13 +72,14 @@ def iter_stream(file_like: typing.BinaryIO):
         # yield data
 
 
-def parse_betfair_file(uri: str):  # noqa
+def parse_betfair_file(uri: PathLike[str] | str) -> Generator[list[PARSE_TYPES], None, None]:
     """
     Parse a file of streaming data.
 
     Parameters
     ----------
-        uri: fsspec-compatible URI.
+    uri : PathLike[str] | str
+        The fsspec-compatible URI.
 
     """
     parser = BetfairParser()
@@ -83,7 +88,7 @@ def parse_betfair_file(uri: str):  # noqa
             yield from parser.parse(mcm)
 
 
-def betting_instruments_from_file(uri: str) -> list[BettingInstrument]:
+def betting_instruments_from_file(uri: PathLike[str] | str) -> list[BettingInstrument]:
     from nautilus_trader.adapters.betfair.providers import make_instruments
 
     instruments: list[BettingInstrument] = []
