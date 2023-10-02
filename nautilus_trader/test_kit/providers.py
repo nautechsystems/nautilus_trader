@@ -69,7 +69,7 @@ class TestInstrumentProvider:
     @staticmethod
     def adabtc_binance() -> CurrencyPair:
         """
-        Return the Binance ADA/BTC instrument for backtesting.
+        Return the Binance Spot ADA/BTC instrument for backtesting.
 
         Returns
         -------
@@ -143,7 +143,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_perp_binance() -> CurrencyPair:
         """
-        Return the Binance Spot BTCUSDT instrument for backtesting.
+        Return the Binance Futures BTCUSDT instrument for backtesting.
 
         Returns
         -------
@@ -181,7 +181,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusdt_binance() -> CurrencyPair:
         """
-        Return the Binance ETHUSDT instrument for backtesting.
+        Return the Binance Spot ETHUSDT instrument for backtesting.
 
         Returns
         -------
@@ -218,7 +218,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
         """
-        Return the Binance ETHUSDT-PERP instrument for backtesting.
+        Return the Binance Futures ETHUSDT-PERP instrument for backtesting.
 
         Returns
         -------
@@ -256,7 +256,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_future_binance(expiry: Optional[date] = None) -> CryptoFuture:
         """
-        Return the Binance BTCUSDT instrument for backtesting.
+        Return the Binance Futures BTCUSDT instrument for backtesting.
 
         Parameters
         ----------
