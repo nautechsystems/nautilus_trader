@@ -267,7 +267,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
-                "Valid book types are L1_TBBO, L2_MBP.",
+                "Valid book types are L1_MBP, L2_MBP.",
             )
             return
 

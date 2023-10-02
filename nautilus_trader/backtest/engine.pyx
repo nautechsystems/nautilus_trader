@@ -355,7 +355,7 @@ cdef class BacktestEngine:
         modules: Optional[list[SimulationModule]] = None,
         fill_model: Optional[FillModel] = None,
         latency_model: Optional[LatencyModel] = None,
-        book_type: BookType = BookType.L1_TBBO,
+        book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
         frozen_account: bool = False,
         bar_execution: bool = True,
@@ -391,7 +391,7 @@ cdef class BacktestEngine:
             The fill model for the exchange.
         latency_model : LatencyModel, optional
             The latency model for the exchange.
-        book_type : BookType, default ``BookType.L1_TBBO``
+        book_type : BookType, default ``BookType.L1_MBP``
             The default order book type for fill modelling.
         routing : bool, default False
             If multi-venue routing should be enabled for the execution client.

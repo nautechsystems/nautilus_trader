@@ -117,11 +117,11 @@ class TestOrderBook:
         # Arrange, Act
         book = OrderBook(
             instrument_id=self.instrument.id,
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
 
         # Assert
-        assert book.book_type == BookType.L1_TBBO
+        assert book.book_type == BookType.L1_MBP
 
     def test_create_level_2_order_book(self):
         # Arrange, Act
@@ -360,7 +360,7 @@ class TestOrderBook:
     def test_delete_l1(self):
         book = OrderBook(
             instrument_id=self.instrument.id,
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
         order = TestDataStubs.order(price=10.0, side=OrderSide.BUY)
         book.update(order, 0)

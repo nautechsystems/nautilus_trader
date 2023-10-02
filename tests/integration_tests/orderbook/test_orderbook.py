@@ -26,7 +26,7 @@ class TestOrderBook:
     def test_l1_orderbook(self):
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
         i = 0
         for i, m in enumerate(TestDataStubs.l1_feed()):
