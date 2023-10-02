@@ -45,15 +45,15 @@ class TardisTradeDataLoader:
         pd.DataFrame
 
         """
-        df = pd.read_csv(
-            file_path,
-            index_col="local_timestamp",
-            date_parser=_ts_parser,
-            parse_dates=True,
-        )
+        df = pd.read_csv(file_path)
+        df["local_timestamp"] = df["local_timestamp"].apply(_ts_parser)
+        df = df.set_index("local_timestamp")
+
         df = df.rename(columns={"id": "trade_id", "amount": "quantity"})
         df["side"] = df.side.str.upper()
         df = df[["symbol", "trade_id", "price", "quantity", "side"]]
+
+        assert isinstance(df, pd.DataFrame)
 
         return df
 
@@ -78,12 +78,10 @@ class TardisQuoteDataLoader:
         pd.DataFrame
 
         """
-        df = pd.read_csv(
-            file_path,
-            index_col="local_timestamp",
-            date_parser=_ts_parser,
-            parse_dates=True,
-        )
+        df = pd.read_csv(file_path)
+        df["local_timestamp"] = df["local_timestamp"].apply(_ts_parser)
+        df = df.set_index("local_timestamp")
+
         df = df.rename(
             columns={
                 "ask_amount": "ask_size",
@@ -91,4 +89,7 @@ class TardisQuoteDataLoader:
             },
         )
 
-        return df[["bid_price", "ask_price", "bid_size", "ask_size"]]
+        df = df[["bid_price", "ask_price", "bid_size", "ask_size"]]
+        assert isinstance(df, pd.DataFrame)
+
+        return df

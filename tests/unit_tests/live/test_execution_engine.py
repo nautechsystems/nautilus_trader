@@ -60,6 +60,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -195,23 +196,13 @@ class TestLiveExecutionEngine:
     def teardown(self):
         self.data_engine.stop()
         self.risk_engine.stop()
-        self.exec_engine.stop()
         self.emulator.stop()
         self.strategy.stop()
 
-        # Cancel ALL tasks in the event loop
-        loop = asyncio.get_event_loop()
-        all_tasks = asyncio.tasks.all_tasks(loop)
-        for task in all_tasks:
-            task.cancel()
+        if self.exec_engine.is_running:
+            self.exec_engine.stop()
 
-        gather_all = asyncio.gather(*all_tasks, return_exceptions=True)
-
-        try:
-            loop.run_until_complete(gather_all)
-        except asyncio.CancelledError:
-            # Expected due to task cancellation
-            pass
+        ensure_all_tasks_completed()
 
         self.exec_engine.dispose()
 

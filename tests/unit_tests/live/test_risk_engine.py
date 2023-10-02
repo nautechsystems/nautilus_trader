@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -127,6 +128,14 @@ class TestLiveRiskEngine:
 
         # Wire up components
         self.exec_engine.register_client(self.exec_client)
+
+    def teardown(self):
+        if self.risk_engine.is_running:
+            self.risk_engine.stop()
+
+        ensure_all_tasks_completed()
+
+        self.risk_engine.dispose()
 
     @pytest.mark.asyncio()
     async def test_start_when_loop_not_running_logs(self):
@@ -248,9 +257,6 @@ class TestLiveRiskEngine:
         # Assert
         assert self.risk_engine.is_running
 
-        # Tear Down
-        self.risk_engine.stop()
-
     @pytest.mark.asyncio()
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
@@ -308,11 +314,6 @@ class TestLiveRiskEngine:
         assert self.risk_engine.cmd_qsize() == 0
         assert self.risk_engine.command_count == 1
 
-        # Tear Down
-        self.risk_engine.stop()
-        await self.risk_engine.get_cmd_queue_task()
-        await self.risk_engine.get_evt_queue_task()
-
     @pytest.mark.asyncio()
     async def test_handle_position_opening_with_position_id_none(self):
         # Arrange
@@ -343,8 +344,3 @@ class TestLiveRiskEngine:
         # Assert
         assert self.risk_engine.cmd_qsize() == 0
         assert self.risk_engine.event_count == 1
-
-        # Tear Down
-        self.risk_engine.stop()
-        await self.risk_engine.get_cmd_queue_task()
-        await self.risk_engine.get_evt_queue_task()
