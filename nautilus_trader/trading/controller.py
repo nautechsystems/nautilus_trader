@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config.common import ActorConfig
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
 
@@ -32,6 +33,11 @@ class Controller(Actor):
     config : ActorConfig, optional
         The configuratuon for the controller
 
+    Raises
+    ------
+    TypeError
+        If `config` is not of type `ActorConfig`.
+
     """
 
     def __init__(
@@ -41,6 +47,7 @@ class Controller(Actor):
     ) -> None:
         if config is None:
             config = ActorConfig()
+        PyCondition.type(config, ActorConfig, "config")
         super().__init__(config=config)
 
         self._trader = trader
