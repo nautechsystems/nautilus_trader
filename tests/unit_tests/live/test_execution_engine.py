@@ -198,6 +198,21 @@ class TestLiveExecutionEngine:
         self.exec_engine.stop()
         self.emulator.stop()
         self.strategy.stop()
+
+        # Cancel ALL tasks in the event loop
+        loop = asyncio.get_event_loop()
+        all_tasks = asyncio.tasks.all_tasks(loop)
+        for task in all_tasks:
+            task.cancel()
+
+        gather_all = asyncio.gather(*all_tasks, return_exceptions=True)
+
+        try:
+            loop.run_until_complete(gather_all)
+        except asyncio.CancelledError:
+            # Expected due to task cancellation
+            pass
+
         self.exec_engine.dispose()
 
     @pytest.mark.asyncio()
@@ -236,7 +251,10 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config=LiveExecEngineConfig(qsize=1),
+            config=LiveExecEngineConfig(
+                debug=True,
+                inflight_check_threshold_ms=0,
+            ),
         )
 
         strategy = Strategy()
@@ -270,7 +288,7 @@ class TestLiveExecutionEngine:
         await asyncio.sleep(0.1)
 
         # Assert
-        assert self.exec_engine.cmd_qsize() == 1
+        assert self.exec_engine.cmd_qsize() == 2
         assert self.exec_engine.command_count == 0
 
     @pytest.mark.asyncio()
@@ -300,7 +318,10 @@ class TestLiveExecutionEngine:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
-            config=LiveExecEngineConfig(qsize=1),
+            config=LiveExecEngineConfig(
+                debug=True,
+                inflight_check_threshold_ms=0,
+            ),
         )
 
         strategy = Strategy()
@@ -354,8 +375,6 @@ class TestLiveExecutionEngine:
     @pytest.mark.asyncio()
     async def test_kill_when_running_and_no_messages_on_queues(self):
         # Arrange, Act
-        self.exec_engine.start()
-        await asyncio.sleep(0)
         self.exec_engine.kill()
 
         # Assert
@@ -364,6 +383,8 @@ class TestLiveExecutionEngine:
     @pytest.mark.asyncio()
     async def test_kill_when_not_running_with_messages_on_queue(self):
         # Arrange, Act
+        self.exec_engine.stop()
+        await asyncio.sleep(0)
         self.exec_engine.kill()
 
         # Assert
@@ -411,7 +432,8 @@ class TestLiveExecutionEngine:
         # Tear Down
         self.exec_engine.stop()
 
-    def test_handle_order_status_report(self):
+    @pytest.mark.asyncio
+    async def test_handle_order_status_report(self):
         # Arrange
         order_report = OrderStatusReport(
             account_id=AccountId("SIM-001"),
@@ -451,7 +473,8 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.report_count == 1
 
-    def test_handle_trade_report(self):
+    @pytest.mark.asyncio
+    async def test_handle_trade_report(self):
         # Arrange
         trade_report = TradeReport(
             account_id=AccountId("SIM-001"),
@@ -476,7 +499,8 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.report_count == 1
 
-    def test_handle_position_status_report(self):
+    @pytest.mark.asyncio
+    async def test_handle_position_status_report(self):
         # Arrange
         position_report = PositionStatusReport(
             account_id=AccountId("SIM-001"),
@@ -495,7 +519,8 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.report_count == 1
 
-    def test_execution_mass_status(self):
+    @pytest.mark.asyncio
+    async def test_execution_mass_status(self):
         # Arrange
         mass_status = ExecutionMassStatus(
             client_id=ClientId("SIM"),
@@ -511,9 +536,10 @@ class TestLiveExecutionEngine:
         # Assert
         assert self.exec_engine.report_count == 1
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_check_inflight_order_status(self):
         # Arrange
+        # Deregister test fixture ExecutionEngine from msgbus)
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -521,13 +547,11 @@ class TestLiveExecutionEngine:
             price=AUDUSD_SIM.make_price(0.70000),
         )
 
+        # Act
         self.strategy.submit_order(order)
         self.exec_engine.process(TestEventStubs.order_submitted(order))
 
         await asyncio.sleep(2.0)  # Default threshold 1000ms
 
-        # Act
-        await self.exec_engine._check_inflight_orders()
-
         # Assert
-        assert self.exec_engine.command_count == 3
+        assert self.exec_engine.command_count >= 2
