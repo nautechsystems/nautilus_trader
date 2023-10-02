@@ -70,7 +70,7 @@ class TestBacktestConfig:
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=QuoteTick,
             instrument_id=instrument.id.value,
             start_time=1580398089820000000,
@@ -96,7 +96,7 @@ class TestBacktestConfig:
 
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
             client_id="NewsClient",
             metadata={"kind": "news"},
@@ -117,7 +117,7 @@ class TestBacktestConfig:
         # Act
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
             client_id="NewsClient",
@@ -133,7 +133,7 @@ class TestBacktestConfig:
 
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=InstrumentStatusUpdate,
         )
         result = c.load()
@@ -145,7 +145,7 @@ class TestBacktestConfig:
         config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             data_cls="nautilus_trader.model.data.tick:QuoteTick",
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             catalog_fs_storage_options={},
             instrument_id="AUD/USD.IDEALPRO",
             start_time=1580398089820000,

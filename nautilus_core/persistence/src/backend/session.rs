@@ -20,7 +20,7 @@ use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelud
 use futures::{executor::block_on, Stream, StreamExt};
 use nautilus_core::{cvec::CVec, python::to_pyruntime_err};
 use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data,
+    bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data, HasTsInit,
 };
 use pyo3::{prelude::*, types::PyCapsule};
 use pyo3_asyncio::tokio::get_runtime;
