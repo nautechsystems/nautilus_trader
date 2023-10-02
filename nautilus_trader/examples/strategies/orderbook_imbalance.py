@@ -18,7 +18,6 @@ from decimal import Decimal
 from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -27,6 +26,7 @@ from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.trading.strategy import Strategy
 
@@ -108,7 +108,6 @@ class OrderBookImbalance(Strategy):
         if self.config.use_quote_ticks:
             assert self.config.book_type == "L1_TBBO"
         self.book_type: BookType = book_type_from_str(self.config.book_type)
-        self._book = None  # type: Optional[OrderBook]
 
     def on_start(self) -> None:
         """
@@ -121,18 +120,14 @@ class OrderBookImbalance(Strategy):
             return
 
         if self.config.use_quote_ticks:
-            book_type = BookType.L1_TBBO
+            self.book_type = BookType.L1_TBBO
             self.subscribe_quote_ticks(self.instrument.id)
         else:
-            book_type = book_type_from_str(self.config.book_type)
-            self.subscribe_order_book_deltas(self.instrument.id, book_type)
+            self.book_type = book_type_from_str(self.config.book_type)
+            self.subscribe_order_book_deltas(self.instrument.id, self.book_type)
+
         if self.config.subscribe_ticker:
             self.subscribe_ticker(self.instrument.id)
-
-        self._book = OrderBook(
-            instrument_id=self.instrument.id,
-            book_type=book_type,
-        )
 
         self._last_trigger_timestamp = self.clock.utc_now()
 
@@ -140,82 +135,65 @@ class OrderBookImbalance(Strategy):
         """
         Actions to be performed when order book deltas are received.
         """
-        if not self._book:
-            self.log.error("No book being maintained.")
-            return
-
-        self._book.apply_deltas(deltas)
-        if self._book.spread():
-            self.check_trigger()
+        self.check_trigger()
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when a delta is received.
         """
-        if not self._book:
-            self.log.error("No book being maintained.")
-            return
-
-        bid = BookOrder(
-            price=tick.bid_price.as_double(),
-            size=tick.bid_size.as_double(),
-            side=OrderSide.BUY,
-        )
-        ask = BookOrder(
-            price=tick.ask_price.as_double(),
-            size=tick.ask_size.as_double(),
-            side=OrderSide.SELL,
-        )
-
-        self._book.clear()
-        self._book.update(bid)
-        self._book.update(ask)
-        if self._book.spread():
-            self.check_trigger()
+        self.check_trigger()
 
     def on_order_book(self, order_book: OrderBook) -> None:
         """
         Actions to be performed when an order book update is received.
         """
-        self._book = order_book
-        if self._book.spread():
-            self.check_trigger()
+        self.check_trigger()
 
     def check_trigger(self) -> None:
         """
         Check for trigger conditions.
         """
-        if not self._book:
-            self.log.error("No book being maintained.")
-            return
-
         if not self.instrument:
             self.log.error("No instrument loaded.")
             return
 
-        bid_size = self._book.best_bid_size()
-        ask_size = self._book.best_ask_size()
-        if not (bid_size > 0 and ask_size > 0):
+        # Fetch book from the cache being maintained by the `DataEngine`
+        book = self.cache.order_book(self.instrument_id)
+        if not book:
+            self.log.error("No book being maintained.")
+            return
+
+        if not book.spread():
+            return
+
+        # Uncomment for debugging
+        # self.log.info("\n" + book.pprint())
+
+        bid_size: Optional[Quantity] = book.best_bid_size()
+        ask_size: Optional[Quantity] = book.best_ask_size()
+        if (bid_size is None or bid_size <= 0) or (ask_size is None or ask_size <= 0):
+            self.log.warning("No market yet.")
             return
 
         smaller = min(bid_size, ask_size)
         larger = max(bid_size, ask_size)
         ratio = smaller / larger
         self.log.info(
-            f"Book: {self._book.best_bid_price()} @ {self._book.best_ask_price()} ({ratio=:0.2f})",
+            f"Book: {book.best_bid_price()} @ {book.best_ask_price()} ({ratio=:0.2f})",
         )
         seconds_since_last_trigger = (
             self.clock.utc_now() - self._last_trigger_timestamp
         ).total_seconds()
+
         if larger > self.trigger_min_size and ratio < self.trigger_imbalance_ratio:
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
-                self.log.info("Already have orders in flight. Skipping")
+                self.log.info("Already have orders in flight - skipping.")
             elif seconds_since_last_trigger < self.min_seconds_between_triggers:
-                self.log.info("Time since last order < min_seconds_between_triggers. Skipping")
+                self.log.info("Time since last order < min_seconds_between_triggers - skipping.")
             elif bid_size > ask_size:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
-                    price=self.instrument.make_price(self._book.best_ask_price()),
+                    price=self.instrument.make_price(book.best_ask_price()),
                     order_side=OrderSide.BUY,
                     quantity=self.instrument.make_qty(ask_size),
                     post_only=False,
@@ -227,7 +205,7 @@ class OrderBookImbalance(Strategy):
             else:
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
-                    price=self.instrument.make_price(self._book.best_bid_price()),
+                    price=self.instrument.make_price(book.best_bid_price()),
                     order_side=OrderSide.SELL,
                     quantity=self.instrument.make_qty(bid_size),
                     post_only=False,
