@@ -108,6 +108,7 @@ class ArrowSerializer:
 
     @staticmethod
     def rust_objects_to_record_batch(data: list[Data], data_cls: type) -> pa.Table | pa.RecordBatch:
+        data = sorted(data, key=lambda x: x.ts_init)
         processed = ArrowSerializer._unpack_container_objects(data_cls, data)
         batches_bytes = DataTransformer.pyobjects_to_batches_bytes(processed)
         reader = pa.ipc.open_stream(BytesIO(batches_bytes))
