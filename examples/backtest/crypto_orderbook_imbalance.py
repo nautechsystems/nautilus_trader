@@ -56,7 +56,7 @@ if __name__ == "__main__":
     engine.add_venue(
         venue=BINANCE,
         oms_type=OmsType.NETTING,
-        account_type=AccountType.MARGIN,
+        account_type=AccountType.CASH,
         base_currency=None,  # Multi-currency account
         starting_balances=[Money(1_000_000.0, USDT), Money(100.0, BTC)],
         book_type=book_type,  # <-- Venues order book
