@@ -209,7 +209,7 @@ class TestBacktestConfigParsing:
                 BacktestVenueConfig(
                     name="SIM",
                     oms_type="HEDGING",
-                    account_type="MARG  IN",
+                    account_type="MARGIN",
                     starting_balances=["1_000_000 USD"],
                 ),
             ],
@@ -219,7 +219,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 757  # UNIX
+        assert len(raw) == 754  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
