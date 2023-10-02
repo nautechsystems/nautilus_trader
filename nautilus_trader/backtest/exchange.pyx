@@ -142,7 +142,7 @@ cdef class SimulatedExchange:
         Logger logger not None,
         FillModel fill_model not None,
         LatencyModel latency_model = None,
-        BookType book_type = BookType.L1_TBBO,
+        BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
         bint bar_execution = True,
         bint reject_stop_orders = True,

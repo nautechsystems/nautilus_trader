@@ -266,7 +266,7 @@ class TestSimulatedExchange:
         self.exchange.process_quote_tick(tick)
 
         # Assert
-        assert self.exchange.get_book(USDJPY_SIM.id).book_type == BookType.L1_TBBO
+        assert self.exchange.get_book(USDJPY_SIM.id).book_type == BookType.L1_MBP
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("90.005")
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("90.002")
 

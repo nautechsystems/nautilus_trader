@@ -369,7 +369,7 @@ class TestBookType:
     @pytest.mark.parametrize(
         ("enum", "expected"),
         [
-            [BookType.L1_TBBO, "L1_TBBO"],
+            [BookType.L1_MBP, "L1_MBP"],
             [BookType.L2_MBP, "L2_MBP"],
             [BookType.L3_MBO, "L3_MBO"],
         ],
@@ -385,7 +385,7 @@ class TestBookType:
         ("string", "expected"),
         [
             ["", None],
-            ["L1_TBBO", BookType.L1_TBBO],
+            ["L1_MBP", BookType.L1_MBP],
             ["L2_MBP", BookType.L2_MBP],
             ["L3_MBO", BookType.L3_MBO],
         ],

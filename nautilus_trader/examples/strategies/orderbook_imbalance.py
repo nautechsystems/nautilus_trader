@@ -106,7 +106,7 @@ class OrderBookImbalance(Strategy):
         self._last_trigger_timestamp: Optional[datetime.datetime] = None
         self.instrument: Optional[Instrument] = None
         if self.config.use_quote_ticks:
-            assert self.config.book_type == "L1_TBBO"
+            assert self.config.book_type == "L1_MBP"
         self.book_type: BookType = book_type_from_str(self.config.book_type)
 
     def on_start(self) -> None:
@@ -120,7 +120,7 @@ class OrderBookImbalance(Strategy):
             return
 
         if self.config.use_quote_ticks:
-            self.book_type = BookType.L1_TBBO
+            self.book_type = BookType.L1_MBP
             self.subscribe_quote_ticks(self.instrument.id)
         else:
             self.book_type = book_type_from_str(self.config.book_type)
