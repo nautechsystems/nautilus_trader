@@ -173,6 +173,7 @@ class BinanceOrderBookDeltaDataLoader:
         # Convert the timestamp column from milliseconds to UTC datetime
         df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
         df = df.set_index("timestamp")
+        df = df.rename(columns={"qty": "size"})
 
         df["instrument_id"] = df["symbol"] + ".BINANCE"
         df["action"] = df.apply(cls.map_actions, axis=1)
@@ -181,10 +182,7 @@ class BinanceOrderBookDeltaDataLoader:
         df["flags"] = df.apply(cls.map_flags, axis=1)
         df["sequence"] = df["last_update_id"]
 
-        # Rename remaining columns
-        df = df.rename(columns={"qty": "size"})
-
-        # Drop redundant columns
+        # Drop now redundant columns
         df = df.drop(columns=["symbol", "update_type", "first_update_id", "last_update_id"])
 
         # Reorder columns
@@ -205,9 +203,9 @@ class BinanceOrderBookDeltaDataLoader:
 
     @classmethod
     def map_actions(cls, row: pd.Series) -> str:
-        if row.update_type == "snap":
+        if row["update_type"] == "snap":
             return "ADD"
-        elif row.size == 0:
+        elif row["size"] == 0:
             return "DELETE"
         else:
             return "UPDATE"
