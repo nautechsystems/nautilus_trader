@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from datetime import datetime
 
 import pandas as pd
@@ -137,7 +136,7 @@ class TestForexSessionFilter:
 class TestEconomicNewsEventFilter:
     def setup(self):
         # Fixture Setup
-        news_csv_path = os.path.join(TEST_DATA_DIR, "news_events.csv")
+        news_csv_path = TEST_DATA_DIR / "news_events.csv"
         self.news_data = as_utc_index(pd.read_csv(news_csv_path, parse_dates=True, index_col=0))
 
     def test_initialize_filter(self):

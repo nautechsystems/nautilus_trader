@@ -2,6 +2,8 @@
 
 Released on TBD (UTC).
 
+This will be the final release with support for Python 3.9.
+
 ### Enhancements
 - Added `ParquetDataCatalog` v2 supporting built-in data types `OrderBookDelta`, `QuoteTick`, `TradeTick` and `Bar`
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
@@ -16,6 +18,7 @@ Released on TBD (UTC).
 - Decythonized `Trader`
 
 ### Breaking Changes
+- Renamed `BookType.L1_TBBO` to `BookType.L1_MBP` (more accurate definition, as L1 is the top-level price either side)
 - Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 
 ### Fixes
@@ -23,9 +26,9 @@ Released on TBD (UTC).
 - Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
 - Fixed `SandboxExecutionClientConfig` `kw_only=True` to allow importing without initializing
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
-- Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed open position snapshots race condition (added `open_only` flag)
 - Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
+- Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed Binance Futures fee rates for backtesting
 
 ---

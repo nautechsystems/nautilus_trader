@@ -98,7 +98,7 @@ cdef extern from "../includes/model.h":
     # The order book type, representing the type of levels granularity and delta updating heuristics.
     cpdef enum BookType:
         # Top-of-book best bid/offer, one level per side.
-        L1_TBBO # = 1,
+        L1_MBP # = 1,
         # Market by price, one order per level (aggregated).
         L2_MBP # = 2,
         # Market by order, multiple orders per level (full granularity).

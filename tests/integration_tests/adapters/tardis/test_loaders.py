@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from pathlib import Path
-
 from nautilus_trader.adapters.tardis.loaders import TardisQuoteDataLoader
 from nautilus_trader.adapters.tardis.loaders import TardisTradeDataLoader
 from nautilus_trader.model.enums import AggressorSide
@@ -29,7 +27,7 @@ from tests import TEST_DATA_DIR
 
 def test_tardis_quote_data_loader():
     # Arrange, Act
-    path = Path(TEST_DATA_DIR) / "tardis_quotes.csv"
+    path = TEST_DATA_DIR / "tardis_quotes.csv"
     ticks = TardisQuoteDataLoader.load(path)
 
     # Assert
@@ -40,7 +38,7 @@ def test_pre_process_with_quote_tick_data():
     # Arrange
     instrument = TestInstrumentProvider.btcusdt_binance()
     wrangler = QuoteTickDataWrangler(instrument=instrument)
-    path = Path(TEST_DATA_DIR) / "tardis_quotes.csv"
+    path = TEST_DATA_DIR / "tardis_quotes.csv"
     data = TardisQuoteDataLoader.load(path)
 
     # Act
@@ -61,7 +59,7 @@ def test_pre_process_with_quote_tick_data():
 
 def test_tardis_trade_tick_loader():
     # Arrange, Act
-    path = Path(TEST_DATA_DIR) / "tardis_trades.csv"
+    path = TEST_DATA_DIR / "tardis_trades.csv"
     ticks = TardisTradeDataLoader.load(path)
 
     # Assert
@@ -72,7 +70,7 @@ def test_pre_process_with_trade_tick_data():
     # Arrange
     instrument = TestInstrumentProvider.btcusdt_binance()
     wrangler = TradeTickDataWrangler(instrument=instrument)
-    path = Path(TEST_DATA_DIR) / "tardis_trades.csv"
+    path = TEST_DATA_DIR / "tardis_trades.csv"
     data = TardisTradeDataLoader.load(path)
 
     # Act

@@ -15,7 +15,8 @@
 
 use nautilus_core::cvec::CVec;
 use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data,
+    bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
+    trade::TradeTick, Data,
 };
 use nautilus_persistence::{
     arrow::NautilusDataType,
@@ -37,7 +38,7 @@ async fn test_order_book_delta_query() {
     let ticks: Vec<Data> = query_result.flatten().collect();
 
     assert_eq!(ticks.len(), expected_length);
-    assert!(is_ascending_by_init(&ticks));
+    assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
 #[rstest]
@@ -86,7 +87,7 @@ async fn test_quote_tick_query() {
     }
 
     assert_eq!(ticks.len(), expected_length);
-    assert!(is_ascending_by_init(&ticks));
+    assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
 #[tokio::test]
@@ -111,7 +112,7 @@ async fn test_quote_tick_multiple_query() {
     let ticks: Vec<Data> = query_result.flatten().collect();
 
     assert_eq!(ticks.len(), expected_length);
-    assert!(is_ascending_by_init(&ticks));
+    assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
 #[tokio::test]
@@ -133,7 +134,7 @@ async fn test_trade_tick_query() {
     }
 
     assert_eq!(ticks.len(), expected_length);
-    assert!(is_ascending_by_init(&ticks));
+    assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
 #[tokio::test]
@@ -155,19 +156,5 @@ async fn test_bar_query() {
     }
 
     assert_eq!(ticks.len(), expected_length);
-    assert!(is_ascending_by_init(&ticks));
-}
-
-// NOTE: is_sorted_by_key is unstable otherwise use
-// ticks.is_sorted_by_key(|tick| tick.ts_init)
-// https://github.com/rust-lang/rust/issues/53485
-fn is_ascending_by_init(ticks: &Vec<Data>) -> bool {
-    for i in 1..ticks.len() {
-        // previous tick is more recent than current tick
-        // this is not ascending order
-        if ticks[i - 1].get_ts_init() > ticks[i].get_ts_init() {
-            return false;
-        }
-    }
-    true
+    assert!(is_monotonically_increasing_by_init(&ticks));
 }

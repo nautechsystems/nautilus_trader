@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from datetime import datetime
 from decimal import Decimal
 
@@ -136,9 +135,7 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine = BacktestEngine(config=config)
 
             provider = TestDataProvider()
-            interest_rate_data = pd.read_csv(
-                os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
-            )
+            interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
             config = FXRolloverInterestConfig(interest_rate_data)
             fx_rollover_interest = FXRolloverInterestModule(config)
 

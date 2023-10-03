@@ -26,10 +26,10 @@ class TestOrderBook:
     def test_l1_orderbook(self):
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
         i = 0
-        for i, m in enumerate(TestDataStubs.l1_feed()):  # (B007)
+        for i, m in enumerate(TestDataStubs.l1_feed()):
             if m["op"] == "update":
                 book.update(order=m["order"], ts_event=0)
             else:
@@ -38,7 +38,7 @@ class TestOrderBook:
         assert i == 1999
 
     def test_l2_feed(self):
-        filename = TEST_DATA_DIR + "/L2_feed.json"
+        filename = TEST_DATA_DIR / "L2_feed.json"
 
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
@@ -66,7 +66,7 @@ class TestOrderBook:
 
     @pytest.mark.skip("segfault on check_integrity")
     def test_l3_feed(self):
-        filename = TEST_DATA_DIR + "/L3_feed.json"
+        filename = TEST_DATA_DIR / "L3_feed.json"
 
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
@@ -77,7 +77,7 @@ class TestOrderBook:
         # immediately, however we may also delete later.
         skip_deletes = []
         i = 0
-        for i, m in enumerate(TestDataStubs.l3_feed(filename)):  # (B007)
+        for i, m in enumerate(TestDataStubs.l3_feed(filename)):
             if m["op"] == "update":
                 book.update(order=m["order"], ts_event=0)
                 try:

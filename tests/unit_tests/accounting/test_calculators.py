@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import datetime
-import os
 from decimal import Decimal
 
 import pandas as pd
@@ -219,9 +218,7 @@ class TestExchangeRateCalculator:
 class TestRolloverInterestCalculator:
     def setup(self):
         # Fixture Setup
-        self.data = pd.read_csv(
-            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
-        )
+        self.data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
 
     def test_rate_dataframe_returns_correct_dataframe(self):
         # Arrange

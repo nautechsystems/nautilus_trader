@@ -433,7 +433,7 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
         depth : int, optional, default None
             The maximum depth for the subscription.
@@ -455,7 +455,7 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
             The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.

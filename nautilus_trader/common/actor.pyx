@@ -1209,7 +1209,7 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -1265,7 +1265,7 @@ cdef class Actor(Component):
         ----------
         instrument_id : InstrumentId
             The order book instrument ID to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -1290,7 +1290,7 @@ cdef class Actor(Component):
         Condition.not_negative(interval_ms, "interval_ms")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
-        if book_type == BookType.L1_TBBO and depth > 1:
+        if book_type == BookType.L1_MBP and depth > 1:
             self._log.error(
                 "Cannot subscribe to order book snapshots: "
                 f"L1 TBBO book subscription depth > 1, was {depth}",

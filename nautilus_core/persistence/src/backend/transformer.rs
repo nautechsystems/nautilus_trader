@@ -19,7 +19,10 @@ use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
 };
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::data::{
+    bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
+    trade::TradeTick,
+};
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
@@ -29,6 +32,7 @@ use pyo3::{
 use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
 
 const ERROR_EMPTY_DATA: &str = "`data` was empty";
+const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
 #[pyclass]
 pub struct DataTransformer {}
@@ -43,6 +47,12 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&deltas) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(deltas)
     }
 
@@ -52,6 +62,12 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| QuoteTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&ticks) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(ticks)
     }
 
@@ -61,6 +77,12 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| TradeTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&ticks) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(ticks)
     }
 
@@ -70,6 +92,12 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<Bar>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&bars) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(bars)
     }
 

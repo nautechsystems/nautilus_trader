@@ -403,7 +403,7 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(tick)}...")
 
-        if self.book_type == BookType.L1_TBBO:
+        if self.book_type == BookType.L1_MBP:
             self._book.update_quote_tick(tick)
 
         self.iterate(tick.ts_init)
@@ -425,7 +425,7 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(tick)}...")
 
-        if self.book_type == BookType.L1_TBBO:
+        if self.book_type == BookType.L1_MBP:
             self._book.update_trade_tick(tick)
 
         self._core.set_last_raw(tick._mem.price.raw)
@@ -452,7 +452,7 @@ cdef class OrderMatchingEngine:
         if not self._log.is_bypassed:
             self._log.debug(f"Processing {repr(bar)}...")
 
-        if self.book_type != BookType.L1_TBBO:
+        if self.book_type != BookType.L1_MBP:
             return  # Can only process an L1 book with bars
 
         cdef PriceType price_type = bar.bar_type.spec.price_type
@@ -1221,7 +1221,7 @@ cdef class OrderMatchingEngine:
         if (
             fills
             and triggered_price is not None
-            and self._book.book_type == BookType.L1_TBBO
+            and self._book.book_type == BookType.L1_MBP
             and order.liquidity_side == LiquiditySide.TAKER
         ):
             ########################################################################
@@ -1248,7 +1248,7 @@ cdef class OrderMatchingEngine:
         cdef Price initial_fill_price
         if (
             fills
-            and self._book.book_type == BookType.L1_TBBO
+            and self._book.book_type == BookType.L1_MBP
             and order.liquidity_side == LiquiditySide.MAKER
         ):
             ########################################################################
@@ -1313,7 +1313,7 @@ cdef class OrderMatchingEngine:
 
         cdef Price price
         cdef Price triggered_price
-        if self._book.book_type == BookType.L1_TBBO and fills:
+        if self._book.book_type == BookType.L1_MBP and fills:
             triggered_price = order.get_triggered_price_c()
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT or order.order_type == OrderType.MARKET_IF_TOUCHED:
                 if order.side == OrderSide.BUY:
@@ -1522,7 +1522,7 @@ cdef class OrderMatchingEngine:
                 self.cancel_order(order)
                 return
 
-            if self.book_type == BookType.L1_TBBO and self._fill_model.is_slipped():
+            if self.book_type == BookType.L1_MBP and self._fill_model.is_slipped():
                 if order.side == OrderSide.BUY:
                     fill_px = fill_px.add(self.instrument.price_increment)
                 elif order.side == OrderSide.SELL:
@@ -1565,7 +1565,7 @@ cdef class OrderMatchingEngine:
 
         if (
             order.is_open_c()
-            and self.book_type == BookType.L1_TBBO
+            and self.book_type == BookType.L1_MBP
             and (
             order.order_type == OrderType.MARKET
             or order.order_type == OrderType.MARKET_IF_TOUCHED

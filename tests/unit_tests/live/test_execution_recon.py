@@ -49,6 +49,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -142,6 +143,13 @@ class TestLiveExecutionReconciliation:
         self.cache.add_instrument(AUDUSD_SIM)
 
     def teardown(self):
+        self.data_engine.stop()
+        self.risk_engine.stop()
+        self.exec_engine.stop()
+
+        ensure_all_tasks_completed()
+
+        self.exec_engine.dispose()
         self.client.dispose()
 
     @pytest.mark.asyncio()

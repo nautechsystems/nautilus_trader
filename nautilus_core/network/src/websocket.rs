@@ -433,7 +433,6 @@ impl WebSocketClient {
         py: Python<'py>,
     ) -> PyResult<&'py PyAny> {
         let writer = slf.writer.clone();
-        debug!("Sending {:?}", data);
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
@@ -451,7 +450,6 @@ impl WebSocketClient {
     #[pyo3(name = "send")]
     fn py_send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
         let writer = slf.writer.clone();
-        debug!("Sending {:?}", String::from_utf8(data.clone()));
         pyo3_asyncio::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard

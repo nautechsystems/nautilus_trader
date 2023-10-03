@@ -109,16 +109,16 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         # The next step is to enable users to pass their own fee rates map via the config.
         # In the future, we aim to represent this fee model with greater accuracy for backtesting.
         self._fee_rates = {
-            0: BinanceFuturesFeeRates(feeTier=0, maker="0.000200", taker="0.000180"),
-            1: BinanceFuturesFeeRates(feeTier=1, maker="0.000160", taker="0.000144"),
-            2: BinanceFuturesFeeRates(feeTier=2, maker="0.000140", taker="0.000126"),
-            3: BinanceFuturesFeeRates(feeTier=3, maker="0.000120", taker="0.000108"),
-            4: BinanceFuturesFeeRates(feeTier=4, maker="0.000100", taker="0.000090"),
-            5: BinanceFuturesFeeRates(feeTier=5, maker="0.000080", taker="0.000072"),
-            6: BinanceFuturesFeeRates(feeTier=6, maker="0.000060", taker="0.000054"),
-            7: BinanceFuturesFeeRates(feeTier=7, maker="0.000040", taker="0.000036"),
-            8: BinanceFuturesFeeRates(feeTier=8, maker="0.000020", taker="0.000018"),
-            9: BinanceFuturesFeeRates(feeTier=9, maker="0.000000", taker="0.000000"),
+            0: BinanceFuturesFeeRates(feeTier=0, maker="0.000200", taker="0.000400"),
+            1: BinanceFuturesFeeRates(feeTier=1, maker="0.000160", taker="0.000400"),
+            2: BinanceFuturesFeeRates(feeTier=2, maker="0.000140", taker="0.000350"),
+            3: BinanceFuturesFeeRates(feeTier=3, maker="0.000120", taker="0.000320"),
+            4: BinanceFuturesFeeRates(feeTier=4, maker="0.000100", taker="0.000300"),
+            5: BinanceFuturesFeeRates(feeTier=5, maker="0.000080", taker="0.000270"),
+            6: BinanceFuturesFeeRates(feeTier=6, maker="0.000060", taker="0.000250"),
+            7: BinanceFuturesFeeRates(feeTier=7, maker="0.000040", taker="0.000220"),
+            8: BinanceFuturesFeeRates(feeTier=8, maker="0.000020", taker="0.000200"),
+            9: BinanceFuturesFeeRates(feeTier=9, maker="0.000000", taker="0.000170"),
         }
 
     async def load_all_async(self, filters: Optional[dict] = None) -> None:

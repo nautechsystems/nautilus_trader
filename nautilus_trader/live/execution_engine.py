@@ -328,18 +328,30 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"Scheduled {self._cmd_queue_task}.")
         self._log.debug(f"Scheduled {self._evt_queue_task}.")
 
-        if self.inflight_check_interval_ms > 0:
-            self._inflight_check_task = self._loop.create_task(self._inflight_check_loop())
-            self._log.debug(f"Scheduled {self._inflight_check_task}.")
+        if not self._inflight_check_task:
+            if self.inflight_check_interval_ms > 0:
+                self._inflight_check_task = self._loop.create_task(
+                    self._inflight_check_loop(),
+                    name="inflight_check",
+                )
+                self._log.debug(f"Scheduled {self._inflight_check_task}.")
 
     def _on_stop(self) -> None:
         if self._inflight_check_task:
+            self._log.info("Canceling in-flight check task...")
             self._inflight_check_task.cancel()
+            self._inflight_check_task = None
 
         if self._kill:
             return  # Avoids queuing redundant sentinel messages
+
         # This will stop the queues processing as soon as they see the sentinel message
         self._enqueue_sentinel()
+
+    async def _wait_for_inflight_check_task(self) -> None:
+        if self._inflight_check_task is None:
+            return
+        await self._inflight_check_task
 
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
@@ -353,6 +365,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("Command message queue canceled.")
+        except RuntimeError as ex:
+            self._log.error(f"RuntimeError: {ex}.")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -372,6 +386,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._handle_event(event)
         except asyncio.CancelledError:
             self._log.warning("Event message queue canceled.")
+        except RuntimeError as ex:
+            self._log.error(f"RuntimeError: {ex}.")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
@@ -380,9 +396,12 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._log.debug(stopped_msg + ".")
 
     async def _inflight_check_loop(self) -> None:
-        while True:
-            await asyncio.sleep(self.inflight_check_interval_ms / 1000)
-            await self._check_inflight_orders()
+        try:
+            while True:
+                await asyncio.sleep(self.inflight_check_interval_ms / 1000)
+                await self._check_inflight_orders()
+        except asyncio.CancelledError:
+            self._log.debug("In-flight check loop task canceled.")
 
     async def _check_inflight_orders(self) -> None:
         self._log.debug("Checking in-flight orders status...")

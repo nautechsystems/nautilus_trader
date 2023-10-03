@@ -14,17 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-from fsspec.utils import pathlib
 
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TESTS_PACKAGE_ROOT
+from tests import TEST_DATA_DIR
 
 
-TEST_DATA_DIR = pathlib.Path(TESTS_PACKAGE_ROOT).joinpath("test_data")
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
@@ -32,7 +30,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def test_quote_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
-    df: pd.DataFrame = pd.read_csv(path)
+    df = pd.read_csv(path)
 
     # Act
     wrangler = QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
@@ -51,7 +49,7 @@ def test_quote_tick_data_wrangler() -> None:
 def test_trade_tick_data_wrangler() -> None:
     # Arrange
     path = TEST_DATA_DIR / "binance-ethusdt-trades.csv"
-    df: pd.DataFrame = pd.read_csv(path)
+    df = pd.read_csv(path)
 
     # Act
     wrangler = TradeTickDataWrangler.from_instrument(ETHUSDT_BINANCE)

@@ -54,7 +54,7 @@ pub enum BookIntegrityError {
     OrdersCrossed(BookPrice, BookPrice),
     #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
     TooManyOrders(OrderSide, usize),
-    #[error("Integrity error: number of {0} levels > 1 for L1_TBBO book, was {1}")]
+    #[error("Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
     TooManyLevels(OrderSide, usize),
 }
 
@@ -91,7 +91,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => panic!("{}", InvalidBookOperation::Add(self.book_type)),
+            BookType::L1_MBP => panic!("{}", InvalidBookOperation::Add(self.book_type)),
         };
 
         match order.side {
@@ -107,7 +107,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => {
+            BookType::L1_MBP => {
                 self.update_l1(order, ts_event, sequence);
                 self.pre_process_order(order)
             }
@@ -126,7 +126,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => self.pre_process_order(order),
+            BookType::L1_MBP => self.pre_process_order(order),
         };
 
         match order.side {
@@ -316,7 +316,7 @@ impl OrderBook {
         match self.book_type {
             BookType::L3_MBO => self.check_integrity_l3(),
             BookType::L2_MBP => self.check_integrity_l2(),
-            BookType::L1_TBBO => self.check_integrity_l1(),
+            BookType::L1_MBP => self.check_integrity_l1(),
         }
     }
 
@@ -386,7 +386,7 @@ impl OrderBook {
     }
 
     fn update_l1(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        // Because of the way we typically get updates from a L1_TBBO order book (bid
+        // Because of the way we typically get updates from a L1_MBP order book (bid
         // and ask updates at the same time), its quite probable that the last
         // bid is now the ask price we are trying to insert (or vice versa). We
         // just need to add some extra protection against this if we aren't calling
@@ -448,10 +448,10 @@ impl OrderBook {
 
     fn pre_process_order(&self, mut order: BookOrder) -> BookOrder {
         match self.book_type {
-            // Because a L1_TBBO only has one level per side, we replace the
+            // Because a L1_MBP only has one level per side, we replace the
             // `order.order_id` with the enum value of the side, which will let us easily process
             // the order.
-            BookType::L1_TBBO => order.order_id = order.side as u64,
+            BookType::L1_MBP => order.order_id = order.side as u64,
             // Because a L2_MBP only has one order per level, we replace the
             // `order.order_id` with a raw price value, which will let us easily process the order.
             BookType::L2_MBP => order.order_id = order.price.raw as u64,
@@ -665,7 +665,7 @@ mod tests {
     #[rstest]
     fn test_update_quote_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBook::new(instrument_id, BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
         let tick = QuoteTick::new(
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             Price::from("5000.000"),
@@ -691,7 +691,7 @@ mod tests {
     #[rstest]
     fn test_update_trade_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBook::new(instrument_id, BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
 
         let price = Price::from("15000.000");
         let size = Quantity::from("10.00000000");
