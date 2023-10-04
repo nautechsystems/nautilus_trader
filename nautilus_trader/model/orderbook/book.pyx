@@ -38,7 +38,7 @@ from nautilus_trader.core.rust.model cimport level_drop
 from nautilus_trader.core.rust.model cimport level_exposure
 from nautilus_trader.core.rust.model cimport level_orders
 from nautilus_trader.core.rust.model cimport level_price
-from nautilus_trader.core.rust.model cimport level_volume
+from nautilus_trader.core.rust.model cimport level_size
 from nautilus_trader.core.rust.model cimport orderbook_add
 from nautilus_trader.core.rust.model cimport orderbook_apply_delta
 from nautilus_trader.core.rust.model cimport orderbook_asks
@@ -55,6 +55,7 @@ from nautilus_trader.core.rust.model cimport orderbook_clear_bids
 from nautilus_trader.core.rust.model cimport orderbook_count
 from nautilus_trader.core.rust.model cimport orderbook_delete
 from nautilus_trader.core.rust.model cimport orderbook_get_avg_px_for_quantity
+from nautilus_trader.core.rust.model cimport orderbook_get_quantity_for_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
 from nautilus_trader.core.rust.model cimport orderbook_has_bid
 from nautilus_trader.core.rust.model cimport orderbook_instrument_id
@@ -519,6 +520,33 @@ cdef class OrderBook(Data):
 
         return orderbook_get_avg_px_for_quantity(&self._mem, quantity._mem, order_side)
 
+    cpdef double get_quantity_for_price(self, Price price, OrderSide order_side):
+        """
+        Return the current total quantity for the given `price` based on the current state
+        of the order book.
+
+        Parameters
+        ----------
+        price : Price
+            The quantity for the calculation.
+        order_side : OrderSide
+            The order side for the calculation.
+
+        Returns
+        -------
+        double
+
+        Raises
+        ------
+        ValueError
+            If `order_side` is equal to ``NO_ORDER_SIDE``
+
+        """
+        Condition.not_none(price, "price")
+        Condition.not_equal(order_side, OrderSide.NO_ORDER_SIDE, "order_side", "NO_ORDER_SIDE")
+
+        return orderbook_get_quantity_for_price(&self._mem, price._mem, order_side)
+
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive):
         """
         Simulate filling the book with the given order.
@@ -690,16 +718,16 @@ cdef class Level:
 
         return book_orders
 
-    cpdef double volume(self):
+    cpdef double size(self):
         """
-        Return the volume at this level.
+        Return the size at this level.
 
         Returns
         -------
         double
 
         """
-        return level_volume(&self._mem)
+        return level_size(&self._mem)
 
     cpdef double exposure(self):
         """

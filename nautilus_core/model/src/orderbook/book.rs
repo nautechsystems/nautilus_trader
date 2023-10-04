@@ -227,24 +227,53 @@ impl OrderBook {
             OrderSide::Sell => &self.bids.levels,
             _ => panic!("Invalid `OrderSide` {}", order_side),
         };
-        let mut cumulative_volume_raw = 0u64;
+        let mut cumulative_size_raw = 0u64;
         let mut cumulative_value = 0.0;
 
         for (book_price, level) in levels {
-            let volume_this_level = level.volume_raw().min(qty.raw - cumulative_volume_raw);
-            cumulative_volume_raw += volume_this_level;
-            cumulative_value += book_price.value.as_f64() * volume_this_level as f64;
+            let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
+            cumulative_size_raw += size_this_level;
+            cumulative_value += book_price.value.as_f64() * size_this_level as f64;
 
-            if cumulative_volume_raw >= qty.raw {
+            if cumulative_size_raw >= qty.raw {
                 break;
             }
         }
 
-        if cumulative_volume_raw == 0 {
+        if cumulative_size_raw == 0 {
             0.0
         } else {
-            cumulative_value / cumulative_volume_raw as f64
+            cumulative_value / cumulative_size_raw as f64
         }
+    }
+
+    pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
+            _ => panic!("Invalid `OrderSide` {}", order_side),
+        };
+
+        let mut matched_size: f64 = 0.0;
+
+        for (book_price, level) in levels {
+            match order_side {
+                OrderSide::Buy => {
+                    if book_price.value > price {
+                        break;
+                    }
+                }
+                OrderSide::Sell => {
+                    if book_price.value < price {
+                        break;
+                    }
+                }
+                _ => panic!("Invalid `OrderSide` {}", order_side),
+            }
+            matched_size += level.size();
+        }
+
+        matched_size
     }
 
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
@@ -617,6 +646,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_quantity_for_price_no_market() {
+        let book = create_stub_book(BookType::L2_MBP);
+        let price = Price::from("1.0");
+
+        assert_eq!(book.get_quantity_for_price(price, OrderSide::Buy), 0.0);
+        assert_eq!(book.get_quantity_for_price(price, OrderSide::Sell), 0.0);
+    }
+
+    #[rstest]
     fn test_get_price_for_quantity() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -659,6 +697,64 @@ mod tests {
         assert_eq!(
             book.get_avg_px_for_quantity(qty, OrderSide::Sell),
             0.9966666666666667
+        );
+    }
+
+    #[rstest]
+    fn test_get_quantity_for_price() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let ask3 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.011"),
+            Quantity::from("3.0"),
+            0, // order_id not applicable
+        );
+        let ask2 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.010"),
+            Quantity::from("2.0"),
+            0, // order_id not applicable
+        );
+        let ask1 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("0.990"),
+            Quantity::from("2.0"),
+            0, // order_id not applicable
+        );
+        let bid3 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("0.989"),
+            Quantity::from("3.0"),
+            0, // order_id not applicable
+        );
+        book.add(bid1, 0, 1);
+        book.add(bid2, 0, 1);
+        book.add(bid3, 0, 1);
+        book.add(ask1, 0, 1);
+        book.add(ask2, 0, 1);
+        book.add(ask3, 0, 1);
+
+        assert_eq!(
+            book.get_quantity_for_price(Price::from("2.010"), OrderSide::Buy),
+            3.0
+        );
+        assert_eq!(
+            book.get_quantity_for_price(Price::from("0.990"), OrderSide::Sell),
+            3.0
         );
     }
 

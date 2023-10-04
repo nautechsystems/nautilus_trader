@@ -54,6 +54,7 @@ cdef class OrderBook(Data):
     cpdef spread(self)
     cpdef midpoint(self)
     cpdef double get_avg_px_for_quantity(self, Quantity quantity, OrderSide order_side)
+    cpdef double get_quantity_for_price(self, Price price, OrderSide order_side)
     cpdef list simulate_fills(self, Order order, uint8_t price_prec, bint is_aggressive)
     cpdef void update_quote_tick(self, QuoteTick tick)
     cpdef void update_trade_tick(self, TradeTick tick)
@@ -64,7 +65,7 @@ cdef class Level:
     cdef Level_API _mem
 
     cpdef list orders(self)
-    cpdef double volume(self)
+    cpdef double size(self)
     cpdef double exposure(self)
 
     @staticmethod

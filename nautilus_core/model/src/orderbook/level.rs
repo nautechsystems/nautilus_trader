@@ -99,7 +99,7 @@ impl Level {
     }
 
     #[must_use]
-    pub fn volume(&self) -> f64 {
+    pub fn size(&self) -> f64 {
         let mut sum: f64 = 0.0;
         for o in self.orders.iter() {
             sum += o.size.as_f64()
@@ -108,7 +108,7 @@ impl Level {
     }
 
     #[must_use]
-    pub fn volume_raw(&self) -> u64 {
+    pub fn size_raw(&self) -> u64 {
         let mut sum = 0u64;
         for o in self.orders.iter() {
             sum += o.size.raw
@@ -207,7 +207,7 @@ mod tests {
         level.add(order);
         assert!(!level.is_empty());
         assert_eq!(level.len(), 1);
-        assert_eq!(level.volume(), 10.0);
+        assert_eq!(level.size(), 10.0);
     }
 
     #[rstest]
@@ -219,7 +219,7 @@ mod tests {
         level.add(order1);
         level.add(order2);
         assert_eq!(level.len(), 2);
-        assert_eq!(level.volume(), 30.0);
+        assert_eq!(level.size(), 30.0);
         assert_eq!(level.exposure(), 60.0);
     }
 
@@ -232,7 +232,7 @@ mod tests {
         level.add(order1);
         level.update(order2);
         assert_eq!(level.len(), 1);
-        assert_eq!(level.volume(), 20.0);
+        assert_eq!(level.size(), 20.0);
         assert_eq!(level.exposure(), 20.0);
     }
 
@@ -245,7 +245,7 @@ mod tests {
         level.add(order1);
         level.update(order2);
         assert_eq!(level.len(), 0);
-        assert_eq!(level.volume(), 0.0);
+        assert_eq!(level.size(), 0.0);
         assert_eq!(level.exposure(), 0.0);
     }
 
@@ -272,7 +272,7 @@ mod tests {
         level.delete(&order1);
         assert_eq!(level.len(), 1);
         assert_eq!(level.orders.first().unwrap().order_id, order2_id);
-        assert_eq!(level.volume(), 20.0);
+        assert_eq!(level.size(), 20.0);
         assert_eq!(level.exposure(), 20.0);
     }
 
@@ -299,7 +299,7 @@ mod tests {
         level.remove(order2_id);
         assert_eq!(level.len(), 1);
         assert_eq!(level.orders.first().unwrap().order_id, order1_id);
-        assert_eq!(level.volume(), 10.0);
+        assert_eq!(level.size(), 10.0);
         assert_eq!(level.exposure(), 10.0);
     }
 
@@ -324,7 +324,7 @@ mod tests {
         let orders = vec![order1, order2];
         level.add_bulk(orders);
         assert_eq!(level.len(), 2);
-        assert_eq!(level.volume(), 30.0);
+        assert_eq!(level.size(), 30.0);
         assert_eq!(level.exposure(), 60.0);
     }
 
@@ -336,25 +336,25 @@ mod tests {
     }
 
     #[rstest]
-    fn test_volume() {
+    fn test_size() {
         let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("1.00"), Quantity::from(15), 1);
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.volume(), 25.0);
+        assert_eq!(level.size(), 25.0);
     }
 
     #[rstest]
-    fn test_volume_raw() {
+    fn test_size_raw() {
         let mut level = Level::new(BookPrice::new(Price::from("2.00"), OrderSide::Buy));
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(10), 0);
         let order2 = BookOrder::new(OrderSide::Buy, Price::from("2.00"), Quantity::from(20), 1);
 
         level.add(order1);
         level.add(order2);
-        assert_eq!(level.volume_raw(), 30_000_000_000);
+        assert_eq!(level.size_raw(), 30_000_000_000);
     }
 
     #[rstest]
