@@ -44,6 +44,7 @@ from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.data.venue import InstrumentClose
 from nautilus_trader.model.data.venue import InstrumentStatusUpdate
+from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -194,7 +195,7 @@ def test_market_update(data_client, mock_data_engine_process):
 def test_market_update_md(data_client, mock_data_engine_process):
     data_client.on_market_update(BetfairStreaming.mcm_UPDATE_md())
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = ["BettingInstrument"] * 2 + ["InstrumentStatusUpdate"] * 2
+    expected = ["BettingInstrument"] * 2 + ["VenueStatusUpdate"] + ["InstrumentStatusUpdate"] * 2
     assert result == expected
 
 
@@ -340,8 +341,8 @@ def test_instrument_in_play_events(data_client, parser):
 def test_instrument_closing_events(data_client, parser):
     updates = BetfairDataProvider.market_updates()
     messages = parser.parse(updates[-1])
-    assert len(messages) == 6
-    ins1, ins2, status1, status2, close1, close2 = messages
+    assert len(messages) == 7
+    ins1, ins2, venue_status, status1, status2, close1, close2 = messages
 
     # Instrument1
     assert isinstance(ins1, BettingInstrument)
@@ -426,7 +427,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
     # Act, Assert
     for update in BetfairDataProvider.market_updates():
         for message in parser.parse(update):
-            if isinstance(message, BettingInstrument):
+            if isinstance(message, (BettingInstrument, VenueStatusUpdate)):
                 continue
             if message.instrument_id not in books:
                 books[message.instrument_id] = create_betfair_order_book(
