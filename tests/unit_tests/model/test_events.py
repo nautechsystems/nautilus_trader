@@ -298,7 +298,7 @@ class TestModelEvents:
         assert OrderAccepted.from_dict(OrderAccepted.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderAccepted(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"  # noqa
+            == "OrderAccepted(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"
         )
         assert (
             repr(event)
@@ -350,7 +350,7 @@ class TestModelEvents:
         assert OrderCanceled.from_dict(OrderCanceled.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderCanceled(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"  # noqa
+            == "OrderCanceled(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"
         )
         assert (
             repr(event)
@@ -376,7 +376,7 @@ class TestModelEvents:
         assert OrderExpired.from_dict(OrderExpired.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderExpired(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"  # noqa
+            == "OrderExpired(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"
         )
         assert (
             repr(event)
@@ -402,7 +402,7 @@ class TestModelEvents:
         assert OrderTriggered.from_dict(OrderTriggered.to_dict(event)) == event
         assert (
             str(event)
-            == "OrderTriggered(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"  # noqa
+            == "OrderTriggered(instrument_id=BTCUSDT.BINANCE, client_order_id=O-2020872378423, venue_order_id=123456, account_id=SIM-000, ts_event=0)"
         )
         assert (
             repr(event)
