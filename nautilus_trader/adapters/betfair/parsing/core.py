@@ -57,8 +57,9 @@ class BetfairParser:
         ts_init = ts_init or ts_event
         for mc in mcm.mc:
             if mc.market_definition is not None:
-                self.market_definitions[mc.id] = mc.market_definition
-                instruments = make_instruments(mc.market_definition, currency=self.currency.code)
+                market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
+                self.market_definitions[mc.id] = market_def
+                instruments = make_instruments(market_def, currency=self.currency.code)
                 updates.extend(instruments)
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
