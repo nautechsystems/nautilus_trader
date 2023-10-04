@@ -338,6 +338,22 @@ def test_instrument_in_play_events(data_client, parser):
     assert result == expected
 
 
+def test_instrument_update(data_client, cache, parser):
+    # Arrange
+    [instrument] = cache.instruments()
+    assert instrument.info == {}
+
+    # Act
+    updates = BetfairDataProvider.market_updates()
+    for upd in updates[:1]:
+        data_client._on_market_update(mcm=upd)
+    new_instrument = cache.instruments()
+
+    # Assert
+    result = new_instrument[2].info
+    assert len(result) == 41
+
+
 def test_instrument_closing_events(data_client, parser):
     updates = BetfairDataProvider.market_updates()
     messages = parser.parse(updates[-1])
