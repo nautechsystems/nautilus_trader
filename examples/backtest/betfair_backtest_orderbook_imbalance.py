@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
     # Add data
     raw = list(BetfairDataProvider.market_updates())
-    parser = BetfairParser()
+    parser = BetfairParser(currency=GBP.code)
     updates = [upd for update in raw for upd in parser.parse(update)]
     engine.add_data(updates, client_id=ClientId("BETFAIR"))
 

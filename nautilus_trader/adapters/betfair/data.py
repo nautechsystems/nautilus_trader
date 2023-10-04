@@ -81,6 +81,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
+        account_currency: str,
         strict_handling: bool = False,
     ):
         super().__init__(
@@ -101,7 +102,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-        self.parser = BetfairParser()
+        self.parser = BetfairParser(currency=account_currency)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions

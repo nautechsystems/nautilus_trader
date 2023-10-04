@@ -559,16 +559,19 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _handle_order_stream_update(self, order_change_message: OCM) -> None:
         for market in order_change_message.oc or []:
             for selection in market.orc:
-                for unmatched_order in selection.uo:
-                    await self._check_order_update(unmatched_order=unmatched_order)
-                    if unmatched_order.status == "E":
-                        self._handle_stream_executable_order_update(unmatched_order=unmatched_order)
-                    elif unmatched_order.status == "EC":
-                        self._handle_stream_execution_complete_order_update(
-                            unmatched_order=unmatched_order,
-                        )
-                    else:
-                        self._log.warning(f"Unknown order state: {unmatched_order}")
+                if selection.uo:
+                    for unmatched_order in selection.uo:
+                        await self._check_order_update(unmatched_order=unmatched_order)
+                        if unmatched_order.status == "E":
+                            self._handle_stream_executable_order_update(
+                                unmatched_order=unmatched_order,
+                            )
+                        elif unmatched_order.status == "EC":
+                            self._handle_stream_execution_complete_order_update(
+                                unmatched_order=unmatched_order,
+                            )
+                        else:
+                            self._log.warning(f"Unknown order state: {unmatched_order}")
                 if selection.full_image:
                     self.check_cache_against_order_image(order_change_message)
                     continue
