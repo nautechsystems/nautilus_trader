@@ -50,6 +50,7 @@ class TestBetfairInstrumentProvider:
             logger=TestComponentStubs.logger(),
             config=BetfairInstrumentProviderConfig(),
         )
+        self.parser = BetfairParser(currency="GBP")
 
     @pytest.mark.asyncio()
     async def test_load_markets(self):
@@ -144,11 +145,10 @@ class TestBetfairInstrumentProvider:
 
         # Act
         results = []
-        parser = BetfairParser()
-        for data in parser.parse(update):
+        for data in self.parser.parse(update):
             results.append(data)
 
         # Assert
-        result = [r.status for r in results[:8]]
+        result = [r.status for r in results[8:16]]
         expected = [MarketStatus.PRE_OPEN] * 7 + [MarketStatus.CLOSED]
         assert result == expected

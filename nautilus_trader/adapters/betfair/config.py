@@ -20,7 +20,7 @@ from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
 
-class BetfairDataClientConfig(LiveDataClientConfig, frozen=True):
+class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     """
     Configuration for ``BetfairDataClient`` instances.
 
@@ -37,6 +37,7 @@ class BetfairDataClientConfig(LiveDataClientConfig, frozen=True):
 
     """
 
+    account_currency: str
     username: Optional[str] = None
     password: Optional[str] = None
     app_key: Optional[str] = None
@@ -61,7 +62,7 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
 
     """
 
-    base_currency: str
+    account_currency: str
     username: Optional[str] = None
     password: Optional[str] = None
     app_key: Optional[str] = None

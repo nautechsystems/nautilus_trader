@@ -178,7 +178,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def parse_betfair(line):
-        parser = BetfairParser()
+        parser = BetfairParser(currency="GBP")
         yield from parser.parse(stream_decode(line))
 
     @staticmethod
@@ -556,6 +556,10 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_market_updates.json", iterate=True)
 
     @staticmethod
+    def mcm_market_definition_racing():
+        return BetfairStreaming.load("streaming_market_definition_racing.json")
+
+    @staticmethod
     def generate_order_change_message(
         price=1.3,
         size=20,
@@ -758,7 +762,7 @@ class BetfairDataProvider:
 
     @staticmethod
     def betfair_feed_parsed(market_id: str = "1.166564490"):
-        parser = BetfairParser()
+        parser = BetfairParser(currency="GBP")
 
         instruments: list[BettingInstrument] = []
         data = []
@@ -840,7 +844,7 @@ def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
     catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(filename))
+    data = list(parse_betfair_file(filename, currency="GBP"))
     catalog.write_data(data)
 
     return catalog
