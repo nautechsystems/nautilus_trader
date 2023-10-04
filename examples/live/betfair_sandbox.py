@@ -61,6 +61,9 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
     instruments = provider.list_all()
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
+    # Load account currency
+    account_currency = await provider.get_account_currency()
+
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
@@ -68,6 +71,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
+                account_currency=account_currency,
                 instrument_config=instrument_config,
             ),
         },

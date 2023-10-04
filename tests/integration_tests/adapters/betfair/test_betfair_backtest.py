@@ -54,7 +54,7 @@ def test_betfair_backtest():
 
     # Add data
     raw = list(BetfairDataProvider.market_updates())
-    parser = BetfairParser()
+    parser = BetfairParser(currency="GBP")
     updates = [upd for update in raw for upd in parser.parse(update)]
     engine.add_data(updates, client_id=ClientId("BETFAIR"))
 

@@ -72,6 +72,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
+                account_currency=account.currency_code,
                 instrument_config=instrument_config,
                 # username="YOUR_BETFAIR_USERNAME",
                 # password="YOUR_BETFAIR_PASSWORD",
@@ -82,7 +83,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
         exec_clients={
             # # UNCOMMENT TO SEND ORDERS
             "BETFAIR": BetfairExecClientConfig(
-                base_currency=account.currency_code,
+                account_currency=account.currency_code,
                 instrument_config=instrument_config,
                 # "username": "YOUR_BETFAIR_USERNAME",
                 # "password": "YOUR_BETFAIR_PASSWORD",

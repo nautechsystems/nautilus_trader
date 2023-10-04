@@ -41,7 +41,7 @@ def fixture_betfair_catalog(data_catalog: ParquetDataCatalog) -> ParquetDataCata
     data_catalog.write_data(instruments)
 
     # Write data
-    data = list(parse_betfair_file(filename))
+    data = list(parse_betfair_file(filename, currency="GBP"))
     data_catalog.write_data(data)
 
     return data_catalog

@@ -93,6 +93,7 @@ from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
+from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 from tests.integration_tests.adapters.betfair.test_kit import mock_betfair_request
@@ -105,6 +106,7 @@ class TestBetfairParsingStreaming:
     def setup(self):
         self.instrument = betting_instrument()
         self.tick_scheme = BETFAIR_TICK_SCHEME
+        self.parser = BetfairParser(currency="GBP")
 
     def test_market_definition_to_instrument_status_updates(self):
         # Arrange
@@ -166,6 +168,25 @@ class TestBetfairParsingStreaming:
         result = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
         assert len(result) == 14
 
+    def test_market_definition_to_instrument_updates(self):
+        # Arrange
+        raw = BetfairStreaming.mcm_market_definition_racing()
+        mcm = msgspec.json.decode(raw, type=MCM)
+
+        # Act
+        updates = self.parser.parse(mcm)
+
+        # Assert
+        counts = Counter([update.__class__.__name__ for update in updates])
+        expected = Counter(
+            {
+                "InstrumentStatusUpdate": 7,
+                "OrderBookDeltas": 7,
+                "BettingInstrument": 7,
+            },
+        )
+        assert counts == expected
+
     def test_market_change_bsp_updates(self):
         raw = b'{"id":"1.205822330","rc":[{"spb":[[1000,32.21]],"id":45368013},{"spb":[[1000,20.5]],"id":49808343},{"atb":[[1.93,10.09]],"id":49808342},{"spb":[[1000,20.5]],"id":39000334},{"spb":[[1000,84.22]],"id":16206031},{"spb":[[1000,18]],"id":10591436},{"spb":[[1000,88.96]],"id":48672282},{"spb":[[1000,18]],"id":19143530},{"spb":[[1000,20.5]],"id":6159479},{"spb":[[1000,10]],"id":25694777},{"spb":[[1000,10]],"id":49808335},{"spb":[[1000,10]],"id":49808334},{"spb":[[1000,20.5]],"id":35672106}],"con":true,"img":false}'  # noqa
         mc = msgspec.json.decode(raw, type=MarketChange)
@@ -206,35 +227,35 @@ class TestBetfairParsingStreaming:
     @pytest.mark.parametrize(
         ("filename", "num_msgs"),
         [
-            ("1.166564490.bz2", 2504),
-            ("1.166811431.bz2", 17838),
-            ("1.180305278.bz2", 15153),
-            ("1.206064380.bz2", 51851),
+            ("1.166564490.bz2", 2506),
+            ("1.166811431.bz2", 17855),
+            ("1.180305278.bz2", 15169),
+            ("1.206064380.bz2", 52115),
         ],
     )
     def test_parsing_streaming_file(self, filename, num_msgs):
         mcms = BetfairDataProvider.market_updates(filename)
-        parser = BetfairParser()
         updates = []
         for mcm in mcms:
-            upd = parser.parse(mcm)
+            upd = self.parser.parse(mcm)
             updates.extend(upd)
         assert len(updates) == num_msgs
 
     def test_parsing_streaming_file_message_counts(self):
         mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
-        parser = BetfairParser()
-        updates = [x for mcm in mcms for x in parser.parse(mcm)]
+        updates = [x for mcm in mcms for x in self.parser.parse(mcm)]
         counts = Counter([x.__class__.__name__ for x in updates])
         expected = Counter(
             {
                 "OrderBookDeltas": 40525,
                 "BetfairTicker": 4658,
                 "TradeTick": 3487,
+                "BettingInstrument": 260,
                 "BSPOrderBookDelta": 2824,
                 "InstrumentStatusUpdate": 260,
                 "BetfairStartingPrice": 72,
                 "InstrumentClose": 25,
+                "VenueStatusUpdate": 4,
             },
         )
         assert counts == expected
@@ -253,10 +274,9 @@ class TestBetfairParsingStreaming:
     )
     def test_order_book_integrity(self, filename, book_count) -> None:
         mcms = BetfairDataProvider.market_updates(filename)
-        parser = BetfairParser()
 
         books: dict[InstrumentId, OrderBook] = {}
-        for update in [x for mcm in mcms for x in parser.parse(mcm)]:
+        for update in [x for mcm in mcms for x in self.parser.parse(mcm)]:
             if isinstance(update, OrderBookDeltas) and not isinstance(
                 update,
                 BSPOrderBookDelta,
@@ -272,11 +292,10 @@ class TestBetfairParsingStreaming:
 
     def test_betfair_trade_sizes(self):  # noqa: C901
         mcms = BetfairDataProvider.read_mcm("1.206064380.bz2")
-        parser = BetfairParser()
         trade_ticks: dict[InstrumentId, list[TradeTick]] = defaultdict(list)
         betfair_tv: dict[int, dict[float, float]] = {}
         for mcm in mcms:
-            for data in parser.parse(mcm):
+            for data in self.parser.parse(mcm):
                 if isinstance(data, TradeTick):
                     trade_ticks[data.instrument_id].append(data)
 
@@ -312,6 +331,7 @@ class TestBetfairParsing:
         self.client = BetfairTestStubs.betfair_client(loop=self.loop, logger=self.logger)
         self.provider = BetfairTestStubs.instrument_provider(self.client)
         self.uuid = UUID4()
+        self.parser = BetfairParser(currency="GBP")
 
     def test_order_submit_to_betfair(self):
         command = TestCommandStubs.submit_order_command(
@@ -442,8 +462,7 @@ class TestBetfairParsing:
             },
         )
         mcm = msgspec.json.decode(raw, type=MCM)
-        parser = BetfairParser()
-        updates = parser.parse(mcm)
+        updates = self.parser.parse(mcm)
         assert len(updates) == 3
         trade, ticker, deltas = updates
         assert isinstance(trade, TradeTick)
@@ -634,10 +653,9 @@ class TestBetfairParsing:
         assert mcm.mc[0].rc[0].batb == expected
 
     def test_mcm_bsp_example1(self):
-        parser = BetfairParser()
         r = b'{"op":"mcm","id":1,"clk":"ANjxBACiiQQAlpQD","pt":1672131753550,"mc":[{"id":"1.208011084","marketDefinition":{"bspMarket":true,"turnInPlayEnabled":false,"persistenceEnabled":false,"marketBaseRate":7,"eventId":"31987078","eventTypeId":"4339","numberOfWinners":1,"bettingType":"ODDS","marketType":"WIN","marketTime":"2022-12-27T09:00:00.000Z","suspendTime":"2022-12-27T09:00:00.000Z","bspReconciled":true,"complete":true,"inPlay":false,"crossMatching":false,"runnersVoidable":false,"numberOfActiveRunners":0,"betDelay":0,"status":"CLOSED","settledTime":"2022-12-27T09:02:21.000Z","runners":[{"status":"WINNER","sortPriority":1,"bsp":2.0008034621107256,"id":45967562},{"status":"LOSER","sortPriority":2,"bsp":5.5,"id":45565847},{"status":"LOSER","sortPriority":3,"bsp":9.2,"id":47727833},{"status":"LOSER","sortPriority":4,"bsp":166.61668896346615,"id":47179469},{"status":"LOSER","sortPriority":5,"bsp":44,"id":51247493},{"status":"LOSER","sortPriority":6,"bsp":32,"id":42324350},{"status":"LOSER","sortPriority":7,"bsp":7.4,"id":51247494},{"status":"LOSER","sortPriority":8,"bsp":32.28604557164013,"id":48516342}],"regulators":["MR_INT"],"venue":"Warragul","countryCode":"AU","discountAllowed":true,"timezone":"Australia/Sydney","openDate":"2022-12-27T07:46:00.000Z","version":4968605121,"priceLadderDefinition":{"type":"CLASSIC"}}}]}'  # noqa
         mcm = stream_decode(r)
-        updates = parser.parse(mcm)
+        updates = self.parser.parse(mcm)
         starting_prices = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
         assert len(starting_prices) == 8
         assert starting_prices[0].instrument_id == InstrumentId.from_str(
@@ -647,9 +665,8 @@ class TestBetfairParsing:
 
     def test_mcm_bsp_example2(self):
         raw = b'{"op":"mcm","clk":"7066946780","pt":1667288437853,"mc":[{"id":"1.205880280","rc":[{"spl":[[1.01,2]],"id":49892033},{"atl":[[2.8,0],[2.78,0]],"id":49892032},{"atb":[[2.8,378.82]],"id":49892032},{"trd":[[2.8,1.16],[2.78,1.18]],"ltp":2.8,"tv":2.34,"id":49892032},{"spl":[[1.01,4.79]],"id":49892030},{"spl":[[1.01,2]],"id":49892029},{"spl":[[1.01,3.79]],"id":49892028},{"spl":[[1.01,2]],"id":49892027},{"spl":[[1.01,2]],"id":49892034}],"con":true,"img":false}]}'  # noqa
-        parser = BetfairParser()
         mcm = stream_decode(raw)
-        updates = parser.parse(mcm)
+        updates = self.parser.parse(mcm)
         single_instrument_bsp_updates = [
             upd
             for upd in updates
