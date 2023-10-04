@@ -81,10 +81,16 @@ class BetfairStreamClient:
         )
         self._client = await SocketClient.connect(
             config,
-            self.post_connection,
+            None,
             self.post_reconnection,
-            self.post_disconnection,
+            None,
+            # TODO - waiting for async handling
+            # self.post_connection,
+            # self.post_reconnection,
+            # self.post_disconnection,
         )
+        self._log.debug("Running post connect")
+        await self.post_connection()
 
         self.is_connected = True
         self._log.info("Connected.")
@@ -93,6 +99,10 @@ class BetfairStreamClient:
         self._log.info("Disconnecting .. ")
         self.disconnecting = True
         self._client.disconnect()
+
+        self._log.debug("Running post disconnect")
+        await self.post_disconnection()
+
         self.is_connected = False
         self._log.info("Disconnected.")
 
@@ -101,11 +111,10 @@ class BetfairStreamClient:
         Actions to be performed post connection.
         """
 
-    async def post_reconnection(self) -> None:
+    def post_reconnection(self) -> None:
         """
         Actions to be performed post connection.
         """
-        raise NotImplementedError("Not implemented for betfair socket, use post_connection")
 
     async def post_disconnection(self) -> None:
         """
@@ -164,6 +173,9 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         }
         await self.send(msgspec.json.encode(self.auth_message()))
         await self.send(msgspec.json.encode(subscribe_msg))
+
+    def post_reconnection(self):
+        self._loop.create_task(self.post_connection())
 
 
 class BetfairMarketStreamClient(BetfairStreamClient):
@@ -270,3 +282,6 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     async def post_connection(self):
         await super().post_connection()
         await self.send(msgspec.json.encode(self.auth_message()))
+
+    def post_reconnection(self):
+        self._loop.create_task(self.post_connection())
