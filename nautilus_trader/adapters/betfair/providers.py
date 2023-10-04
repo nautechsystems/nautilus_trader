@@ -45,8 +45,8 @@ class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
     event_type_ids: Optional[list[str]] = None
     event_ids: Optional[list[str]] = None
     market_ids: Optional[list[str]] = None
-    event_country_codes: Optional[list[str]] = None
-    market_market_types: Optional[list[str]] = None
+    country_codes: Optional[list[str]] = None
+    market_types: Optional[list[str]] = None
     event_type_names: Optional[list[str]] = None
 
 
@@ -105,10 +105,8 @@ class BetfairInstrumentProvider(InstrumentProvider):
             event_type_ids=filters.get("event_type_ids") or self._config.event_type_ids,
             event_ids=filters.get("event_ids") or self._config.event_ids,
             market_ids=filters.get("market_ids") or self._config.market_ids,
-            event_country_codes=filters.get("event_country_codes")
-            or self._config.event_country_codes,
-            market_market_types=filters.get("market_market_types")
-            or self._config.market_market_types,
+            event_country_codes=filters.get("country_codes") or self._config.country_codes,
+            market_market_types=filters.get("market_types") or self._config.market_types,
             event_type_names=filters.get("event_type_names") or self._config.event_type_names,
         )
 
