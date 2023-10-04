@@ -23,6 +23,7 @@ import msgspec
 import pytest
 from betfair_parser.spec.streaming import OCM
 from betfair_parser.spec.streaming import MatchedOrder
+from betfair_parser.spec.streaming import Order as BFOrder
 from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
@@ -34,6 +35,7 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currency import Currency
@@ -84,7 +86,7 @@ async def _setup_order_state(
                     instrument_id = betfair_instrument_id(
                         market_id=oc.id,
                         selection_id=str(orc.id),
-                        selection_handicap=str(orc.hc),
+                        selection_handicap=str(orc.hc or 0.0),
                     )
                     order_id = str(order_update.id)
                     venue_order_id = VenueOrderId(order_id)
@@ -93,7 +95,7 @@ async def _setup_order_state(
                         instrument = betting_instrument(
                             market_id=oc.id,
                             selection_id=str(orc.id),
-                            selection_handicap=str(orc.hc),
+                            selection_handicap=str(orc.hc or 0.0),
                         )
                         cache.add_instrument(instrument)
                     if not cache.order(client_order_id):
@@ -831,7 +833,6 @@ async def test_order_filled_avp_update(exec_client, setup_order_state):
 
 @pytest.mark.asyncio()
 async def test_generate_order_status_report_client_id(
-    mocker,
     exec_client: BetfairExecutionClient,
     betfair_client,
     instrument_provider,
@@ -852,6 +853,35 @@ async def test_generate_order_status_report_client_id(
         instrument_id=instrument.id,
         venue_order_id=VenueOrderId("1"),
         client_order_id=None,
+    )
+
+    # Assert
+    assert report.order_status == OrderStatus.ACCEPTED
+    assert report.price == Price(5.0, BETFAIR_PRICE_PRECISION)
+    assert report.quantity == Quantity(10.0, BETFAIR_QUANTITY_PRECISION)
+    assert report.filled_qty == Quantity(0.0, BETFAIR_QUANTITY_PRECISION)
+
+
+@pytest.mark.asyncio()
+async def test_generate_order_status_report_venue_order_id(
+    exec_client: BetfairExecutionClient,
+    betfair_client,
+    instrument_provider,
+    instrument: BettingInstrument,
+) -> None:
+    # Arrange
+    response = BetfairResponses.list_current_orders()
+    response["result"]["currentOrders"] = response["result"]["currentOrders"][:1]
+    mock_betfair_request(betfair_client, response=response)
+
+    client_order_id = ClientOrderId("O-20231004-0534-001-59723858-5")
+    venue_order_id = VenueOrderId("323427122115")
+
+    # Act
+    report: OrderStatusReport = await exec_client.generate_order_status_report(
+        instrument_id=instrument.id,
+        venue_order_id=venue_order_id,
+        client_order_id=client_order_id,
     )
 
     # Assert
@@ -902,3 +932,58 @@ async def test_check_cache_against_order_image_passes(
 
     # Act, Assert
     exec_client.check_cache_against_order_image(ocm)
+
+
+@pytest.mark.asyncio
+async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy, cache):
+    # Arrange
+    instrument = betting_instrument(
+        market_id="1.219194342",
+        selection_id=str(61288616),
+        selection_handicap=str(0.0),
+    )
+    cache.add_instrument(instrument)
+    instrument_id = instrument.id
+    client_order_id = ClientOrderId("O-20231004-0354-001-61288616-1")
+    venue_order_id = VenueOrderId("323421338057")
+    limit_order = TestExecStubs.limit_order(
+        instrument_id=instrument_id,
+        order_side=OrderSide.SELL,
+        price=Price(9.6000000, BETFAIR_PRICE_PRECISION),
+        quantity=Quantity(2.8000, 4),
+        time_in_force=TimeInForce.FOK,
+        client_order_id=client_order_id,
+    )
+    exec_client.venue_order_id_to_client_order_id[venue_order_id] = client_order_id
+    await _accept_order(limit_order, venue_order_id, exec_client, strategy, cache)
+
+    # Act
+    unmatched_order = BFOrder(
+        id=323421338057,
+        p=9.6,
+        s=2.8,
+        side="L",
+        status="EC",
+        pt="L",
+        ot="L",
+        pd=1696391679000,
+        bsp=None,
+        rfo="O-20231004-0354-001",
+        rfs="OrderBookImbala",
+        rc="REG_LGA",
+        rac="",
+        md=None,
+        cd=1696391679000,
+        ld=None,
+        avp=None,
+        sm=0.0,
+        sr=0.0,
+        sl=0.0,
+        sc=2.8,
+        sv=0.0,
+        lsrc=None,
+    )
+    exec_client._handle_stream_execution_complete_order_update(unmatched_order=unmatched_order)
+
+    # Assert
+    assert cache.order(client_order_id).status == OrderStatus.CANCELED
