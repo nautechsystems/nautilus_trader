@@ -30,7 +30,9 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
+from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
 
@@ -40,7 +42,8 @@ class BetfairParser:
     Stateful parser that keeps market definition.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, currency: str) -> None:
+        self.currency = Currency.from_str(currency)
         self.market_definitions: dict[str, MarketDefinition] = {}
         self.traded_volumes: dict[InstrumentId, dict[float, float]] = {}
 
@@ -55,6 +58,8 @@ class BetfairParser:
         for mc in mcm.mc:
             if mc.market_definition is not None:
                 self.market_definitions[mc.id] = mc.market_definition
+                instruments = make_instruments(mc.market_definition, currency=self.currency.code)
+                updates.extend(instruments)
             mc_updates = market_change_to_updates(mc, self.traded_volumes, ts_event, ts_init)
             updates.extend(mc_updates)
         return updates
@@ -72,7 +77,10 @@ def iter_stream(file_like: BinaryIO):
         # yield data
 
 
-def parse_betfair_file(uri: PathLike[str] | str) -> Generator[list[PARSE_TYPES], None, None]:
+def parse_betfair_file(
+    uri: PathLike[str] | str,
+    currency: str,
+) -> Generator[list[PARSE_TYPES], None, None]:
     """
     Parse a file of streaming data.
 
@@ -80,9 +88,11 @@ def parse_betfair_file(uri: PathLike[str] | str) -> Generator[list[PARSE_TYPES],
     ----------
     uri : PathLike[str] | str
         The fsspec-compatible URI.
+    currency : str
+        The betfair account currency
 
     """
-    parser = BetfairParser()
+    parser = BetfairParser(currency=currency)
     with fsspec.open(uri, compression="infer") as f:
         for mcm in iter_stream(f):
             yield from parser.parse(mcm)
