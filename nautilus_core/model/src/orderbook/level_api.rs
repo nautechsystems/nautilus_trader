@@ -85,8 +85,8 @@ pub extern "C" fn level_orders(level: &Level_API) -> CVec {
 }
 
 #[no_mangle]
-pub extern "C" fn level_volume(level: &Level_API) -> f64 {
-    level.volume()
+pub extern "C" fn level_size(level: &Level_API) -> f64 {
+    level.size()
 }
 
 #[no_mangle]

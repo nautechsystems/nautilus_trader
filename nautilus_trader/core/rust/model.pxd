@@ -1357,6 +1357,10 @@ cdef extern from "../includes/model.h":
                                              Quantity_t qty,
                                              OrderSide order_side);
 
+    double orderbook_get_quantity_for_price(OrderBook_API *book,
+                                            Price_t price,
+                                            OrderSide order_side);
+
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *tick);
 
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
@@ -1380,7 +1384,7 @@ cdef extern from "../includes/model.h":
 
     CVec level_orders(const Level_API *level);
 
-    double level_volume(const Level_API *level);
+    double level_size(const Level_API *level);
 
     double level_exposure(const Level_API *level);
 

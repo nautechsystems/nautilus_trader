@@ -155,8 +155,8 @@ impl Ladder {
     }
 
     #[must_use]
-    pub fn volumes(&self) -> f64 {
-        return self.levels.values().map(|l| l.volume()).sum();
+    pub fn sizes(&self) -> f64 {
+        return self.levels.values().map(|l| l.size()).sum();
     }
 
     #[must_use]
@@ -253,7 +253,7 @@ mod tests {
 
         ladder.add(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
@@ -268,7 +268,7 @@ mod tests {
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
-        assert_eq!(ladder.volumes(), 300.0);
+        assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
@@ -288,7 +288,7 @@ mod tests {
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
-        assert_eq!(ladder.volumes(), 300.0);
+        assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
@@ -304,7 +304,7 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
         assert_eq!(
             ladder.top().unwrap().price.value.as_f64(),
@@ -323,7 +323,7 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
         assert_eq!(
             ladder.top().unwrap().price.value.as_f64(),
@@ -342,7 +342,7 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 10.0);
+        assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
@@ -358,7 +358,7 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 10.0);
+        assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
@@ -374,7 +374,7 @@ mod tests {
 
         ladder.delete(order);
         assert_eq!(ladder.len(), 0);
-        assert_eq!(ladder.volumes(), 0.0);
+        assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
         assert_eq!(ladder.top(), None)
     }
@@ -390,7 +390,7 @@ mod tests {
 
         ladder.delete(order);
         assert_eq!(ladder.len(), 0);
-        assert_eq!(ladder.volumes(), 0.0);
+        assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
         assert_eq!(ladder.top(), None)
     }
@@ -469,7 +469,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_simulate_order_fills_buy_with_volume_depth_type() {
+    fn test_simulate_order_fills_buy() {
         let mut ladder = Ladder::new(OrderSide::Sell);
 
         ladder.add_bulk(vec![
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_simulate_order_fills_sell_with_volume_depth_type() {
+    fn test_simulate_order_fills_sell() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
         ladder.add_bulk(vec![
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_simulate_order_fills_sell_with_volume_at_limit_of_precision() {
+    fn test_simulate_order_fills_sell_with_size_at_limit_of_precision() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
         ladder.add_bulk(vec![
