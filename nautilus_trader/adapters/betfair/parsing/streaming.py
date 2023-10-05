@@ -25,7 +25,7 @@ from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import RunnerChange
 from betfair_parser.spec.streaming import RunnerDefinition
 from betfair_parser.spec.streaming import RunnerStatus
-from betfair_parser.spec.streaming.type_definitions import _PV
+from betfair_parser.spec.streaming.type_definitions import PV
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
@@ -298,7 +298,7 @@ def runner_to_betfair_starting_price(
         return None
 
 
-def _price_volume_to_book_order(pv: _PV, side: OrderSide) -> BookOrder:
+def _price_volume_to_book_order(pv: PV, side: OrderSide) -> BookOrder:
     price = betfair_float_to_price(pv.price)
     order_id = int(price.as_double() * 10**price.precision)
     return BookOrder(
