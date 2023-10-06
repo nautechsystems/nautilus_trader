@@ -493,3 +493,8 @@ def test_bsp_deltas_apply(data_client, instrument):
     # Assert
     assert book.best_ask_price() == betfair_float_to_price(0.001)
     assert book.best_bid_price() == betfair_float_to_price(0.990099)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_instruments(data_client, instrument):
+    await data_client._subscribe_instrument(instrument.id)
