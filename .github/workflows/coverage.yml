@@ -24,7 +24,7 @@ jobs:
       - name: Set up Rust tool-chain (stable)
         uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
-          toolchain: stable
+          toolchain: 1.73.0
           components: rustfmt, clippy
 
       - name: Set up Python environment
