@@ -215,10 +215,8 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        # TODO: This is more like a Req/Res model?
-        self._instrument_provider.load(instrument_id)
-        instrument = self._instrument_provider.find(instrument_id)
-        self._handle_data(instrument)
+        self._log.info("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
+        return
 
     async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():
