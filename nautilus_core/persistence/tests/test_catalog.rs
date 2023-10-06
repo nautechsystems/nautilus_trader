@@ -34,8 +34,8 @@ async fn test_order_book_delta_query() {
         .add_file_default_query::<OrderBookDelta>("delta_001", file_path)
         .await
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     assert_eq!(ticks.len(), expected_length);
     assert!(is_monotonically_increasing_by_init(&ticks));
@@ -77,8 +77,8 @@ async fn test_quote_tick_query() {
         .add_file_default_query::<QuoteTick>("quote_005", file_path)
         .await
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Quote(q) = &ticks[0] {
         assert_eq!("EUR/USD.SIM", q.instrument_id.to_string());
@@ -108,8 +108,8 @@ async fn test_quote_tick_multiple_query() {
         )
         .await
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     assert_eq!(ticks.len(), expected_length);
     assert!(is_monotonically_increasing_by_init(&ticks));
@@ -124,8 +124,8 @@ async fn test_trade_tick_query() {
         .add_file_default_query::<TradeTick>("trade_001", file_path)
         .await
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Trade(t) = &ticks[0] {
         assert_eq!("EUR/USD.SIM", t.instrument_id.to_string());
@@ -146,8 +146,8 @@ async fn test_bar_query() {
         .add_file_default_query::<Bar>("bar_001", file_path)
         .await
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Bar(b) = &ticks[0] {
         assert_eq!("ADABTC.BINANCE", b.bar_type.instrument_id.to_string());

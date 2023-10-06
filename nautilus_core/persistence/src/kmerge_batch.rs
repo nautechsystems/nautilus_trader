@@ -13,59 +13,94 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{task::Poll, vec::IntoIter};
+use std::vec::IntoIter;
 
-use binary_heap_plus::BinaryHeap;
+use binary_heap_plus::{BinaryHeap, PeekMut};
 use compare::Compare;
-use futures::{future::join_all, ready, FutureExt, Stream, StreamExt};
-use pin_project_lite::pin_project;
+use futures::{Stream, StreamExt};
+use pyo3_asyncio::tokio::get_runtime;
+use tokio::{
+    sync::mpsc::{self, Receiver},
+    task::JoinHandle,
+};
 
-pub struct PeekElementBatchStream<S, I>
-where
-    S: Stream<Item = IntoIter<I>>,
-{
-    pub item: I,
-    batch: S::Item,
-    stream: S,
+pub struct EagerStream<T> {
+    rx: Receiver<T>,
+    task: JoinHandle<()>,
 }
 
-impl<S, I> PeekElementBatchStream<S, I>
+impl<T> EagerStream<T> {
+    pub fn from_stream<S>(stream: S) -> Self
+    where
+        S: Stream<Item = T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let (tx, rx) = mpsc::channel(1);
+        let task = tokio::spawn(async move {
+            stream
+                .for_each(|item| async {
+                    let _ = tx.send(item).await;
+                })
+                .await;
+        });
+
+        EagerStream { rx, task }
+    }
+}
+
+impl<T> Iterator for EagerStream<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let rt = get_runtime();
+        match self.task.is_finished() {
+            false => rt.block_on(self.rx.recv()),
+            true => None,
+        }
+    }
+}
+
+impl<T> Drop for EagerStream<T> {
+    fn drop(&mut self) {
+        self.task.abort();
+        self.rx.close();
+    }
+}
+
+pub struct ElementBatchIter<I, T>
 where
-    S: Stream<Item = IntoIter<I>> + Unpin,
+    I: Iterator<Item = IntoIter<T>>,
 {
-    async fn new_from_stream(mut stream: S) -> Option<Self> {
-        // Poll next batch from stream and get next item from the batch
-        // and add the new element to the heap. No new element is added
-        // to the heap if the stream is empty. Keep polling the stream
-        // for a batch that is non-empty.
-        let next_batch = stream.next().await;
+    pub item: T,
+    batch: I::Item,
+    iter: I,
+}
+
+impl<I, T> ElementBatchIter<I, T>
+where
+    I: Iterator<Item = IntoIter<T>>,
+{
+    fn new_from_iter(mut iter: I) -> Option<Self> {
+        let next_batch = iter.next();
         if let Some(mut batch) = next_batch {
-            batch.next().map(|next_item| Self {
-                item: next_item,
-                batch,
-                stream,
-            })
+            batch.next().map(|item| Self { item, batch, iter })
         } else {
-            // Stream is empty, no new batch
             None
         }
     }
 }
 
-pin_project! {
-    pub struct KMerge<S, I, C>
-    where
-        S: Stream<Item = IntoIter<I>>,
-    {
-        heap: BinaryHeap<PeekElementBatchStream<S, I>, C>,
-    }
+pub struct KMerge<I, T, C>
+where
+    I: Iterator<Item = IntoIter<T>>,
+{
+    heap: BinaryHeap<ElementBatchIter<I, T>, C>,
 }
 
-impl<S, I, C> KMerge<S, I, C>
+impl<I, T, C> KMerge<I, T, C>
 where
-    S: Stream<Item = IntoIter<I>> + Unpin + Send + 'static,
-    C: Compare<PeekElementBatchStream<S, I>>,
-    I: Send + 'static,
+    I: Iterator<Item = IntoIter<T>>,
+    C: Compare<ElementBatchIter<I, T>>,
 {
     pub fn new(cmp: C) -> Self {
         Self {
@@ -73,72 +108,59 @@ where
         }
     }
 
-    #[cfg(test)]
-    async fn push_stream(&mut self, s: S) {
-        if let Some(heap_elem) = PeekElementBatchStream::new_from_stream(s).await {
+    pub fn push_iter(&mut self, s: I) {
+        if let Some(heap_elem) = ElementBatchIter::new_from_iter(s) {
             self.heap.push(heap_elem);
         }
     }
-
-    /// Push elements on to the heap
-    ///
-    /// Takes a Iterator of Streams. It concurrently converts all the streams
-    /// to heap elements and then pushes them onto the heap.
-    pub async fn push_iter_stream<L>(&mut self, l: L)
-    where
-        L: Iterator<Item = S>,
-    {
-        let tasks = l.map(|batch| {
-            tokio::spawn(async move { PeekElementBatchStream::new_from_stream(batch).await })
-        });
-
-        join_all(tasks)
-            .await
-            .into_iter()
-            .for_each(|heap_elem| match heap_elem {
-                Ok(Some(heap_elem)) => self.heap.push(heap_elem),
-                Ok(None) => (),
-                Err(e) => panic!("Failed to create heap element because of error: {e}"),
-            });
-    }
 }
 
-impl<S, I, C> Stream for KMerge<S, I, C>
+impl<I, T, C> Iterator for KMerge<I, T, C>
 where
-    S: Stream<Item = IntoIter<I>> + Unpin,
-    C: Compare<PeekElementBatchStream<S, I>>,
+    I: Iterator<Item = IntoIter<T>>,
+    C: Compare<ElementBatchIter<I, T>>,
 {
-    type Item = I;
+    type Item = T;
 
-    fn poll_next(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        let this = self.project();
-        if let Some(PeekElementBatchStream {
-            item,
-            mut batch,
-            stream,
-        }) = this.heap.pop()
-        {
-            // Next element from batch
-            if let Some(next_item) = batch.next() {
-                this.heap.push(PeekElementBatchStream {
-                    item: next_item,
-                    batch,
-                    stream,
-                });
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.heap.peek_mut() {
+            Some(mut heap_elem) => {
+                // Get next element from batch
+                match heap_elem.batch.next() {
+                    // swap current heap element with new element
+                    // return the old element
+                    Some(mut item) => {
+                        std::mem::swap(&mut item, &mut heap_elem.item);
+                        Some(item)
+                    }
+                    // Otherwise get the next batch and the element from it
+                    // Unless the underlying iterator is exhausted
+                    None => loop {
+                        match heap_elem.iter.next() {
+                            Some(mut batch) => match batch.next() {
+                                Some(mut item) => {
+                                    std::mem::swap(&mut item, &mut heap_elem.item);
+                                    heap_elem.batch = batch;
+                                    break Some(item);
+                                }
+                                // get next batch from iterator
+                                None => continue,
+                            },
+                            // iterator has no more batches return current element
+                            // and pop the heap element
+                            None => {
+                                let ElementBatchIter {
+                                    item,
+                                    batch: _,
+                                    iter: _,
+                                } = PeekMut::pop(heap_elem);
+                                break Some(item);
+                            }
+                        }
+                    },
+                }
             }
-            // Batch is empty create new heap element from stream
-            else if let Some(heap_elem) =
-                ready!(Box::pin(PeekElementBatchStream::new_from_stream(stream)).poll_unpin(cx))
-            {
-                this.heap.push(heap_elem);
-            }
-            Poll::Ready(Some(item))
-        } else {
-            // Heap is empty
-            Poll::Ready(None)
+            None => None,
         }
     }
 }
@@ -148,66 +170,58 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use futures::stream::iter;
-
     use super::*;
 
     struct OrdComparator;
-    impl<S> Compare<PeekElementBatchStream<S, i32>> for OrdComparator
+    impl<S> Compare<ElementBatchIter<S, i32>> for OrdComparator
     where
-        S: Stream<Item = IntoIter<i32>>,
+        S: Iterator<Item = IntoIter<i32>>,
     {
         fn compare(
             &self,
-            l: &PeekElementBatchStream<S, i32>,
-            r: &PeekElementBatchStream<S, i32>,
+            l: &ElementBatchIter<S, i32>,
+            r: &ElementBatchIter<S, i32>,
         ) -> std::cmp::Ordering {
             // Max heap ordering must be reversed
             l.item.cmp(&r.item).reverse()
         }
     }
 
-    #[tokio::test]
-    async fn test1() {
-        let stream_a = iter(vec![vec![1, 2, 3].into_iter(), vec![7, 8, 9].into_iter()]);
-        let stream_b = iter(vec![vec![4, 5, 6].into_iter()]);
+    #[test]
+    fn test1() {
+        let iter_a = vec![vec![1, 2, 3].into_iter(), vec![7, 8, 9].into_iter()].into_iter();
+        let iter_b = vec![vec![4, 5, 6].into_iter()].into_iter();
         let mut kmerge: KMerge<_, i32, _> = KMerge::new(OrdComparator);
-        kmerge.push_stream(stream_a).await;
-        kmerge.push_stream(stream_b).await;
+        kmerge.push_iter(iter_a);
+        kmerge.push_iter(iter_b);
 
-        let values: Vec<i32> = kmerge.collect().await;
+        let values: Vec<i32> = kmerge.collect();
         assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
     }
 
-    #[tokio::test]
-    async fn test2() {
-        let stream_a = iter(vec![vec![1, 2, 6].into_iter(), vec![7, 8, 9].into_iter()]);
-        let stream_b = iter(vec![vec![3, 4, 5, 6].into_iter()]);
+    #[test]
+    fn test2() {
+        let iter_a = vec![vec![1, 2, 6].into_iter(), vec![7, 8, 9].into_iter()].into_iter();
+        let iter_b = vec![vec![3, 4, 5, 6].into_iter()].into_iter();
         let mut kmerge: KMerge<_, i32, _> = KMerge::new(OrdComparator);
-        kmerge.push_stream(stream_a).await;
-        kmerge.push_stream(stream_b).await;
+        kmerge.push_iter(iter_a);
+        kmerge.push_iter(iter_b);
 
-        let values: Vec<i32> = kmerge.collect().await;
+        let values: Vec<i32> = kmerge.collect();
         assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 6, 7, 8, 9]);
     }
 
-    #[tokio::test]
-    async fn test3() {
-        let stream_a = iter(vec![
-            vec![1, 4, 7].into_iter(),
-            vec![24, 35, 56].into_iter(),
-        ]);
-        let stream_b = iter(vec![vec![2, 4, 8].into_iter()]);
-        let stream_c = iter(vec![
-            vec![3, 5, 9].into_iter(),
-            vec![12, 12, 90].into_iter(),
-        ]);
+    #[test]
+    fn test3() {
+        let iter_a = vec![vec![1, 4, 7].into_iter(), vec![24, 35, 56].into_iter()].into_iter();
+        let iter_b = vec![vec![2, 4, 8].into_iter()].into_iter();
+        let iter_c = vec![vec![3, 5, 9].into_iter(), vec![12, 12, 90].into_iter()].into_iter();
         let mut kmerge: KMerge<_, i32, _> = KMerge::new(OrdComparator);
-        kmerge.push_stream(stream_a).await;
-        kmerge.push_stream(stream_b).await;
-        kmerge.push_stream(stream_c).await;
+        kmerge.push_iter(iter_a);
+        kmerge.push_iter(iter_b);
+        kmerge.push_iter(iter_c);
 
-        let values: Vec<i32> = kmerge.collect().await;
+        let values: Vec<i32> = kmerge.collect();
         assert_eq!(
             values,
             vec![1, 2, 3, 4, 4, 5, 7, 8, 9, 12, 12, 24, 35, 56, 90]

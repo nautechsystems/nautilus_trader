@@ -34,12 +34,12 @@ fn single_stream_bench(c: &mut Criterion) {
                 let mut catalog = DataBackendSession::new(chunk_size);
                 rt.block_on(catalog.add_file_default_query::<QuoteTick>("quote_tick", file_path))
                     .unwrap();
-                rt.block_on(catalog.get_query_result())
+                catalog.get_query_result()
             },
             |query_result: &mut QueryResult| {
                 let rt = get_runtime();
                 let _guard = rt.enter();
-                let count: usize = query_result.map(|vec| vec.len()).sum();
+                let count: usize = query_result.count();
                 assert_eq!(count, 9_689_614);
             },
             BatchSize::SmallInput,
@@ -83,12 +83,12 @@ fn multi_stream_bench(c: &mut Criterion) {
                     }
                 }
 
-                rt.block_on(catalog.get_query_result())
+                catalog.get_query_result()
             },
             |query_result: &mut QueryResult| {
                 let rt = get_runtime();
                 let _guard = rt.enter();
-                let count: usize = query_result.map(|vec| vec.len()).sum();
+                let count: usize = query_result.count();
                 assert_eq!(count, 72_536_038);
             },
             BatchSize::SmallInput,

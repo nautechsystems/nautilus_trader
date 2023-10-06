@@ -17,7 +17,7 @@ use std::{collections::HashMap, vec::IntoIter};
 
 use compare::Compare;
 use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
-use futures::{executor::block_on, Stream, StreamExt};
+use futures::{executor::block_on, StreamExt};
 use nautilus_core::{cvec::CVec, python::to_pyruntime_err};
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data, HasTsInit,
@@ -30,37 +30,27 @@ use crate::{
         DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
         WriteStream,
     },
-    kmerge_batch::{KMerge, PeekElementBatchStream},
+    kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
 };
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
 
-impl<S> Compare<PeekElementBatchStream<S, Data>> for TsInitComparator
+impl<I> Compare<ElementBatchIter<I, Data>> for TsInitComparator
 where
-    S: Stream<Item = IntoIter<Data>>,
+    I: Iterator<Item = IntoIter<Data>>,
 {
     fn compare(
         &self,
-        l: &PeekElementBatchStream<S, Data>,
-        r: &PeekElementBatchStream<S, Data>,
+        l: &ElementBatchIter<I, Data>,
+        r: &ElementBatchIter<I, Data>,
     ) -> std::cmp::Ordering {
         // Max heap ordering must be reversed
         l.item.get_ts_init().cmp(&r.item.get_ts_init()).reverse()
     }
 }
 
-pub struct QueryResult<T = Data> {
-    data: Box<dyn Stream<Item = Vec<T>> + Unpin>,
-}
-
-impl Iterator for QueryResult {
-    type Item = Vec<Data>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        block_on(self.data.next())
-    }
-}
+pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsInitComparator>;
 
 /// Provides a DataFusion session and registers DataFusion queries.
 ///
@@ -70,7 +60,7 @@ impl Iterator for QueryResult {
 #[pyclass]
 pub struct DataBackendSession {
     session_ctx: SessionContext,
-    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin + Send + 'static>>,
+    batch_streams: Vec<EagerStream<IntoIter<Data>>>,
     pub chunk_size: usize,
 }
 
@@ -172,22 +162,21 @@ impl DataBackendSession {
             Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
         });
 
-        self.batch_streams.push(Box::new(transform));
+        self.batch_streams.push(EagerStream::from_stream(transform));
     }
 
     // Consumes the registered queries and returns a [`QueryResult].
     // Passes the output of the query though the a KMerge which sorts the
     // queries in ascending order of `ts_init`.
     // QueryResult is an iterator that return Vec<Data>.
-    pub async fn get_query_result(&mut self) -> QueryResult<Data> {
-        // TODO: No need to kmerge if there is only one batch stream
+    pub fn get_query_result(&mut self) -> QueryResult {
         let mut kmerge: KMerge<_, _, _> = KMerge::new(TsInitComparator);
 
-        kmerge.push_iter_stream(self.batch_streams.drain(..)).await;
+        self.batch_streams
+            .drain(..)
+            .for_each(|eager_stream| kmerge.push_iter(eager_stream));
 
-        QueryResult {
-            data: Box::new(kmerge.chunks(self.chunk_size)),
-        }
+        kmerge
     }
 }
 
@@ -268,16 +257,17 @@ impl DataBackendSession {
     }
 
     fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
-        let rt = get_runtime();
-        let query_result = rt.block_on(slf.get_query_result());
-        DataQueryResult::new(query_result)
+        let query_result = slf.get_query_result();
+        DataQueryResult::new(query_result, slf.chunk_size)
     }
 }
 
 #[pyclass]
 pub struct DataQueryResult {
-    result: QueryResult<Data>,
+    result: QueryResult,
     chunk: Option<CVec>,
+    acc: Vec<Data>,
+    size: usize,
 }
 
 #[cfg(feature = "python")]
@@ -292,28 +282,32 @@ impl DataQueryResult {
     fn __next__(mut slf: PyRefMut<'_, Self>) -> PyResult<Option<PyObject>> {
         slf.drop_chunk();
 
-        let rt = get_runtime();
-        let _guard = rt.enter();
-
-        match slf.result.next() {
-            Some(chunk) => {
-                let cvec = chunk.into();
-                Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
-                    Ok(capsule) => Ok(Some(capsule.into_py(py))),
-                    Err(err) => Err(to_pyruntime_err(err)),
-                })
+        for _ in 0..slf.size {
+            match slf.result.next() {
+                Some(item) => slf.acc.push(item),
+                None => break,
             }
-            None => Ok(None),
         }
+
+        let mut acc: Vec<Data> = Vec::new();
+        std::mem::swap(&mut acc, &mut slf.acc);
+
+        let cvec = acc.into();
+        Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
+            Ok(capsule) => Ok(Some(capsule.into_py(py))),
+            Err(err) => Err(to_pyruntime_err(err)),
+        })
     }
 }
 
 impl DataQueryResult {
     #[must_use]
-    pub fn new(result: QueryResult<Data>) -> Self {
+    pub fn new(result: QueryResult, size: usize) -> Self {
         Self {
             result,
             chunk: None,
+            acc: Vec::new(),
+            size,
         }
     }
 
