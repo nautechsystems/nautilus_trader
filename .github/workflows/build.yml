@@ -33,7 +33,7 @@ jobs:
         if: (runner.os == 'Linux') || (runner.os == 'Windows')
         uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
-          toolchain: stable
+          toolchain: 1.73.0
           components: rustfmt, clippy
 
       # Work around as actions-rust-lang does not seem to work on macOS yet
@@ -41,7 +41,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: 1.73.0
           override: true
           components: rustfmt, clippy
 
