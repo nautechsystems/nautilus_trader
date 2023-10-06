@@ -37,7 +37,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.7.0",
     "numpy>=1.26.0",
-    "Cython==3.0.2",
+    "Cython==3.0.3",
     "toml>=0.10.2",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -48,7 +48,7 @@ generate-setup-file = false
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.12"
-cython = "==3.0.2"  # Build dependency (pinned for stability)
+cython = "==3.0.3"  # Build dependency (pinned for stability)
 numpy = "^1.26.0"  # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
