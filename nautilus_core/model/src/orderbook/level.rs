@@ -191,6 +191,12 @@ mod tests {
     };
 
     #[rstest]
+    fn test_empty_level() {
+        let level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
+        assert!(level.first().is_none());
+    }
+
+    #[rstest]
     fn test_comparisons_bid_side() {
         let level0 = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
         let level1 = Level::new(BookPrice::new(Price::from("1.01"), OrderSide::Buy));
@@ -215,6 +221,7 @@ mod tests {
         assert!(!level.is_empty());
         assert_eq!(level.len(), 1);
         assert_eq!(level.size(), 10.0);
+        assert_eq!(level.first().unwrap(), &order);
     }
 
     #[rstest]
@@ -228,6 +235,7 @@ mod tests {
         assert_eq!(level.len(), 2);
         assert_eq!(level.size(), 30.0);
         assert_eq!(level.exposure(), 60.0);
+        assert_eq!(level.first().unwrap(), &order1);
     }
 
     #[rstest]
