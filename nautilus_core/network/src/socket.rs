@@ -147,7 +147,7 @@ impl SocketClientInner {
             loop {
                 match reader.read_buf(&mut buf).await {
                     // Connection has been terminated or vector buffer is completely
-                    Ok(bytes) if bytes == 0 => {
+                    Ok(0) => {
                         error!("Cannot read anymore bytes");
                         break;
                     }
