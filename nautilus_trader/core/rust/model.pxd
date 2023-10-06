@@ -340,6 +340,7 @@ cdef extern from "../includes/model.h":
     cdef struct Level:
         pass
 
+    # Provides an order book which can handle L1/L2/L3 granularity data.
     cdef struct OrderBook:
         pass
 

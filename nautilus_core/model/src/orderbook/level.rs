@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cmp::Ordering;
+use std::{cmp::Ordering, collections::BTreeMap};
 
 use crate::{
     data::order::{BookOrder, OrderId},
@@ -24,7 +24,8 @@ use crate::{
 #[derive(Clone, Debug, Eq)]
 pub struct Level {
     pub price: BookPrice,
-    pub orders: Vec<BookOrder>,
+    pub orders: BTreeMap<OrderId, BookOrder>,
+    insertion_order: Vec<OrderId>,
 }
 
 impl Level {
@@ -32,7 +33,8 @@ impl Level {
     pub fn new(price: BookPrice) -> Self {
         Self {
             price,
-            orders: Vec::new(),
+            orders: BTreeMap::new(),
+            insertion_order: Vec::new(),
         }
     }
 
@@ -40,7 +42,8 @@ impl Level {
     pub fn from_order(order: BookOrder) -> Self {
         let mut level = Self {
             price: order.to_book_price(),
-            orders: Vec::new(),
+            orders: BTreeMap::new(),
+            insertion_order: Vec::new(),
         };
         level.add(order);
         level
@@ -56,82 +59,86 @@ impl Level {
         self.orders.is_empty()
     }
 
+    #[must_use]
+    pub fn first(&self) -> Option<&BookOrder> {
+        self.insertion_order
+            .first()
+            .and_then(|&id| self.orders.get(&id))
+    }
+
     pub fn add_bulk(&mut self, orders: Vec<BookOrder>) {
+        self.insertion_order
+            .extend(orders.iter().map(|o| o.order_id));
+
         for order in orders {
-            self.add(order)
+            self.check_order_for_this_level(&order);
+            self.orders.insert(order.order_id, order);
         }
     }
 
     pub fn add(&mut self, order: BookOrder) {
-        assert_eq!(order.price, self.price.value); // Confirm order for this level
+        self.check_order_for_this_level(&order);
 
-        self.orders.push(order);
+        self.orders.insert(order.order_id, order);
+        self.insertion_order.push(order.order_id);
     }
 
     pub fn update(&mut self, order: BookOrder) {
-        assert_eq!(order.price, self.price.value); // Confirm order for this level
+        self.check_order_for_this_level(&order);
 
         if order.size.raw == 0 {
-            self.delete(&order)
+            self.orders.remove(&order.order_id);
+            self.update_insertion_order();
         } else {
-            let idx = self
-                .orders
-                .iter()
-                .position(|o| o.order_id == order.order_id)
-                .unwrap_or_else(|| {
-                    panic!("{}", &BookIntegrityError::OrderNotFound(order.order_id))
-                });
-            self.orders[idx] = order;
+            self.orders.insert(order.order_id, order);
         }
     }
 
     pub fn delete(&mut self, order: &BookOrder) {
-        self.remove(order.order_id);
+        self.orders.remove(&order.order_id);
+        self.update_insertion_order();
     }
 
-    pub fn remove(&mut self, order_id: OrderId) {
-        let index = self
-            .orders
-            .iter()
-            .position(|o| o.order_id == order_id)
-            .unwrap_or_else(|| panic!("{}", &BookIntegrityError::OrderNotFound(order_id)));
-        self.orders.remove(index);
+    pub fn remove_by_id(&mut self, order_id: OrderId) {
+        if self.orders.remove(&order_id).is_none() {
+            panic!("{}", &BookIntegrityError::OrderNotFound(order_id));
+        }
+        self.update_insertion_order();
     }
 
     #[must_use]
     pub fn size(&self) -> f64 {
-        let mut sum: f64 = 0.0;
-        for o in self.orders.iter() {
-            sum += o.size.as_f64()
-        }
-        sum
+        self.orders.values().map(|o| o.size.as_f64()).sum()
     }
 
     #[must_use]
     pub fn size_raw(&self) -> u64 {
-        let mut sum = 0u64;
-        for o in self.orders.iter() {
-            sum += o.size.raw
-        }
-        sum
+        self.orders.values().map(|o| o.size.raw).sum()
     }
 
     #[must_use]
     pub fn exposure(&self) -> f64 {
-        let mut sum: f64 = 0.0;
-        for o in self.orders.iter() {
-            sum += o.price.as_f64() * o.size.as_f64()
-        }
-        sum
+        self.orders
+            .values()
+            .map(|o| o.price.as_f64() * o.size.as_f64())
+            .sum()
     }
 
     #[must_use]
     pub fn exposure_raw(&self) -> u64 {
-        let mut sum = 0u64;
-        for o in self.orders.iter() {
-            sum += ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64
-        }
-        sum
+        self.orders
+            .values()
+            .map(|o| ((o.price.as_f64() * o.size.as_f64()) * FIXED_SCALAR) as u64)
+            .sum()
+    }
+
+    fn check_order_for_this_level(&self, order: &BookOrder) {
+        assert_eq!(order.price, self.price.value);
+    }
+
+    fn update_insertion_order(&mut self) {
+        self.insertion_order
+            .retain(|&id| self.orders.contains_key(&id));
     }
 }
 
@@ -259,7 +266,7 @@ mod tests {
             Quantity::from(10),
             order1_id,
         );
-        let order2_id = 0;
+        let order2_id = 1;
         let order2 = BookOrder::new(
             OrderSide::Buy,
             Price::from("1.00"),
@@ -271,8 +278,8 @@ mod tests {
         level.add(order2);
         level.delete(&order1);
         assert_eq!(level.len(), 1);
-        assert_eq!(level.orders.first().unwrap().order_id, order2_id);
         assert_eq!(level.size(), 20.0);
+        assert!(level.orders.contains_key(&order2_id));
         assert_eq!(level.exposure(), 20.0);
     }
 
@@ -296,9 +303,9 @@ mod tests {
 
         level.add(order1);
         level.add(order2);
-        level.remove(order2_id);
+        level.remove_by_id(order2_id);
         assert_eq!(level.len(), 1);
-        assert_eq!(level.orders.first().unwrap().order_id, order1_id);
+        assert!(level.orders.contains_key(&order1_id));
         assert_eq!(level.size(), 10.0);
         assert_eq!(level.exposure(), 10.0);
     }
@@ -332,7 +339,7 @@ mod tests {
     #[should_panic(expected = "Invalid book operation: order ID 1 not found")]
     fn test_remove_nonexistent_order() {
         let mut level = Level::new(BookPrice::new(Price::from("1.00"), OrderSide::Buy));
-        level.remove(1);
+        level.remove_by_id(1);
     }
 
     #[rstest]

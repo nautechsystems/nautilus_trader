@@ -632,6 +632,9 @@ typedef enum TriggerType {
 
 typedef struct Level Level;
 
+/**
+ * Provides an order book which can handle L1/L2/L3 granularity data.
+ */
 typedef struct OrderBook OrderBook;
 
 /**

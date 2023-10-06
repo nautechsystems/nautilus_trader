@@ -27,6 +27,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+/// Represents a price level with a specified side in an order books ladder.
 #[derive(Copy, Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
@@ -147,7 +148,7 @@ impl Ladder {
     pub fn remove(&mut self, order_id: OrderId) {
         if let Some(price) = self.cache.remove(&order_id) {
             let level = self.levels.get_mut(&price).unwrap();
-            level.remove(order_id);
+            level.remove_by_id(order_id);
             if level.is_empty() {
                 self.levels.remove(&price);
             }
@@ -186,7 +187,7 @@ impl Ladder {
                 break;
             }
 
-            for book_order in &level.orders {
+            for book_order in level.orders.values() {
                 let current = book_order.size;
                 if cumulative_denominator + current >= target {
                     // This order has filled us, add fill and return
@@ -262,9 +263,9 @@ mod tests {
     fn test_add_multiple_buy_orders() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 0);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(30), 0);
-        let order3 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(50), 0);
-        let order4 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(200), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(30), 1);
+        let order3 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(50), 2);
+        let order4 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(200), 3);
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
@@ -277,8 +278,8 @@ mod tests {
     fn test_add_multiple_sell_orders() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order1 = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 0);
-        let order2 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(30), 0);
-        let order3 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(50), 0);
+        let order2 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(30), 1);
+        let order3 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(50), 2);
         let order4 = BookOrder::new(
             OrderSide::Sell,
             Price::from("13.00"),
