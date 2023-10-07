@@ -27,8 +27,9 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, sma::SimpleMovingAverage,
+        ema::ExponentialMovingAverage, sma::SimpleMovingAverage, MovingAverageType,
     },
+    momentum::rsi::RelativeStrengthIndex,
     ratio::efficiency_ratio::EfficiencyRatio,
 };
 
@@ -116,7 +117,19 @@ pub fn indicator_dema_10() -> DoubleExponentialMovingAverage {
     DoubleExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Ratios
+////////////////////////////////////////////////////////////////////////////////
+
 #[fixture]
 pub fn efficiency_ratio_10() -> EfficiencyRatio {
     EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Momentum
+////////////////////////////////////////////////////////////////////////////////
+#[fixture]
+pub fn rsi_10() -> RelativeStrengthIndex {
+    RelativeStrengthIndex::new(10, Some(MovingAverageType::Exponential)).unwrap()
 }
