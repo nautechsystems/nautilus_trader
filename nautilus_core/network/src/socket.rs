@@ -37,7 +37,10 @@ type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct SocketConfig {
     /// The URL to connect to.
     url: String,
@@ -87,7 +90,10 @@ impl SocketConfig {
 /// The client uses a suffix to separate messages on the byte stream. It is
 /// appended to all sent messages and heartbeats. It is also used the split
 /// the received byte stream.
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 struct SocketClientInner {
     config: SocketConfig,
     read_task: task::JoinHandle<()>,
@@ -288,7 +294,10 @@ impl Drop for SocketClientInner {
     }
 }
 
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct SocketClient {
     writer: SharedTcpWriter,
     controller_task: task::JoinHandle<()>,

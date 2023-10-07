@@ -40,7 +40,10 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct MarketOrder {
     core: OrderCore,
 }

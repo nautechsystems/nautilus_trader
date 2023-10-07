@@ -226,7 +226,10 @@ impl Drop for WebSocketClientInner {
     }
 }
 
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct WebSocketClient {
     writer: SharedMessageWriter,
     controller_task: task::JoinHandle<()>,
