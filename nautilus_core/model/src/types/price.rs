@@ -51,7 +51,10 @@ pub const ERROR_PRICE: Price = Price {
 
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Default)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Price {
     pub raw: i64,
     pub precision: u8,

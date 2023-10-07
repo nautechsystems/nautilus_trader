@@ -86,8 +86,11 @@ impl InnerHttpClient {
     }
 }
 
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub enum HttpMethod {
     GET,
     POST,
@@ -120,7 +123,10 @@ impl HttpMethod {
 
 /// HttpResponse contains relevant data from a HTTP request.
 #[derive(Debug, Clone)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct HttpResponse {
     #[pyo3(get)]
     pub status: u16,
@@ -157,7 +163,10 @@ impl HttpResponse {
     }
 }
 
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
 pub struct HttpClient {
     rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     client: InnerHttpClient,
