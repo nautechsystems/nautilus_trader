@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::vec::IntoIter;
+use std::{sync::Arc, vec::IntoIter};
 
 use binary_heap_plus::{BinaryHeap, PeekMut};
 use compare::Compare;
 use futures::{Stream, StreamExt};
-use pyo3_asyncio::tokio::get_runtime;
 use tokio::{
+    runtime::Runtime,
     sync::mpsc::{self, Receiver},
     task::JoinHandle,
 };
@@ -27,14 +27,16 @@ use tokio::{
 pub struct EagerStream<T> {
     rx: Receiver<T>,
     task: JoinHandle<()>,
+    runtime: Arc<Runtime>,
 }
 
 impl<T> EagerStream<T> {
-    pub fn from_stream<S>(stream: S) -> Self
+    pub fn from_stream_with_runtime<S>(stream: S, runtime: Arc<Runtime>) -> Self
     where
         S: Stream<Item = T> + Send + 'static,
         T: Send + 'static,
     {
+        let _guard = runtime.enter();
         let (tx, rx) = mpsc::channel(1);
         let task = tokio::spawn(async move {
             stream
@@ -44,7 +46,7 @@ impl<T> EagerStream<T> {
                 .await;
         });
 
-        EagerStream { rx, task }
+        EagerStream { rx, task, runtime }
     }
 }
 
@@ -52,9 +54,8 @@ impl<T> Iterator for EagerStream<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let rt = get_runtime();
         match self.task.is_finished() {
-            false => rt.block_on(self.rx.recv()),
+            false => self.runtime.block_on(self.rx.recv()),
             true => None,
         }
     }
@@ -226,5 +227,22 @@ mod tests {
             values,
             vec![1, 2, 3, 4, 4, 5, 7, 8, 9, 12, 12, 24, 35, 56, 90]
         );
+    }
+
+    #[test]
+    fn test5() {
+        let iter_a = vec![
+            vec![1, 3, 5].into_iter(),
+            vec![].into_iter(),
+            vec![7, 9, 11].into_iter(),
+        ]
+        .into_iter();
+        let iter_b = vec![vec![2, 4, 6].into_iter()].into_iter();
+        let mut kmerge: KMerge<_, i32, _> = KMerge::new(OrdComparator);
+        kmerge.push_iter(iter_a);
+        kmerge.push_iter(iter_b);
+
+        let values: Vec<i32> = kmerge.collect();
+        assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 9, 11]);
     }
 }

@@ -13,11 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, vec::IntoIter};
+use std::{collections::HashMap, sync::Arc, vec::IntoIter};
 
 use compare::Compare;
 use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
-use futures::{executor::block_on, StreamExt};
+use futures::StreamExt;
 use nautilus_core::{cvec::CVec, python::to_pyruntime_err};
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data, HasTsInit,
@@ -61,16 +61,22 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
 pub struct DataBackendSession {
     session_ctx: SessionContext,
     batch_streams: Vec<EagerStream<IntoIter<Data>>>,
-    pub chunk_size: usize,
+    chunk_size: usize,
+    runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl DataBackendSession {
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         Self {
             session_ctx: SessionContext::default(),
             batch_streams: Vec::default(),
             chunk_size,
+            runtime: Arc::new(runtime),
         }
     }
 
@@ -84,16 +90,23 @@ impl DataBackendSession {
         Ok(())
     }
 
-    /// Query a file for all it's records. the caller must specify `T` to indicate
+    /// Query a file for its records. the caller must specify `T` to indicate
     /// the kind of data expected from this query.
+    ///
+    /// table_name: Logical table_name assigned to this file. Queries to this file should address the
+    /// file by its table name.
+    /// file_path: Path to file
+    /// sql_query: A custom sql query to retrieve records from file. If no query is provided a default
+    /// query "SELECT * FROM <table_name>" is run.
     ///
     /// # Safety
     /// The file data must be ordered by the ts_init in ascending order for this
     /// to work correctly.
-    pub async fn add_file_default_query<T>(
+    pub fn add_file<T>(
         &mut self,
         table_name: &str,
         file_path: &str,
+        sql_query: Option<&str>,
     ) -> Result<()>
     where
         T: DecodeDataFromRecordBatch + Into<Data>,
@@ -102,50 +115,17 @@ impl DataBackendSession {
             skip_metadata: Some(false),
             ..Default::default()
         };
-        self.session_ctx
-            .register_parquet(table_name, file_path, parquet_options)
-            .await?;
+        self.runtime.block_on(self.session_ctx.register_parquet(
+            table_name,
+            file_path,
+            parquet_options,
+        ))?;
 
-        let batch_stream = self
-            .session_ctx
-            .sql(&format!("SELECT * FROM {}", &table_name))
-            .await?
-            .execute_stream()
-            .await?;
+        let default_query = format!("SELECT * FROM {}", &table_name);
+        let sql_query = sql_query.unwrap_or(&default_query);
+        let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
 
-        self.add_batch_stream::<T>(batch_stream);
-        Ok(())
-    }
-
-    // Query a file for all it's records with a custom query. The caller must
-    // specify `T` to indicate what kind of data is expected from this query.
-    //
-    // # Safety
-    // The query should ensure the records are ordered by the `ts_init` field
-    // in ascending order.
-    pub async fn add_file_with_custom_query<T>(
-        &mut self,
-        table_name: &str,
-        file_path: &str,
-        sql_query: &str,
-    ) -> Result<()>
-    where
-        T: DecodeDataFromRecordBatch + Into<Data>,
-    {
-        let parquet_options = ParquetReadOptions::<'_> {
-            skip_metadata: Some(false),
-            ..Default::default()
-        };
-        self.session_ctx
-            .register_parquet(table_name, file_path, parquet_options)
-            .await?;
-
-        let batch_stream = self
-            .session_ctx
-            .sql(sql_query)
-            .await?
-            .execute_stream()
-            .await?;
+        let batch_stream = self.runtime.block_on(query.execute_stream())?;
 
         self.add_batch_stream::<T>(batch_stream);
         Ok(())
@@ -162,7 +142,11 @@ impl DataBackendSession {
             Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
         });
 
-        self.batch_streams.push(EagerStream::from_stream(transform));
+        self.batch_streams
+            .push(EagerStream::from_stream_with_runtime(
+                transform,
+                self.runtime.clone(),
+            ));
     }
 
     // Consumes the registered queries and returns a [`QueryResult].
@@ -197,62 +181,41 @@ impl DataBackendSession {
         Self::new(chunk_size)
     }
 
-    fn add_file(
+    /// Query a file for its records. the caller must specify `T` to indicate
+    /// the kind of data expected from this query.
+    ///
+    /// table_name: Logical table_name assigned to this file. Queries to this file should address the
+    /// file by its table name.
+    /// file_path: Path to file
+    /// sql_query: A custom sql query to retrieve records from file. If no query is provided a default
+    /// query "SELECT * FROM <table_name>" is run.
+    ///
+    /// # Safety
+    /// The file data must be ordered by the ts_init in ascending order for this
+    /// to work correctly.
+    #[pyo3(name = "add_file")]
+    fn add_file_py(
         mut slf: PyRefMut<'_, Self>,
+        data_type: NautilusDataType,
         table_name: &str,
         file_path: &str,
-        data_type: NautilusDataType,
+        sql_query: Option<&str>,
     ) -> PyResult<()> {
-        let rt = get_runtime();
-        let _guard = rt.enter();
+        let _guard = slf.runtime.enter();
 
         match data_type {
-            NautilusDataType::OrderBookDelta => {
-                block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
-                    .map_err(to_pyruntime_err)
-            }
-            NautilusDataType::QuoteTick => {
-                block_on(slf.add_file_default_query::<QuoteTick>(table_name, file_path))
-                    .map_err(to_pyruntime_err)
-            }
-            NautilusDataType::TradeTick => {
-                block_on(slf.add_file_default_query::<TradeTick>(table_name, file_path))
-                    .map_err(to_pyruntime_err)
-            }
-            NautilusDataType::Bar => {
-                block_on(slf.add_file_default_query::<Bar>(table_name, file_path))
-                    .map_err(to_pyruntime_err)
-            }
-        }
-    }
-
-    fn add_file_with_query(
-        mut slf: PyRefMut<'_, Self>,
-        table_name: &str,
-        file_path: &str,
-        sql_query: &str,
-        data_type: NautilusDataType,
-    ) -> PyResult<()> {
-        let rt = get_runtime();
-        let _guard = rt.enter();
-
-        match data_type {
-            NautilusDataType::OrderBookDelta => block_on(
-                slf.add_file_with_custom_query::<OrderBookDelta>(table_name, file_path, sql_query),
-            )
-            .map_err(to_pyruntime_err),
-            NautilusDataType::QuoteTick => block_on(
-                slf.add_file_with_custom_query::<QuoteTick>(table_name, file_path, sql_query),
-            )
-            .map_err(to_pyruntime_err),
-            NautilusDataType::TradeTick => block_on(
-                slf.add_file_with_custom_query::<TradeTick>(table_name, file_path, sql_query),
-            )
-            .map_err(to_pyruntime_err),
-            NautilusDataType::Bar => {
-                block_on(slf.add_file_with_custom_query::<Bar>(table_name, file_path, sql_query))
-                    .map_err(to_pyruntime_err)
-            }
+            NautilusDataType::OrderBookDelta => slf
+                .add_file::<OrderBookDelta>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::QuoteTick => slf
+                .add_file::<QuoteTick>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::TradeTick => slf
+                .add_file::<TradeTick>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
+            NautilusDataType::Bar => slf
+                .add_file::<Bar>(table_name, file_path, sql_query)
+                .map_err(to_pyruntime_err),
         }
     }
 
