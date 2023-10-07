@@ -13,16 +13,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust tool-chain (stable)
-        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Get Rust version from rust-toolchain.toml
+        id: rust-version
+        run: |
+          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
+          echo "Rust toolchain version $version"
+          echo "RUST_VERSION=$version" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}
+
+      - name: Set up Rust tool-chain (Linux, Windows) stable
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
-          toolchain: 1.73.0
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
 
       - name: Set up Rust tool-chain (nightly)
         uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
-          toolchain: 1.73.0
+          toolchain: nightly
           components: rustfmt, clippy
 
       - name: Set up Python environment
@@ -30,10 +39,15 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Get Poetry version from poetry-version
+        run: |
+          version=$(cat poetry-version)
+          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: 1.6.1
+          version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec

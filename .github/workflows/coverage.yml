@@ -21,10 +21,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust tool-chain (stable)
+      - name: Get Rust version from rust-toolchain.toml
+        id: rust-version
+        run: |
+          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
+          echo "Rust toolchain version $version"
+          echo "RUST_VERSION=$version" >> $GITHUB_ENV
+        working-directory: ${{ github.workspace }}
+
+      - name: Set up Rust tool-chain (Linux, Windows) stable
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
         uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
-          toolchain: 1.73.0
+          toolchain: ${{ env.RUST_VERSION }}
           components: rustfmt, clippy
 
       - name: Set up Python environment
@@ -32,10 +41,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Get Poetry version from poetry-version
+        run: |
+          version=$(cat poetry-version)
+          echo "POETRY_VERSION=$version" >> $GITHUB_ENV
+
       - name: Install Poetry
         uses: snok/install-poetry@v1
         with:
-          version: 1.6.1
+          version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
@@ -50,14 +64,14 @@ jobs:
       - name: Run pre-commit
         run: pre-commit run --all-files
 
-      - name: Set poetry output
-        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+      - name: Set poetry cache-dir
+        run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
 
       - name: Poetry cache
         id: cached-poetry
         uses: actions/cache@v3
         with:
-          path: ${{ env.dir }}
+          path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Install Redis
