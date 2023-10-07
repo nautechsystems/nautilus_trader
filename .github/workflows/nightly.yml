@@ -3,7 +3,7 @@ name: nightly
 on:
   schedule:
     # Run at 1300 UTC daily
-    - cron: '0 13 * * *'
+    # - cron: '0 13 * * *'
 
 jobs:
   nightly-update:
@@ -51,7 +51,7 @@ jobs:
                      jq -r '.check_runs[0].conclusion')
             if [ "$status" == "success" ]; then
               echo "Last successful build commit SHA is $commit_sha"
-              echo "::set-output name=commit_sha::$commit_sha"
+              echo "COMMIT_SHA=$commit_sha" >> $GITHUB_ENV
               break
             fi
           done
@@ -74,23 +74,22 @@ jobs:
           # Fetch the current head of the nightly branch
           nightly_sha=$(git rev-parse refs/remotes/origin/nightly)
 
-          if [ "$nightly_sha" == "${{ steps.get-commit.outputs.commit_sha }}" ]; then
+          if [ "$nightly_sha" == "${{ env.COMMIT_SHA }}" ]; then
             echo "The nightly branch is already up to date. No need to update."
-            echo "::set-output name=update_required::false"
+            echo "UPDATE_REQUIRED=false" >> $GITHUB_ENV
           else
             echo "The nightly branch needs an update."
-            echo "::set-output name=update_required::true"
+            echo "UPDATE_REQUIRED=true" >> $GITHUB_ENV
           fi
 
       - name: Update nightly branch
-        if: steps.check-nightly.outputs.update_required == 'true'
+        if: env.UPDATE_REQUIRED == 'true'
         run: |
           git checkout nightly
-          git reset --hard ${{ steps.get-commit.outputs.commit_sha }}
+          git reset --hard ${{ env.COMMIT_SHA }}
           git push origin nightly
 
   nightly-prerelease:
-    if: needs.nightly-update.outputs.update_required == 'true'
     needs: nightly-update
     runs-on: ubuntu-latest
     outputs:
@@ -112,26 +111,43 @@ jobs:
         with:
           version: ${{ env.POETRY_VERSION }}
 
+      - name: Check if nightly release exists
+        id: check_release
+        run: |
+          response=$(curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/releases/tags/nightly-${{ github.sha }}")
+
+          upload_url=$(echo $response | jq -r '.upload_url' | sed "s/{?name,label}//")  # Extract the upload_url without its parameters
+
+          # Set the result to an output variable or environment variable
+          if [ "$upload_url" != "null" ]; then
+            echo "Nightly release already exists with upload_url: $upload_url"
+            echo "UPLOAD_URL=$upload_url" >> $GITHUB_ENV
+            echo "RELEASE_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "RELEASE_EXISTS=false" >> $GITHUB_ENV
+          fi
+
       - name: Set output
         id: vars
         run: |
-          echo "::set-output name=tag_name::v$(poetry version --short)"
-          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta (pre-release)"
+          echo "TAG_NAME=v$(poetry version --short)" >> $GITHUB_ENV
+          echo "RELEASE_NAME=NautilusTrader $(poetry version --short) Beta (pre-release)" >> $GITHUB_ENV
           sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
 
       - name: Create GitHub Pre-Release
+        if: env.RELEASE_EXISTS == 'false'
         id: create_release
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: nightly-${{ github.sha }}
-          release_name: Nightly Build ${{ github.sha }}
+          tag_name: nightly-${{ env.TAG_NAME }}
+          release_name: ${{ env.RELEASE_NAME }}
           draft: false
           prerelease: true
 
   nightly-wheels:
-    if: needs.nightly-update.outputs.update_required == 'true'
     needs: nightly-prerelease
     strategy:
       fail-fast: false
@@ -211,17 +227,15 @@ jobs:
       - name: Set output for release
         id: vars-release
         run: |
-          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
           cd dist
-          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
 
       - name: Upload release asset
         id: upload-release-asset-unix
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ASSET_PATH: ${{ steps.vars-release.outputs.asset_path }}
-          ASSET_NAME: ${{ steps.vars-release.outputs.asset_name }}
         with:
           upload_url: ${{ needs.create-release.outputs.upload_url }}
           asset_path: ${{ env.ASSET_PATH }}
