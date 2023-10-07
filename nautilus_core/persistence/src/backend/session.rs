@@ -23,7 +23,6 @@ use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data, HasTsInit,
 };
 use pyo3::{prelude::*, types::PyCapsule};
-use pyo3_asyncio::tokio::get_runtime;
 
 use crate::{
     arrow::{
@@ -176,8 +175,6 @@ impl DataBackendSession {
     #[new]
     #[pyo3(signature=(chunk_size=5_000))]
     fn new_session(chunk_size: usize) -> Self {
-        // Initialize runtime here
-        get_runtime();
         Self::new(chunk_size)
     }
 
