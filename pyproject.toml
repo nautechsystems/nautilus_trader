@@ -55,7 +55,7 @@ click = "^8.1.7"
 frozendict = "^2.3.8"
 fsspec = "==2023.6.0"  # Pinned for stability
 importlib_metadata = "^6.8.0"
-msgspec = "^0.18.3"
+msgspec = "^0.18.4"
 pandas = "^2.1.1"
 psutil = "^5.9.5"
 pyarrow = ">=12.0.1"  # Minimum version set one major version behind the latest for compatibility
@@ -94,7 +94,7 @@ optional = true
 [tool.poetry.group.test.dependencies]
 coverage = "^7.3.2"
 pytest = "^7.4.2"
-pytest-aiohttp = "^1.0.4"
+pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "^0.21.1"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "^4.1.0"
