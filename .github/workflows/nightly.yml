@@ -1,7 +1,7 @@
 name: nightly
 
 on:
-  schedule:
+  # schedule:
     # Run at 1300 UTC daily
     # - cron: '0 13 * * *'
 
