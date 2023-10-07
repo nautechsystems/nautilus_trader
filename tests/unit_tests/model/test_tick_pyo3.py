@@ -31,8 +31,6 @@ from nautilus_trader.core.nautilus_pyo3.model import Venue
 
 AUDUSD_SIM_ID = InstrumentId.from_str("AUD/USD.SIM")
 
-# pytestmark = pytest.mark.skip(reason="WIP")
-
 
 class TestQuoteTick:
     def test_pickling_instrument_id_round_trip(self):
