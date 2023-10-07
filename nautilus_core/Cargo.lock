@@ -1963,6 +1963,7 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "rstest",
+ "strum 0.25.0",
 ]
 
 [[package]]

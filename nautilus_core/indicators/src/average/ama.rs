@@ -22,7 +22,10 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
+use crate::{
+    indicator::{Indicator, MovingAverage},
+    ratio::efficiency_ratio::EfficiencyRatio,
+};
 
 /// An indicator which calculates an adaptive moving average (AMA) across a
 /// rolling window. Developed by Perry Kaufman, the AMA is a moving average
@@ -129,7 +132,25 @@ impl AdaptiveMovingAverage {
         self._alpha_fast - self._alpha_slow
     }
 
-    pub fn update_raw(&mut self, value: f64) {
+    pub fn reset(&mut self) {
+        self.value = 0.0;
+        self._prior_value = None;
+        self.count = 0;
+        self.has_inputs = false;
+        self.is_initialized = false;
+    }
+}
+
+impl MovingAverage for AdaptiveMovingAverage {
+    fn value(&self) -> f64 {
+        self.value
+    }
+
+    fn count(&self) -> usize {
+        self.count
+    }
+
+    fn update_raw(&mut self, value: f64) {
         if !self.has_inputs {
             self._prior_value = Some(value);
             self._efficiency_ratio.update_raw(value);
@@ -156,14 +177,6 @@ impl AdaptiveMovingAverage {
             self.is_initialized = true;
         }
     }
-
-    pub fn reset(&mut self) {
-        self.value = 0.0;
-        self._prior_value = None;
-        self.count = 0;
-        self.has_inputs = false;
-        self.is_initialized = false;
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -174,7 +187,11 @@ mod tests {
     use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
     use rstest::rstest;
 
-    use crate::{average::ama::AdaptiveMovingAverage, indicator::Indicator, stubs::*};
+    use crate::{
+        average::ama::AdaptiveMovingAverage,
+        indicator::{Indicator, MovingAverage},
+        stubs::*,
+    };
 
     #[rstest]
     fn test_ama_initialized(indicator_ama_10: AdaptiveMovingAverage) {

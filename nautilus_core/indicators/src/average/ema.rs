@@ -23,7 +23,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::indicator::Indicator;
+use crate::indicator::{Indicator, MovingAverage};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -91,8 +91,17 @@ impl ExponentialMovingAverage {
             is_initialized: false,
         })
     }
+}
 
-    pub fn update_raw(&mut self, value: f64) {
+impl MovingAverage for ExponentialMovingAverage {
+    fn value(&self) -> f64 {
+        self.value
+    }
+
+    fn count(&self) -> usize {
+        self.count
+    }
+    fn update_raw(&mut self, value: f64) {
         if !self.has_inputs {
             self.has_inputs = true;
             self.value = value;
@@ -199,7 +208,11 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{average::ema::ExponentialMovingAverage, indicator::Indicator, stubs::*};
+    use crate::{
+        average::ema::ExponentialMovingAverage,
+        indicator::{Indicator, MovingAverage},
+        stubs::*,
+    };
 
     #[rstest]
     fn test_ema_initialized(indicator_ema_10: ExponentialMovingAverage) {
