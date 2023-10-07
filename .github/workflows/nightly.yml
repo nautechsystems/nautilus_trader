@@ -1,0 +1,210 @@
+name: nightly
+
+on:
+  schedule:
+    # Run at 1300 UTC daily
+    - cron: '0 13 * * *'
+
+jobs:
+  nightly-update:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # fetch all history so we can operate on branches correctly
+
+      - name: Get last successful build commit
+        id: get-commit
+        run: |
+          max_retries=3
+          retry_delay=10 # 10 seconds delay between retries
+
+          retry_cmd() {
+            local retries=0
+            until [ $retries -ge $max_retries ]
+            do
+              $@ && break  # Execute the command. If it succeeds, break out of the loop.
+              retries=$[$retries+1]
+              echo "Failed! ($retries/$max_retries). Retrying in $retry_delay seconds..."
+              sleep $retry_delay
+            done
+
+            if [ $retries -eq $max_retries ]; then
+              echo "Command failed after $max_retries attempts."
+              exit 1
+            fi
+          }
+
+          # Use retry_cmd with curl:
+          commits=$(retry_cmd curl -H "Accept: application/vnd.github.v3+json" \
+                                   -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                                   "https://api.github.com/repos/${{ github.repository }}/commits?sha=develop" | \
+                    jq -r '.[].sha')
+
+          for commit_sha in $commits; do
+            # Check status of the 'build' workflow for the commit using retry_cmd
+            status=$(retry_cmd curl -H "Accept: application/vnd.github.v3+json" \
+                                    -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                                    "https://api.github.com/repos/${{ github.repository }}/commits/$commit_sha/check-runs?check_name=build" | \
+                     jq -r '.check_runs[0].conclusion')
+            if [ "$status" == "success" ]; then
+              echo "Last successful build commit SHA is $commit_sha"
+              echo "::set-output name=commit_sha::$commit_sha"
+              break
+            fi
+          done
+
+      - name: Fetch all from origin
+        run: git fetch origin
+
+      - name: Ensure nightly branch exists
+        run: |
+          # Check if the 'nightly' branch exists in the remote
+          if ! git show-ref --quiet refs/remotes/origin/nightly; then
+            # Create and push the 'nightly' branch if it doesn't exist
+            git checkout -b nightly
+            git push origin nightly
+          fi
+
+      - name: Check if nightly branch needs an update
+        id: check-nightly
+        run: |
+          # Fetch the current head of the nightly branch
+          nightly_sha=$(git rev-parse refs/remotes/origin/nightly)
+
+          if [ "$nightly_sha" == "${{ steps.get-commit.outputs.commit_sha }}" ]; then
+            echo "The nightly branch is already up to date. No need to update."
+            echo "::set-output name=update_required::false"
+          else
+            echo "The nightly branch needs an update."
+            echo "::set-output name=update_required::true"
+          fi
+
+      - name: Update nightly branch
+        if: steps.check-nightly.outputs.update_required == 'true'
+        run: |
+          git checkout nightly
+          git reset --hard ${{ steps.get-commit.outputs.commit_sha }}
+          git push origin nightly
+
+  nightly-prerelease:
+    if: needs.nightly-update.outputs.update_required == 'true'
+    needs: nightly-update
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+
+    steps:
+      - name: Set up Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.6.1
+
+      - name: Set output
+        id: vars
+        run: |
+          echo "::set-output name=tag_name::v$(poetry version --short)"
+          echo "::set-output name=release_name::NautilusTrader $(poetry version --short) Beta (pre-release)"
+          sed -n '/^#/,${p;/^---/q};w RELEASE.md' RELEASES.md
+
+      - name: Create GitHub Pre-Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: nightly-${{ github.sha }}
+          release_name: Nightly Build ${{ github.sha }}
+          draft: false
+          prerelease: true
+
+  nightly-wheels:
+    if: needs.nightly-update.outputs.update_required == 'true'
+    needs: nightly-prerelease
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64]
+        os: [ubuntu-20.04, ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11"]
+    defaults:
+      run:
+        shell: bash
+    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    env:
+      BUILD_MODE: release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust tool-chain (Linux, Windows) stable
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+        uses: actions-rust-lang/setup-rust-toolchain@v1.5
+        with:
+          toolchain: 1.73.0
+          components: rustfmt, clippy
+
+      - name: Set up Rust tool-chain (macOS)
+        if: runner.os == 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.73.0
+          override: true
+          components: rustfmt, clippy
+
+      - name: Set up Python environment
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: 1.6.1
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+
+      - name: Set poetry output
+        run: echo "dir=$(poetry config cache-dir)" >> $GITHUB_ENV
+
+      - name: Poetry cache
+        id: cached-poetry
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.dir }}
+          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install / Build
+        run: |
+          poetry install
+          poetry build --format wheel
+
+      - name: Set output for release
+        id: vars-release
+        run: |
+          echo "::set-output name=asset_path::$(find ./dist -mindepth 1 -print -quit)"
+          cd dist
+          echo "::set-output name=asset_name::$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')"
+
+      - name: Upload release asset
+        id: upload-release-asset-unix
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET_PATH: ${{ steps.vars-release.outputs.asset_path }}
+          ASSET_NAME: ${{ steps.vars-release.outputs.asset_name }}
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ env.ASSET_PATH }}
+          asset_name: ${{ env.ASSET_NAME }}
+          asset_content_type: application/wheel
