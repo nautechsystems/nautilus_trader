@@ -21,14 +21,25 @@ use std::{
 use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
-use super::bar::{Bar, BarType};
+use super::bar::{Bar, BarSpecification, BarType};
 use crate::{
+    enums::{AggregationSource, BarAggregation, PriceType},
+    identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
 
 #[pymethods]
-impl BarType {
+impl BarSpecification {
+    #[new]
+    fn py_new(step: usize, aggregation: BarAggregation, price_type: PriceType) -> Self {
+        Self {
+            step,
+            aggregation,
+            price_type,
+        }
+    }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -49,6 +60,57 @@ impl BarType {
 
     fn __repr__(&self) -> String {
         format!("{self:?}")
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "fully_qualified_name")]
+    fn py_fully_qualified_name() -> String {
+        format!("{}:{}", PY_MODULE_MODEL, stringify!(BarSpecification))
+    }
+}
+
+#[pymethods]
+impl BarType {
+    #[new]
+    #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External))]
+    fn py_new(
+        instrument_id: InstrumentId,
+        spec: BarSpecification,
+        aggregation_source: AggregationSource,
+    ) -> Self {
+        Self {
+            instrument_id,
+            spec,
+            aggregation_source,
+        }
+    }
+
+    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
+        match op {
+            CompareOp::Eq => self.eq(other).into_py(py),
+            CompareOp::Ne => self.ne(other).into_py(py),
+            _ => py.NotImplemented(),
+        }
+    }
+
+    fn __hash__(&self) -> isize {
+        let mut h = DefaultHasher::new();
+        self.hash(&mut h);
+        h.finish() as isize
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("{self:?}")
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "fully_qualified_name")]
+    fn py_fully_qualified_name() -> String {
+        format!("{}:{}", PY_MODULE_MODEL, stringify!(BarType))
     }
 }
 
