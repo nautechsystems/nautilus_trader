@@ -56,7 +56,7 @@ class TestPersistenceCatalog:
         expected = [
             "betfair_ticker",
             "betting_instrument",
-            "instrument_status_update",
+            "instrument_status",
             "order_book_delta",
             "trade_tick",
         ]

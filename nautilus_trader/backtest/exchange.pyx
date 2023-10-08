@@ -39,10 +39,10 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OmsType
@@ -748,13 +748,13 @@ cdef class SimulatedExchange:
 
         matching_engine.process_bar(bar)
 
-    cpdef void process_venue_status(self, VenueStatusUpdate update):
+    cpdef void process_venue_status(self, VenueStatus update):
         """
         Process the exchange for the given status.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
+        update : VenueStatus
             The status to process.
 
         """
@@ -768,13 +768,13 @@ cdef class SimulatedExchange:
         for matching_engine in self._matching_engines.values():
             matching_engine.process_status(update.status)
 
-    cpdef void process_instrument_status(self, InstrumentStatusUpdate update):
+    cpdef void process_instrument_status(self, InstrumentStatus update):
         """
         Process a specific instrument status.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
+        update : VenueStatus
             The status to process.
 
         """

@@ -30,12 +30,12 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -151,8 +151,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_bar(self, Bar bar)
     cpdef void _handle_generic_data(self, GenericData data)
-    cpdef void _handle_venue_status_update(self, VenueStatusUpdate data)
-    cpdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data)
+    cpdef void _handle_venue_status_update(self, VenueStatus data)
+    cpdef void _handle_instrument_status_update(self, InstrumentStatus data)
     cpdef void _handle_close_price(self, InstrumentClose data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------

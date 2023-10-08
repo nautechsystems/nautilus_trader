@@ -70,10 +70,10 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
@@ -127,7 +127,7 @@ class TestBetfairParsingStreaming:
         result = [
             upd
             for upd in updates
-            if isinstance(upd, InstrumentStatusUpdate) and upd.status == MarketStatus.PRE_OPEN
+            if isinstance(upd, InstrumentStatus) and upd.status == MarketStatus.PRE_OPEN
         ]
         assert len(result) == 17
 
@@ -180,7 +180,7 @@ class TestBetfairParsingStreaming:
         counts = Counter([update.__class__.__name__ for update in updates])
         expected = Counter(
             {
-                "InstrumentStatusUpdate": 7,
+                "InstrumentStatus": 7,
                 "OrderBookDeltas": 7,
                 "BettingInstrument": 7,
             },
@@ -252,10 +252,10 @@ class TestBetfairParsingStreaming:
                 "TradeTick": 3487,
                 "BettingInstrument": 260,
                 "BSPOrderBookDelta": 2824,
-                "InstrumentStatusUpdate": 260,
+                "InstrumentStatus": 260,
                 "BetfairStartingPrice": 72,
                 "InstrumentClose": 25,
-                "VenueStatusUpdate": 4,
+                "VenueStatus": 4,
             },
         )
         assert counts == expected

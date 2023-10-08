@@ -63,12 +63,12 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -300,13 +300,13 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update):
+    cpdef void on_venue_status_update(self, VenueStatus update):
         """
         Actions to be performed when running and receives a venue status update.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
+        update : VenueStatus
             The update received.
 
         Warnings
@@ -316,14 +316,14 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update):
+    cpdef void on_instrument_status_update(self, InstrumentStatus update):
         """
         Actions to be performed when running and receives an instrument status
         update.
 
         Parameters
         ----------
-        update : InstrumentStatusUpdate
+        update : InstrumentStatus
             The update received.
 
         Warnings
@@ -1475,7 +1475,7 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=venue,
-            data_type=DataType(VenueStatusUpdate),
+            data_type=DataType(VenueStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1506,13 +1506,13 @@ cdef class Actor(Component):
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentStatusUpdate, metadata={"instrument_id": instrument_id}),
+            data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Subscribed to {instrument_id} InstrumentStatusUpdate.")
+        self._log.info(f"Subscribed to {instrument_id} InstrumentStatus.")
 
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None):
         """
@@ -1877,7 +1877,7 @@ cdef class Actor(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=venue,
-            data_type=DataType(VenueStatusUpdate),
+            data_type=DataType(VenueStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
@@ -1907,13 +1907,13 @@ cdef class Actor(Component):
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentStatusUpdate),
+            data_type=DataType(InstrumentStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatusUpdate.")
+        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus.")
 
 
     cpdef void publish_data(self, DataType data_type, Data data):
@@ -2709,7 +2709,7 @@ cdef class Actor(Component):
                 self._handle_indicators_for_bar(indicators, bar)
             self.handle_historical_data(bar)
 
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate update):
+    cpdef void handle_venue_status_update(self, VenueStatus update):
         """
         Handle the given venue status update.
 
@@ -2717,7 +2717,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        update : VenueStatusUpdate
+        update : VenueStatus
             The update received.
 
         Warnings
@@ -2734,7 +2734,7 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(update)}", e)
                 raise
 
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update):
+    cpdef void handle_instrument_status_update(self, InstrumentStatus update):
         """
         Handle the given instrument status update.
 
@@ -2742,7 +2742,7 @@ cdef class Actor(Component):
 
         Parameters
         ----------
-        update : InstrumentStatusUpdate
+        update : InstrumentStatus
             The update received.
 
         Warnings

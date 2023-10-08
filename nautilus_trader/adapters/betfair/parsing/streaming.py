@@ -45,10 +45,10 @@ from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.data.venue import VenueStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -64,7 +64,7 @@ from nautilus_trader.model.objects import Price
 
 
 PARSE_TYPES = Union[
-    InstrumentStatusUpdate,
+    InstrumentStatus,
     InstrumentClose,
     OrderBookDeltas,
     TradeTick,
@@ -176,11 +176,11 @@ def market_definition_to_instrument_status_updates(
     market_id: str,
     ts_event: int,
     ts_init: int,
-) -> list[InstrumentStatusUpdate]:
+) -> list[InstrumentStatus]:
     updates = []
 
     if market_definition.in_play:
-        venue_status = VenueStatusUpdate(
+        venue_status = VenueStatus(
             venue=BETFAIR_VENUE,
             status=MarketStatus.OPEN,
             ts_event=ts_event,
@@ -204,7 +204,7 @@ def market_definition_to_instrument_status_updates(
                 raise ValueError(
                     f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
-        status = InstrumentStatusUpdate(
+        status = InstrumentStatus(
             instrument_id,
             status=status,
             ts_event=ts_event,

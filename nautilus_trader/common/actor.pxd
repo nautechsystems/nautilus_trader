@@ -34,12 +34,12 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -84,8 +84,8 @@ cdef class Actor(Component):
     cpdef void on_dispose(self)
     cpdef void on_degrade(self)
     cpdef void on_fault(self)
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update)
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update)
+    cpdef void on_venue_status_update(self, VenueStatus update)
+    cpdef void on_instrument_status_update(self, InstrumentStatus update)
     cpdef void on_instrument_close(self, InstrumentClose update)
     cpdef void on_instrument(self, Instrument instrument)
     cpdef void on_order_book_deltas(self, OrderBookDeltas deltas)
@@ -221,8 +221,8 @@ cdef class Actor(Component):
     cpdef void handle_bar(self, Bar bar)
     cpdef void handle_bars(self, list bars)
     cpdef void handle_data(self, Data data)
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate update)
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update)
+    cpdef void handle_venue_status_update(self, VenueStatus update)
+    cpdef void handle_instrument_status_update(self, InstrumentStatus update)
     cpdef void handle_instrument_close(self, InstrumentClose update)
     cpdef void handle_historical_data(self, Data data)
     cpdef void handle_event(self, Event event)

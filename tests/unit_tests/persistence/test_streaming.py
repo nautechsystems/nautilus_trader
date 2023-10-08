@@ -29,7 +29,7 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.rust.model import BookType
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
@@ -115,7 +115,7 @@ class TestPersistenceStreaming:
         instrument_data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",
-            data_cls=InstrumentStatusUpdate.fully_qualified_name(),
+            data_cls=InstrumentStatus.fully_qualified_name(),
         )
 
         streaming = BetfairTestStubs.streaming_config(
