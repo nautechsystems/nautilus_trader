@@ -67,14 +67,27 @@ from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionChanged
+from nautilus_trader.model.events.position cimport PositionClosed
+from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -357,6 +370,344 @@ cdef class Strategy(Actor):
         self._indicators_for_bars.clear()
 
         self.on_reset()
+
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
+
+    cpdef void on_order_event(self, OrderEvent event):
+        """
+        Actions to be performed when running and receives an order event.
+
+        Parameters
+        ----------
+        event : OrderEvent
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_initialized(self, OrderInitialized event):
+        """
+        Actions to be performed when running and receives an order initialized event.
+
+        Parameters
+        ----------
+        event : OrderInitialized
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_denied(self, OrderDenied event):
+        """
+        Actions to be performed when running and receives an order denied event.
+
+        Parameters
+        ----------
+        event : OrderDenied
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_emulated(self, OrderEmulated event):
+        """
+        Actions to be performed when running and receives an order initialized event.
+
+        Parameters
+        ----------
+        event : OrderEmulated
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_released(self, OrderReleased event):
+        """
+        Actions to be performed when running and receives an order released event.
+
+        Parameters
+        ----------
+        event : OrderReleased
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_submitted(self, OrderSubmitted event):
+        """
+        Actions to be performed when running and receives an order submitted event.
+
+        Parameters
+        ----------
+        event : OrderSubmitted
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_rejected(self, OrderRejected event):
+        """
+        Actions to be performed when running and receives an order rejected event.
+
+        Parameters
+        ----------
+        event : OrderRejected
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_accepted(self, OrderAccepted event):
+        """
+        Actions to be performed when running and receives an order accepted event.
+
+        Parameters
+        ----------
+        event : OrderAccepted
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_canceled(self, OrderCanceled event):
+        """
+        Actions to be performed when running and receives an order canceled event.
+
+        Parameters
+        ----------
+        event : OrderCanceled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_expired(self, OrderExpired event):
+        """
+        Actions to be performed when running and receives an order expired event.
+
+        Parameters
+        ----------
+        event : OrderExpired
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_triggered(self, OrderTriggered event):
+        """
+        Actions to be performed when running and receives an order triggered event.
+
+        Parameters
+        ----------
+        event : OrderTriggered
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_pending_update(self, OrderPendingUpdate event):
+        """
+        Actions to be performed when running and receives an order pending update event.
+
+        Parameters
+        ----------
+        event : OrderPendingUpdate
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_pending_cancel(self, OrderPendingCancel event):
+        """
+        Actions to be performed when running and receives an order pending cancel event.
+
+        Parameters
+        ----------
+        event : OrderPendingCancel
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_modify_rejected(self, OrderModifyRejected event):
+        """
+        Actions to be performed when running and receives an order modify rejected event.
+
+        Parameters
+        ----------
+        event : OrderModifyRejected
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_cancel_rejected(self, OrderCancelRejected event):
+        """
+        Actions to be performed when running and receives an order cancel rejected event.
+
+        Parameters
+        ----------
+        event : OrderCancelRejected
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_updated(self, OrderUpdated event):
+        """
+        Actions to be performed when running and receives an order updated event.
+
+        Parameters
+        ----------
+        event : OrderUpdated
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_filled(self, OrderFilled event):
+        """
+        Actions to be performed when running and receives an order filled event.
+
+        Parameters
+        ----------
+        event : OrderFilled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_event(self, PositionEvent event):
+        """
+        Actions to be performed when running and receives a position event.
+
+        Parameters
+        ----------
+        event : PositionEvent
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_opened(self, PositionOpened event):
+        """
+        Actions to be performed when running and receives a position opened event.
+
+        Parameters
+        ----------
+        event : PositionOpened
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_changed(self, PositionChanged event):
+        """
+        Actions to be performed when running and receives a position changed event.
+
+        Parameters
+        ----------
+        event : PositionChanged
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_closed(self, PositionClosed event):
+        """
+        Actions to be performed when running and receives a position closed event.
+
+        Parameters
+        ----------
+        event : PositionClosed
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
@@ -1156,12 +1507,74 @@ cdef class Strategy(Actor):
             if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
 
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_event(event)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(event)}", e)
-                raise
+        if self._fsm.state != ComponentState.RUNNING:
+            return
+
+        try:
+            # Send to specific event handler
+            if isinstance(event, OrderInitialized):
+                self.on_order_initialized(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderDenied):
+                self.on_order_denied(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderEmulated):
+                self.on_order_emulated(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderReleased):
+                self.on_order_released(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderSubmitted):
+                self.on_order_submitted(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderRejected):
+                self.on_order_rejected(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderAccepted):
+                self.on_order_accepted(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderCanceled):
+                self.on_order_canceled(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderExpired):
+                self.on_order_expired(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderTriggered):
+                self.on_order_triggered(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderPendingUpdate):
+                self.on_order_pending_update(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderPendingCancel):
+                self.on_order_pending_cancel(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderModifyRejected):
+                self.on_order_modify_rejected(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderCancelRejected):
+                self.on_order_cancel_rejected(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderUpdated):
+                self.on_order_updated(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderFilled):
+                self.on_order_filled(event)
+                self.on_order_event(event)
+            elif isinstance(event, PositionOpened):
+                self.on_position_opened(event)
+                self.on_position_event(event)
+            elif isinstance(event, PositionChanged):
+                self.on_position_changed(event)
+                self.on_position_event(event)
+            elif isinstance(event, PositionClosed):
+                self.on_position_closed(event)
+                self.on_position_event(event)
+
+            # Always send to general event handler
+            self.on_event(event)
+        except Exception as e:  # pragma: no cover
+            self.log.exception(f"Error on handling {repr(event)}", e)
+            raise
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 
