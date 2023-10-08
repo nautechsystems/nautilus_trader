@@ -48,6 +48,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.model.data.book import OrderBookDelta
+from nautilus_trader.model.data.book import OrderBookDeltas
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.base import BaseDataCatalog
 from nautilus_trader.persistence.funcs import class_to_filename
@@ -285,7 +286,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             ]
         return data
 
-    def backend_session(
+    def backend_session(  # noqa (too complex)
         self,
         data_cls: type,
         instrument_ids: list[str] | None = None,
@@ -305,6 +306,18 @@ class ParquetDataCatalog(BaseDataCatalog):
             session = DataBackendSession()
         if session is None:
             raise ValueError("`session` was `None` when a value was expected")
+
+        # TODO: Extract this into a function
+        if data_cls in (OrderBookDelta, OrderBookDeltas):
+            data_type = NautilusDataType.OrderBookDelta
+        elif data_cls == QuoteTick:
+            data_type = NautilusDataType.QuoteTick
+        elif data_cls == TradeTick:
+            data_type = NautilusDataType.TradeTick
+        elif data_cls == Bar:
+            data_type = NautilusDataType.Bar
+        else:
+            raise RuntimeError("unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
 
         # TODO (bm) - fix this glob, query once on catalog creation?
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
@@ -327,7 +340,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 where=where,
             )
 
-            session.add_file_with_query(table, fn, query, data_type)
+            session.add_file(data_type, table, fn, query)
 
         return session
 
@@ -443,7 +456,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             conditions.append(f"ts_init <= {end_ts}")
         if conditions:
             query += f" WHERE {' AND '.join(conditions)}"
-        query += " ORDER BY ts_init"
+
         return query
 
     @staticmethod
