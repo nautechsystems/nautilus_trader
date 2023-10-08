@@ -65,7 +65,7 @@ if __name__ == "__main__":
     config = EMACrossTrailingStopConfig(
         instrument_id=str(ETHUSDT_BINANCE.id),
         bar_type="ETHUSDT.BINANCE-100-TICK-LAST-INTERNAL",
-        trade_size=Decimal("0.05"),
+        trade_size=Decimal("0.10"),
         fast_ema_period=10,
         slow_ema_period=20,
         atr_period=20,
