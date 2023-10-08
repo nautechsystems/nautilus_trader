@@ -54,10 +54,7 @@ impl<T> Iterator for EagerStream<T> {
     type Item = T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.task.is_finished() {
-            false => self.runtime.block_on(self.rx.recv()),
-            true => None,
-        }
+        self.runtime.block_on(self.rx.recv())
     }
 }
 
@@ -68,6 +65,8 @@ impl<T> Drop for EagerStream<T> {
     }
 }
 
+// TODO: Investigate implementing Iterator for ElementBatchIter
+// to reduce next element duplication. May be difficult to make it peekable
 pub struct ElementBatchIter<I, T>
 where
     I: Iterator<Item = IntoIter<T>>,
@@ -82,11 +81,16 @@ where
     I: Iterator<Item = IntoIter<T>>,
 {
     fn new_from_iter(mut iter: I) -> Option<Self> {
-        let next_batch = iter.next();
-        if let Some(mut batch) = next_batch {
-            batch.next().map(|item| Self { item, batch, iter })
-        } else {
-            None
+        loop {
+            match iter.next() {
+                Some(mut batch) => match batch.next() {
+                    Some(item) => {
+                        break Some(ElementBatchIter { item, batch, iter });
+                    }
+                    None => continue,
+                },
+                None => break None,
+            }
         }
     }
 }
@@ -140,8 +144,8 @@ where
                         match heap_elem.iter.next() {
                             Some(mut batch) => match batch.next() {
                                 Some(mut item) => {
-                                    std::mem::swap(&mut item, &mut heap_elem.item);
                                     heap_elem.batch = batch;
+                                    std::mem::swap(&mut item, &mut heap_elem.item);
                                     break Some(item);
                                 }
                                 // get next batch from iterator
@@ -171,6 +175,9 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use quickcheck::{empty_shrinker, Arbitrary};
+    use quickcheck_macros::quickcheck;
+
     use super::*;
 
     struct OrdComparator;
@@ -182,6 +189,20 @@ mod tests {
             &self,
             l: &ElementBatchIter<S, i32>,
             r: &ElementBatchIter<S, i32>,
+        ) -> std::cmp::Ordering {
+            // Max heap ordering must be reversed
+            l.item.cmp(&r.item).reverse()
+        }
+    }
+
+    impl<S> Compare<ElementBatchIter<S, u64>> for OrdComparator
+    where
+        S: Iterator<Item = IntoIter<u64>>,
+    {
+        fn compare(
+            &self,
+            l: &ElementBatchIter<S, u64>,
+            r: &ElementBatchIter<S, u64>,
         ) -> std::cmp::Ordering {
             // Max heap ordering must be reversed
             l.item.cmp(&r.item).reverse()
@@ -244,5 +265,60 @@ mod tests {
 
         let values: Vec<i32> = kmerge.collect();
         assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 9, 11]);
+    }
+
+    #[derive(Debug, Clone)]
+    struct SortedNestedVec(Vec<Vec<u64>>);
+
+    impl Arbitrary for SortedNestedVec {
+        fn arbitrary(g: &mut quickcheck::Gen) -> Self {
+            // Generate a random Vec<u64>
+            let mut vec: Vec<u64> = Arbitrary::arbitrary(g);
+
+            // Sort the vector
+            vec.sort();
+
+            // Recreate nested Vec structure by splitting the flattened_sorted_vec into sorted chunks
+            let mut nested_sorted_vec = Vec::new();
+            let mut start = 0;
+            while start < vec.len() {
+                // let chunk_size: usize = g.rng.gen_range(0, vec.len() - start + 1);
+                let chunk_size: usize = Arbitrary::arbitrary(g);
+                let chunk_size = chunk_size % (vec.len() - start + 1);
+                let end = start + chunk_size;
+                let chunk = vec[start..end].to_vec();
+                nested_sorted_vec.push(chunk);
+                start = end;
+            }
+
+            // Wrap the sorted nested vector in the SortedNestedVecU64 struct
+            SortedNestedVec(nested_sorted_vec)
+        }
+
+        // Optionally, implement the `shrink` method if you want to shrink the generated data on test failures
+        fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
+            empty_shrinker()
+        }
+    }
+
+    #[quickcheck]
+    fn prop_test(all_data: Vec<SortedNestedVec>) -> bool {
+        let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
+
+        let copy_data = all_data.clone();
+        copy_data.into_iter().for_each(|stream| {
+            let input = stream.0.into_iter().map(|batch| batch.into_iter());
+            kmerge.push_iter(input);
+        });
+        let merged_data: Vec<u64> = kmerge.collect();
+
+        let mut sorted_data: Vec<u64> = all_data
+            .into_iter()
+            .map(|stream| stream.0.into_iter().flatten())
+            .flatten()
+            .collect();
+        sorted_data.sort();
+
+        merged_data.len() == sorted_data.len() && merged_data.eq(&sorted_data)
     }
 }

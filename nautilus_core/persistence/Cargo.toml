@@ -36,6 +36,8 @@ default = ["python"]
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
+quickcheck = "1"
+quickcheck_macros = "1"
 
 [[bench]]
 name = "bench_persistence"
