@@ -1,24 +1,32 @@
 # Installation
 
-The package is tested against Python 3.9, 3.10, 3.11 on 64-bit Linux, macOS and Windows. 
-We recommend running the platform with the latest stable version of Python, and 
-in a virtual environment to isolate the dependencies.
+NautilusTrader is tested and supported for Python 3.9-3.11 on the following 64-bit platforms:
+
+| Operating System       | Supported Versions    | CPU Architecture  |
+|------------------------|-----------------------|-------------------|
+| Linux (Ubuntu)         | 20.04 or later        | x86_64            |
+| macOS                  | 12 or later           | x86_64, ARM64     |
+| Windows Server         | 2022 or later         | x86_64            |
+
+```{tip}
+We recommend running the platform with the latest supported stable version of Python, and in a virtual environment to isolate the dependencies.
+```
 
 ## From PyPI
-To install the latest binary wheel (or sdist package) from PyPI:
+To install the latest binary wheel (or sdist package) from PyPI using Pythons _pip_ package manager:
     
     pip install -U nautilus_trader
 
 ## Extras
 
-Also, the following optional dependency ‘extras’ are separately available for installation.
+Install optional dependencies as 'extras' for specific integrations:
 
-- `betfair` - package required for the Betfair integration
-- `docker` - package required for docker when using the IB gateway
-- `ib`  - package required for the Interactive Brokers adapter
-- `redis`  - packages required to use Redis as a cache database
+- `betfair`: Betfair adapter
+- `docker`: Needed for Docker when using the IB gateway
+- `ib`: Interactive Brokers adapter
+- `redis`: Use Redis as a cache database
 
-For example, to install including the `docker`, `ib` and `redis` extras using pip:
+To install with specific extras using _pip_:
 
     pip install -U "nautilus_trader[docker,ib,redis]"
 
