@@ -79,8 +79,7 @@ fn multi_stream_bench(c: &mut Criterion) {
             },
             |query_result: &mut QueryResult| {
                 let count: usize = query_result.count();
-                println!("{}", count);
-                // assert_eq!(count, 72_536_038);
+                assert_eq!(count, 72_536_038);
             },
             BatchSize::SmallInput,
         );
