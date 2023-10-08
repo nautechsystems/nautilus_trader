@@ -66,7 +66,7 @@ impl<T> Drop for EagerStream<T> {
 }
 
 // TODO: Investigate implementing Iterator for ElementBatchIter
-// to reduce next element duplication. May be difficult to make it peekable
+// to reduce next element duplication. May be difficult to make it peekable.
 pub struct ElementBatchIter<I, T>
 where
     I: Iterator<Item = IntoIter<T>>,
@@ -132,7 +132,7 @@ where
             Some(mut heap_elem) => {
                 // Get next element from batch
                 match heap_elem.batch.next() {
-                    // swap current heap element with new element
+                    // Swap current heap element with new element
                     // return the old element
                     Some(mut item) => {
                         std::mem::swap(&mut item, &mut heap_elem.item);
@@ -148,10 +148,10 @@ where
                                     std::mem::swap(&mut item, &mut heap_elem.item);
                                     break Some(item);
                                 }
-                                // get next batch from iterator
+                                // Get next batch from iterator
                                 None => continue,
                             },
-                            // iterator has no more batches return current element
+                            // Iterator has no more batches return current element
                             // and pop the heap element
                             None => {
                                 let ElementBatchIter {
