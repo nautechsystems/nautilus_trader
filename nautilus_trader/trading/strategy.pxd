@@ -29,10 +29,27 @@ from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
+from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEmulated
+from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
+from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionChanged
+from nautilus_trader.model.events.position cimport PositionClosed
+from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -77,6 +94,30 @@ cdef class Strategy(Actor):
     )
     cpdef void change_id(self, StrategyId strategy_id)
     cpdef void change_order_id_tag(self, str order_id_tag)
+
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
+
+    cpdef void on_order_event(self, OrderEvent event)
+    cpdef void on_order_initialized(self, OrderInitialized event)
+    cpdef void on_order_denied(self, OrderDenied event)
+    cpdef void on_order_emulated(self, OrderEmulated event)
+    cpdef void on_order_released(self, OrderReleased event)
+    cpdef void on_order_submitted(self, OrderSubmitted event)
+    cpdef void on_order_rejected(self, OrderRejected event)
+    cpdef void on_order_accepted(self, OrderAccepted event)
+    cpdef void on_order_canceled(self, OrderCanceled event)
+    cpdef void on_order_expired(self, OrderExpired event)
+    cpdef void on_order_triggered(self, OrderTriggered event)
+    cpdef void on_order_pending_update(self, OrderPendingUpdate event)
+    cpdef void on_order_pending_cancel(self, OrderPendingCancel event)
+    cpdef void on_order_modify_rejected(self, OrderModifyRejected event)
+    cpdef void on_order_cancel_rejected(self, OrderCancelRejected event)
+    cpdef void on_order_updated(self, OrderUpdated event)
+    cpdef void on_order_filled(self, OrderFilled event)
+    cpdef void on_position_event(self, PositionEvent event)
+    cpdef void on_position_opened(self, PositionOpened event)
+    cpdef void on_position_changed(self, PositionChanged event)
+    cpdef void on_position_closed(self, PositionClosed event)
 
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 

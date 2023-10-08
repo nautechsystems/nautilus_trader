@@ -307,7 +307,7 @@ cdef class Actor(Component):
         Parameters
         ----------
         data : VenueStatus
-            The status update received.
+            The venue status update received.
 
         Warnings
         --------
@@ -324,7 +324,7 @@ cdef class Actor(Component):
         Parameters
         ----------
         data : InstrumentStatus
-            The status update received.
+            The instrument status update received.
 
         Warnings
         --------
@@ -341,7 +341,7 @@ cdef class Actor(Component):
         Parameters
         ----------
         update : InstrumentClose
-            The update received.
+            The instrument close received.
 
         Warnings
         --------
