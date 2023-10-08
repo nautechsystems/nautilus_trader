@@ -950,6 +950,10 @@ cdef class Strategy(Actor):
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
+        if batch_more:
+            self._log.error("The `batch_more` feature is not currently implemented.")
+            return
+
         cdef ModifyOrder command = self._create_modify_order(
             order=order,
             quantity=quantity,
