@@ -266,25 +266,33 @@ typedef enum LiquiditySide {
  */
 typedef enum MarketStatus {
     /**
-     * The market is closed.
+     * The market session is in the pre-open.
      */
-    CLOSED = 1,
+    PRE_OPEN = 1,
     /**
-     * The market is in the pre-open session.
+     * The market session is open.
      */
-    PRE_OPEN = 2,
-    /**
-     * The market is open for the normal session.
-     */
-    OPEN = 3,
+    OPEN = 2,
     /**
      * The market session is paused.
      */
-    PAUSE = 4,
+    PAUSE = 3,
     /**
-     * The market is in the pre-close session.
+     * The market session is halted.
      */
-    PRE_CLOSE = 5,
+    HALT = 4,
+    /**
+     * The market session has reopened after a pause or halt.
+     */
+    REOPEN = 5,
+    /**
+     * The market session is in the pre-close.
+     */
+    PRE_CLOSE = 6,
+    /**
+     * The market session is closed.
+     */
+    CLOSED = 7,
 } MarketStatus;
 
 /**

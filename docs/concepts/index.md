@@ -83,8 +83,9 @@ The following market data types can be requested historically, and also subscrib
 - `TradeTick`
 - `Bar`
 - `Instrument`
-- `VenueStatusUpdate`
-- `InstrumentStatusUpdate`
+- `VenueStatus`
+- `InstrumentStatus`
+- `InstrumentClose`
 
 The following PriceType options can be used for bar aggregations;
 - `BID`

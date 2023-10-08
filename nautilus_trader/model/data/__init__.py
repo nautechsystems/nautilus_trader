@@ -30,12 +30,12 @@ from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.data.venue import VenueStatusUpdate
 
 
 __all__ = [
@@ -53,8 +53,8 @@ __all__ = [
     "Ticker",
     "TradeTick",
     "InstrumentClose",
-    "InstrumentStatusUpdate",
-    "VenueStatusUpdate",
+    "InstrumentStatus",
+    "VenueStatus",
 ]
 
 

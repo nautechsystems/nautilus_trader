@@ -27,12 +27,12 @@ from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import VenueStatusUpdate
+from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
@@ -72,14 +72,14 @@ NAUTILUS_ARROW_SCHEMA = {
             pa.field("ts_init", pa.uint64(), False),
         ],
     ),
-    VenueStatusUpdate: pa.schema(
+    VenueStatus: pa.schema(
         {
             "venue": pa.dictionary(pa.int16(), pa.string()),
             "status": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
-        metadata={"type": "InstrumentStatusUpdate"},
+        metadata={"type": "InstrumentStatus"},
     ),
     InstrumentClose: pa.schema(
         {
@@ -91,14 +91,14 @@ NAUTILUS_ARROW_SCHEMA = {
         },
         metadata={"type": "InstrumentClose"},
     ),
-    InstrumentStatusUpdate: pa.schema(
+    InstrumentStatus: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "status": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
-        metadata={"type": "InstrumentStatusUpdate"},
+        metadata={"type": "InstrumentStatus"},
     ),
     ComponentStateChanged: pa.schema(
         {

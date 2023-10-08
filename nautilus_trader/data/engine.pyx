@@ -69,11 +69,11 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BarAggregation
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -686,12 +686,12 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("bar_type"),
             )
-        elif command.data_type.type == VenueStatusUpdate:
+        elif command.data_type.type == VenueStatus:
             self._handle_subscribe_venue_status_updates(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == InstrumentStatusUpdate:
+        elif command.data_type.type == InstrumentStatus:
             self._handle_subscribe_instrument_status_updates(
                 client,
                 command.data_type.metadata.get("instrument_id"),
@@ -1039,7 +1039,7 @@ cdef class DataEngine(Component):
 
         if instrument_id.is_synthetic():
             self._log.error(
-                "Cannot subscribe for synthetic instrument `InstrumentStatusUpdate` data.",
+                "Cannot subscribe for synthetic instrument `InstrumentStatus` data.",
             )
             return
 
@@ -1389,9 +1389,9 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, VenueStatusUpdate):
+        elif isinstance(data, VenueStatus):
             self._handle_venue_status_update(data)
-        elif isinstance(data, InstrumentStatusUpdate):
+        elif isinstance(data, InstrumentStatus):
             self._handle_instrument_status_update(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
@@ -1507,10 +1507,10 @@ cdef class DataEngine(Component):
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
-    cpdef void _handle_venue_status_update(self, VenueStatusUpdate data):
+    cpdef void _handle_venue_status_update(self, VenueStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
 
-    cpdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data):
+    cpdef void _handle_instrument_status_update(self, InstrumentStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
 
     cpdef void _handle_close_price(self, InstrumentClose data):

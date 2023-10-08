@@ -144,16 +144,20 @@ cdef extern from "../includes/model.h":
 
     # The status of an individual market on a trading venue.
     cpdef enum MarketStatus:
-        # The market is closed.
-        CLOSED # = 1,
-        # The market is in the pre-open session.
-        PRE_OPEN # = 2,
-        # The market is open for the normal session.
-        OPEN # = 3,
+        # The market session is in the pre-open.
+        PRE_OPEN # = 1,
+        # The market session is open.
+        OPEN # = 2,
         # The market session is paused.
-        PAUSE # = 4,
-        # The market is in the pre-close session.
-        PRE_CLOSE # = 5,
+        PAUSE # = 3,
+        # The market session is halted.
+        HALT # = 4,
+        # The market session has reopened after a pause or halt.
+        REOPEN # = 5,
+        # The market session is in the pre-close.
+        PRE_CLOSE # = 6,
+        # The market session is closed.
+        CLOSED # = 7,
 
     # The order management system (OMS) type for a trading venue or trading strategy.
     cpdef enum OmsType:

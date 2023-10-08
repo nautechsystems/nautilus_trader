@@ -575,21 +575,62 @@ pub enum LiquiditySide {
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum MarketStatus {
-    /// The market is closed.
-    #[pyo3(name = "CLOSED")]
-    Closed = 1,
-    /// The market is in the pre-open session.
+    /// The market session is in the pre-open.
     #[pyo3(name = "PRE_OPEN")]
-    PreOpen = 2,
-    /// The market is open for the normal session.
+    PreOpen = 1,
+    /// The market session is open.
     #[pyo3(name = "OPEN")]
-    Open = 3,
+    Open = 2,
     /// The market session is paused.
     #[pyo3(name = "PAUSE")]
-    Pause = 4,
-    /// The market is in the pre-close session.
+    Pause = 3,
+    /// The market session is halted.
+    #[pyo3(name = "HALT")]
+    Halt = 4,
+    /// The market session has reopened after a pause or halt.
+    #[pyo3(name = "REOPEN")]
+    Reopen = 5,
+    /// The market session is in the pre-close.
     #[pyo3(name = "PRE_CLOSE")]
-    PreClose = 5,
+    PreClose = 6,
+    /// The market session is closed.
+    #[pyo3(name = "CLOSED")]
+    Closed = 7,
+}
+
+/// The reason for a venue or market halt.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum HaltReason {
+    /// The venue or market session is not halted.
+    #[pyo3(name = "NOT_HALTED")]
+    NotHalted = 1,
+    /// Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+    #[pyo3(name = "GENERAL")]
+    General = 2,
+    /// Trading halt is imposed by the venue to protect against extreme volatility.
+    #[pyo3(name = "VOLATILITY")]
+    Volatility = 3,
 }
 
 /// The order management system (OMS) type for a trading venue or trading strategy.
