@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{fmt, fmt::Debug};
+
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 
+/// Indicator trait
 pub trait Indicator {
     fn name(&self) -> String;
     fn has_inputs(&self) -> bool;
@@ -23,4 +26,24 @@ pub trait Indicator {
     fn handle_trade_tick(&mut self, tick: &TradeTick);
     fn handle_bar(&mut self, bar: &Bar);
     fn reset(&mut self);
+}
+
+/// Moving average trait
+pub trait MovingAverage: Indicator {
+    fn value(&self) -> f64;
+    fn count(&self) -> usize;
+    fn update_raw(&mut self, value: f64);
+}
+
+impl Debug for dyn Indicator + Send {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Implement custom formatting for the Indicator trait object.
+        write!(f, "Indicator {{ ... }}")
+    }
+}
+impl Debug for dyn MovingAverage + Send {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Implement custom formatting for the Indicator trait object.
+        write!(f, "MovingAverage()")
+    }
 }
