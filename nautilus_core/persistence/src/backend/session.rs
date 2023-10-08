@@ -252,11 +252,15 @@ impl DataQueryResult {
         let mut acc: Vec<Data> = Vec::new();
         std::mem::swap(&mut acc, &mut slf.acc);
 
-        let cvec = acc.into();
-        Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
-            Ok(capsule) => Ok(Some(capsule.into_py(py))),
-            Err(err) => Err(to_pyruntime_err(err)),
-        })
+        if !acc.is_empty() {
+            let cvec = acc.into();
+            Python::with_gil(|py| match PyCapsule::new::<CVec>(py, cvec, None) {
+                Ok(capsule) => Ok(Some(capsule.into_py(py))),
+                Err(err) => Err(to_pyruntime_err(err)),
+            })
+        } else {
+            Ok(None)
+        }
     }
 }
 

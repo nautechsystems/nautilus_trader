@@ -28,7 +28,7 @@ def test_backend_session_order_book() -> None:
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/order_book_deltas.parquet")
     assert pd.read_parquet(parquet_data_path).shape[0] == 1077
     session = DataBackendSession()
-    session.add_file("order_book_deltas", parquet_data_path, NautilusDataType.OrderBookDelta)
+    session.add_file(NautilusDataType.OrderBookDelta, "order_book_deltas", parquet_data_path)
 
     # Act
     result = session.to_query_result()
@@ -47,7 +47,7 @@ def test_backend_session_quotes() -> None:
     # Arrange
     parquet_data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
     session = DataBackendSession()
-    session.add_file("quote_ticks", parquet_data_path, NautilusDataType.QuoteTick)
+    session.add_file(NautilusDataType.QuoteTick, "quote_ticks", parquet_data_path)
 
     # Act
     result = session.to_query_result()
@@ -67,7 +67,7 @@ def test_backend_session_trades() -> None:
     # Arrange
     trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
     session = DataBackendSession()
-    session.add_file("trade_ticks", trades_path, NautilusDataType.TradeTick)
+    session.add_file(NautilusDataType.TradeTick, "trade_ticks", trades_path)
 
     # Act
     result = session.to_query_result()
@@ -86,7 +86,7 @@ def test_backend_session_bars() -> None:
     # Arrange
     trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/bar_data.parquet")
     session = DataBackendSession()
-    session.add_file("bars_01", trades_path, NautilusDataType.Bar)
+    session.add_file(NautilusDataType.Bar, "bars_01", trades_path)
 
     # Act
     result = session.to_query_result()
@@ -106,8 +106,8 @@ def test_backend_session_multiple_types() -> None:
     trades_path = os.path.join(PACKAGE_ROOT, "tests/test_data/trade_tick_data.parquet")
     quotes_path = os.path.join(PACKAGE_ROOT, "tests/test_data/quote_tick_data.parquet")
     session = DataBackendSession()
-    session.add_file("trades_01", trades_path, NautilusDataType.TradeTick)
-    session.add_file("quotes_01", quotes_path, NautilusDataType.QuoteTick)
+    session.add_file(NautilusDataType.TradeTick, "trades_01", trades_path)
+    session.add_file(NautilusDataType.QuoteTick, "quotes_01", quotes_path)
 
     # Act
     result = session.to_query_result()
