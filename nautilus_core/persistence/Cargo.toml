@@ -16,7 +16,6 @@ nautilus-model = { path = "../model" }
 chrono = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio = { workspace = true, optional = true }
 rand = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
@@ -24,7 +23,6 @@ binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 # FIX: default feature "crypto_expressions" using using blake3 fails build on windows: https://github.com/BLAKE3-team/BLAKE3/issues/298
 datafusion = { version = "31.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions"] }
-pin-project-lite = "0.2.9"
 
 [features]
 extension-module = [
@@ -32,12 +30,14 @@ extension-module = [
   "nautilus-core/extension-module", 
   "nautilus-model/extension-module",
 ]
-python = ["pyo3", "pyo3-asyncio"]
+python = ["pyo3"]
 default = ["python"]
 
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
+quickcheck = "1"
+quickcheck_macros = "1"
 
 [[bench]]
 name = "bench_persistence"

@@ -25,17 +25,20 @@ use nautilus_persistence::{
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
-#[tokio::test]
-async fn test_order_book_delta_query() {
+#[rstest]
+fn test_order_book_delta_query() {
     let expected_length = 1077;
     let file_path = "../../tests/test_data/order_book_deltas.parquet";
     let mut catalog = DataBackendSession::new(1_000);
     catalog
-        .add_file_default_query::<OrderBookDelta>("delta_001", file_path)
-        .await
+        .add_file::<OrderBookDelta>(
+            "delta_001",
+            file_path,
+            Some("SELECT * FROM delta_001 ORDER BY ts_init"),
+        )
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     assert_eq!(ticks.len(), expected_length);
     assert!(is_monotonically_increasing_by_init(&ticks));
@@ -54,9 +57,9 @@ fn test_order_book_delta_query_py() {
                 py,
                 "add_file",
                 (
+                    NautilusDataType::OrderBookDelta,
                     "order_book_deltas",
                     file_path,
-                    NautilusDataType::OrderBookDelta,
                 ),
             )
             .unwrap();
@@ -68,17 +71,16 @@ fn test_order_book_delta_query_py() {
     });
 }
 
-#[tokio::test]
-async fn test_quote_tick_query() {
+#[rstest]
+fn test_quote_tick_query() {
     let expected_length = 9_500;
     let file_path = "../../tests/test_data/quote_tick_data.parquet";
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file_default_query::<QuoteTick>("quote_005", file_path)
-        .await
+        .add_file::<QuoteTick>("quote_005", file_path, None)
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Quote(q) = &ticks[0] {
         assert_eq!("EUR/USD.SIM", q.instrument_id.to_string());
@@ -90,42 +92,41 @@ async fn test_quote_tick_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[tokio::test]
-async fn test_quote_tick_multiple_query() {
+#[rstest]
+fn test_quote_tick_multiple_query() {
     let expected_length = 9_600;
     let mut catalog = DataBackendSession::new(5_000);
     catalog
-        .add_file_default_query::<QuoteTick>(
+        .add_file::<QuoteTick>(
             "quote_tick",
             "../../tests/test_data/quote_tick_data.parquet",
+            None,
         )
-        .await
         .unwrap();
     catalog
-        .add_file_default_query::<TradeTick>(
+        .add_file::<TradeTick>(
             "quote_tick_2",
             "../../tests/test_data/trade_tick_data.parquet",
+            None,
         )
-        .await
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     assert_eq!(ticks.len(), expected_length);
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[tokio::test]
-async fn test_trade_tick_query() {
+#[rstest]
+fn test_trade_tick_query() {
     let expected_length = 100;
     let file_path = "../../tests/test_data/trade_tick_data.parquet";
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file_default_query::<TradeTick>("trade_001", file_path)
-        .await
+        .add_file::<TradeTick>("trade_001", file_path, None)
         .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Trade(t) = &ticks[0] {
         assert_eq!("EUR/USD.SIM", t.instrument_id.to_string());
@@ -137,17 +138,14 @@ async fn test_trade_tick_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[tokio::test]
-async fn test_bar_query() {
+#[rstest]
+fn test_bar_query() {
     let expected_length = 10;
     let file_path = "../../tests/test_data/bar_data.parquet";
     let mut catalog = DataBackendSession::new(10_000);
-    catalog
-        .add_file_default_query::<Bar>("bar_001", file_path)
-        .await
-        .unwrap();
-    let query_result: QueryResult = catalog.get_query_result().await;
-    let ticks: Vec<Data> = query_result.flatten().collect();
+    catalog.add_file::<Bar>("bar_001", file_path, None).unwrap();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Bar(b) = &ticks[0] {
         assert_eq!("ADABTC.BINANCE", b.bar_type.instrument_id.to_string());
