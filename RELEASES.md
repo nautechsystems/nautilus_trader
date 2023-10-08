@@ -6,6 +6,8 @@ This will be the final release with support for Python 3.9.
 
 ### Enhancements
 - Added `ParquetDataCatalog` v2 supporting built-in data types `OrderBookDelta`, `QuoteTick`, `TradeTick` and `Bar`
+- Added `Strategy` specific order and position event handlers
+- Added `ExecAlgorithm` specific order and position event handlers
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
 - Added Binance Futures support for GTD orders
