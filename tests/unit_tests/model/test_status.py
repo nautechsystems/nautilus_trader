@@ -46,14 +46,17 @@ class TestVenue:
         # Arrange
         update = InstrumentStatus(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            status=MarketStatus.PAUSE,
+            status=MarketStatus.OPEN,
             ts_event=0,
             ts_init=0,
         )
 
         # Act, Assert
         assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(update)) == update
-        assert repr(update) == "InstrumentStatus(instrument_id=BTCUSDT.BINANCE, status=PAUSE)"
+        assert (
+            repr(update)
+            == "InstrumentStatus(instrument_id=BTCUSDT.BINANCE, trading_session=Regular, status=OPEN, halt_reason=NOT_HALTED, ts_event=0)"
+        )
 
     def test_instrument_close(self):
         # Arrange

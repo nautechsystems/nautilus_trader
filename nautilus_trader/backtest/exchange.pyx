@@ -748,47 +748,47 @@ cdef class SimulatedExchange:
 
         matching_engine.process_bar(bar)
 
-    cpdef void process_venue_status(self, VenueStatus update):
+    cpdef void process_venue_status(self, VenueStatus data):
         """
         Process the exchange for the given status.
 
         Parameters
         ----------
-        update : VenueStatus
-            The status to process.
+        data : VenueStatus
+            The status update to process.
 
         """
-        Condition.not_none(update, "status")
+        Condition.not_none(data, "data")
 
         cdef SimulationModule module
         for module in self.modules:
-            module.pre_process(update)
+            module.pre_process(data)
 
         cdef OrderMatchingEngine matching_engine
         for matching_engine in self._matching_engines.values():
-            matching_engine.process_status(update.status)
+            matching_engine.process_status(data.status)
 
-    cpdef void process_instrument_status(self, InstrumentStatus update):
+    cpdef void process_instrument_status(self, InstrumentStatus data):
         """
         Process a specific instrument status.
 
         Parameters
         ----------
-        update : VenueStatus
-            The status to process.
+        data : VenueStatus
+            The status update to process.
 
         """
-        Condition.not_none(update, "status")
+        Condition.not_none(data, "data")
 
         cdef SimulationModule module
         for module in self.modules:
-            module.pre_process(update)
+            module.pre_process(data)
 
-        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(update.instrument_id)
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(data.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {update.instrument_id}")
+            raise RuntimeError(f"No matching engine found for {data.instrument_id}")
 
-        matching_engine.process_status(update.status)
+        matching_engine.process_status(data.status)
 
     cpdef void process(self, uint64_t ts_now):
         """

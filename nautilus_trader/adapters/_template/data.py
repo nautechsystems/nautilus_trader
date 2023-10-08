@@ -110,7 +110,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _subscribe_quote_ticks                 | optional    |
     | _subscribe_trade_ticks                 | optional    |
     | _subscribe_bars                        | optional    |
-    | _subscribe_instrument_status_updates   | optional    |
+    | _subscribe_instrument_status           | optional    |
     | _subscribe_instrument_close            | optional    |
     | _unsubscribe (adapter specific types)  | optional    |
     | _unsubscribe_instruments               | optional    |
@@ -121,7 +121,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _unsubscribe_quote_ticks               | optional    |
     | _unsubscribe_trade_ticks               | optional    |
     | _unsubscribe_bars                      | optional    |
-    | _unsubscribe_instrument_status_updates | optional    |
+    | _unsubscribe_instrument_status         | optional    |
     | _unsubscribe_instrument_close          | optional    |
     +----------------------------------------+-------------+
     | _request                               | optional    |
@@ -187,7 +187,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -220,7 +220,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
-    async def _unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
     async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:

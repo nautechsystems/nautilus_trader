@@ -115,7 +115,7 @@ async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(instrument.id)
     await asyncio.sleep(0)
-    data_client.subscribe_instrument_status_updates(instrument.id)
+    data_client.subscribe_instrument_status(instrument.id)
     await asyncio.sleep(0)
     data_client.subscribe_instrument_close(instrument.id)
     await asyncio.sleep(0)

@@ -516,11 +516,11 @@ class LiveMarketDataClient(MarketDataClient):
             actions=lambda: self._add_subscription_bars(bar_type),
         )
 
-    def subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    def subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         self.create_task(
-            self._subscribe_instrument_status_updates(instrument_id),
-            log_msg=f"subscribe: instrument_status_updates {instrument_id}",
-            actions=lambda: self._add_subscription_instrument_status_updates(instrument_id),
+            self._subscribe_instrument_status(instrument_id),
+            log_msg=f"subscribe: instrument_status {instrument_id}",
+            actions=lambda: self._add_subscription_instrument_status(instrument_id),
         )
 
     def subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -593,11 +593,11 @@ class LiveMarketDataClient(MarketDataClient):
             actions=lambda: self._remove_subscription_bars(bar_type),
         )
 
-    def unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         self.create_task(
-            self._unsubscribe_instrument_status_updates(instrument_id),
-            log_msg=f"unsubscribe: instrument_status_updates {instrument_id}",
-            actions=lambda: self._remove_subscription_instrument_status_updates(instrument_id),
+            self._unsubscribe_instrument_status(instrument_id),
+            log_msg=f"unsubscribe: instrument_status {instrument_id}",
+            actions=lambda: self._remove_subscription_instrument_status(instrument_id),
         )
 
     def unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -754,9 +754,9 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe_bars` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "implement the `_subscribe_instrument_status_updates` coroutine",  # pragma: no cover
+            "implement the `_subscribe_instrument_status` coroutine",  # pragma: no cover
         )
 
     async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -809,9 +809,9 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_unsubscribe_bars` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(  # pragma: no cover
-            "implement the `_unsubscribe_instrument_status_updates` coroutine",  # pragma: no cover
+            "implement the `_unsubscribe_instrument_status` coroutine",  # pragma: no cover
         )
 
     async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:

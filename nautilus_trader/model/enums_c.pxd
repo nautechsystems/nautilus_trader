@@ -22,6 +22,7 @@ from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport CurrencyType
+from nautilus_trader.core.rust.model cimport HaltReason
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
@@ -77,6 +78,9 @@ cpdef str liquidity_side_to_str(LiquiditySide value)
 
 cpdef MarketStatus market_status_from_str(str value)
 cpdef str market_status_to_str(MarketStatus value)
+
+cpdef HaltReason halt_reason_from_str(str value)
+cpdef str halt_reason_to_str(HaltReason value)
 
 cpdef OmsType oms_type_from_str(str value)
 cpdef str oms_type_to_str(OmsType value)

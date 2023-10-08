@@ -16,6 +16,7 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.model.enums_c cimport HaltReason
 from nautilus_trader.model.enums_c cimport InstrumentCloseType
 from nautilus_trader.model.enums_c cimport MarketStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -43,8 +44,12 @@ cdef class VenueStatus(Data):
 cdef class InstrumentStatus(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
+    cdef readonly str trading_session
+    """The trading session name.\n\n:returns: `str`"""
     cdef readonly MarketStatus status
     """The instrument market status.\n\n:returns: `MarketStatus`"""
+    cdef readonly HaltReason halt_reason
+    """The halt reason.\n\n:returns: `HaltReason`"""
     cdef readonly uint64_t ts_event
     """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init

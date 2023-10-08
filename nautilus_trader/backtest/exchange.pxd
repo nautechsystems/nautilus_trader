@@ -131,8 +131,8 @@ cdef class SimulatedExchange:
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)
-    cpdef void process_venue_status(self, VenueStatus update)
-    cpdef void process_instrument_status(self, InstrumentStatus update)
+    cpdef void process_venue_status(self, VenueStatus data)
+    cpdef void process_instrument_status(self, InstrumentStatus data)
     cpdef void process(self, uint64_t ts_now)
     cpdef void reset(self)
 

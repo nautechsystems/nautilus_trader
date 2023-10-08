@@ -85,7 +85,7 @@ def market_change_to_updates(  # noqa: C901
     # Handle instrument status and close updates first
     if mc.market_definition is not None:
         updates.extend(
-            market_definition_to_instrument_status_updates(
+            market_definition_to_instrument_status(
                 mc.market_definition,
                 mc.id,
                 ts_event,
@@ -171,7 +171,7 @@ def market_change_to_updates(  # noqa: C901
     return updates
 
 
-def market_definition_to_instrument_status_updates(
+def market_definition_to_instrument_status(
     market_definition: MarketDefinition,
     market_id: str,
     ts_event: int,
