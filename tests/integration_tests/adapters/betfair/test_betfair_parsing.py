@@ -64,7 +64,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_re
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_betfair_starting_prices
 from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_closes
-from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status_updates
+from nautilus_trader.adapters.betfair.parsing.streaming import market_definition_to_instrument_status
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
@@ -108,7 +108,7 @@ class TestBetfairParsingStreaming:
         self.tick_scheme = BETFAIR_TICK_SCHEME
         self.parser = BetfairParser(currency="GBP")
 
-    def test_market_definition_to_instrument_status_updates(self):
+    def test_market_definition_to_instrument_status(self):
         # Arrange
         market_definition_open = decode(
             encode(BetfairResponses.market_definition_open()),
@@ -116,7 +116,7 @@ class TestBetfairParsingStreaming:
         )
 
         # Act
-        updates = market_definition_to_instrument_status_updates(
+        updates = market_definition_to_instrument_status(
             market_definition_open,
             "1.205822330",
             0,

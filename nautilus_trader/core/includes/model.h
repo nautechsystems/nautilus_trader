@@ -230,6 +230,24 @@ typedef enum CurrencyType {
 } CurrencyType;
 
 /**
+ * The reason for a venue or market halt.
+ */
+typedef enum HaltReason {
+    /**
+     * The venue or market session is not halted.
+     */
+    NOT_HALTED = 1,
+    /**
+     * Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+     */
+    GENERAL = 2,
+    /**
+     * Trading halt is imposed by the venue to protect against extreme volatility.
+     */
+    VOLATILITY = 3,
+} HaltReason;
+
+/**
  * The type of event for an instrument close.
  */
 typedef enum InstrumentCloseType {
@@ -1519,6 +1537,16 @@ const char *market_status_to_cstr(enum MarketStatus value);
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum MarketStatus market_status_from_cstr(const char *ptr);
+
+const char *halt_reason_to_cstr(enum HaltReason value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum HaltReason halt_reason_from_cstr(const char *ptr);
 
 const char *oms_type_to_cstr(enum OmsType value);
 

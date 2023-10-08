@@ -222,7 +222,7 @@ class BetfairDataClient(LiveMarketDataClient):
         for instrument in self._instrument_provider.list_all():
             self._handle_data(instrument)
 
-    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument_close(self, instrument_id: InstrumentId):

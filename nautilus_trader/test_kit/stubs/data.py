@@ -387,7 +387,7 @@ class TestDataStubs:
         return book
 
     @staticmethod
-    def venue_status_update(
+    def venue_status(
         venue: Venue | None = None,
         status: MarketStatus | None = None,
     ) -> VenueStatus:
@@ -399,7 +399,7 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def instrument_status_update(
+    def instrument_status(
         instrument_id: InstrumentId | None = None,
         status: MarketStatus | None = None,
     ) -> InstrumentStatus:

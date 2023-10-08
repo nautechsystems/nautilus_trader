@@ -21,6 +21,12 @@ This will be the final release with support for Python 3.9.
 - Renamed `BookType.L1_TBBO` to `BookType.L1_MBP` (more accurate definition, as L1 is the top-level price either side)
 - Renamed `VenueStatusUpdate` -> `VenueStatus`
 - Renamed `InstrumentStatusUpdate` -> `InstrumentStatus`
+- Renamed `Actor.subscribe_venue_status_updates(...)` to `Actor.subscribe_venue_status(...)`
+- Renamed `Actor.subscribe_instrument_status_updates(...)` to `Actor.subscribe_instrument_status(...)`
+- Renamed `Actor.unsubscribe_venue_status_updates(...)` to `Actor.unsubscribe_venue_status(...)`
+- Renamed `Actor.unsubscribe_instrument_status_updates(...)` to `Actor.unsubscribe_instrument_status(...)`
+- Renamed `Actor.on_venue_status_update(...)` to `Actor.on_venue_status(...)`
+- Renamed `Actor.on_instrument_status_update(...)` to `Actor.on_instrument_status(...)`
 - Changed `InstrumentStatus` fields/schema and constructor
 - Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
 

@@ -126,6 +126,15 @@ cdef extern from "../includes/model.h":
         # A type of currency that is based on the value of an underlying commodity.
         COMMODITY_BACKED # = 3,
 
+    # The reason for a venue or market halt.
+    cpdef enum HaltReason:
+        # The venue or market session is not halted.
+        NOT_HALTED # = 1,
+        # Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+        GENERAL # = 2,
+        # Trading halt is imposed by the venue to protect against extreme volatility.
+        VOLATILITY # = 3,
+
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
         # When the market session ended.
@@ -957,6 +966,14 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
     MarketStatus market_status_from_cstr(const char *ptr);
+
+    const char *halt_reason_to_cstr(HaltReason value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    HaltReason halt_reason_from_cstr(const char *ptr);
 
     const char *oms_type_to_cstr(OmsType value);
 

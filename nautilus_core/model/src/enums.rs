@@ -1429,6 +1429,24 @@ pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketSt
 
 #[cfg(feature = "ffi")]
 #[no_mangle]
+pub extern "C" fn halt_reason_to_cstr(value: HaltReason) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+/// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub unsafe extern "C" fn halt_reason_from_cstr(ptr: *const c_char) -> HaltReason {
+    let value = cstr_to_str(ptr);
+    HaltReason::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `HaltReason` enum string value, was '{value}'"))
+}
+
+#[cfg(feature = "ffi")]
+#[no_mangle]
 pub extern "C" fn oms_type_to_cstr(value: OmsType) -> *const c_char {
     str_to_cstr(value.as_ref())
 }

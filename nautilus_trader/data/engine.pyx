@@ -456,7 +456,7 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_bars()
         return subscriptions + list(self._bar_aggregators.keys())
 
-    cpdef list subscribed_instrument_status_updates(self):
+    cpdef list subscribed_instrument_status(self):
         """
         Return the status update instruments subscribed to.
 
@@ -468,7 +468,7 @@ cdef class DataEngine(Component):
         cdef list subscriptions = []
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
-            subscriptions += client.subscribed_instrument_status_updates()
+            subscriptions += client.subscribed_instrument_status()
         return subscriptions
 
     cpdef list subscribed_instrument_close(self):
@@ -687,12 +687,12 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("bar_type"),
             )
         elif command.data_type.type == VenueStatus:
-            self._handle_subscribe_venue_status_updates(
+            self._handle_subscribe_venue_status(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == InstrumentStatus:
-            self._handle_subscribe_instrument_status_updates(
+            self._handle_subscribe_instrument_status(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
@@ -1018,7 +1018,7 @@ cdef class DataEngine(Component):
             )
             return
 
-    cpdef void _handle_subscribe_venue_status_updates(
+    cpdef void _handle_subscribe_venue_status(
         self,
         MarketDataClient client,
         Venue venue,
@@ -1026,10 +1026,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(venue, "venue")
 
-        if venue not in client.subscribed_venue_status_updates():
-            client.subscribe_venue_status_updates(venue)
+        if venue not in client.subscribed_venue_status():
+            client.subscribe_venue_status(venue)
 
-    cpdef void _handle_subscribe_instrument_status_updates(
+    cpdef void _handle_subscribe_instrument_status(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -1043,8 +1043,8 @@ cdef class DataEngine(Component):
             )
             return
 
-        if instrument_id not in client.subscribed_instrument_status_updates():
-            client.subscribe_instrument_status_updates(instrument_id)
+        if instrument_id not in client.subscribed_instrument_status():
+            client.subscribe_instrument_status(instrument_id)
 
     cpdef void _handle_subscribe_instrument_close(
         self,
@@ -1390,9 +1390,9 @@ cdef class DataEngine(Component):
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
         elif isinstance(data, VenueStatus):
-            self._handle_venue_status_update(data)
+            self._handle_venue_status(data)
         elif isinstance(data, InstrumentStatus):
-            self._handle_instrument_status_update(data)
+            self._handle_instrument_status(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
         elif isinstance(data, GenericData):
@@ -1507,10 +1507,10 @@ cdef class DataEngine(Component):
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
-    cpdef void _handle_venue_status_update(self, VenueStatus data):
+    cpdef void _handle_venue_status(self, VenueStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
 
-    cpdef void _handle_instrument_status_update(self, InstrumentStatus data):
+    cpdef void _handle_instrument_status(self, InstrumentStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
 
     cpdef void _handle_close_price(self, InstrumentClose data):
