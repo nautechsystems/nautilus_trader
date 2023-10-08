@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import copy
 import pickle
 
@@ -528,22 +529,22 @@ class TestOrderBook:
     #     assert self.empty_book.ts_last == delta.ts_init
 
     @pytest.mark.skip(reason="TBD")
-    def test_l3_get_price_for_volume(self):
-        bid_price = self.sample_book.get_price_for_volume(True, 5.0)
-        ask_price = self.sample_book.get_price_for_volume(False, 12.0)
+    def test_l3_get_price_for_size(self):
+        bid_price = self.sample_book.get_price_for_size(True, 5.0)
+        ask_price = self.sample_book.get_price_for_size(False, 12.0)
         assert bid_price == 0.88600
         assert ask_price == 0.0
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
-        ("is_buy", "quote_volume", "expected"),
+        ("is_buy", "quote_size", "expected"),
         [
             (True, 0.8860, 0.8860),
             (False, 0.8300, 0.8300),
         ],
     )
-    def test_l3_get_price_for_quote_volume(self, is_buy, quote_volume, expected):
-        assert self.sample_book.get_price_for_quote_volume(is_buy, quote_volume) == expected
+    def test_l3_get_price_for_quote_size(self, is_buy, quote_size, expected):
+        assert self.sample_book.get_price_for_quote_size(is_buy, quote_size) == expected
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
@@ -560,8 +561,8 @@ class TestOrderBook:
             (False, 0.88700, 0.0),
         ],
     )
-    def test_get_volume_for_price(self, is_buy, price, expected):
-        assert self.sample_book.get_volume_for_price(is_buy, price) == expected
+    def test_get_quantity_for_price(self, is_buy, price, expected):
+        assert self.sample_book.get_quantity_for_price(is_buy, price) == expected
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
@@ -578,12 +579,12 @@ class TestOrderBook:
             (False, 0.88700, 0.0),
         ],
     )
-    def test_get_quote_volume_for_price(self, is_buy, price, expected):
-        assert self.sample_book.get_quote_volume_for_price(is_buy, price) == expected
+    def test_get_quote_size_for_price(self, is_buy, price, expected):
+        assert self.sample_book.get_quote_size_for_price(is_buy, price) == expected
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
-        ("is_buy", "volume", "expected"),
+        ("is_buy", "size", "expected"),
         [
             (True, 1.0, 0.886),
             (True, 3.0, 0.886),
@@ -596,8 +597,8 @@ class TestOrderBook:
             (False, 5.0, 0.828),
         ],
     )
-    def test_get_vwap_for_volume(self, is_buy, volume, expected):
-        assert self.sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(expected, 0.01)
+    def test_get_vwap_for_size(self, is_buy, size, expected):
+        assert self.sample_book.get_vwap_for_size(is_buy, size) == pytest.approx(expected, 0.01)
 
     @pytest.mark.skip(reason="TBD")
     def test_l2_update(self):

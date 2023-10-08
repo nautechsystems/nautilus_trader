@@ -223,7 +223,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 handle_revised_bars=self._handle_revised_bars,
             )
 
-    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -271,7 +271,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         else:
             await self._client.unsubscribe_historical_bars(bar_type)
 
-    async def _unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:

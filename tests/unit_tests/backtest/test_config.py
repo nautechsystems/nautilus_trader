@@ -31,7 +31,7 @@ from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -134,7 +134,7 @@ class TestBacktestConfig:
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
-            data_cls=InstrumentStatusUpdate,
+            data_cls=InstrumentStatus,
         )
         result = c.load()
         assert len(result.data) == 2

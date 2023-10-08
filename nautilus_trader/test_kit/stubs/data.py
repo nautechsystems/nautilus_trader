@@ -31,13 +31,13 @@ from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import VenueStatusUpdate
+from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
@@ -387,11 +387,11 @@ class TestDataStubs:
         return book
 
     @staticmethod
-    def venue_status_update(
+    def venue_status(
         venue: Venue | None = None,
         status: MarketStatus | None = None,
-    ) -> VenueStatusUpdate:
-        return VenueStatusUpdate(
+    ) -> VenueStatus:
+        return VenueStatus(
             venue=venue or Venue("BINANCE"),
             status=status or MarketStatus.OPEN,
             ts_event=0,
@@ -399,11 +399,11 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def instrument_status_update(
+    def instrument_status(
         instrument_id: InstrumentId | None = None,
         status: MarketStatus | None = None,
-    ) -> InstrumentStatusUpdate:
-        return InstrumentStatusUpdate(
+    ) -> InstrumentStatus:
+        return InstrumentStatus(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             status=status or MarketStatus.PAUSE,
             ts_event=0,

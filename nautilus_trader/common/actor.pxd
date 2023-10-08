@@ -34,12 +34,12 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -84,9 +84,9 @@ cdef class Actor(Component):
     cpdef void on_dispose(self)
     cpdef void on_degrade(self)
     cpdef void on_fault(self)
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update)
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update)
-    cpdef void on_instrument_close(self, InstrumentClose update)
+    cpdef void on_venue_status(self, VenueStatus data)
+    cpdef void on_instrument_status(self, InstrumentStatus data)
+    cpdef void on_instrument_close(self, InstrumentClose data)
     cpdef void on_instrument(self, Instrument instrument)
     cpdef void on_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void on_order_book(self, OrderBook order_book)
@@ -157,8 +157,8 @@ cdef class Actor(Component):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*)
-    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id=*)
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*)
+    cpdef void subscribe_venue_status(self, Venue venue, ClientId client_id=*)
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*)
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*)
@@ -169,8 +169,8 @@ cdef class Actor(Component):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=*)
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=*)
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*)
+    cpdef void unsubscribe_venue_status(self, Venue venue, ClientId client_id=*)
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void publish_data(self, DataType data_type, Data data)
     cpdef void publish_signal(self, str name, value, uint64_t ts_event=*)
 
@@ -221,9 +221,9 @@ cdef class Actor(Component):
     cpdef void handle_bar(self, Bar bar)
     cpdef void handle_bars(self, list bars)
     cpdef void handle_data(self, Data data)
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate update)
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update)
-    cpdef void handle_instrument_close(self, InstrumentClose update)
+    cpdef void handle_venue_status(self, VenueStatus data)
+    cpdef void handle_instrument_status(self, InstrumentStatus data)
+    cpdef void handle_instrument_close(self, InstrumentClose data)
     cpdef void handle_historical_data(self, Data data)
     cpdef void handle_event(self, Event event)
 

@@ -25,7 +25,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
@@ -102,8 +102,8 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         self,
         instrument_ids: list[str] | None = None,
         **kwargs: Any,
-    ) -> list[InstrumentStatusUpdate]:
-        return self.query(data_cls=InstrumentStatusUpdate, instrument_ids=instrument_ids, **kwargs)
+    ) -> list[InstrumentStatus]:
+        return self.query(data_cls=InstrumentStatus, instrument_ids=instrument_ids, **kwargs)
 
     def instrument_closes(
         self,

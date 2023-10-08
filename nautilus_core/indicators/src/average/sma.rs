@@ -23,7 +23,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::indicator::Indicator;
+use crate::indicator::{Indicator, MovingAverage};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -89,8 +89,17 @@ impl SimpleMovingAverage {
             is_initialized: false,
         })
     }
+}
 
-    pub fn update_raw(&mut self, value: f64) {
+impl MovingAverage for SimpleMovingAverage {
+    fn value(&self) -> f64 {
+        self.value
+    }
+
+    fn count(&self) -> usize {
+        self.count
+    }
+    fn update_raw(&mut self, value: f64) {
         if self.inputs.len() == self.period {
             self.inputs.remove(0);
             self.count -= 1;
@@ -170,7 +179,11 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{average::sma::SimpleMovingAverage, indicator::Indicator, stubs::*};
+    use crate::{
+        average::sma::SimpleMovingAverage,
+        indicator::{Indicator, MovingAverage},
+        stubs::*,
+    };
 
     #[rstest]
     fn test_sma_initialized(indicator_sma_10: SimpleMovingAverage) {

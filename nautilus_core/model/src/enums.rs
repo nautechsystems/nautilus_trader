@@ -49,7 +49,10 @@ pub trait FromU8 {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
     #[pyo3(name = "CASH")]
@@ -81,7 +84,10 @@ pub enum AccountType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AggregationSource {
     /// The data is externally aggregated (outside the Nautilus system boundary).
     #[pyo3(name = "EXTERNAL")]
@@ -110,7 +116,10 @@ pub enum AggregationSource {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
     NoAggressor = 0, // Will be replaced by `Option`
@@ -152,7 +161,10 @@ impl FromU8 for AggressorSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 #[allow(non_camel_case_types)]
 pub enum AssetClass {
     /// Foreign exchange (FOREX) assets.
@@ -202,7 +214,10 @@ pub enum AssetClass {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AssetType {
     /// A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
     #[pyo3(name = "SPOT")]
@@ -246,7 +261,10 @@ pub enum AssetType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum BarAggregation {
     /// Based on a number of ticks.
     #[pyo3(name = "TICK")]
@@ -317,7 +335,10 @@ pub enum BarAggregation {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum BookAction {
     /// An order is added to the book.
     #[pyo3(name = "ADD")]
@@ -365,7 +386,10 @@ impl FromU8 for BookAction {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(non_camel_case_types)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum BookType {
     /// Top-of-book best bid/offer, one level per side.
     L1_MBP = 1,
@@ -407,7 +431,10 @@ impl FromU8 for BookType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum ContingencyType {
     /// Not a contingent order.
     NoContingency = 0, // Will be replaced by `Option`
@@ -441,7 +468,10 @@ pub enum ContingencyType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum CurrencyType {
     /// A type of cryptocurrency or crypto token.
     #[pyo3(name = "CRYPTO")]
@@ -473,7 +503,10 @@ pub enum CurrencyType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum InstrumentCloseType {
     /// When the market session ended.
     #[pyo3(name = "END_OF_SESSION")]
@@ -502,8 +535,11 @@ pub enum InstrumentCloseType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 #[allow(clippy::enum_variant_names)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
 pub enum LiquiditySide {
     /// No specific liqudity side.
     NoLiquiditySide = 0, // Will be replaced by `Option`
@@ -534,23 +570,67 @@ pub enum LiquiditySide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum MarketStatus {
-    /// The market is closed.
-    #[pyo3(name = "CLOSED")]
-    Closed = 1,
-    /// The market is in the pre-open session.
+    /// The market session is in the pre-open.
     #[pyo3(name = "PRE_OPEN")]
-    PreOpen = 2,
-    /// The market is open for the normal session.
+    PreOpen = 1,
+    /// The market session is open.
     #[pyo3(name = "OPEN")]
-    Open = 3,
+    Open = 2,
     /// The market session is paused.
     #[pyo3(name = "PAUSE")]
-    Pause = 4,
-    /// The market is in the pre-close session.
+    Pause = 3,
+    /// The market session is halted.
+    #[pyo3(name = "HALT")]
+    Halt = 4,
+    /// The market session has reopened after a pause or halt.
+    #[pyo3(name = "REOPEN")]
+    Reopen = 5,
+    /// The market session is in the pre-close.
     #[pyo3(name = "PRE_CLOSE")]
-    PreClose = 5,
+    PreClose = 6,
+    /// The market session is closed.
+    #[pyo3(name = "CLOSED")]
+    Closed = 7,
+}
+
+/// The reason for a venue or market halt.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum HaltReason {
+    /// The venue or market session is not halted.
+    #[pyo3(name = "NOT_HALTED")]
+    NotHalted = 1,
+    /// Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+    #[pyo3(name = "GENERAL")]
+    General = 2,
+    /// Trading halt is imposed by the venue to protect against extreme volatility.
+    #[pyo3(name = "VOLATILITY")]
+    Volatility = 3,
 }
 
 /// The order management system (OMS) type for a trading venue or trading strategy.
@@ -572,7 +652,10 @@ pub enum MarketStatus {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OmsType {
     /// There is no specific type of order management specified (will defer to the venue).
     Unspecified = 0, // Will be replaced by `Option`
@@ -605,7 +688,10 @@ pub enum OmsType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OptionKind {
     /// A Call option gives the holder the right, but not the obligation, to buy an underlying asset at a specified strike price within a specified period of time.
     #[pyo3(name = "CALL")]
@@ -635,7 +721,10 @@ pub enum OptionKind {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OrderSide {
     /// No order side is specified (only valid in the context of a filter for actions involving orders).
     NoOrderSide = 0, // Will be replaced by `Option`
@@ -697,7 +786,10 @@ impl FromU8 for OrderSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OrderStatus {
     /// The order is initialized (instantiated) within the Nautilus system.
     #[pyo3(name = "INITIALIZED")]
@@ -762,7 +854,10 @@ pub enum OrderStatus {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OrderType {
     /// A market order to buy or sell at the best available price in the current market.
     #[pyo3(name = "MARKET")]
@@ -813,7 +908,10 @@ pub enum OrderType {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum PositionSide {
     /// No position side is specified (only valid in the context of a filter for actions involving positions).
     NoPositionSide = 0, // Will be replaced by `Option`
@@ -847,7 +945,10 @@ pub enum PositionSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum PriceType {
     /// A quoted order price where a buyer is willing to buy a quantity of an instrument.
     #[pyo3(name = "BID")]
@@ -882,7 +983,10 @@ pub enum PriceType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TimeInForce {
     /// Good Till Canceled (GTC) - the order remains active until canceled.
     #[pyo3(name = "GTD")]
@@ -926,7 +1030,10 @@ pub enum TimeInForce {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TradingState {
     /// Normal trading operations.
     #[pyo3(name = "ACTIVE")]
@@ -958,7 +1065,10 @@ pub enum TradingState {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TrailingOffsetType {
     /// No trailing offset type is specified (invalid for trailing type orders).
     NoTrailingOffset = 0, // Will be replaced by `Option`
@@ -995,7 +1105,10 @@ pub enum TrailingOffsetType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TriggerType {
     /// No trigger type is specified (invalid for orders with a trigger).
     NoTrigger = 0, // Will be replaced by `Option`
@@ -1312,6 +1425,24 @@ pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketSt
     let value = cstr_to_str(ptr);
     MarketStatus::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `MarketStatus` enum string value, was '{value}'"))
+}
+
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn halt_reason_to_cstr(value: HaltReason) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+/// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub unsafe extern "C" fn halt_reason_from_cstr(ptr: *const c_char) -> HaltReason {
+    let value = cstr_to_str(ptr);
+    HaltReason::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `HaltReason` enum string value, was '{value}'"))
 }
 
 #[cfg(feature = "ffi")]

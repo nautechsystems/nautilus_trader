@@ -15,7 +15,7 @@
 
 import asyncio
 import json
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
@@ -125,7 +125,8 @@ class BinanceWebSocketClient:
         self._log.info(f"Connected to {self._base_url}.", LogColor.BLUE)
         self._log.info(f"Subscribed to {initial_stream}.", LogColor.BLUE)
 
-    async def reconnect(self) -> None:
+    # TODO: Temporarily synch
+    def reconnect(self) -> None:
         """
         Reconnect the client to the server and resubscribe to all streams.
         """
@@ -136,8 +137,8 @@ class BinanceWebSocketClient:
         self._log.warning(f"Reconnected to {self._base_url}.")
 
         # Re-subscribe to all streams
-        for stream in self._streams:
-            await self._subscribe(stream)
+        loop = asyncio.get_event_loop()
+        loop.create_task(self._subscribe_all())
 
     async def disconnect(self) -> None:
         """
@@ -448,17 +449,23 @@ class BinanceWebSocketClient:
             await self.connect()
             return
 
-        message = {
-            "method": "SUBSCRIBE",
-            "params": [stream],
-            "id": self._msg_id,
-        }
-        self._msg_id += 1
-
+        message = self._create_subscribe_msg(streams=[stream])
         self._log.debug(f"SENDING: {message}")
 
         self._inner.send_text(json.dumps(message))
         self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
+
+    async def _subscribe_all(self) -> None:
+        if self._inner is None:
+            self._log.error("Cannot subscribe all: no connected.")
+            return
+
+        message = self._create_subscribe_msg(streams=self._streams)
+        self._log.debug(f"SENDING: {message}")
+
+        self._inner.send_text(json.dumps(message))
+        for stream in self._streams:
+            self._log.info(f"Subscribed to {stream}.", LogColor.BLUE)
 
     async def _unsubscribe(self, stream: str) -> None:
         if stream not in self._streams:
@@ -471,14 +478,26 @@ class BinanceWebSocketClient:
             self._log.error(f"Cannot unsubscribe from {stream}: not connected.")
             return
 
-        message = {
-            "method": "UNSUBSCRIBE",
-            "params": [stream],
-            "id": self._msg_id,
-        }
-        self._msg_id += 1
-
+        message = self._create_unsubscribe_msg(streams=[stream])
         self._log.debug(f"SENDING: {message}")
 
         self._inner.send_text(json.dumps(message))
         self._log.info(f"Unsubscribed from {stream}.", LogColor.BLUE)
+
+    def _create_subscribe_msg(self, streams: list[str]) -> dict[str, Any]:
+        message = {
+            "method": "SUBSCRIBE",
+            "params": streams,
+            "id": self._msg_id,
+        }
+        self._msg_id += 1
+        return message
+
+    def _create_unsubscribe_msg(self, streams: list[str]) -> dict[str, Any]:
+        message = {
+            "method": "UNSUBSCRIBE",
+            "params": streams,
+            "id": self._msg_id,
+        }
+        self._msg_id += 1
+        return message

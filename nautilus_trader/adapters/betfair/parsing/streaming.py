@@ -25,8 +25,9 @@ from betfair_parser.spec.streaming import MarketDefinition
 from betfair_parser.spec.streaming import RunnerChange
 from betfair_parser.spec.streaming import RunnerDefinition
 from betfair_parser.spec.streaming import RunnerStatus
-from betfair_parser.spec.streaming.type_definitions import _PV
+from betfair_parser.spec.streaming.type_definitions import PV
 
+from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -44,9 +45,10 @@ from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
 from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -62,7 +64,7 @@ from nautilus_trader.model.objects import Price
 
 
 PARSE_TYPES = Union[
-    InstrumentStatusUpdate,
+    InstrumentStatus,
     InstrumentClose,
     OrderBookDeltas,
     TradeTick,
@@ -83,7 +85,7 @@ def market_change_to_updates(  # noqa: C901
     # Handle instrument status and close updates first
     if mc.market_definition is not None:
         updates.extend(
-            market_definition_to_instrument_status_updates(
+            market_definition_to_instrument_status(
                 mc.market_definition,
                 mc.id,
                 ts_event,
@@ -169,13 +171,22 @@ def market_change_to_updates(  # noqa: C901
     return updates
 
 
-def market_definition_to_instrument_status_updates(
+def market_definition_to_instrument_status(
     market_definition: MarketDefinition,
     market_id: str,
     ts_event: int,
     ts_init: int,
-) -> list[InstrumentStatusUpdate]:
+) -> list[InstrumentStatus]:
     updates = []
+
+    if market_definition.in_play:
+        venue_status = VenueStatus(
+            venue=BETFAIR_VENUE,
+            status=MarketStatus.OPEN,
+            ts_event=ts_event,
+            ts_init=ts_init,
+        )
+        updates.append(venue_status)
 
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
@@ -184,7 +195,7 @@ def market_definition_to_instrument_status_updates(
             selection_handicap=parse_handicap(runner.handicap),
         )
         key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
-        if runner.status == RunnerStatus.REMOVED:
+        if runner.status in (RunnerStatus.REMOVED, RunnerStatus.REMOVED_VACANT):
             status = MarketStatus.CLOSED
         else:
             try:
@@ -193,7 +204,7 @@ def market_definition_to_instrument_status_updates(
                 raise ValueError(
                     f"{runner.status=} {market_definition.status=} {market_definition.in_play=}",
                 )
-        status = InstrumentStatusUpdate(
+        status = InstrumentStatus(
             instrument_id,
             status=status,
             ts_event=ts_event,
@@ -287,7 +298,7 @@ def runner_to_betfair_starting_price(
         return None
 
 
-def _price_volume_to_book_order(pv: _PV, side: OrderSide) -> BookOrder:
+def _price_volume_to_book_order(pv: PV, side: OrderSide) -> BookOrder:
     price = betfair_float_to_price(pv.price)
     order_id = int(price.as_double() * 10**price.precision)
     return BookOrder(

@@ -25,6 +25,7 @@ from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
@@ -89,6 +90,7 @@ def data_client(
         loop=event_loop,
         name=venue.value,
         config=BetfairDataClientConfig(
+            account_currency="GBP",
             username="username",
             password="password",
             app_key="app_key",
@@ -148,7 +150,7 @@ def exec_client(
             username="username",
             password="password",
             app_key="app_key",
-            base_currency="GBP",
+            account_currency="GBP",
         ),
         msgbus=msgbus,
         cache=cache,
@@ -170,6 +172,11 @@ def data_catalog() -> ParquetDataCatalog:
     catalog: ParquetDataCatalog = data_catalog_setup(protocol="memory", path="/")
     load_betfair_data(catalog)
     return catalog
+
+
+@pytest.fixture()
+def parser() -> BetfairParser:
+    return BetfairParser(currency="GBP")
 
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):

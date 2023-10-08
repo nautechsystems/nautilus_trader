@@ -126,6 +126,15 @@ cdef extern from "../includes/model.h":
         # A type of currency that is based on the value of an underlying commodity.
         COMMODITY_BACKED # = 3,
 
+    # The reason for a venue or market halt.
+    cpdef enum HaltReason:
+        # The venue or market session is not halted.
+        NOT_HALTED # = 1,
+        # Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+        GENERAL # = 2,
+        # Trading halt is imposed by the venue to protect against extreme volatility.
+        VOLATILITY # = 3,
+
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
         # When the market session ended.
@@ -144,16 +153,20 @@ cdef extern from "../includes/model.h":
 
     # The status of an individual market on a trading venue.
     cpdef enum MarketStatus:
-        # The market is closed.
-        CLOSED # = 1,
-        # The market is in the pre-open session.
-        PRE_OPEN # = 2,
-        # The market is open for the normal session.
-        OPEN # = 3,
+        # The market session is in the pre-open.
+        PRE_OPEN # = 1,
+        # The market session is open.
+        OPEN # = 2,
         # The market session is paused.
-        PAUSE # = 4,
-        # The market is in the pre-close session.
-        PRE_CLOSE # = 5,
+        PAUSE # = 3,
+        # The market session is halted.
+        HALT # = 4,
+        # The market session has reopened after a pause or halt.
+        REOPEN # = 5,
+        # The market session is in the pre-close.
+        PRE_CLOSE # = 6,
+        # The market session is closed.
+        CLOSED # = 7,
 
     # The order management system (OMS) type for a trading venue or trading strategy.
     cpdef enum OmsType:
@@ -340,6 +353,7 @@ cdef extern from "../includes/model.h":
     cdef struct Level:
         pass
 
+    # Provides an order book which can handle L1/L2/L3 granularity data.
     cdef struct OrderBook:
         pass
 
@@ -953,6 +967,14 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     MarketStatus market_status_from_cstr(const char *ptr);
 
+    const char *halt_reason_to_cstr(HaltReason value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    HaltReason halt_reason_from_cstr(const char *ptr);
+
     const char *oms_type_to_cstr(OmsType value);
 
     # Returns an enum from a Python string.
@@ -1357,6 +1379,10 @@ cdef extern from "../includes/model.h":
                                              Quantity_t qty,
                                              OrderSide order_side);
 
+    double orderbook_get_quantity_for_price(OrderBook_API *book,
+                                            Price_t price,
+                                            OrderSide order_side);
+
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *tick);
 
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
@@ -1380,7 +1406,7 @@ cdef extern from "../includes/model.h":
 
     CVec level_orders(const Level_API *level);
 
-    double level_volume(const Level_API *level);
+    double level_size(const Level_API *level);
 
     double level_exposure(const Level_API *level);
 

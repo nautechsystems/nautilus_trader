@@ -63,12 +63,12 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -300,14 +300,14 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update):
+    cpdef void on_venue_status(self, VenueStatus data):
         """
         Actions to be performed when running and receives a venue status update.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
-            The update received.
+        data : VenueStatus
+            The status update received.
 
         Warnings
         --------
@@ -316,15 +316,15 @@ cdef class Actor(Component):
         """
         # Optionally override in subclass
 
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update):
+    cpdef void on_instrument_status(self, InstrumentStatus data):
         """
         Actions to be performed when running and receives an instrument status
         update.
 
         Parameters
         ----------
-        update : InstrumentStatusUpdate
-            The update received.
+        data : InstrumentStatus
+            The status update received.
 
         Warnings
         --------
@@ -1451,7 +1451,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id = None):
+    cpdef void subscribe_venue_status(self, Venue venue, ClientId client_id = None):
         """
         Subscribe to status updates for the given venue.
 
@@ -1469,20 +1469,20 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.status.{venue.to_str()}",
-            handler=self.handle_venue_status_update,
+            handler=self.handle_venue_status,
         )
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=venue,
-            data_type=DataType(VenueStatusUpdate),
+            data_type=DataType(VenueStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None):
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to status updates for the given instrument ID.
 
@@ -1500,19 +1500,19 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
-            handler=self.handle_instrument_status_update,
+            handler=self.handle_instrument_status,
         )
 
         cdef Subscribe command = Subscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentStatusUpdate, metadata={"instrument_id": instrument_id}),
+            data_type=DataType(InstrumentStatus, metadata={"instrument_id": instrument_id}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Subscribed to {instrument_id} InstrumentStatusUpdate.")
+        self._log.info(f"Subscribed to {instrument_id} InstrumentStatus.")
 
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id = None):
         """
@@ -1853,7 +1853,7 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {bar_type} bar data.")
 
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id = None):
+    cpdef void unsubscribe_venue_status(self, Venue venue, ClientId client_id = None):
         """
         Unsubscribe to status updates for the given venue.
 
@@ -1871,20 +1871,20 @@ cdef class Actor(Component):
 
         self._msgbus.unsubscribe(
             topic=f"data.status.{venue.to_str()}",
-            handler=self.handle_venue_status_update,
+            handler=self.handle_venue_status,
         )
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=venue,
-            data_type=DataType(VenueStatusUpdate),
+            data_type=DataType(VenueStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id = None):
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe to status updates of the given venue.
 
@@ -1902,18 +1902,18 @@ cdef class Actor(Component):
 
         self._msgbus.unsubscribe(
             topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
-            handler=self.handle_venue_status_update,
+            handler=self.handle_venue_status,
         )
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
-            data_type=DataType(InstrumentStatusUpdate),
+            data_type=DataType(InstrumentStatus),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatusUpdate.")
+        self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus.")
 
 
     cpdef void publish_data(self, DataType data_type, Data data):
@@ -2709,54 +2709,54 @@ cdef class Actor(Component):
                 self._handle_indicators_for_bar(indicators, bar)
             self.handle_historical_data(bar)
 
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate update):
+    cpdef void handle_venue_status(self, VenueStatus data):
         """
         Handle the given venue status update.
 
-        If state is ``RUNNING`` then passes to `on_venue_status_update`.
+        If state is ``RUNNING`` then passes to `on_venue_status`.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
-            The update received.
+        data : VenueStatus
+            The status update received.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(update, "update")
+        Condition.not_none(data, "data")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_venue_status_update(update)
+                self.on_venue_status(data)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(update)}", e)
+                self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update):
+    cpdef void handle_instrument_status(self, InstrumentStatus data):
         """
         Handle the given instrument status update.
 
-        If state is ``RUNNING`` then passes to `on_instrument_status_update`.
+        If state is ``RUNNING`` then passes to `on_instrument_status`.
 
         Parameters
         ----------
-        update : InstrumentStatusUpdate
-            The update received.
+        data : InstrumentStatus
+            The status update received.
 
         Warnings
         --------
         System method (not intended to be called by user code).
 
         """
-        Condition.not_none(update, "update")
+        Condition.not_none(data, "data")
 
         if self._fsm.state == ComponentState.RUNNING:
             try:
-                self.on_instrument_status_update(update)
+                self.on_instrument_status(data)
             except Exception as e:
-                self._log.exception(f"Error on handling {repr(update)}", e)
+                self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
     cpdef void handle_instrument_close(self, InstrumentClose update):

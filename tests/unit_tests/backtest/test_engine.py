@@ -40,7 +40,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import AccountType
@@ -556,13 +556,13 @@ class TestBacktestEngineData:
     def test_add_instrument_status_to_engine(self):
         # Arrange
         data = [
-            InstrumentStatusUpdate(
+            InstrumentStatus(
                 instrument_id=USDJPY_SIM.id,
                 status=MarketStatus.CLOSED,
                 ts_init=0,
                 ts_event=0,
             ),
-            InstrumentStatusUpdate(
+            InstrumentStatus(
                 instrument_id=USDJPY_SIM.id,
                 status=MarketStatus.OPEN,
                 ts_init=0,

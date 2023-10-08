@@ -27,6 +27,7 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+/// Represents a price level with a specified side in an order books ladder.
 #[derive(Copy, Clone, Debug, Eq)]
 pub struct BookPrice {
     pub value: Price,
@@ -68,6 +69,7 @@ impl Display for BookPrice {
     }
 }
 
+/// Represents one side of an order book as a ladder of price levels.
 pub struct Ladder {
     pub side: OrderSide,
     pub levels: BTreeMap<BookPrice, Level>,
@@ -147,7 +149,7 @@ impl Ladder {
     pub fn remove(&mut self, order_id: OrderId) {
         if let Some(price) = self.cache.remove(&order_id) {
             let level = self.levels.get_mut(&price).unwrap();
-            level.remove(order_id);
+            level.remove_by_id(order_id);
             if level.is_empty() {
                 self.levels.remove(&price);
             }
@@ -155,8 +157,8 @@ impl Ladder {
     }
 
     #[must_use]
-    pub fn volumes(&self) -> f64 {
-        return self.levels.values().map(|l| l.volume()).sum();
+    pub fn sizes(&self) -> f64 {
+        return self.levels.values().map(|l| l.size()).sum();
     }
 
     #[must_use]
@@ -186,7 +188,7 @@ impl Ladder {
                 break;
             }
 
-            for book_order in &level.orders {
+            for book_order in level.orders.values() {
                 let current = book_order.size;
                 if cumulative_denominator + current >= target {
                     // This order has filled us, add fill and return
@@ -253,7 +255,7 @@ mod tests {
 
         ladder.add(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 200.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
@@ -262,13 +264,13 @@ mod tests {
     fn test_add_multiple_buy_orders() {
         let mut ladder = Ladder::new(OrderSide::Buy);
         let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 0);
-        let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(30), 0);
-        let order3 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(50), 0);
-        let order4 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(200), 0);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(30), 1);
+        let order3 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(50), 2);
+        let order4 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(200), 3);
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
-        assert_eq!(ladder.volumes(), 300.0);
+        assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 2520.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 10.0)
     }
@@ -277,8 +279,8 @@ mod tests {
     fn test_add_multiple_sell_orders() {
         let mut ladder = Ladder::new(OrderSide::Sell);
         let order1 = BookOrder::new(OrderSide::Sell, Price::from("11.00"), Quantity::from(20), 0);
-        let order2 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(30), 0);
-        let order3 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(50), 0);
+        let order2 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(30), 1);
+        let order3 = BookOrder::new(OrderSide::Sell, Price::from("12.00"), Quantity::from(50), 2);
         let order4 = BookOrder::new(
             OrderSide::Sell,
             Price::from("13.00"),
@@ -288,9 +290,47 @@ mod tests {
 
         ladder.add_bulk(vec![order1, order2, order3, order4]);
         assert_eq!(ladder.len(), 3);
-        assert_eq!(ladder.volumes(), 300.0);
+        assert_eq!(ladder.sizes(), 300.0);
         assert_eq!(ladder.exposures(), 3780.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+    }
+
+    #[rstest]
+    fn test_add_to_same_price_level() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order1 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(30), 2);
+
+        ladder.add(order1);
+        ladder.add(order2);
+
+        assert_eq!(ladder.len(), 1);
+        assert_eq!(ladder.sizes(), 50.0);
+        assert_eq!(ladder.exposures(), 500.00000000000006);
+    }
+
+    #[rstest]
+    fn test_add_descending_buy_orders() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order1 = BookOrder::new(OrderSide::Buy, Price::from("9.00"), Quantity::from(20), 1);
+        let order2 = BookOrder::new(OrderSide::Buy, Price::from("8.00"), Quantity::from(30), 2);
+
+        ladder.add(order1);
+        ladder.add(order2);
+
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("9.00"));
+    }
+
+    #[rstest]
+    fn test_add_ascending_sell_orders() {
+        let mut ladder = Ladder::new(OrderSide::Sell);
+        let order1 = BookOrder::new(OrderSide::Sell, Price::from("8.00"), Quantity::from(20), 1);
+        let order2 = BookOrder::new(OrderSide::Sell, Price::from("9.00"), Quantity::from(30), 2);
+
+        ladder.add(order1);
+        ladder.add(order2);
+
+        assert_eq!(ladder.top().unwrap().price.value, Price::from("8.00"));
     }
 
     #[rstest]
@@ -299,12 +339,11 @@ mod tests {
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(20), 1);
 
         ladder.add(order);
-
         let order = BookOrder::new(OrderSide::Buy, Price::from("11.10"), Quantity::from(20), 1);
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
         assert_eq!(
             ladder.top().unwrap().price.value.as_f64(),
@@ -323,7 +362,7 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 20.0);
+        assert_eq!(ladder.sizes(), 20.0);
         assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
         assert_eq!(
             ladder.top().unwrap().price.value.as_f64(),
@@ -342,7 +381,7 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 10.0);
+        assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
     }
@@ -358,9 +397,19 @@ mod tests {
 
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
-        assert_eq!(ladder.volumes(), 10.0);
+        assert_eq!(ladder.sizes(), 10.0);
         assert_eq!(ladder.exposures(), 110.0);
         assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.0)
+    }
+
+    #[rstest]
+    fn test_delete_non_existing_order() {
+        let mut ladder = Ladder::new(OrderSide::Buy);
+        let order = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
+
+        ladder.delete(order);
+
+        assert_eq!(ladder.len(), 0);
     }
 
     #[rstest]
@@ -374,7 +423,7 @@ mod tests {
 
         ladder.delete(order);
         assert_eq!(ladder.len(), 0);
-        assert_eq!(ladder.volumes(), 0.0);
+        assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
         assert_eq!(ladder.top(), None)
     }
@@ -390,9 +439,19 @@ mod tests {
 
         ladder.delete(order);
         assert_eq!(ladder.len(), 0);
-        assert_eq!(ladder.volumes(), 0.0);
+        assert_eq!(ladder.sizes(), 0.0);
         assert_eq!(ladder.exposures(), 0.0);
         assert_eq!(ladder.top(), None)
+    }
+
+    #[rstest]
+    fn test_simulate_fills_with_empty_book() {
+        let ladder = Ladder::new(OrderSide::Buy);
+        let order = BookOrder::new(OrderSide::Buy, Price::max(2), Quantity::from(500), 1);
+
+        let fills = ladder.simulate_fills(&order);
+
+        assert!(fills.is_empty());
     }
 
     #[rstest]
@@ -469,7 +528,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_simulate_order_fills_buy_with_volume_depth_type() {
+    fn test_simulate_order_fills_buy() {
         let mut ladder = Ladder::new(OrderSide::Sell);
 
         ladder.add_bulk(vec![
@@ -518,7 +577,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_simulate_order_fills_sell_with_volume_depth_type() {
+    fn test_simulate_order_fills_sell() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
         ladder.add_bulk(vec![
@@ -567,7 +626,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_simulate_order_fills_sell_with_volume_at_limit_of_precision() {
+    fn test_simulate_order_fills_sell_with_size_at_limit_of_precision() {
         let mut ladder = Ladder::new(OrderSide::Buy);
 
         ladder.add_bulk(vec![
@@ -613,5 +672,23 @@ mod tests {
         let (price3, size3) = fills[2];
         assert_eq!(price3, Price::from("100.00"));
         assert_eq!(size3, Quantity::from("399.999999999"));
+    }
+
+    #[rstest]
+    fn test_boundary_prices() {
+        let max_price = Price::max(1);
+        let min_price = Price::min(1);
+
+        let mut ladder_buy = Ladder::new(OrderSide::Buy);
+        let mut ladder_sell = Ladder::new(OrderSide::Sell);
+
+        let order_buy = BookOrder::new(OrderSide::Buy, min_price, Quantity::from(1), 1);
+        let order_sell = BookOrder::new(OrderSide::Sell, max_price, Quantity::from(1), 1);
+
+        ladder_buy.add(order_buy);
+        ladder_sell.add(order_sell);
+
+        assert_eq!(ladder_buy.top().unwrap().price.value, min_price);
+        assert_eq!(ladder_sell.top().unwrap().price.value, max_price);
     }
 }

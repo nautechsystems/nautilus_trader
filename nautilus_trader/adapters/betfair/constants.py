@@ -30,6 +30,7 @@ CLOSE_PRICE_WINNER = Price(1.0, precision=BETFAIR_PRICE_PRECISION)
 CLOSE_PRICE_LOSER = Price(0.0, precision=BETFAIR_PRICE_PRECISION)
 
 MARKET_STATUS_MAPPING: dict[tuple[MarketStatus, bool], MarketStatus] = {
+    (BetfairMarketStatus.INACTIVE, False): MarketStatus.CLOSED,
     (BetfairMarketStatus.OPEN, False): MarketStatus.PRE_OPEN,
     (BetfairMarketStatus.OPEN, True): MarketStatus.OPEN,
     (BetfairMarketStatus.SUSPENDED, False): MarketStatus.PAUSE,

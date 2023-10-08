@@ -230,6 +230,24 @@ typedef enum CurrencyType {
 } CurrencyType;
 
 /**
+ * The reason for a venue or market halt.
+ */
+typedef enum HaltReason {
+    /**
+     * The venue or market session is not halted.
+     */
+    NOT_HALTED = 1,
+    /**
+     * Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+     */
+    GENERAL = 2,
+    /**
+     * Trading halt is imposed by the venue to protect against extreme volatility.
+     */
+    VOLATILITY = 3,
+} HaltReason;
+
+/**
  * The type of event for an instrument close.
  */
 typedef enum InstrumentCloseType {
@@ -266,25 +284,33 @@ typedef enum LiquiditySide {
  */
 typedef enum MarketStatus {
     /**
-     * The market is closed.
+     * The market session is in the pre-open.
      */
-    CLOSED = 1,
+    PRE_OPEN = 1,
     /**
-     * The market is in the pre-open session.
+     * The market session is open.
      */
-    PRE_OPEN = 2,
-    /**
-     * The market is open for the normal session.
-     */
-    OPEN = 3,
+    OPEN = 2,
     /**
      * The market session is paused.
      */
-    PAUSE = 4,
+    PAUSE = 3,
     /**
-     * The market is in the pre-close session.
+     * The market session is halted.
      */
-    PRE_CLOSE = 5,
+    HALT = 4,
+    /**
+     * The market session has reopened after a pause or halt.
+     */
+    REOPEN = 5,
+    /**
+     * The market session is in the pre-close.
+     */
+    PRE_CLOSE = 6,
+    /**
+     * The market session is closed.
+     */
+    CLOSED = 7,
 } MarketStatus;
 
 /**
@@ -632,6 +658,9 @@ typedef enum TriggerType {
 
 typedef struct Level Level;
 
+/**
+ * Provides an order book which can handle L1/L2/L3 granularity data.
+ */
 typedef struct OrderBook OrderBook;
 
 /**
@@ -1509,6 +1538,16 @@ const char *market_status_to_cstr(enum MarketStatus value);
  */
 enum MarketStatus market_status_from_cstr(const char *ptr);
 
+const char *halt_reason_to_cstr(enum HaltReason value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum HaltReason halt_reason_from_cstr(const char *ptr);
+
 const char *oms_type_to_cstr(enum OmsType value);
 
 /**
@@ -1978,6 +2017,10 @@ double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
                                          struct Quantity_t qty,
                                          enum OrderSide order_side);
 
+double orderbook_get_quantity_for_price(struct OrderBook_API *book,
+                                        struct Price_t price,
+                                        enum OrderSide order_side);
+
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
 
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
@@ -2003,7 +2046,7 @@ struct Price_t level_price(const struct Level_API *level);
 
 CVec level_orders(const struct Level_API *level);
 
-double level_volume(const struct Level_API *level);
+double level_size(const struct Level_API *level);
 
 double level_exposure(const struct Level_API *level);
 

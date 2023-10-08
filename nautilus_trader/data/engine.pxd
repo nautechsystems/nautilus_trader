@@ -30,12 +30,12 @@ from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -98,7 +98,7 @@ cdef class DataEngine(Component):
     cpdef list subscribed_quote_ticks(self)
     cpdef list subscribed_trade_ticks(self)
     cpdef list subscribed_bars(self)
-    cpdef list subscribed_instrument_status_updates(self)
+    cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
     cpdef list subscribed_synthetic_quotes(self)
     cpdef list subscribed_synthetic_trades(self)
@@ -126,8 +126,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type)
     cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
-    cpdef void _handle_subscribe_venue_status_updates(self, MarketDataClient client, Venue venue)
-    cpdef void _handle_subscribe_instrument_status_updates(self, MarketDataClient client, InstrumentId instrument_id)
+    cpdef void _handle_subscribe_venue_status(self, MarketDataClient client, Venue venue)
+    cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
@@ -151,8 +151,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_bar(self, Bar bar)
     cpdef void _handle_generic_data(self, GenericData data)
-    cpdef void _handle_venue_status_update(self, VenueStatusUpdate data)
-    cpdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data)
+    cpdef void _handle_venue_status(self, VenueStatus data)
+    cpdef void _handle_instrument_status(self, InstrumentStatus data)
     cpdef void _handle_close_price(self, InstrumentClose data)
 
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------

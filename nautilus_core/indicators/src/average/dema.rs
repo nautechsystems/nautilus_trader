@@ -23,7 +23,10 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::{average::ema::ExponentialMovingAverage, indicator::Indicator};
+use crate::{
+    average::ema::ExponentialMovingAverage,
+    indicator::{Indicator, MovingAverage},
+};
 
 /// The Double Exponential Moving Average attempts to a smoother average with less
 /// lag than the normal Exponential Moving Average (EMA)
@@ -96,8 +99,17 @@ impl DoubleExponentialMovingAverage {
             _ema2: ExponentialMovingAverage::new(period, price_type)?,
         })
     }
+}
 
-    pub fn update_raw(&mut self, value: f64) {
+impl MovingAverage for DoubleExponentialMovingAverage {
+    fn value(&self) -> f64 {
+        self.value
+    }
+
+    fn count(&self) -> usize {
+        self.count
+    }
+    fn update_raw(&mut self, value: f64) {
         if !self.has_inputs {
             self.has_inputs = true;
             self.value = value;
@@ -196,7 +208,11 @@ mod tests {
     use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
     use rstest::rstest;
 
-    use crate::{average::dema::DoubleExponentialMovingAverage, indicator::Indicator, stubs::*};
+    use crate::{
+        average::dema::DoubleExponentialMovingAverage,
+        indicator::{Indicator, MovingAverage},
+        stubs::*,
+    };
 
     #[rstest]
     fn test_dema_initialized(indicator_dema_10: DoubleExponentialMovingAverage) {

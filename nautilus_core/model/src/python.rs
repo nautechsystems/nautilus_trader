@@ -109,3 +109,105 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
         }
     }
 }
+
+#[cfg(test)]
+#[cfg(feature = "python")]
+mod tests {
+    use pyo3::{
+        prelude::*,
+        types::{PyBool, PyInt, PyList, PyString},
+    };
+    use rstest::rstest;
+    use serde_json::Value;
+
+    use super::*;
+
+    #[rstest]
+    fn test_value_to_pydict() {
+        Python::with_gil(|py| {
+            let json_str = r#"
+        {
+            "type": "OrderAccepted",
+            "ts_event": 42,
+            "is_reconciliation": false
+        }
+        "#;
+
+            let val: Value = serde_json::from_str(json_str).unwrap();
+            let py_dict_ref = value_to_pydict(py, &val).unwrap();
+            let py_dict = py_dict_ref.as_ref(py);
+
+            assert_eq!(
+                py_dict
+                    .get_item("type")
+                    .unwrap()
+                    .downcast::<PyString>()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "OrderAccepted"
+            );
+            assert_eq!(
+                py_dict
+                    .get_item("ts_event")
+                    .unwrap()
+                    .downcast::<PyInt>()
+                    .unwrap()
+                    .extract::<i64>()
+                    .unwrap(),
+                42
+            );
+            assert_eq!(
+                py_dict
+                    .get_item("is_reconciliation")
+                    .unwrap()
+                    .downcast::<PyBool>()
+                    .unwrap()
+                    .is_true(),
+                false
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_value_to_pyobject_string() {
+        Python::with_gil(|py| {
+            let val = Value::String("Hello, world!".to_string());
+            let py_obj = value_to_pyobject(py, &val).unwrap();
+
+            assert_eq!(py_obj.extract::<&str>(py).unwrap(), "Hello, world!");
+        });
+    }
+
+    #[rstest]
+    fn test_value_to_pyobject_bool() {
+        Python::with_gil(|py| {
+            let val = Value::Bool(true);
+            let py_obj = value_to_pyobject(py, &val).unwrap();
+
+            assert_eq!(py_obj.extract::<bool>(py).unwrap(), true);
+        });
+    }
+
+    #[rstest]
+    fn test_value_to_pyobject_array() {
+        Python::with_gil(|py| {
+            let val = Value::Array(vec![
+                Value::String("item1".to_string()),
+                Value::String("item2".to_string()),
+            ]);
+            let binding = value_to_pyobject(py, &val).unwrap();
+            let py_list = binding.downcast::<PyList>(py).unwrap();
+
+            assert_eq!(py_list.len(), 2);
+            assert_eq!(
+                py_list.get_item(0).unwrap().extract::<&str>().unwrap(),
+                "item1"
+            );
+            assert_eq!(
+                py_list.get_item(1).unwrap().extract::<&str>().unwrap(),
+                "item2"
+            );
+        });
+    }
+}

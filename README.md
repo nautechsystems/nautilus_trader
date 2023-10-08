@@ -15,10 +15,10 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.72.1+ | 3.9+   |
-| `macOS (x86_64)`   | 1.72.1+ | 3.9+   |
-| `macOS (arm64)`    | 1.72.1+ | 3.9+   |
-| `Windows (x86_64)` | 1.72.1+ | 3.9+   |
+| `Linux (x86_64)`   | 1.73.0+ | 3.9+   |
+| `macOS (x86_64)`   | 1.73.0+ | 3.9+   |
+| `macOS (arm64)`    | 1.73.0+ | 3.9+   |
+| `Windows (x86_64)` | 1.73.0+ | 3.9+   |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io

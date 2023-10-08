@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatusUpdate
-from nautilus_trader.model.data import VenueStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
@@ -31,7 +31,7 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 class TestVenue:
     def test_venue_status(self):
         # Arrange
-        update = VenueStatusUpdate(
+        update = VenueStatus(
             venue=Venue("BINANCE"),
             status=MarketStatus.OPEN,
             ts_event=0,
@@ -39,21 +39,24 @@ class TestVenue:
         )
 
         # Act, Assert
-        assert VenueStatusUpdate.from_dict(VenueStatusUpdate.to_dict(update)) == update
-        assert repr(update) == "VenueStatusUpdate(venue=BINANCE, status=OPEN)"
+        assert VenueStatus.from_dict(VenueStatus.to_dict(update)) == update
+        assert repr(update) == "VenueStatus(venue=BINANCE, status=OPEN)"
 
     def test_instrument_status(self):
         # Arrange
-        update = InstrumentStatusUpdate(
+        update = InstrumentStatus(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            status=MarketStatus.PAUSE,
+            status=MarketStatus.OPEN,
             ts_event=0,
             ts_init=0,
         )
 
         # Act, Assert
-        assert InstrumentStatusUpdate.from_dict(InstrumentStatusUpdate.to_dict(update)) == update
-        assert repr(update) == "InstrumentStatusUpdate(instrument_id=BTCUSDT.BINANCE, status=PAUSE)"
+        assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(update)) == update
+        assert (
+            repr(update)
+            == "InstrumentStatus(instrument_id=BTCUSDT.BINANCE, trading_session=Regular, status=OPEN, halt_reason=NOT_HALTED, ts_event=0)"
+        )
 
     def test_instrument_close(self):
         # Arrange
