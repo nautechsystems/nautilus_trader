@@ -55,73 +55,74 @@ These handlers are triggered by lifecycle state changes of the `Strategy`. It's 
 - Use the `on_stop` method for cleanup tasks (e.g., unsubscribe from data)
 
 ```python
-on_start(self)
-on_stop(self)
-on_resume(self)
-on_reset(self)
-on_dispose(self)
-on_degrade(self)
-on_fault(self)
-on_save(self) -> dict[str, bytes]  # Returns user defined dictionary of state to be saved
-on_load(self, state: dict[str, bytes])
+def on_start(self) -> None:
+def on_stop(self) -> None:
+def on_resume(self) -> None:
+def on_reset(self) -> None:
+def on_dispose(self) -> None:
+def on_degrade(self) -> None:
+def on_fault(self) -> None:
+def on_save(self) -> dict[str, bytes]:  # Returns user defined dictionary of state to be saved
+def on_load(self, state: dict[str, bytes]) -> None:
 ```
 
 #### Data handling
 
 These handlers deal with market data updates.
+You can use these handlers to define actions upon receiving new market data.
 
 ```python
-on_order_book_deltas(self, deltas: OrderBookDeltas)
-on_order_book(self, order_book: OrderBook)
-on_ticker(self, ticker: Ticker)
-on_quote_tick(self, tick: QuoteTick)
-on_trade_tick(self, tick: TradeTick)
-on_bar(self, bar: Bar)
-on_venue_status(self, data: VenueStatus)
-on_instrument(self, instrument: Instrument)
-on_instrument_status(self, data: InstrumentStatus)
-on_instrument_close(self, data: InstrumentClose)
-on_historical_data(self, data: Data)
-on_data(self, data: Data)  # Generic data passed to this handler
+def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+def on_order_book(self, order_book: OrderBook) -> None:
+def on_ticker(self, ticker: Ticker) -> None:
+def on_quote_tick(self, tick: QuoteTick) -> None:
+def on_trade_tick(self, tick: TradeTick) -> None:
+def on_bar(self, bar: Bar) -> None:
+def on_venue_status(self, data: VenueStatus) -> None:
+def on_instrument(self, instrument: Instrument) -> None:
+def on_instrument_status(self, data: InstrumentStatus) -> None:
+def on_instrument_close(self, data: InstrumentClose) -> None:
+def on_historical_data(self, data: Data) -> None:
+def on_data(self, data: Data) -> None:  # Generic data passed to this handler
 ```
 
 #### Order management
 
-Handlers in this category are triggered by events related to order management.
+Handlers in this category are triggered by events related to orders.
 `OrderEvent` type messages are passed to handlers in this sequence:
 
-- 1. Specific handlers (e.g., on_order_accepted, on_order_rejected, etc.)
-- 2. `on_order_event(...)`
-- 3. `on_event(...)`
+1. Specific handler (e.g., on_order_accepted, on_order_rejected, etc.)
+2. `on_order_event(...)`
+3. `on_event(...)`
 
 ```{python}
-on_order_initialized(self, event: OrderInitialized)
-on_order_denied(self, event: OrderDenied)
-on_order_emulated(self, event: OrderEmulated)
-on_order_released(self, event: OrderReleased)
-on_order_submitted(self, event: OrderSubmitted)
-on_order_rejected(self, event: OrderRejected)
-on_order_accepted(self, event: OrderAccepted)
-on_order_canceled(self, event: OrderCanceled)
-on_order_expired(self, event: OrderExpired)
-on_order_triggered(self, event: OrderTriggered)
-on_order_pending_update(self, event: OrderPendingUpdate)
-on_order_pending_cancel(self, event: OrderPendingCancel)
-on_order_modify_rejected(self, event: OrderModifyRejected)
-on_order_cancel_rejected(self, event: OrderCancelRejected)
-on_order_updated(self, event: OrderUpdated)
-on_order_filled(self, event: OrderFilled)
-on_order_event(self, event: OrderEvent)  # All order event messages are eventually passed to this handler
+def on_order_initialized(self, event: OrderInitialized) -> None:
+def on_order_denied(self, event: OrderDenied) -> None:
+def on_order_emulated(self, event: OrderEmulated) -> None:
+def on_order_released(self, event: OrderReleased) -> None:
+def on_order_submitted(self, event: OrderSubmitted) -> None:
+def on_order_rejected(self, event: OrderRejected) -> None:
+def on_order_accepted(self, event: OrderAccepted) -> None:
+def on_order_canceled(self, event: OrderCanceled) -> None:
+def on_order_expired(self, event: OrderExpired) -> None:
+def on_order_triggered(self, event: OrderTriggered) -> None:
+def on_order_pending_update(self, event: OrderPendingUpdate) -> None:
+def on_order_pending_cancel(self, event: OrderPendingCancel) -> None:
+def on_order_modify_rejected(self, event: OrderModifyRejected) -> None:
+def on_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
+def on_order_updated(self, event: OrderUpdated) -> None:
+def on_order_filled(self, event: OrderFilled) -> None:
+def on_order_event(self, event: OrderEvent) -> None:  # All order event messages are eventually passed to this handler
 ```
 
 #### Position management
 
-Handlers in this category are triggered by events related to position management.
+Handlers in this category are triggered by events related to positions.
 `PositionEvent` type messages are passed to handlers in this sequence:
 
-- 1. Specific handlers (e.g., on_position_opened, on_position_changed, etc.)
-- 2. `on_position_event(...)`
-- 3. `on_event(...)`
+1. Specific handler (e.g., on_position_opened, on_position_changed, etc.)
+2. `on_position_event(...)`
+3. `on_event(...)`
 
 ```python
 on_position_opened(self, event: PositionOpened)
@@ -136,7 +137,7 @@ This handler will eventually receive all event messages which arrive at the stra
 which no other specific handler exists.
 
 ```python
-on_event(self, event: Event)
+def on_event(self, event: Event) -> None:
 ```
 
 ## Configuration
