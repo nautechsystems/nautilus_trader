@@ -11,6 +11,7 @@
    strategies.md
    instruments.md
    backtesting.md
+   data.md
    adapters.md
    orders.md
    execution.md
