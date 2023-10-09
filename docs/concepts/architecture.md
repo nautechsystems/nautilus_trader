@@ -38,7 +38,7 @@ environment contexts.
 
 ```{note}
 Throughout the documentation, the term _"Nautilus system boundary"_ refers to operations within
-the runtime of a single Nautilus node (also known as a trader instance).
+the runtime of a single Nautilus node (also known as a "trader instance").
 ```
 
 ### Environment contexts
@@ -62,8 +62,8 @@ on a single thread, for both backtesting and live trading. Much research and tes
 resulted in arriving at this design, as it was found the overhead of context switching between threads
 didn't actually result in improved performance.
 
-When considering the logic of how your trading will work within the system boundary, you can expect each component to consume messages
-in a predictable synchronous way (_similar_ to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
+When considering the logic of how your algo trading will work within the system boundary, you can expect each component to consume messages
+in a deterministic synchronous way (_similar_ to the [actor model](https://en.wikipedia.org/wiki/Actor_model)).
 
 ```{note}
 Of interest is the LMAX exchange architecture, which achieves award winning performance running on

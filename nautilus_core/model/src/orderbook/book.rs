@@ -295,6 +295,7 @@ impl OrderBook {
         }
     }
 
+    /// Return a [`String`] representation of the order book in a human-readable table format.
     pub fn pprint(&self, num_levels: usize) -> String {
         let ask_levels: Vec<(&BookPrice, &Level)> =
             self.asks.levels.iter().take(num_levels).rev().collect();
