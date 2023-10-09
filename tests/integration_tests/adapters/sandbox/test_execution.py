@@ -18,6 +18,8 @@ import asyncio
 import pytest
 
 from nautilus_trader.backtest.exchange import SimulatedExchange
+from nautilus_trader.core.nautilus_pyo3.model import OrderSide
+from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
@@ -31,6 +33,7 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
+from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 
 
@@ -43,6 +46,13 @@ def _make_quote_tick(instrument):
         ask_size=Quantity.from_int(100),
         ts_init=0,
         ts_event=0,
+    )
+
+
+def _make_order_book_delta(instrument, order: BookOrder):
+    return TestDataStubs.order_book_delta(
+        instrument_id=instrument.id,
+        order=order,
     )
 
 
@@ -63,6 +73,27 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Act
     strategy.submit_order(order=order)
     exec_client.on_data(_make_quote_tick(instrument))
+
+    # Assert
+    _, submitted, _, accepted, _, filled, _ = events
+    assert isinstance(submitted, OrderSubmitted)
+    assert isinstance(accepted, OrderAccepted)
+    assert isinstance(filled, OrderFilled)
+    assert accepted.venue_order_id.value.startswith("SANDBOX-")
+
+
+@pytest.mark.asyncio()
+async def test_order_filled_order_book_delta(exec_client, instrument, strategy, events):
+    # Arrange
+    exec_client.connect()
+    bid = BookOrder(OrderSide.BUY, Price.from_str("2.00"), Quantity.from_int(100), 0)
+    ask = BookOrder(OrderSide.SELL, Price.from_str("3.00"), Quantity.from_int(100), 1)
+    exec_client.on_data(_make_order_book_delta(instrument, bid))
+    exec_client.on_data(_make_order_book_delta(instrument, ask))
+
+    # Act
+    order = TestExecStubs.limit_order(instrument_id=instrument.id)
+    strategy.submit_order(order=order)
 
     # Assert
     _, submitted, _, accepted, _, filled, _ = events
