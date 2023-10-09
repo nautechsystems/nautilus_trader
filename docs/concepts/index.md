@@ -10,6 +10,7 @@
    architecture.md
    strategies.md
    instruments.md
+   backtesting.md
    adapters.md
    orders.md
    execution.md
