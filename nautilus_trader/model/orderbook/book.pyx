@@ -621,12 +621,12 @@ cdef class OrderBook(Data):
 
     cpdef str pprint(self, int num_levels=3):
         """
-        Print the order book in a clear format.
+        Return a string representation of the order book in a human-readable table format.
 
         Parameters
         ----------
         num_levels : int
-            The number of levels to print.
+            The number of levels to include.
 
         Returns
         -------

@@ -54,7 +54,7 @@ To facilitate this, nearly all configuration and domain objects can be serialize
 
 ## Common core
 The common system core is utilized by both the backtest, sandbox, and live trading nodes. 
-User-defined Actor and Strategy components are managed consistently across these environment contexts.
+User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
 
 ## Backtesting
 Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
@@ -65,9 +65,13 @@ A `TradingNode` can ingest data and events from multiple data and execution clie
 Live deployments can use both demo/paper trading accounts, or real accounts.
 
 For live trading, a `TradingNode` can ingest data and events from multiple data and execution clients. 
-The system supports both demo/paper trading accounts and real accounts. High performance can be achieved by running 
+The platform supports both demo/paper trading accounts and real accounts. High performance can be achieved by running
 asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
+
+```{tip}
+Python 3.11 offers improved run-time performance, while Python 3.12 offers improved asyncio performance.
+```
 
 ## Domain model
 The platform features a comprehensive trading domain model that includes various value types such as 
@@ -76,8 +80,7 @@ which are used to aggregate multiple events to determine state.
 
 ### Data Types
 The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.
-- `OrderBookDelta`
-- `OrderBookDeltas` (L1/L2/L3)
+- `OrderBookDelta` (L1/L2/L3)
 - `Ticker`
 - `QuoteTick`
 - `TradeTick`
@@ -124,7 +127,7 @@ The following account types are available for both live and backtest environment
 - `Betting` single-currency
 
 ### Order Types
-The following order types are available (when possible on an exchange);
+The following order types are available (when possible on a venue);
 
 - `MARKET`
 - `LIMIT`
