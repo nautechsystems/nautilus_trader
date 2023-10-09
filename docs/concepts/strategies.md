@@ -54,7 +54,7 @@ These handlers are triggered by lifecycle state changes of the `Strategy`. It's 
 - Use the `on_start` method to initialize your strategy (e.g., fetch instruments, subscribe to data)
 - Use the `on_stop` method for cleanup tasks (e.g., unsubscribe from data)
 
-```{python}
+```python
 on_start(self)
 on_stop(self)
 on_resume(self)
@@ -70,7 +70,7 @@ on_load(self, state: dict[str, bytes])
 
 These handlers deal with market data updates.
 
-```{python}
+```python
 on_order_book_deltas(self, deltas: OrderBookDeltas)
 on_order_book(self, order_book: OrderBook)
 on_ticker(self, ticker: Ticker)
@@ -121,9 +121,9 @@ Handlers in this category are triggered by events related to position management
 
 - 1. Specific handlers (e.g., on_position_opened, on_position_changed, etc.)
 - 2. `on_position_event(...)`
-- 2. `on_event(...)`
+- 3. `on_event(...)`
 
-```{python}
+```python
 on_position_opened(self, event: PositionOpened)
 on_position_changed(self, event: PositionChanged)
 on_position_closed(self, event: PositionClosed)
@@ -135,7 +135,7 @@ on_position_event(self, event: PositionEvent)  # All position event messages are
 This handler will eventually receive all event messages which arrive at the strategy, including those for
 which no other specific handler exists.
 
-```{python}
+```python
 on_event(self, event: Event)
 ```
 
