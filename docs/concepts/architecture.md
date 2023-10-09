@@ -1,12 +1,16 @@
 # Architecture
 
-This guide describes the architecture of NautilusTrader from highest to lowest level, including:
-- Design philosophy
-- System architecture
-- Framework organization
-- Code structure
-- Component organization and interaction
-- Implementation techniques
+Welcome to the architectural overview of NautilusTrader.
+This document dives deep into the foundational principles, structures, and designs that underpin
+the platform. Whether you're a developer, system architect, or just curious about the inner workings 
+of NautilusTrader, this exposition covers:
+
+- The **Design Philosophy** that drives decisions and shapes the system's evolution
+- The overarching **System Architecture** providing a bird's-eye view of the entire system framework
+- How the **Framework** is organized to facilitate modularity and maintainability
+- The **Code Structure** that ensures readability and scalability
+- A breakdown of **Component Organization and Interaction** to understand how different parts communicate and collaborate
+- And finally, the **Implementation Techniques** that are crucial for performance, reliability, and robustness
 
 ## Design philosophy
 The major architectural techniques and design patterns employed by NautilusTrader are:
