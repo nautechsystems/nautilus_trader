@@ -70,7 +70,7 @@ asynchronously on a single [event loop](https://docs.python.org/3/library/asynci
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
 ```{tip}
-Python 3.11 offers improved run-time performance, while Python 3.12 offers improved asyncio performance.
+Python 3.11 offers improved run-time performance, while Python 3.12 additionally offers improved asyncio performance.
 ```
 
 ## Domain model
