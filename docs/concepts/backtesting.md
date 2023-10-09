@@ -43,9 +43,10 @@ Multiple configurations can be bundled into a list and fed to the node to be run
 Each of these `BacktestRunConfig` objects in turn is made up of:
 - A list of `BacktestDataConfig` objects
 - A list of `BacktestVenueConfig` objects
-- A list of `ActorConfig` objects
-- A list of `StrategyConfig` objects
-- A list of `ExecAlgorithmConfig` objects
-- An optional `BacktestEngineConfig` objects (otherwise will be the default)
+- A list of `ImportableActorConfig` objects
+- A list of `ImportableStrategyConfig` objects
+- A list of `ImportableExecAlgorithmConfig` objects
+- An optional `ImportableControllerConfig` object
+- An optional `BacktestEngineConfig` object (otherwise will be the default)
 
 **This doc is an evolving work in progress and will continue to describe each API more fully...**
