@@ -91,7 +91,7 @@ def on_data(self, data: Data) -> None:  # Generic data passed to this handler
 Handlers in this category are triggered by events related to orders.
 `OrderEvent` type messages are passed to handlers in this sequence:
 
-1. Specific handler (e.g., on_order_accepted, on_order_rejected, etc.)
+1. Specific handler (e.g., `on_order_accepted`, `on_order_rejected`, etc.)
 2. `on_order_event(...)`
 3. `on_event(...)`
 
@@ -120,15 +120,15 @@ def on_order_event(self, event: OrderEvent) -> None:  # All order event messages
 Handlers in this category are triggered by events related to positions.
 `PositionEvent` type messages are passed to handlers in this sequence:
 
-1. Specific handler (e.g., on_position_opened, on_position_changed, etc.)
+1. Specific handler (e.g., `on_position_opened`, `on_position_changed`, etc.)
 2. `on_position_event(...)`
 3. `on_event(...)`
 
 ```python
-on_position_opened(self, event: PositionOpened)
-on_position_changed(self, event: PositionChanged)
-on_position_closed(self, event: PositionClosed)
-on_position_event(self, event: PositionEvent)  # All position event messages are eventually passed to this handler
+def on_position_opened(self, event: PositionOpened) -> None:
+def on_position_changed(self, event: PositionChanged) -> None:
+def on_position_closed(self, event: PositionClosed) -> None:
+def on_position_event(self, event: PositionEvent) -> None:  # All position event messages are eventually passed to this handler
 ```
 
 #### Generic event handling
