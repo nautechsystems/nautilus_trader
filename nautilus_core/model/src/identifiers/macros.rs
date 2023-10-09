@@ -64,11 +64,36 @@ macro_rules! identifier_for_python {
                 }
             }
 
+            fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+                let value: (&PyString,) = state.extract(py)?;
+                let value_str: String = value.0.extract()?;
+                self.value = Ustr::from_str(&value_str).map_err(to_pyvalue_err)?;
+                Ok(())
+            }
+
+            fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+                Ok((self.value.to_string(),).to_object(py))
+            }
+
+            fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+                let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+                let state = self.__getstate__(py)?;
+                Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+            }
+
+            #[staticmethod]
+            fn _safe_constructor() -> PyResult<Self> {
+                Ok(<$ty>::from_str("NULL").unwrap()) // Safe default
+            }
+
             fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
                 match op {
                     CompareOp::Eq => self.eq(other).into_py(py),
                     CompareOp::Ne => self.ne(other).into_py(py),
-                    _ => py.NotImplemented(),
+                    CompareOp::Ge => self.ge(other).into_py(py),
+                    CompareOp::Gt => self.gt(other).into_py(py),
+                    CompareOp::Le => self.le(other).into_py(py),
+                    CompareOp::Lt => self.lt(other).into_py(py),
                 }
             }
 
@@ -81,7 +106,11 @@ macro_rules! identifier_for_python {
             }
 
             fn __repr__(&self) -> String {
-                format!("{}('{}')", stringify!($ty), self.value)
+                format!(
+                    "{}('{}')",
+                    stringify!($ty).split("::").last().unwrap_or(""),
+                    self.value
+                )
             }
 
             #[getter]

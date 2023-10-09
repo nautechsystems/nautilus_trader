@@ -761,6 +761,135 @@ cdef class CancelAllOrders(TradingCommand):
         return CancelAllOrders.to_dict_c(obj)
 
 
+cdef class BatchCancelOrders(TradingCommand):
+    """
+    Represents a command to batch cancel orders working on a venue for an instrument.
+
+    Parameters
+    ----------
+    trader_id : TraderId
+        The trader ID for the command.
+    strategy_id : StrategyId
+        The strategy ID for the command.
+    instrument_id : InstrumentId
+        The instrument ID for the command.
+    cancels : list[CancelOrder]
+        The inner list of cancel order commands.
+    command_id : UUID4
+        The command ID.
+    ts_init : uint64_t
+        The UNIX timestamp (nanoseconds) when the object was initialized.
+    client_id : ClientId, optional
+        The execution client ID for the command.
+
+    Raises
+    ------
+    ValueError
+        If `cancels` is empty.
+    ValueError
+        If `cancels` contains a type other than `CancelOrder`.
+    """
+
+    def __init__(
+        self,
+        TraderId trader_id not None,
+        StrategyId strategy_id not None,
+        InstrumentId instrument_id not None,
+        list cancels,
+        UUID4 command_id not None,
+        uint64_t ts_init,
+        ClientId client_id = None,
+    ):
+        Condition.not_empty(cancels, "cancels")
+        Condition.list_type(cancels, CancelOrder, "cancels")
+        super().__init__(
+            client_id=client_id,
+            trader_id=trader_id,
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            command_id=command_id,
+            ts_init=ts_init,
+        )
+
+        self.cancels = cancels
+
+    def __str__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"cancels={self.cancels})"
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "  # Can be None
+            f"trader_id={self.trader_id.to_str()}, "
+            f"strategy_id={self.strategy_id.to_str()}, "
+            f"instrument_id={self.instrument_id.to_str()}, "
+            f"cancels={self.cancels}, "
+            f"command_id={self.id.to_str()}, "
+            f"ts_init={self.ts_init})"
+        )
+
+    @staticmethod
+    cdef BatchCancelOrders from_dict_c(dict values):
+        Condition.not_none(values, "values")
+        cdef str client_id = values["client_id"]
+        return BatchCancelOrders(
+            client_id=ClientId(client_id) if client_id is not None else None,
+            trader_id=TraderId(values["trader_id"]),
+            strategy_id=StrategyId(values["strategy_id"]),
+            instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
+            cancels=[CancelOrder.from_dict_c(cancel) for cancel in values["cancels"]],
+            command_id=UUID4(values["command_id"]),
+            ts_init=values["ts_init"],
+        )
+
+    @staticmethod
+    cdef dict to_dict_c(BatchCancelOrders obj):
+        Condition.not_none(obj, "obj")
+        return {
+            "type": "BatchCancelOrders",
+            "client_id": obj.client_id.to_str() if obj.client_id is not None else None,
+            "trader_id": obj.trader_id.to_str(),
+            "strategy_id": obj.strategy_id.to_str(),
+            "instrument_id": obj.instrument_id.to_str(),
+            "cancels": [CancelOrder.to_dict_c(cancel) for cancel in obj.cancels],
+            "command_id": obj.id.to_str(),
+            "ts_init": obj.ts_init,
+        }
+
+    @staticmethod
+    def from_dict(dict values) -> BatchCancelOrders:
+        """
+        Return a batch cancel order command from the given dict values.
+
+        Parameters
+        ----------
+        values : dict[str, object]
+            The values for initialization.
+
+        Returns
+        -------
+        BatchCancelOrders
+
+        """
+        return BatchCancelOrders.from_dict_c(values)
+
+    @staticmethod
+    def to_dict(BatchCancelOrders obj):
+        """
+        Return a dictionary representation of this object.
+
+        Returns
+        -------
+        dict[str, object]
+
+        """
+        return BatchCancelOrders.to_dict_c(obj)
+
+
 cdef class QueryOrder(TradingCommand):
     """
     Represents a command to query an order.

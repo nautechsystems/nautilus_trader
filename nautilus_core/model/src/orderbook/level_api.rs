@@ -61,7 +61,9 @@ pub extern "C" fn level_new(order_side: OrderSide, price: Price, orders: CVec) -
         value: price,
         side: order_side,
     };
-    Level_API::new(Level { price, orders })
+    let mut level = Level::new(price);
+    level.add_bulk(orders);
+    Level_API::new(level)
 }
 
 #[no_mangle]
@@ -81,12 +83,13 @@ pub extern "C" fn level_price(level: &Level_API) -> Price {
 
 #[no_mangle]
 pub extern "C" fn level_orders(level: &Level_API) -> CVec {
-    level.orders.to_vec().into()
+    let orders_vec: Vec<BookOrder> = level.orders.values().cloned().collect();
+    orders_vec.into()
 }
 
 #[no_mangle]
-pub extern "C" fn level_volume(level: &Level_API) -> f64 {
-    level.volume()
+pub extern "C" fn level_size(level: &Level_API) -> f64 {
+    level.size()
 }
 
 #[no_mangle]

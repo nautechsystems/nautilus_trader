@@ -14,20 +14,24 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
+use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
 use ustr::Ustr;
 
+/// Represents a valid venue order ID (assigned by a trading venue).
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct VenueOrderId {
+    /// The venue assigned order ID value.
     pub value: Ustr,
 }
 
@@ -78,8 +82,7 @@ impl From<&str> for VenueOrderId {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn venue_order_id_new(ptr: *const c_char) -> VenueOrderId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    VenueOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    VenueOrderId::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]

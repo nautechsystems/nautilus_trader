@@ -69,7 +69,7 @@ class TestInstrumentProvider:
     @staticmethod
     def adabtc_binance() -> CurrencyPair:
         """
-        Return the Binance ADA/BTC instrument for backtesting.
+        Return the Binance Spot ADA/BTC instrument for backtesting.
 
         Returns
         -------
@@ -106,7 +106,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_binance() -> CurrencyPair:
         """
-        Return the Binance BTCUSDT instrument for backtesting.
+        Return the Binance Spot BTCUSDT instrument for backtesting.
 
         Returns
         -------
@@ -141,9 +141,47 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def btcusdt_perp_binance() -> CurrencyPair:
+        """
+        Return the Binance Futures BTCUSDT instrument for backtesting.
+
+        Returns
+        -------
+        CryptoPerpetual
+
+        """
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTCUSDT-PERP"),
+                venue=Venue("BINANCE"),
+            ),
+            raw_symbol=Symbol("BTCUSDT"),
+            base_currency=BTC,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=1,
+            price_increment=Price.from_str("0.1"),
+            size_precision=3,
+            size_increment=Quantity.from_str("0.001"),
+            max_quantity=Quantity.from_str("1000.000"),
+            min_quantity=Quantity.from_str("0.001"),
+            max_notional=None,
+            min_notional=Money(10.00, USDT),
+            max_price=Price.from_str("809484.0"),
+            min_price=Price.from_str("261.1"),
+            margin_init=Decimal("0.0500"),
+            margin_maint=Decimal("0.0250"),
+            maker_fee=Decimal("0.000200"),
+            taker_fee=Decimal("0.000180"),
+            ts_event=1646199312128000000,
+            ts_init=1646199342953849862,
+        )
+
+    @staticmethod
     def ethusdt_binance() -> CurrencyPair:
         """
-        Return the Binance ETHUSDT instrument for backtesting.
+        Return the Binance Spot ETHUSDT instrument for backtesting.
 
         Returns
         -------
@@ -180,7 +218,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
         """
-        Return the Binance ETHUSDT-PERP instrument for backtesting.
+        Return the Binance Futures ETHUSDT-PERP instrument for backtesting.
 
         Returns
         -------
@@ -218,7 +256,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_future_binance(expiry: Optional[date] = None) -> CryptoFuture:
         """
-        Return the Binance BTCUSDT instrument for backtesting.
+        Return the Binance Futures BTCUSDT instrument for backtesting.
 
         Parameters
         ----------
@@ -420,7 +458,11 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def future(symbol: str = "ESZ21", underlying: str = "ES", venue: str = "CME"):
+    def future(
+        symbol: str = "ESZ21",
+        underlying: str = "ES",
+        venue: str = "CME",
+    ) -> FuturesContract:
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
             raw_symbol=Symbol(symbol),
@@ -550,7 +592,7 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str, **kwargs) -> TextFileReader:
+    def read_csv(self, path: str, **kwargs: Any) -> TextFileReader:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return pd.read_csv(f, **kwargs)

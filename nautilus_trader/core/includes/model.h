@@ -176,7 +176,7 @@ typedef enum BookType {
     /**
      * Top-of-book best bid/offer, one level per side.
      */
-    L1_TBBO = 1,
+    L1_MBP = 1,
     /**
      * Market by price, one order per level (aggregated).
      */
@@ -230,6 +230,24 @@ typedef enum CurrencyType {
 } CurrencyType;
 
 /**
+ * The reason for a venue or market halt.
+ */
+typedef enum HaltReason {
+    /**
+     * The venue or market session is not halted.
+     */
+    NOT_HALTED = 1,
+    /**
+     * Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+     */
+    GENERAL = 2,
+    /**
+     * Trading halt is imposed by the venue to protect against extreme volatility.
+     */
+    VOLATILITY = 3,
+} HaltReason;
+
+/**
  * The type of event for an instrument close.
  */
 typedef enum InstrumentCloseType {
@@ -266,25 +284,33 @@ typedef enum LiquiditySide {
  */
 typedef enum MarketStatus {
     /**
-     * The market is closed.
+     * The market session is in the pre-open.
      */
-    CLOSED = 1,
+    PRE_OPEN = 1,
     /**
-     * The market is in the pre-open session.
+     * The market session is open.
      */
-    PRE_OPEN = 2,
-    /**
-     * The market is open for the normal session.
-     */
-    OPEN = 3,
+    OPEN = 2,
     /**
      * The market session is paused.
      */
-    PAUSE = 4,
+    PAUSE = 3,
     /**
-     * The market is in the pre-close session.
+     * The market session is halted.
      */
-    PRE_CLOSE = 5,
+    HALT = 4,
+    /**
+     * The market session has reopened after a pause or halt.
+     */
+    REOPEN = 5,
+    /**
+     * The market session is in the pre-close.
+     */
+    PRE_CLOSE = 6,
+    /**
+     * The market session is closed.
+     */
+    CLOSED = 7,
 } MarketStatus;
 
 /**
@@ -632,6 +658,9 @@ typedef enum TriggerType {
 
 typedef struct Level Level;
 
+/**
+ * Provides an order book which can handle L1/L2/L3 granularity data.
+ */
 typedef struct OrderBook OrderBook;
 
 /**
@@ -640,16 +669,39 @@ typedef struct OrderBook OrderBook;
  */
 typedef struct SyntheticInstrument SyntheticInstrument;
 
+/**
+ * Represents a valid ticker symbol ID for a tradable financial market instrument.
+ */
 typedef struct Symbol_t {
+    /**
+     * The ticker symbol ID value.
+     */
     char* value;
 } Symbol_t;
 
+/**
+ * Represents a valid trading venue ID.
+ */
 typedef struct Venue_t {
+    /**
+     * The venue ID value.
+     */
     char* value;
 } Venue_t;
 
+/**
+ * Represents a valid instrument ID.
+ *
+ * The symbol and venue combination should uniquely identify the instrument.
+ */
 typedef struct InstrumentId_t {
+    /**
+     * The instruments ticker symbol.
+     */
     struct Symbol_t symbol;
+    /**
+     * The instruments trading venue.
+     */
     struct Venue_t venue;
 } InstrumentId_t;
 
@@ -753,7 +805,18 @@ typedef struct QuoteTick_t {
     uint64_t ts_init;
 } QuoteTick_t;
 
+/**
+ * Represents a valid trade match ID (assigned by a trading venue).
+ *
+ * Can correspond to the `TradeID <1003> field` of the FIX protocol.
+ *
+ * The unique ID assigned to the trade entity once it is received or matched by
+ * the exchange or central counterparty.
+ */
 typedef struct TradeId_t {
+    /**
+     * The trade match ID value.
+     */
     char* value;
 } TradeId_t;
 
@@ -910,15 +973,50 @@ typedef struct Ticker {
     uint64_t ts_init;
 } Ticker;
 
+/**
+ * Represents a valid trader ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a trader ID is the abbreviated name of the trader
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "TESTER-001".
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another node instance.
+ */
 typedef struct TraderId_t {
+    /**
+     * The trader ID value.
+     */
     char* value;
 } TraderId_t;
 
+/**
+ * Represents a valid strategy ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a strategy ID is the class name of the strategy,
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "EMACross-001".
+ *
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another strategy within the node instance.
+ */
 typedef struct StrategyId_t {
+    /**
+     * The strategy ID value.
+     */
     char* value;
 } StrategyId_t;
 
+/**
+ * Represents a valid client order ID (assigned by the Nautilus system).
+ */
 typedef struct ClientOrderId_t {
+    /**
+     * The client order ID value.
+     */
     char* value;
 } ClientOrderId_t;
 
@@ -954,7 +1052,19 @@ typedef struct OrderReleased_t {
     uint64_t ts_init;
 } OrderReleased_t;
 
+/**
+ * Represents a valid account ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen '-'.
+ * It is expected an account ID is the name of the issuer with an account number
+ * separated by a hyphen.
+ *
+ * Example: "IB-D02851908".
+ */
 typedef struct AccountId_t {
+    /**
+     * The account ID value.
+     */
     char* value;
 } AccountId_t;
 
@@ -969,7 +1079,13 @@ typedef struct OrderSubmitted_t {
     uint64_t ts_init;
 } OrderSubmitted_t;
 
+/**
+ * Represents a valid venue order ID (assigned by a trading venue).
+ */
 typedef struct VenueOrderId_t {
+    /**
+     * The venue assigned order ID value.
+     */
     char* value;
 } VenueOrderId_t;
 
@@ -999,23 +1115,53 @@ typedef struct OrderRejected_t {
     uint8_t reconciliation;
 } OrderRejected_t;
 
+/**
+ * Represents a system client ID.
+ */
 typedef struct ClientId_t {
+    /**
+     * The client ID value.
+     */
     char* value;
 } ClientId_t;
 
+/**
+ * Represents a valid component ID.
+ */
 typedef struct ComponentId_t {
+    /**
+     * The component ID value.
+     */
     char* value;
 } ComponentId_t;
 
+/**
+ * Represents a valid execution algorithm ID.
+ */
 typedef struct ExecAlgorithmId_t {
+    /**
+     * The execution algorithm ID value.
+     */
     char* value;
 } ExecAlgorithmId_t;
 
+/**
+ * Represents a valid order list ID (assigned by the Nautilus system).
+ */
 typedef struct OrderListId_t {
+    /**
+     * The order list ID value.
+     */
     char* value;
 } OrderListId_t;
 
+/**
+ * Represents a valid position ID.
+ */
 typedef struct PositionId_t {
+    /**
+     * The position ID value.
+     */
     char* value;
 } PositionId_t;
 
@@ -1113,6 +1259,24 @@ uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
 struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
+
+/**
+ * Returns any [`BarType`] parsing error from the provided C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+const char *bar_type_check_parsing(const char *ptr);
+
+/**
+ * Returns a [`BarType`] from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct BarType_t bar_type_from_cstr(const char *ptr);
 
 uint8_t bar_type_eq(const struct BarType_t *lhs, const struct BarType_t *rhs);
 
@@ -1374,6 +1538,16 @@ const char *market_status_to_cstr(enum MarketStatus value);
  */
 enum MarketStatus market_status_from_cstr(const char *ptr);
 
+const char *halt_reason_to_cstr(enum HaltReason value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum HaltReason halt_reason_from_cstr(const char *ptr);
+
 const char *oms_type_to_cstr(enum OmsType value);
 
 /**
@@ -1614,13 +1788,22 @@ uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
 struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
 
 /**
+ * Returns any [`InstrumentId`] parsing error from the provided C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+const char *instrument_id_check_parsing(const char *ptr);
+
+/**
  * Returns a Nautilus identifier from a C string pointer.
  *
  * # Safety
  *
  * - Assumes `ptr` is a valid C string pointer.
  */
-struct InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
+struct InstrumentId_t instrument_id_from_cstr(const char *ptr);
 
 /**
  * Returns an [`InstrumentId`] as a C string pointer.
@@ -1834,6 +2017,10 @@ double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
                                          struct Quantity_t qty,
                                          enum OrderSide order_side);
 
+double orderbook_get_quantity_for_price(struct OrderBook_API *book,
+                                        struct Price_t price,
+                                        enum OrderSide order_side);
+
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
 
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
@@ -1859,7 +2046,7 @@ struct Price_t level_price(const struct Level_API *level);
 
 CVec level_orders(const struct Level_API *level);
 
-double level_volume(const struct Level_API *level);
+double level_size(const struct Level_API *level);
 
 double level_exposure(const struct Level_API *level);
 

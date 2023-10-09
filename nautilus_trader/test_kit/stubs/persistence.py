@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pandas as pd
 
 from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
@@ -67,7 +66,7 @@ class TestPersistenceStubs:
             )
 
         register_arrow(
-            cls=NewsEventData,
+            data_cls=NewsEventData,
             serializer=_news_event_to_dict,
             deserializer=_news_event_from_dict,
             # partition_keys=("currency",),
@@ -77,7 +76,7 @@ class TestPersistenceStubs:
 
     @staticmethod
     def news_events() -> list[NewsEventData]:
-        df = pd.read_csv(f"{TEST_DATA_DIR}/news_events.csv")
+        df = pd.read_csv(TEST_DATA_DIR / "news_events.csv")
         events = []
         for _, row in df.iterrows():
             data = NewsEventData(

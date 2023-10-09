@@ -208,7 +208,7 @@ def parse_options_contract(
         multiplier=Quantity.from_str(details.contract.multiplier),
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
-        strike_price=Price.from_str(str(details.contract.strike)),
+        strike_price=Price(details.contract.strike, price_precision),
         expiry_date=datetime.datetime.strptime(
             details.contract.lastTradeDateOrContractMonth,
             "%Y%m%d",

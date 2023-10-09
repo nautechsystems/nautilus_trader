@@ -40,6 +40,9 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TradingState
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import OrderListId
@@ -64,7 +67,7 @@ from nautilus_trader.trading.strategy import Strategy
 
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD")
-BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
+XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 
 
 class TestRiskEngineWithCashAccount:
@@ -143,7 +146,7 @@ class TestRiskEngineWithCashAccount:
         self.msgbus.deregister("RiskEngine.process", self.risk_engine.process)
 
         config = RiskEngineConfig(
-            bypass=True,  # <-- bypassing pre-trade risk checks for backtest
+            bypass=True,  # <-- Bypassing pre-trade risk checks for backtest
             max_order_submit_rate="5/00:00:01",
             max_order_modify_rate="5/00:00:01",
             max_notional_per_order={"GBP/USD.SIM": 2_000_000},
@@ -343,7 +346,7 @@ class TestRiskEngineWithCashAccount:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_engine.command_count == 1  # <-- initial account event
+        assert self.exec_engine.command_count == 1  # <-- Initial account event
         assert self.exec_client.calls == ["_start", "submit_order"]
 
     def test_submit_reduce_only_order_when_position_already_closed_then_denies(self):
@@ -513,7 +516,7 @@ class TestRiskEngineWithCashAccount:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=strategy.id,
-            position_id=PositionId("CUSTOM-001"),  # <-- custom position ID
+            position_id=PositionId("CUSTOM-001"),  # <-- Custom position ID
             order=order,
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -524,7 +527,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_instrument_not_in_cache_then_denies(self):
         # Arrange
@@ -541,7 +544,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         order = strategy.order_factory.market(
-            GBPUSD_SIM.id,  # <-- not in the cache
+            GBPUSD_SIM.id,  # <-- Not in the cache
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
@@ -560,7 +563,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_invalid_price_precision_then_denies(self):
         # Arrange
@@ -597,7 +600,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_invalid_negative_price_and_not_option_then_denies(self):
         # Arrange
@@ -634,7 +637,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_invalid_trigger_price_then_denies(self):
         # Arrange
@@ -672,7 +675,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_invalid_quantity_precision_then_denies(self):
         # Arrange
@@ -709,7 +712,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(self):
         # Arrange
@@ -746,7 +749,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(self):
         # Arrange
@@ -783,7 +786,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_market_order_and_no_market_then_logs_warning(self):
         # Arrange
@@ -820,7 +823,129 @@ class TestRiskEngineWithCashAccount:
         self.risk_engine.execute(submit_order)
 
         # Assert
-        assert self.exec_engine.command_count == 1  # <-- command reaches engine with warning
+        assert self.exec_engine.command_count == 1  # <-- Command reaches engine with warning
+
+    @pytest.mark.parametrize(("order_side"), [OrderSide.BUY, OrderSide.SELL])
+    def test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
+        self,
+        order_side: OrderSide,
+    ) -> None:
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("BITMEX"),
+            venue=XBTUSD_BITMEX.id.venue,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("BITMEX-001")))
+        self.exec_engine.register_client(exec_client)
+
+        self.cache.add_instrument(XBTUSD_BITMEX)
+        quote = TestDataStubs.quote_tick(
+            instrument=XBTUSD_BITMEX,
+            bid_price=50_000.00,
+            ask_price=50_001.00,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            XBTUSD_BITMEX.id,
+            order_side,
+            Quantity.from_str("0.1"),  # <-- Less than min notional ($1 USD)
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
+
+    @pytest.mark.parametrize(("order_side"), [OrderSide.BUY, OrderSide.SELL])
+    def test_submit_order_when_greater_than_max_notional_for_instrument_then_denies(
+        self,
+        order_side: OrderSide,
+    ) -> None:
+        # Arrange
+        exec_client = MockExecutionClient(
+            client_id=ClientId("BITMEX"),
+            venue=XBTUSD_BITMEX.id.venue,
+            account_type=AccountType.CASH,
+            base_currency=USD,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        self.portfolio.update_account(TestEventStubs.cash_account_state(AccountId("BITMEX-001")))
+        self.exec_engine.register_client(exec_client)
+
+        self.cache.add_instrument(XBTUSD_BITMEX)
+        quote = TestDataStubs.quote_tick(
+            instrument=XBTUSD_BITMEX,
+            bid_price=50_000.00,
+            ask_price=50_001.00,
+        )
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.market(
+            XBTUSD_BITMEX.id,
+            order_side,
+            Quantity.from_int(11_000_000),  # <-- Greater than max notional ($10 million USD)
+        )
+
+        submit_order = SubmitOrder(
+            trader_id=self.trader_id,
+            strategy_id=strategy.id,
+            position_id=None,
+            order=order,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(self):
         # Arrange
@@ -862,7 +987,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_sell_market_order_and_over_max_notional_then_denies(self):
         # Arrange
@@ -912,7 +1037,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_market_order_and_over_free_balance_then_denies(self):
         # Arrange - Initialize market
@@ -951,7 +1076,7 @@ class TestRiskEngineWithCashAccount:
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_list_buys_when_over_free_balance_then_denies(self):
         # Arrange - Initialize market
@@ -1001,7 +1126,7 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert order1.status == OrderStatus.DENIED
         assert order2.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_list_sells_when_over_free_balance_then_denies(self):
         # Arrange - Initialize market
@@ -1051,7 +1176,7 @@ class TestRiskEngineWithCashAccount:
         # Assert
         assert order1.status == OrderStatus.DENIED
         assert order2.status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_when_reducing_and_buy_order_adds_then_denies(self):
         # Arrange
@@ -1089,7 +1214,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         self.risk_engine.execute(submit_order1)
-        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- Allow reducing orders only
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1117,7 +1242,7 @@ class TestRiskEngineWithCashAccount:
         assert order1.status == OrderStatus.FILLED
         assert order2.status == OrderStatus.DENIED
         assert self.portfolio.is_net_long(AUDUSD_SIM.id)
-        assert self.exec_engine.command_count == 1  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 1  # <-- Command never reaches engine
 
     def test_submit_order_when_reducing_and_sell_order_adds_then_denies(self):
         # Arrange
@@ -1155,7 +1280,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         self.risk_engine.execute(submit_order1)
-        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- Allow reducing orders only
 
         order2 = strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1183,7 +1308,7 @@ class TestRiskEngineWithCashAccount:
         assert order1.status == OrderStatus.FILLED
         assert order2.status == OrderStatus.DENIED
         assert self.portfolio.is_net_short(AUDUSD_SIM.id)
-        assert self.exec_engine.command_count == 1  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 1  # <-- Command never reaches engine
 
     def test_submit_order_when_trading_halted_then_denies_order(self):
         # Arrange
@@ -1215,14 +1340,55 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Halt trading
-        self.risk_engine.set_trading_state(TradingState.HALTED)  # <-- halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)  # <-- Halt trading
 
         # Act
         self.risk_engine.execute(submit_order)
 
         # Assert
         assert order.status == OrderStatus.DENIED
-        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+        assert self.risk_engine.command_count == 1  # <-- Command never reaches engine
+
+    def test_submit_order_beyond_rate_limit_then_denies_order(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Act
+        order = None
+        for _ in range(101):
+            order = strategy.order_factory.market(
+                AUDUSD_SIM.id,
+                OrderSide.BUY,
+                Quantity.from_int(100_000),
+            )
+
+            submit_order = SubmitOrder(
+                trader_id=self.trader_id,
+                strategy_id=strategy.id,
+                position_id=None,
+                order=order,
+                command_id=UUID4(),
+                ts_init=self.clock.timestamp_ns(),
+            )
+
+            self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order
+        assert order.status == OrderStatus.DENIED
+        assert isinstance(order.last_event, OrderDenied)
+        assert self.risk_engine.command_count == 101
+        assert self.exec_engine.command_count == 100  # <-- Does not send last submit event
 
     def test_submit_order_list_when_trading_halted_then_denies_orders(self):
         # Arrange
@@ -1272,7 +1438,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Halt trading
-        self.risk_engine.set_trading_state(TradingState.HALTED)  # <-- halt trading
+        self.risk_engine.set_trading_state(TradingState.HALTED)  # <-- Halt trading
 
         # Act
         self.risk_engine.execute(submit_bracket)
@@ -1281,7 +1447,7 @@ class TestRiskEngineWithCashAccount:
         assert entry.status == OrderStatus.DENIED
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
-        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+        assert self.risk_engine.command_count == 1  # <-- Command never reaches engine
 
     def test_submit_order_list_buys_when_trading_reducing_then_denies_orders(self):
         # Arrange
@@ -1353,7 +1519,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Reduce trading
-        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- Allow reducing orders only
 
         # Act
         self.risk_engine.execute(submit_bracket)
@@ -1362,7 +1528,7 @@ class TestRiskEngineWithCashAccount:
         assert entry.status == OrderStatus.DENIED
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
-        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+        assert self.risk_engine.command_count == 1  # <-- Command never reaches engine
 
     def test_submit_order_list_sells_when_trading_reducing_then_denies_orders(self):
         # Arrange
@@ -1434,7 +1600,7 @@ class TestRiskEngineWithCashAccount:
         )
 
         # Reduce trading
-        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- allow reducing orders only
+        self.risk_engine.set_trading_state(TradingState.REDUCING)  # <-- Allow reducing orders only
 
         # Act
         self.risk_engine.execute(submit_bracket)
@@ -1443,7 +1609,7 @@ class TestRiskEngineWithCashAccount:
         assert entry.status == OrderStatus.DENIED
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
-        assert self.risk_engine.command_count == 1  # <-- command never reaches engine
+        assert self.risk_engine.command_count == 1  # <-- Command never reaches engine
 
     # -- SUBMIT BRACKET ORDER TESTS ---------------------------------------------------------------
 
@@ -1561,7 +1727,7 @@ class TestRiskEngineWithCashAccount:
         assert bracket.orders[0].status == OrderStatus.DENIED
         assert bracket.orders[1].status == OrderStatus.DENIED
         assert bracket.orders[2].status == OrderStatus.DENIED
-        assert self.exec_engine.command_count == 0  # <-- command never reaches engine
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
     def test_submit_order_for_emulation_sends_command_to_emulator(self):
         # Arrange
@@ -1625,6 +1791,51 @@ class TestRiskEngineWithCashAccount:
         assert self.exec_client.calls == ["_start"]
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 0
+
+    def test_modify_order_beyond_rate_limit_then_rejects(self):
+        # Arrange
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order = strategy.order_factory.stop_market(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00010"),
+        )
+
+        strategy.submit_order(order)
+
+        # Act
+        for i in range(101):
+            modify = ModifyOrder(
+                self.trader_id,
+                strategy.id,
+                AUDUSD_SIM.id,
+                order.client_order_id,
+                VenueOrderId("1"),
+                Quantity.from_int(100_000),
+                Price(1.00011 + 0.00001 * i, precision=5),
+                None,
+                UUID4(),
+                self.clock.timestamp_ns(),
+            )
+
+            self.risk_engine.execute(modify)
+
+        # Assert
+        assert isinstance(order.last_event, OrderModifyRejected)
+        assert self.risk_engine.command_count == 102
+        assert self.exec_engine.command_count == 101  # <-- Does not send last modify event
 
     def test_modify_order_with_default_settings_then_sends_to_client(self):
         # Arrange
@@ -1840,7 +2051,7 @@ class TestRiskEngineWithBettingAccount:
             self.instrument.id,
             side,
             Quantity.from_int(quantity),
-            Price.from_str(str(price)),
+            Price(price, precision=1),
         )
         submit_order = SubmitOrder(
             trader_id=self.trader_id,

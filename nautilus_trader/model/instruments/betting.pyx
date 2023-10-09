@@ -115,7 +115,7 @@ cdef class BettingInstrument(Instrument):
             max_quantity=None,   # Can be None
             min_quantity=None,   # Can be None
             max_notional=None,   # Can be None
-            min_notional=Money(5, Currency.from_str_c(currency)),
+            min_notional=Money(1, Currency.from_str_c(currency)),
             max_price=None,      # Can be None
             min_price=None,      # Can be None
             margin_init=Decimal(1),

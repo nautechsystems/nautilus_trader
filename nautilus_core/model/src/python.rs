@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -5,6 +20,8 @@ use pyo3::{
 };
 use serde_json::Value;
 use strum::IntoEnumIterator;
+
+pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 
 /// Python iterator over the variants of an enum.
 #[cfg(feature = "python")]
@@ -90,5 +107,107 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
             let py_dict = value_to_pydict(py, val)?;
             Ok(py_dict.into())
         }
+    }
+}
+
+#[cfg(test)]
+#[cfg(feature = "python")]
+mod tests {
+    use pyo3::{
+        prelude::*,
+        types::{PyBool, PyInt, PyList, PyString},
+    };
+    use rstest::rstest;
+    use serde_json::Value;
+
+    use super::*;
+
+    #[rstest]
+    fn test_value_to_pydict() {
+        Python::with_gil(|py| {
+            let json_str = r#"
+        {
+            "type": "OrderAccepted",
+            "ts_event": 42,
+            "is_reconciliation": false
+        }
+        "#;
+
+            let val: Value = serde_json::from_str(json_str).unwrap();
+            let py_dict_ref = value_to_pydict(py, &val).unwrap();
+            let py_dict = py_dict_ref.as_ref(py);
+
+            assert_eq!(
+                py_dict
+                    .get_item("type")
+                    .unwrap()
+                    .downcast::<PyString>()
+                    .unwrap()
+                    .to_str()
+                    .unwrap(),
+                "OrderAccepted"
+            );
+            assert_eq!(
+                py_dict
+                    .get_item("ts_event")
+                    .unwrap()
+                    .downcast::<PyInt>()
+                    .unwrap()
+                    .extract::<i64>()
+                    .unwrap(),
+                42
+            );
+            assert_eq!(
+                py_dict
+                    .get_item("is_reconciliation")
+                    .unwrap()
+                    .downcast::<PyBool>()
+                    .unwrap()
+                    .is_true(),
+                false
+            );
+        });
+    }
+
+    #[rstest]
+    fn test_value_to_pyobject_string() {
+        Python::with_gil(|py| {
+            let val = Value::String("Hello, world!".to_string());
+            let py_obj = value_to_pyobject(py, &val).unwrap();
+
+            assert_eq!(py_obj.extract::<&str>(py).unwrap(), "Hello, world!");
+        });
+    }
+
+    #[rstest]
+    fn test_value_to_pyobject_bool() {
+        Python::with_gil(|py| {
+            let val = Value::Bool(true);
+            let py_obj = value_to_pyobject(py, &val).unwrap();
+
+            assert_eq!(py_obj.extract::<bool>(py).unwrap(), true);
+        });
+    }
+
+    #[rstest]
+    fn test_value_to_pyobject_array() {
+        Python::with_gil(|py| {
+            let val = Value::Array(vec![
+                Value::String("item1".to_string()),
+                Value::String("item2".to_string()),
+            ]);
+            let binding = value_to_pyobject(py, &val).unwrap();
+            let py_list = binding.downcast::<PyList>(py).unwrap();
+
+            assert_eq!(py_list.len(), 2);
+            assert_eq!(
+                py_list.get_item(0).unwrap().extract::<&str>().unwrap(),
+                "item1"
+            );
+            assert_eq!(
+                py_list.get_item(1).unwrap().extract::<&str>().unwrap(),
+                "item2"
+            );
+        });
     }
 }

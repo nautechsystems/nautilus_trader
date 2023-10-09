@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::time::UnixNanos;
 use tabled::{settings::Style, Table, Tabled};
 use thiserror::Error;
 
@@ -24,16 +25,6 @@ use crate::{
     orderbook::ladder::Ladder,
     types::{price::Price, quantity::Quantity},
 };
-
-pub struct OrderBook {
-    bids: Ladder,
-    asks: Ladder,
-    pub instrument_id: InstrumentId,
-    pub book_type: BookType,
-    pub sequence: u64,
-    pub ts_last: u64,
-    pub count: u64,
-}
 
 #[derive(thiserror::Error, Debug)]
 pub enum InvalidBookOperation {
@@ -53,7 +44,7 @@ pub enum BookIntegrityError {
     OrdersCrossed(BookPrice, BookPrice),
     #[error("Integrity error: number of {0} orders at level > 1 for L2_MBP book, was {1}")]
     TooManyOrders(OrderSide, usize),
-    #[error("Integrity error: number of {0} levels > 1 for L1_TBBO book, was {1}")]
+    #[error("Integrity error: number of {0} levels > 1 for L1_MBP book, was {1}")]
     TooManyLevels(OrderSide, usize),
 }
 
@@ -62,6 +53,17 @@ struct OrderLevelDisplay {
     bids: String,
     price: String,
     asks: String,
+}
+
+/// Provides an order book which can handle L1/L2/L3 granularity data.
+pub struct OrderBook {
+    bids: Ladder,
+    asks: Ladder,
+    pub instrument_id: InstrumentId,
+    pub book_type: BookType,
+    pub sequence: u64,
+    pub ts_last: UnixNanos,
+    pub count: u64,
 }
 
 impl OrderBook {
@@ -90,7 +92,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => panic!("{}", InvalidBookOperation::Add(self.book_type)),
+            BookType::L1_MBP => panic!("{}", InvalidBookOperation::Add(self.book_type)),
         };
 
         match order.side {
@@ -106,7 +108,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => {
+            BookType::L1_MBP => {
                 self.update_l1(order, ts_event, sequence);
                 self.pre_process_order(order)
             }
@@ -125,7 +127,7 @@ impl OrderBook {
         let order = match self.book_type {
             BookType::L3_MBO => order, // No order pre-processing
             BookType::L2_MBP => self.pre_process_order(order),
-            BookType::L1_TBBO => self.pre_process_order(order),
+            BookType::L1_MBP => self.pre_process_order(order),
         };
 
         match order.side {
@@ -194,14 +196,14 @@ impl OrderBook {
 
     pub fn best_bid_size(&self) -> Option<Quantity> {
         match self.bids.top() {
-            Some(top) => top.orders.first().map(|order| order.size),
+            Some(top) => top.first().map(|order| order.size),
             None => None,
         }
     }
 
     pub fn best_ask_size(&self) -> Option<Quantity> {
         match self.asks.top() {
-            Some(top) => top.orders.first().map(|order| order.size),
+            Some(top) => top.first().map(|order| order.size),
             None => None,
         }
     }
@@ -222,28 +224,57 @@ impl OrderBook {
 
     pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
         let levels = match order_side {
-            OrderSide::Buy => &self.asks.levels,
-            OrderSide::Sell => &self.bids.levels,
+            OrderSide::Buy => self.asks.levels.iter(),
+            OrderSide::Sell => self.bids.levels.iter(),
             _ => panic!("Invalid `OrderSide` {}", order_side),
         };
-        let mut cumulative_volume_raw = 0u64;
+        let mut cumulative_size_raw = 0u64;
         let mut cumulative_value = 0.0;
 
         for (book_price, level) in levels {
-            let volume_this_level = level.volume_raw().min(qty.raw - cumulative_volume_raw);
-            cumulative_volume_raw += volume_this_level;
-            cumulative_value += book_price.value.as_f64() * volume_this_level as f64;
+            let size_this_level = level.size_raw().min(qty.raw - cumulative_size_raw);
+            cumulative_size_raw += size_this_level;
+            cumulative_value += book_price.value.as_f64() * size_this_level as f64;
 
-            if cumulative_volume_raw >= qty.raw {
+            if cumulative_size_raw >= qty.raw {
                 break;
             }
         }
 
-        if cumulative_volume_raw == 0 {
+        if cumulative_size_raw == 0 {
             0.0
         } else {
-            cumulative_value / cumulative_volume_raw as f64
+            cumulative_value / cumulative_size_raw as f64
         }
+    }
+
+    pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
+        let levels = match order_side {
+            OrderSide::Buy => self.asks.levels.iter(),
+            OrderSide::Sell => self.bids.levels.iter(),
+            _ => panic!("Invalid `OrderSide` {}", order_side),
+        };
+
+        let mut matched_size: f64 = 0.0;
+
+        for (book_price, level) in levels {
+            match order_side {
+                OrderSide::Buy => {
+                    if book_price.value > price {
+                        break;
+                    }
+                }
+                OrderSide::Sell => {
+                    if book_price.value < price {
+                        break;
+                    }
+                }
+                _ => panic!("Invalid `OrderSide` {}", order_side),
+            }
+            matched_size += level.size();
+        }
+
+        matched_size
     }
 
     pub fn update_quote_tick(&mut self, tick: &QuoteTick) {
@@ -264,32 +295,32 @@ impl OrderBook {
         }
     }
 
+    /// Return a [`String`] representation of the order book in a human-readable table format.
     pub fn pprint(&self, num_levels: usize) -> String {
-        let mut ask_levels: Vec<(&BookPrice, &Level)> =
-            self.asks.levels.iter().take(num_levels).collect();
-
+        let ask_levels: Vec<(&BookPrice, &Level)> =
+            self.asks.levels.iter().take(num_levels).rev().collect();
         let bid_levels: Vec<(&BookPrice, &Level)> =
             self.bids.levels.iter().take(num_levels).collect();
-
-        ask_levels.reverse();
-
         let levels: Vec<(&BookPrice, &Level)> = ask_levels.into_iter().chain(bid_levels).collect();
 
         let data: Vec<OrderLevelDisplay> = levels
             .iter()
-            .map(|(_, level)| {
+            .map(|(book_price, level)| {
+                let is_bid_level = self.bids.levels.contains_key(book_price);
+                let is_ask_level = self.asks.levels.contains_key(book_price);
+
                 let bid_sizes: Vec<String> = level
                     .orders
                     .iter()
-                    .filter(|order| self.bids.levels.contains_key(&order.to_book_price()))
-                    .map(|order| format!("{}", order.size))
+                    .filter(|_| is_bid_level)
+                    .map(|order| format!("{}", order.1.size))
                     .collect();
 
                 let ask_sizes: Vec<String> = level
                     .orders
                     .iter()
-                    .filter(|order| self.asks.levels.contains_key(&order.to_book_price()))
-                    .map(|order| format!("{}", order.size))
+                    .filter(|_| is_ask_level)
+                    .map(|order| format!("{}", order.1.size))
                     .collect();
 
                 OrderLevelDisplay {
@@ -315,7 +346,7 @@ impl OrderBook {
         match self.book_type {
             BookType::L3_MBO => self.check_integrity_l3(),
             BookType::L2_MBP => self.check_integrity_l2(),
-            BookType::L1_TBBO => self.check_integrity_l1(),
+            BookType::L1_MBP => self.check_integrity_l1(),
         }
     }
 
@@ -385,7 +416,7 @@ impl OrderBook {
     }
 
     fn update_l1(&mut self, order: BookOrder, ts_event: u64, sequence: u64) {
-        // Because of the way we typically get updates from a L1_TBBO order book (bid
+        // Because of the way we typically get updates from a L1_MBP order book (bid
         // and ask updates at the same time), its quite probable that the last
         // bid is now the ask price we are trying to insert (or vice versa). We
         // just need to add some extra protection against this if we aren't calling
@@ -411,7 +442,7 @@ impl OrderBook {
 
     fn update_bid(&mut self, order: BookOrder) {
         match self.bids.top() {
-            Some(top_bids) => match top_bids.orders.first() {
+            Some(top_bids) => match top_bids.first() {
                 Some(top_bid) => {
                     let order_id = top_bid.order_id;
                     self.bids.remove(order_id);
@@ -429,7 +460,7 @@ impl OrderBook {
 
     fn update_ask(&mut self, order: BookOrder) {
         match self.asks.top() {
-            Some(top_asks) => match top_asks.orders.first() {
+            Some(top_asks) => match top_asks.first() {
                 Some(top_ask) => {
                     let order_id = top_ask.order_id;
                     self.asks.remove(order_id);
@@ -447,10 +478,10 @@ impl OrderBook {
 
     fn pre_process_order(&self, mut order: BookOrder) -> BookOrder {
         match self.book_type {
-            // Because a L1_TBBO only has one level per side, we replace the
+            // Because a L1_MBP only has one level per side, we replace the
             // `order.order_id` with the enum value of the side, which will let us easily process
             // the order.
-            BookType::L1_TBBO => order.order_id = order.side as u64,
+            BookType::L1_MBP => order.order_id = order.side as u64,
             // Because a L2_MBP only has one order per level, we replace the
             // `order.order_id` with a raw price value, which will let us easily process the order.
             BookType::L2_MBP => order.order_id = order.price.raw as u64,
@@ -616,6 +647,15 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_quantity_for_price_no_market() {
+        let book = create_stub_book(BookType::L2_MBP);
+        let price = Price::from("1.0");
+
+        assert_eq!(book.get_quantity_for_price(price, OrderSide::Buy), 0.0);
+        assert_eq!(book.get_quantity_for_price(price, OrderSide::Sell), 0.0);
+    }
+
+    #[rstest]
     fn test_get_price_for_quantity() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
         let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
@@ -662,9 +702,67 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_quantity_for_price() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+
+        let ask3 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.011"),
+            Quantity::from("3.0"),
+            0, // order_id not applicable
+        );
+        let ask2 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.010"),
+            Quantity::from("2.0"),
+            0, // order_id not applicable
+        );
+        let ask1 = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("2.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid1 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("1.000"),
+            Quantity::from("1.0"),
+            0, // order_id not applicable
+        );
+        let bid2 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("0.990"),
+            Quantity::from("2.0"),
+            0, // order_id not applicable
+        );
+        let bid3 = BookOrder::new(
+            OrderSide::Buy,
+            Price::from("0.989"),
+            Quantity::from("3.0"),
+            0, // order_id not applicable
+        );
+        book.add(bid1, 0, 1);
+        book.add(bid2, 0, 1);
+        book.add(bid3, 0, 1);
+        book.add(ask1, 0, 1);
+        book.add(ask2, 0, 1);
+        book.add(ask3, 0, 1);
+
+        assert_eq!(
+            book.get_quantity_for_price(Price::from("2.010"), OrderSide::Buy),
+            3.0
+        );
+        assert_eq!(
+            book.get_quantity_for_price(Price::from("0.990"), OrderSide::Sell),
+            3.0
+        );
+    }
+
+    #[rstest]
     fn test_update_quote_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBook::new(instrument_id, BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
         let tick = QuoteTick::new(
             InstrumentId::from("ETHUSDT-PERP.BINANCE"),
             Price::from("5000.000"),
@@ -679,8 +777,8 @@ mod tests {
         book.update_quote_tick(&tick);
 
         // Check if the top bid order in order_book is the same as the one created from tick
-        let top_bid_order = book.bids.top().unwrap().orders.first().unwrap();
-        let top_ask_order = book.asks.top().unwrap().orders.first().unwrap();
+        let top_bid_order = book.bids.top().unwrap().first().unwrap();
+        let top_ask_order = book.asks.top().unwrap().first().unwrap();
         let expected_bid_order = BookOrder::from_quote_tick(&tick, OrderSide::Buy);
         let expected_ask_order = BookOrder::from_quote_tick(&tick, OrderSide::Sell);
         assert_eq!(*top_bid_order, expected_bid_order);
@@ -690,7 +788,7 @@ mod tests {
     #[rstest]
     fn test_update_trade_tick_l1() {
         let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
-        let mut book = OrderBook::new(instrument_id, BookType::L1_TBBO);
+        let mut book = OrderBook::new(instrument_id, BookType::L1_MBP);
 
         let price = Price::from("15000.000");
         let size = Quantity::from("10.00000000");

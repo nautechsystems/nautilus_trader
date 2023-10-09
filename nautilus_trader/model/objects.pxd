@@ -137,8 +137,6 @@ cdef class Money:
     @staticmethod
     cdef Money from_str_c(str value)
 
-    cpdef str to_str(self)
-
     @staticmethod
     cdef object _extract_decimal(object obj)
 
@@ -147,6 +145,7 @@ cdef class Money:
     cdef void add_assign(self, Money other)
     cdef void sub_assign(self, Money other)
 
+    cpdef str to_str(self)
     cpdef object as_decimal(self)
     cpdef double as_double(self)
 

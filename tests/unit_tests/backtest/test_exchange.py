@@ -22,6 +22,8 @@ from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.backtest.models import LatencyModel
+from nautilus_trader.backtest.modules import SimulationModule
+from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
@@ -35,6 +37,7 @@ from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.model.currencies import JPY
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookType
@@ -263,7 +266,7 @@ class TestSimulatedExchange:
         self.exchange.process_quote_tick(tick)
 
         # Assert
-        assert self.exchange.get_book(USDJPY_SIM.id).book_type == BookType.L1_TBBO
+        assert self.exchange.get_book(USDJPY_SIM.id).book_type == BookType.L1_MBP
         assert self.exchange.best_ask_price(USDJPY_SIM.id) == Price.from_str("90.005")
         assert self.exchange.best_bid_price(USDJPY_SIM.id) == Price.from_str("90.002")
 
@@ -1643,6 +1646,65 @@ class TestSimulatedExchange:
         assert order3.status == OrderStatus.ACCEPTED
         assert len(self.exchange.get_open_orders()) == 1
 
+    def test_batch_cancel_orders_all_open_orders_for_batch(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order1 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.030"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.020"),
+        )
+
+        order3 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.010"),
+        )
+
+        order4 = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.010"),
+        )
+
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.strategy.submit_order(order3)
+        self.strategy.submit_order(order4)
+        self.exchange.process(0)
+
+        self.strategy.cancel_order(order4)
+        self.exchange.process(0)
+
+        # Act
+        self.strategy.cancel_orders([order1, order2, order3, order4])
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.CANCELED
+        assert order2.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.CANCELED
+        assert order3.status == OrderStatus.CANCELED
+        assert len(self.exchange.get_open_orders()) == 0
+        assert self.exec_engine.event_count == 12
+
     def test_modify_stop_order_when_order_does_not_exist(self) -> None:
         # Arrange
         command = ModifyOrder(
@@ -2437,6 +2499,40 @@ class TestSimulatedExchange:
         assert order.avg_px == 90.100
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
+    def test_process_trade_tick_fills_sell_limit_order(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("90.100"),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        trade = TestDataStubs.trade_tick(
+            instrument=USDJPY_SIM,
+            price=91.000,
+        )
+
+        self.exchange.process_trade_tick(trade)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert len(self.exchange.get_open_orders()) == 0
+        assert order.avg_px == 90.100
+        assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
+
     def test_realized_pnl_contains_commission(self) -> None:
         # Arrange: Prepare market
         tick = TestDataStubs.quote_tick(
@@ -2755,3 +2851,162 @@ class TestSimulatedExchange:
         # Assert
         assert entry.status == OrderStatus.ACCEPTED
         assert entry.quantity == 200000
+
+
+class TestSimulatedExchangeL2:
+    def setup(self) -> None:
+        # Fixture Setup
+        self.clock = TestClock()
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
+
+        self.trader_id = TestIdStubs.trader_id()
+
+        self.msgbus = MessageBus(
+            trader_id=self.trader_id,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.cache = TestComponentStubs.cache()
+
+        self.portfolio = Portfolio(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.data_engine = DataEngine(
+            msgbus=self.msgbus,
+            clock=self.clock,
+            cache=self.cache,
+            logger=self.logger,
+        )
+
+        self.exec_engine = ExecutionEngine(
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config=ExecEngineConfig(debug=True),
+        )
+
+        self.risk_engine = RiskEngine(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            config=RiskEngineConfig(debug=True),
+        )
+
+        class TradeTickFillModule(SimulationModule):
+            def pre_process(self, data):
+                if isinstance(data, TradeTick):
+                    matching_engine = self.exchange.get_matching_engine(data.instrument_id)
+                    book = matching_engine.get_book()
+                    for order in self.cache.orders_open(instrument_id=data.instrument_id):
+                        book.update_trade_tick(data)
+                        fills = matching_engine.determine_limit_price_and_volume(order)
+                        matching_engine.apply_fills(
+                            order=order,
+                            fills=fills,
+                            liquidity_side=LiquiditySide.MAKER,
+                        )
+
+            def process(self, uint64_t_ts_now):
+                pass
+
+            def reset(self):
+                pass
+
+        config = SimulationModuleConfig()
+        self.module = TradeTickFillModule(config)
+
+        self.exchange = SimulatedExchange(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            default_leverage=Decimal(50),
+            leverages={AUDUSD_SIM.id: Decimal(10)},
+            instruments=[USDJPY_SIM],
+            modules=[self.module],
+            fill_model=FillModel(),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+            latency_model=LatencyModel(0),
+            book_type=BookType.L2_MBP,
+        )
+
+        self.exec_client = BacktestExecClient(
+            exchange=self.exchange,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Wire up components
+        self.exec_engine.register_client(self.exec_client)
+        self.exchange.register_client(self.exec_client)
+
+        self.cache.add_instrument(USDJPY_SIM)
+
+        # Create mock strategy
+        self.strategy = MockStrategy(bar_type=TestDataStubs.bartype_usdjpy_1min_bid())
+        self.strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        # Start components
+        self.exchange.reset()
+        self.data_engine.start()
+        self.exec_engine.start()
+        self.strategy.start()
+
+    def test_process_trade_tick_fills_sell_limit_order(self) -> None:
+        # Arrange: Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=USDJPY_SIM,
+            bid_price=90.002,
+            ask_price=90.005,
+        )
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+
+        order = self.strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("91.000"),
+        )
+
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        trade = TestDataStubs.trade_tick(
+            instrument=USDJPY_SIM,
+            price=91.000,
+        )
+        self.module.pre_process(trade)
+        self.exchange.process_trade_tick(trade)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert len(self.exchange.get_open_orders()) == 0
+        assert order.avg_px == 91.000
+        assert self.exchange.get_account().balance_total(USD) == Money(999997.98, USD)

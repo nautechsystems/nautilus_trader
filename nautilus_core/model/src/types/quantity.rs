@@ -47,7 +47,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Copy, Clone, Eq, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
     pub raw: u64,
@@ -65,10 +65,9 @@ impl Quantity {
         })
     }
 
-    #[must_use]
-    pub fn from_raw(raw: u64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
-        Self { raw, precision }
+    pub fn from_raw(raw: u64, precision: u8) -> Result<Self> {
+        check_fixed_precision(precision)?;
+        Ok(Self { raw, precision })
     }
 
     #[must_use]
@@ -88,11 +87,6 @@ impl Quantity {
     }
 
     #[must_use]
-    pub fn as_str(&self) -> String {
-        format!("{self:?}").separate_with_underscores()
-    }
-
-    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -102,6 +96,11 @@ impl Quantity {
         // Scale down the raw value to match the precision
         let rescaled_raw = self.raw / u64::pow(10, (FIXED_PRECISION - self.precision) as u32);
         Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
+
+    #[must_use]
+    pub fn to_formatted_string(&self) -> String {
+        format!("{self}").separate_with_underscores()
     }
 }
 
@@ -595,8 +594,7 @@ impl Quantity {
     #[staticmethod]
     #[pyo3(name = "from_raw")]
     fn py_from_raw(raw: u64, precision: u8) -> PyResult<Quantity> {
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Quantity::from_raw(raw, precision))
+        Quantity::from_raw(raw, precision).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -628,11 +626,6 @@ impl Quantity {
         self.is_positive()
     }
 
-    #[pyo3(name = "to_str")]
-    fn py_to_str(&self) -> String {
-        self.as_str()
-    }
-
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()
@@ -641,6 +634,11 @@ impl Quantity {
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
         self.as_f64()
+    }
+
+    #[pyo3(name = "to_formatted_str")]
+    fn py_to_formatted_str(&self) -> String {
+        self.to_formatted_string()
     }
 }
 
@@ -657,7 +655,7 @@ pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
-    Quantity::from_raw(raw, precision)
+    Quantity::from_raw(raw, precision).unwrap()
 }
 
 #[cfg(feature = "ffi")]
@@ -714,7 +712,7 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Quantity::from_raw(1, 10);
+        let _ = Quantity::from_raw(1, 10).unwrap();
     }
 
     #[rstest]
@@ -805,11 +803,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_str_valid_input() {
-        let input = "1000.25";
-        let expected_quantity = Quantity::new(1000.25, precision_from_str(input)).unwrap();
-        let result = Quantity::from_str(input).unwrap();
-        assert_eq!(result, expected_quantity);
+    #[case("0", 0)]
+    #[case("1.1", 1)]
+    #[case("1.123456789", 9)]
+    fn test_from_str_valid_input(#[case] input: &str, #[case] expected_prec: u8) {
+        let qty = Quantity::from_str(input).unwrap();
+        assert_eq!(qty.precision, expected_prec);
+        assert_eq!(qty.as_decimal(), Decimal::from_str(input).unwrap());
     }
 
     #[rstest]

@@ -29,16 +29,17 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataCommand
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
+from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -54,6 +55,10 @@ cdef class Actor(Component):
     cdef set _warning_events
     cdef dict _signal_classes
     cdef dict _pending_requests
+    cdef list _indicators
+    cdef dict _indicators_for_quotes
+    cdef dict _indicators_for_trades
+    cdef dict _indicators_for_bars
 
     cdef readonly config
     """The actors configuration.\n\n:returns: `NautilusConfig`"""
@@ -66,6 +71,8 @@ cdef class Actor(Component):
     cdef readonly CacheFacade cache
     """The read-only cache for the actor.\n\n:returns: `CacheFacade`"""
 
+    cpdef bint indicators_initialized(self)
+
 # -- ABSTRACT METHODS -----------------------------------------------------------------------------
 
     cpdef dict on_save(self)
@@ -77,9 +84,9 @@ cdef class Actor(Component):
     cpdef void on_dispose(self)
     cpdef void on_degrade(self)
     cpdef void on_fault(self)
-    cpdef void on_venue_status_update(self, VenueStatusUpdate update)
-    cpdef void on_instrument_status_update(self, InstrumentStatusUpdate update)
-    cpdef void on_instrument_close(self, InstrumentClose update)
+    cpdef void on_venue_status(self, VenueStatus data)
+    cpdef void on_instrument_status(self, InstrumentStatus data)
+    cpdef void on_instrument_close(self, InstrumentClose data)
     cpdef void on_instrument(self, Instrument instrument)
     cpdef void on_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void on_order_book(self, OrderBook order_book)
@@ -104,6 +111,9 @@ cdef class Actor(Component):
     cpdef void register_executor(self, loop, executor)
     cpdef void register_warning_event(self, type event)
     cpdef void deregister_warning_event(self, type event)
+    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator)
+    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator)
+    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator)
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -147,8 +157,8 @@ cdef class Actor(Component):
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*)
-    cpdef void subscribe_venue_status_updates(self, Venue venue, ClientId client_id=*)
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*)
+    cpdef void subscribe_venue_status(self, Venue venue, ClientId client_id=*)
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*)
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*)
@@ -159,8 +169,8 @@ cdef class Actor(Component):
     cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void unsubscribe_bars(self, BarType bar_type, ClientId client_id=*)
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue, ClientId client_id=*)
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id, ClientId client_id=*)
+    cpdef void unsubscribe_venue_status(self, Venue venue, ClientId client_id=*)
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void publish_data(self, DataType data_type, Data data)
     cpdef void publish_signal(self, str name, value, uint64_t ts_event=*)
 
@@ -211,11 +221,13 @@ cdef class Actor(Component):
     cpdef void handle_bar(self, Bar bar)
     cpdef void handle_bars(self, list bars)
     cpdef void handle_data(self, Data data)
-    cpdef void handle_venue_status_update(self, VenueStatusUpdate update)
-    cpdef void handle_instrument_status_update(self, InstrumentStatusUpdate update)
-    cpdef void handle_instrument_close(self, InstrumentClose update)
+    cpdef void handle_venue_status(self, VenueStatus data)
+    cpdef void handle_instrument_status(self, InstrumentStatus data)
+    cpdef void handle_instrument_close(self, InstrumentClose data)
     cpdef void handle_historical_data(self, Data data)
     cpdef void handle_event(self, Event event)
+
+# -- HANDLERS -------------------------------------------------------------------------------------
 
     cpdef void _handle_data_response(self, DataResponse response)
     cpdef void _handle_instrument_response(self, DataResponse response)
@@ -224,6 +236,9 @@ cdef class Actor(Component):
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
     cpdef void _finish_response(self, UUID4 request_id)
+    cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
+    cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)
+    cpdef void _handle_indicators_for_bar(self, list indicators, Bar bar)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

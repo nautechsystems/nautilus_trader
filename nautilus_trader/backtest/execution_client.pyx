@@ -21,6 +21,7 @@ from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.execution.client cimport ExecutionClient
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -134,6 +135,11 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange.send(command)
 
     cpdef void cancel_all_orders(self, CancelAllOrders command):
+        Condition.true(self.is_connected, "not connected")
+
+        self._exchange.send(command)
+
+    cpdef void batch_cancel_orders(self, BatchCancelOrders command):
         Condition.true(self.is_connected, "not connected")
 
         self._exchange.send(command)

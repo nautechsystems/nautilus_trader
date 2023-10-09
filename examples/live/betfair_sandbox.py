@@ -23,6 +23,7 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
@@ -40,7 +41,7 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-async def main(market_id: str):
+async def main(instrument_config: BetfairInstrumentProviderConfig):
     # Connect to Betfair client early to load instruments and account currency
     logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
@@ -52,15 +53,17 @@ async def main(market_id: str):
     await client.connect()
 
     # Find instruments for a particular market_id
-    market_filter = {"market_id": (market_id,)}
     provider = get_cached_betfair_instrument_provider(
         client=client,
         logger=logger,
-        market_filter=tuple(market_filter.items()),
+        config=instrument_config,
     )
     await provider.load_all_async()
     instruments = provider.list_all()
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
+
+    # Load account currency
+    account_currency = await provider.get_account_currency()
 
     # Configure trading node
     config = TradingNodeConfig(
@@ -68,7 +71,10 @@ async def main(market_id: str):
         logging=LoggingConfig(log_level="INFO"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
-            "BETFAIR": BetfairDataClientConfig(market_filter=tuple(market_filter.items())),
+            "BETFAIR": BetfairDataClientConfig(
+                account_currency=account_currency,
+                instrument_config=instrument_config,
+            ),
         },
         exec_clients={
             "SANDBOX": SandboxExecutionClientConfig(
@@ -93,10 +99,12 @@ async def main(market_id: str):
     node = TradingNode(config=config)
     node.trader.add_strategies(strategies)
 
+    # Need to manually set instruments for sandbox exec client
+    SandboxExecutionClient.INSTRUMENTS = instruments
+
     # Register your client factories with the node (can take user defined factories)
     node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
     node.add_exec_client_factory("SANDBOX", SandboxLiveExecClientFactory)
-    SandboxExecutionClient.INSTRUMENTS = instruments
     node.build()
 
     try:
@@ -114,4 +122,8 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.218019626"))
+    config = BetfairInstrumentProviderConfig(
+        market_ids=["1.199513161"],
+    )
+    node = asyncio.run(main(config))
+    node.dispose()

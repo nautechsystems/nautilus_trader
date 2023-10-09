@@ -16,13 +16,14 @@
 from __future__ import annotations
 
 import abc
-from typing import Any
+from typing import Any, ClassVar
 
 import pandas as pd
 import pyarrow as pa
 
-# fmt: off
 from nautilus_trader.core.nautilus_pyo3.model import Bar as RustBar
+
+# fmt: off
 from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
 from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
 from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
@@ -36,14 +37,17 @@ from nautilus_trader.model.instruments import Instrument
 
 # fmt: on
 
+
+###################################################################################################
 # These classes are only intended to be used under the hood of the ParquetDataCatalog v2 at this stage
+###################################################################################################
 
 
 class WranglerBase(abc.ABC):
-    IGNORE_KEYS = {b"class", b"pandas"}
+    IGNORE_KEYS: ClassVar[set[bytes]] = {b"class", b"pandas"}
 
     @classmethod
-    def from_instrument(cls, instrument: Instrument, **kwargs):
+    def from_instrument(cls, instrument: Instrument, **kwargs: Any):
         return cls(  # type: ignore
             instrument_id=instrument.id.value,
             price_precision=instrument.price_precision,

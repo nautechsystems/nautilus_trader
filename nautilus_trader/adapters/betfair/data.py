@@ -17,15 +17,15 @@ import asyncio
 from typing import Optional
 
 import msgspec
+from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import Connection
+from betfair_parser.spec.streaming import Status
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.mcm import MCM
-from betfair_parser.spec.streaming.status import Connection
-from betfair_parser.spec.streaming.status import Status
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.data_types import SubscriptionStatus
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
@@ -65,8 +65,6 @@ class BetfairDataClient(LiveMarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    market_filter : dict
-        The market filter.
     instrument_provider : BetfairInstrumentProvider, optional
         The instrument provider.
     strict_handling : bool
@@ -82,16 +80,15 @@ class BetfairDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        market_filter: dict,
-        instrument_provider: Optional[BetfairInstrumentProvider] = None,
+        instrument_provider: BetfairInstrumentProvider,
+        account_currency: str,
         strict_handling: bool = False,
     ):
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            instrument_provider=instrument_provider
-            or BetfairInstrumentProvider(client=client, logger=logger, filters=market_filter),
+            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -105,7 +102,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-        self.parser = BetfairParser()
+        self.parser = BetfairParser(currency=account_currency)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
@@ -193,7 +190,7 @@ class BetfairDataClient(LiveMarketDataClient):
         self._subscribed_market_ids.add(instrument.market_id)
         self._subscribed_instrument_ids.add(instrument.id)
         if self.subscription_status == SubscriptionStatus.UNSUBSCRIBED:
-            self.create_task(self.delayed_subscribe(delay=5))
+            self.create_task(self.delayed_subscribe(delay=3))
             self.subscription_status = SubscriptionStatus.PENDING_STARTUP
         elif self.subscription_status == SubscriptionStatus.PENDING_STARTUP:
             pass
@@ -218,16 +215,14 @@ class BetfairDataClient(LiveMarketDataClient):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        # TODO: This is more like a Req/Res model?
-        self._instrument_provider.load(instrument_id)
-        instrument = self._instrument_provider.find(instrument_id)
-        self._handle_data(instrument)
+        self._log.info("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
+        return
 
     async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():
             self._handle_data(instrument)
 
-    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId):
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId):
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument_close(self, instrument_id: InstrumentId):
@@ -261,7 +256,7 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
-            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDeltas)):
+            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDelta)):
                 # Not a regular data type
                 generic_data = GenericData(
                     DataType(data.__class__, {"instrument_id": data.instrument_id}),
@@ -288,11 +283,12 @@ class BetfairDataClient(LiveMarketDataClient):
         if update.stream_unreliable:
             self._log.warning("Stream unhealthy, waiting for recover")
             self.degrade()
-        for mc in update.mc:
-            if mc.con:
-                self._log.warning(
-                    "Conflated stream - consuming data too slow (data received is delayed)",
-                )
+        if update.mc is not None:
+            for mc in update.mc:
+                if mc.con:
+                    self._log.warning(
+                        "Conflated stream - consuming data too slow (data received is delayed)",
+                    )
 
     def _handle_status_message(self, update: Status):
         if update.status_code == "FAILURE" and update.connection_closed:
@@ -301,4 +297,4 @@ class BetfairDataClient(LiveMarketDataClient):
                 raise RuntimeError("No more connections available")
             else:
                 self._log.info("Attempting reconnect")
-                self.create_task(self._stream.reconnect())
+                self.create_task(self._stream.connect())

@@ -25,6 +25,7 @@ from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.enums import HaltReason
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import MarketStatus
@@ -59,6 +60,8 @@ from nautilus_trader.model.enums import contingency_type_from_str
 from nautilus_trader.model.enums import contingency_type_to_str
 from nautilus_trader.model.enums import currency_type_from_str
 from nautilus_trader.model.enums import currency_type_to_str
+from nautilus_trader.model.enums import halt_reason_from_str
+from nautilus_trader.model.enums import halt_reason_to_str
 from nautilus_trader.model.enums import instrument_close_type_from_str
 from nautilus_trader.model.enums import instrument_close_type_to_str
 from nautilus_trader.model.enums import liquidity_side_from_str
@@ -369,7 +372,7 @@ class TestBookType:
     @pytest.mark.parametrize(
         ("enum", "expected"),
         [
-            [BookType.L1_TBBO, "L1_TBBO"],
+            [BookType.L1_MBP, "L1_MBP"],
             [BookType.L2_MBP, "L2_MBP"],
             [BookType.L3_MBO, "L3_MBO"],
         ],
@@ -385,7 +388,7 @@ class TestBookType:
         ("string", "expected"),
         [
             ["", None],
-            ["L1_TBBO", BookType.L1_TBBO],
+            ["L1_MBP", BookType.L1_MBP],
             ["L2_MBP", BookType.L2_MBP],
             ["L3_MBO", BookType.L3_MBO],
         ],
@@ -490,6 +493,38 @@ class TestOptionKind:
     def test_option_kind_from_str(self, string, expected):
         # Arrange, Act
         result = option_kind_from_str(string)
+
+        # Assert
+        assert result == expected
+
+
+class TestHaltReason:
+    @pytest.mark.parametrize(
+        ("enum", "expected"),
+        [
+            [HaltReason.NOT_HALTED, "NOT_HALTED"],
+            [HaltReason.GENERAL, "GENERAL"],
+            [HaltReason.VOLATILITY, "VOLATILITY"],
+        ],
+    )
+    def test_halt_reason_to_str(self, enum, expected):
+        # Arrange, Act
+        result = halt_reason_to_str(enum)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("string", "expected"),
+        [
+            ["NOT_HALTED", HaltReason.NOT_HALTED],
+            ["GENERAL", HaltReason.GENERAL],
+            ["VOLATILITY", HaltReason.VOLATILITY],
+        ],
+    )
+    def test_halt_reason_from_str(self, string, expected):
+        # Arrange, Act
+        result = halt_reason_from_str(string)
 
         # Assert
         assert result == expected

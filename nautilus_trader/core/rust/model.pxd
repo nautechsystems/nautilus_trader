@@ -98,7 +98,7 @@ cdef extern from "../includes/model.h":
     # The order book type, representing the type of levels granularity and delta updating heuristics.
     cpdef enum BookType:
         # Top-of-book best bid/offer, one level per side.
-        L1_TBBO # = 1,
+        L1_MBP # = 1,
         # Market by price, one order per level (aggregated).
         L2_MBP # = 2,
         # Market by order, multiple orders per level (full granularity).
@@ -126,6 +126,15 @@ cdef extern from "../includes/model.h":
         # A type of currency that is based on the value of an underlying commodity.
         COMMODITY_BACKED # = 3,
 
+    # The reason for a venue or market halt.
+    cpdef enum HaltReason:
+        # The venue or market session is not halted.
+        NOT_HALTED # = 1,
+        # Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+        GENERAL # = 2,
+        # Trading halt is imposed by the venue to protect against extreme volatility.
+        VOLATILITY # = 3,
+
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
         # When the market session ended.
@@ -144,16 +153,20 @@ cdef extern from "../includes/model.h":
 
     # The status of an individual market on a trading venue.
     cpdef enum MarketStatus:
-        # The market is closed.
-        CLOSED # = 1,
-        # The market is in the pre-open session.
-        PRE_OPEN # = 2,
-        # The market is open for the normal session.
-        OPEN # = 3,
+        # The market session is in the pre-open.
+        PRE_OPEN # = 1,
+        # The market session is open.
+        OPEN # = 2,
         # The market session is paused.
-        PAUSE # = 4,
-        # The market is in the pre-close session.
-        PRE_CLOSE # = 5,
+        PAUSE # = 3,
+        # The market session is halted.
+        HALT # = 4,
+        # The market session has reopened after a pause or halt.
+        REOPEN # = 5,
+        # The market session is in the pre-close.
+        PRE_CLOSE # = 6,
+        # The market session is closed.
+        CLOSED # = 7,
 
     # The order management system (OMS) type for a trading venue or trading strategy.
     cpdef enum OmsType:
@@ -340,6 +353,7 @@ cdef extern from "../includes/model.h":
     cdef struct Level:
         pass
 
+    # Provides an order book which can handle L1/L2/L3 granularity data.
     cdef struct OrderBook:
         pass
 
@@ -348,14 +362,23 @@ cdef extern from "../includes/model.h":
     cdef struct SyntheticInstrument:
         pass
 
+    # Represents a valid ticker symbol ID for a tradable financial market instrument.
     cdef struct Symbol_t:
+        # The ticker symbol ID value.
         char* value;
 
+    # Represents a valid trading venue ID.
     cdef struct Venue_t:
+        # The venue ID value.
         char* value;
 
+    # Represents a valid instrument ID.
+    #
+    # The symbol and venue combination should uniquely identify the instrument.
     cdef struct InstrumentId_t:
+        # The instruments ticker symbol.
         Symbol_t symbol;
+        # The instruments trading venue.
         Venue_t venue;
 
     cdef struct Price_t:
@@ -411,7 +434,14 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Represents a valid trade match ID (assigned by a trading venue).
+    #
+    # Can correspond to the `TradeID <1003> field` of the FIX protocol.
+    #
+    # The unique ID assigned to the trade entity once it is received or matched by
+    # the exchange or central counterparty.
     cdef struct TradeId_t:
+        # The trade match ID value.
         char* value;
 
     # Represents a single trade tick in a financial market.
@@ -492,13 +522,36 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
+    # Represents a valid trader ID.
+    #
+    # Must be correctly formatted with two valid strings either side of a hyphen.
+    # It is expected a trader ID is the abbreviated name of the trader
+    # with an order ID tag number separated by a hyphen.
+    #
+    # Example: "TESTER-001".
+    # The reason for the numerical component of the ID is so that order and position IDs
+    # do not collide with those from another node instance.
     cdef struct TraderId_t:
+        # The trader ID value.
         char* value;
 
+    # Represents a valid strategy ID.
+    #
+    # Must be correctly formatted with two valid strings either side of a hyphen.
+    # It is expected a strategy ID is the class name of the strategy,
+    # with an order ID tag number separated by a hyphen.
+    #
+    # Example: "EMACross-001".
+    #
+    # The reason for the numerical component of the ID is so that order and position IDs
+    # do not collide with those from another strategy within the node instance.
     cdef struct StrategyId_t:
+        # The strategy ID value.
         char* value;
 
+    # Represents a valid client order ID (assigned by the Nautilus system).
     cdef struct ClientOrderId_t:
+        # The client order ID value.
         char* value;
 
     cdef struct OrderDenied_t:
@@ -530,7 +583,15 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    # Represents a valid account ID.
+    #
+    # Must be correctly formatted with two valid strings either side of a hyphen '-'.
+    # It is expected an account ID is the name of the issuer with an account number
+    # separated by a hyphen.
+    #
+    # Example: "IB-D02851908".
     cdef struct AccountId_t:
+        # The account ID value.
         char* value;
 
     cdef struct OrderSubmitted_t:
@@ -543,7 +604,9 @@ cdef extern from "../includes/model.h":
         uint64_t ts_event;
         uint64_t ts_init;
 
+    # Represents a valid venue order ID (assigned by a trading venue).
     cdef struct VenueOrderId_t:
+        # The venue assigned order ID value.
         char* value;
 
     cdef struct OrderAccepted_t:
@@ -570,19 +633,29 @@ cdef extern from "../includes/model.h":
         uint64_t ts_init;
         uint8_t reconciliation;
 
+    # Represents a system client ID.
     cdef struct ClientId_t:
+        # The client ID value.
         char* value;
 
+    # Represents a valid component ID.
     cdef struct ComponentId_t:
+        # The component ID value.
         char* value;
 
+    # Represents a valid execution algorithm ID.
     cdef struct ExecAlgorithmId_t:
+        # The execution algorithm ID value.
         char* value;
 
+    # Represents a valid order list ID (assigned by the Nautilus system).
     cdef struct OrderListId_t:
+        # The order list ID value.
         char* value;
 
+    # Represents a valid position ID.
     cdef struct PositionId_t:
+        # The position ID value.
         char* value;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -659,6 +732,20 @@ cdef extern from "../includes/model.h":
     BarType_t bar_type_new(InstrumentId_t instrument_id,
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
+
+    # Returns any [`BarType`] parsing error from the provided C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    const char *bar_type_check_parsing(const char *ptr);
+
+    # Returns a [`BarType`] from a C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    BarType_t bar_type_from_cstr(const char *ptr);
 
     uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
 
@@ -880,6 +967,14 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     MarketStatus market_status_from_cstr(const char *ptr);
 
+    const char *halt_reason_to_cstr(HaltReason value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    HaltReason halt_reason_from_cstr(const char *ptr);
+
     const char *oms_type_to_cstr(OmsType value);
 
     # Returns an enum from a Python string.
@@ -1083,12 +1178,19 @@ cdef extern from "../includes/model.h":
 
     InstrumentId_t instrument_id_new(Symbol_t symbol, Venue_t venue);
 
+    # Returns any [`InstrumentId`] parsing error from the provided C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    const char *instrument_id_check_parsing(const char *ptr);
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
-    InstrumentId_t instrument_id_new_from_cstr(const char *ptr);
+    InstrumentId_t instrument_id_from_cstr(const char *ptr);
 
     # Returns an [`InstrumentId`] as a C string pointer.
     const char *instrument_id_to_cstr(const InstrumentId_t *instrument_id);
@@ -1277,6 +1379,10 @@ cdef extern from "../includes/model.h":
                                              Quantity_t qty,
                                              OrderSide order_side);
 
+    double orderbook_get_quantity_for_price(OrderBook_API *book,
+                                            Price_t price,
+                                            OrderSide order_side);
+
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *tick);
 
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
@@ -1300,7 +1406,7 @@ cdef extern from "../includes/model.h":
 
     CVec level_orders(const Level_API *level);
 
-    double level_volume(const Level_API *level);
+    double level_size(const Level_API *level);
 
     double level_exposure(const Level_API *level);
 

@@ -24,10 +24,10 @@ from nautilus_trader.adapters.interactive_brokers.client import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -223,7 +223,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 handle_revised_bars=self._handle_revised_bars,
             )
 
-    async def _subscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -271,7 +271,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         else:
             await self._client.unsubscribe_historical_bars(bar_type)
 
-    async def _unsubscribe_instrument_status_updates(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
@@ -401,31 +401,26 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        if bar_type.is_internally_aggregated():
-            self._log.error(
-                f"Cannot request {bar_type}: "
-                f"only historical bars with EXTERNAL aggregation available from InteractiveBrokers.",
-            )
-            return
-
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
                 f"Cannot request {bar_type}: only time bars are aggregated by InteractiveBrokers.",
             )
             return
 
-        if not start:
-            limit = self._cache.bar_capacity
+        if not start and limit == 0:
+            limit = 1000
 
         if not end:
             end = pd.Timestamp.utcnow()
 
-        duration_str = "7 D" if bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
+        if start:
+            duration = end - start
+            duration_str = timedelta_to_duration_str(duration)
+        else:
+            duration_str = "7 D" if bar_type.spec.timedelta.total_seconds() >= 60 else "1 D"
+
         bars: list[Bar] = []
-        while (start and end > start) or (len(bars) < limit):
-            self._log.info(f"{start=}", LogColor.MAGENTA)
-            self._log.info(f"{end=}", LogColor.MAGENTA)
-            self._log.info(f"{limit=}", LogColor.MAGENTA)
+        while (start and end > start) or (len(bars) < limit > 0):
             bars_part = await self._client.get_historical_bars(
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
@@ -433,11 +428,10 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 end_date_time=end.strftime("%Y%m%d %H:%M:%S %Z"),
                 duration=duration_str,
             )
-            if not bars_part:
-                break
             bars.extend(bars_part)
+            if not bars_part or start:
+                break
             end = pd.Timestamp(min(bars, key=attrgetter("ts_event")).ts_event, tz="UTC")
-            self._log.info(f"NEW {end=}", LogColor.MAGENTA)
 
         if bars:
             bars = list(set(bars))

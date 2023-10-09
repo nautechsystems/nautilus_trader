@@ -17,6 +17,7 @@ from datetime import datetime
 from datetime import timedelta
 from decimal import Decimal
 
+import pandas as pd
 import pytest
 import pytz
 
@@ -199,6 +200,7 @@ class TestStrategy:
             "order_id_tag": None,
             "strategy_id": None,
             "external_order_claims": None,
+            "manage_gtd_expiry": False,
         }
 
     def test_strategy_to_importable_config(self):
@@ -207,6 +209,7 @@ class TestStrategy:
             order_id_tag="001",
             strategy_id="ALPHA-01",
             external_order_claims=["ETHUSDT-PERP.DYDX"],
+            manage_gtd_expiry=True,
         )
 
         strategy = Strategy(config=config)
@@ -223,6 +226,7 @@ class TestStrategy:
             "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
+            "manage_gtd_expiry": True,
         }
 
     def test_strategy_equality(self):
@@ -806,6 +810,51 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 0
 
+    def test_start_when_manage_gtd_reactivates_timers(self):
+        # Arrange
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("100.00"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+        )
+        order2 = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("101.00"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=11),
+        )
+
+        strategy.submit_order(order1)
+        strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        strategy.clock.cancel_timers()  # <-- Simulate restart
+        strategy.start()
+
+        # Assert
+        assert strategy.clock.timer_count == 2
+        assert strategy.clock.timer_names == [
+            "GTD-EXPIRY:O-19700101-0000-000-None-1",
+            "GTD-EXPIRY:O-19700101-0000-000-None-2",
+        ]
+
     def test_submit_order_when_duplicate_id_then_denies(self):
         # Arrange
         strategy = Strategy()
@@ -874,7 +923,8 @@ class TestStrategy:
 
     def test_submit_order_with_managed_gtd_starts_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -894,7 +944,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order(order, manage_gtd_expiry=True)
+        strategy.submit_order(order)
 
         # Assert
         assert strategy.clock.timer_count == 1
@@ -902,7 +952,8 @@ class TestStrategy:
 
     def test_submit_order_with_managed_gtd_when_immediately_filled_cancels_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -922,7 +973,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order(order, manage_gtd_expiry=True)
+        strategy.submit_order(order)
         self.exchange.process(0)
 
         # Assert
@@ -1086,7 +1137,8 @@ class TestStrategy:
 
     def test_submit_order_list_with_managed_gtd_starts_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1109,7 +1161,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        strategy.submit_order_list(bracket)
         self.exchange.process(0)
 
         # Assert
@@ -1118,7 +1170,8 @@ class TestStrategy:
 
     def test_submit_order_list_with_managed_gtd_when_immediately_filled_cancels_timer(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1141,7 +1194,7 @@ class TestStrategy:
         )
 
         # Act
-        strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        strategy.submit_order_list(bracket)
         self.exchange.process(0)
 
         # Assert
@@ -1152,7 +1205,8 @@ class TestStrategy:
 
     def test_cancel_gtd_expiry(self):
         # Arrange
-        strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
         strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -1171,7 +1225,7 @@ class TestStrategy:
             expire_time=UNIX_EPOCH + timedelta(minutes=1),
         )
 
-        strategy.submit_order(order, manage_gtd_expiry=True)
+        strategy.submit_order(order)
 
         # Act
         strategy.cancel_gtd_expiry(order)
@@ -1420,6 +1474,44 @@ class TestStrategy:
         assert strategy.cache.is_order_open(order.client_order_id)
         assert not strategy.cache.is_order_closed(order.client_order_id)
         assert strategy.portfolio.is_flat(order.instrument_id)
+
+    def test_cancel_orders(self):
+        # Arrange
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.stop_market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.007"),
+        )
+
+        order2 = strategy.order_factory.stop_market(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("90.006"),
+        )
+
+        strategy.submit_order(order1)
+        self.exchange.process(0)
+        strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Act
+        strategy.cancel_orders([order1, order2])
+        self.exchange.process(0)
+
+        # Assert
+        # TODO: WIP!
 
     def test_cancel_all_orders(self):
         # Arrange

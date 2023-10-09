@@ -19,6 +19,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
 from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -34,7 +35,9 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
 from nautilus_trader.core.rust.model cimport bar_to_cstr
+from nautilus_trader.core.rust.model cimport bar_type_check_parsing
 from nautilus_trader.core.rust.model cimport bar_type_eq
+from nautilus_trader.core.rust.model cimport bar_type_from_cstr
 from nautilus_trader.core.rust.model cimport bar_type_ge
 from nautilus_trader.core.rust.model cimport bar_type_gt
 from nautilus_trader.core.rust.model cimport bar_type_hash
@@ -42,7 +45,7 @@ from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
 from nautilus_trader.core.rust.model cimport bar_type_to_cstr
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
@@ -509,22 +512,22 @@ cdef class BarType:
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
 
     def __eq__(self, BarType other) -> bool:
-        return bar_type_eq(&self._mem, &other._mem)
+        return self.to_str() == other.to_str()
 
     def __lt__(self, BarType other) -> bool:
-        return bar_type_lt(&self._mem, &other._mem)
+        return self.to_str() < other.to_str()
 
     def __le__(self, BarType other) -> bool:
-        return bar_type_le(&self._mem, &other._mem)
+        return self.to_str() <= other.to_str()
 
     def __gt__(self, BarType other) -> bool:
-        return bar_type_gt(&self._mem, &other._mem)
+        return self.to_str() > other.to_str()
 
     def __ge__(self, BarType other) -> bool:
-        return bar_type_ge(&self._mem, &other._mem)
+        return self.to_str() >= other.to_str()
 
     def __hash__(self) -> int:
-        return bar_type_hash(&self._mem)
+        return hash(self.to_str())
 
     def __str__(self) -> str:
         return self.to_str()
@@ -540,25 +543,15 @@ cdef class BarType:
 
     @staticmethod
     cdef BarType from_str_c(str value):
-        Condition.valid_string(value, 'value')
+        Condition.valid_string(value, "value")
 
-        cdef list pieces = value.rsplit('-', maxsplit=4)
-        if len(pieces) != 5:
-            raise ValueError(f"The `BarType` string value was malformed, was {value}")
+        cdef str parse_err = cstr_to_pystr(bar_type_check_parsing(pystr_to_cstr(value)))
+        if parse_err:
+            raise ValueError(parse_err)
 
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(pieces[0])
-        cdef BarSpecification bar_spec = BarSpecification(
-            int(pieces[1]),
-            bar_aggregation_from_str(pieces[2]),
-            price_type_from_str(pieces[3]),
-        )
-        cdef AggregationSource aggregation_source = aggregation_source_from_str(pieces[4])
-
-        return BarType(
-            instrument_id=instrument_id,
-            bar_spec=bar_spec,
-            aggregation_source=aggregation_source,
-        )
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = bar_type_from_cstr(pystr_to_cstr(value))
+        return bar_type
 
     @property
     def instrument_id(self) -> InstrumentId:
@@ -748,10 +741,10 @@ cdef class Bar(Data):
         )
 
     def __eq__(self, Bar other) -> bool:
-        return bar_eq(&self._mem, &other._mem)
+        return self.to_str() == other.to_str()
 
     def __hash__(self) -> int:
-        return bar_hash(&self._mem)
+        return hash(self.to_str())
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_to_cstr(&self._mem))
@@ -761,6 +754,12 @@ cdef class Bar(Data):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}({self})"
+
+    @staticmethod
+    cdef Bar from_mem_c(Bar_t mem):
+        cdef Bar bar = Bar.__new__(Bar)
+        bar._mem = mem
+        return bar
 
     @staticmethod
     cdef Bar from_dict_c(dict values):

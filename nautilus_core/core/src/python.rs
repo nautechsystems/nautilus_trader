@@ -16,7 +16,7 @@
 use std::fmt;
 
 use pyo3::{
-    exceptions::{PyTypeError, PyValueError},
+    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
 };
 
@@ -25,12 +25,17 @@ pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p st
     obj.as_ref(py).get_type().name()
 }
 
-/// Converts any type that implements `Debug` to a Python `ValueError`.
-pub fn to_pyvalue_err(e: impl fmt::Debug) -> PyErr {
-    PyValueError::new_err(format!("{e:?}"))
+/// Converts any type that implements `Display` to a Python `ValueError`.
+pub fn to_pyvalue_err(e: impl fmt::Display) -> PyErr {
+    PyValueError::new_err(e.to_string())
 }
 
-/// Converts any type that implements `Debug` to a Python `TypeError`.
-pub fn to_pytype_err(e: impl fmt::Debug) -> PyErr {
-    PyTypeError::new_err(format!("{e:?}"))
+/// Converts any type that implements `Display` to a Python `TypeError`.
+pub fn to_pytype_err(e: impl fmt::Display) -> PyErr {
+    PyTypeError::new_err(e.to_string())
+}
+
+/// Converts any type that implements `Display` to a Python `RuntimeError`.
+pub fn to_pyruntime_err(e: impl fmt::Display) -> PyErr {
+    PyRuntimeError::new_err(e.to_string())
 }

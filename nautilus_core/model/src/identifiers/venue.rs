@@ -14,22 +14,26 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
+use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
 use ustr::Ustr;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
+/// Represents a valid trading venue ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Venue {
+    /// The venue ID value.
     pub value: Ustr,
 }
 
@@ -90,8 +94,7 @@ impl From<&str> for Venue {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    Venue::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    Venue::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]
@@ -120,7 +123,7 @@ pub mod stubs {
         Venue::from("BINANCE")
     }
     #[fixture]
-    pub fn simulation() -> Venue {
+    pub fn sim() -> Venue {
         Venue::from("SIM")
     }
 }

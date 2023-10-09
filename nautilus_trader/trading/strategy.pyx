@@ -50,13 +50,13 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport QueryOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.tick cimport QuoteTick
@@ -67,14 +67,27 @@ from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport oms_type_from_str
 from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
+from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderEvent
+from nautilus_trader.model.events.order cimport OrderExpired
+from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderPendingCancel
 from nautilus_trader.model.events.order cimport OrderPendingUpdate
 from nautilus_trader.model.events.order cimport OrderRejected
+from nautilus_trader.model.events.order cimport OrderReleased
+from nautilus_trader.model.events.order cimport OrderSubmitted
+from nautilus_trader.model.events.order cimport OrderTriggered
+from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.events.position cimport PositionChanged
+from nautilus_trader.model.events.position cimport PositionClosed
+from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -138,13 +151,7 @@ cdef class Strategy(Actor):
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
-        self._manage_gtd_expiry = False
-
-        # Indicators
-        self._indicators: list[Indicator] = []
-        self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
-        self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
-        self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
+        self.manage_gtd_expiry = config.manage_gtd_expiry
 
         # Public components
         self.clock = self._clock
@@ -181,37 +188,6 @@ cdef class Strategy(Actor):
             config_path=self.config.fully_qualified_name(),
             config=self.config.dict(),
         )
-
-    @property
-    def registered_indicators(self):
-        """
-        Return the registered indicators for the strategy.
-
-        Returns
-        -------
-        list[Indicator]
-
-        """
-        return self._indicators.copy()
-
-    cpdef bint indicators_initialized(self):
-        """
-        Return a value indicating whether all indicators are initialized.
-
-        Returns
-        -------
-        bool
-            True if all initialized, else False
-
-        """
-        if not self._indicators:
-            return False
-
-        cdef Indicator indicator
-        for indicator in self._indicators:
-            if not indicator.initialized:
-                return False
-        return True
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
@@ -308,93 +284,42 @@ cdef class Strategy(Actor):
         self._msgbus.subscribe(topic=f"events.order.{self.id}", handler=self.handle_event)
         self._msgbus.subscribe(topic=f"events.position.{self.id}", handler=self.handle_event)
 
-    cpdef void register_indicator_for_quote_ticks(self, InstrumentId instrument_id, Indicator indicator):
+    cpdef void change_id(self, StrategyId strategy_id):
         """
-        Register the given indicator with the strategy to receive quote tick
-        data for the given instrument ID.
+        Change the strategies identifier to the given `strategy_id`.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for tick updates.
-        indicator : Indicator
-            The indicator to register.
+        strategy_id : StrategyId
+            The new strategy ID to change to.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(indicator, "indicator")
+        Condition.not_none(strategy_id, "strategy_id")
 
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
+        self.id = strategy_id
 
-        if instrument_id not in self._indicators_for_quotes:
-            self._indicators_for_quotes[instrument_id] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_quotes[instrument_id]:
-            self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks.")
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks.")
-
-    cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator):
+    cpdef void change_order_id_tag(self, str order_id_tag):
         """
-        Register the given indicator with the strategy to receive trade tick
-        data for the given instrument ID.
+        Change the order identifier tag to the given `order_id_tag`.
 
         Parameters
         ----------
-        instrument_id : InstrumentId
-            The instrument ID for tick updates.
-        indicator : indicator
-            The indicator to register.
+        order_id_tag : str
+            The new order ID tag to change to.
 
         """
-        Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(indicator, "indicator")
+        Condition.valid_string(order_id_tag, "order_id_tag")
 
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
-
-        if instrument_id not in self._indicators_for_trades:
-            self._indicators_for_trades[instrument_id] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_trades[instrument_id]:
-            self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks.")
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks.")
-
-    cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator):
-        """
-        Register the given indicator with the strategy to receive bar data for the
-        given bar type.
-
-        Parameters
-        ----------
-        bar_type : BarType
-            The bar type for bar updates.
-        indicator : Indicator
-            The indicator to register.
-
-        """
-        Condition.not_none(bar_type, "bar_type")
-        Condition.not_none(indicator, "indicator")
-
-        if indicator not in self._indicators:
-            self._indicators.append(indicator)
-
-        if bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[bar_type] = []  # type: list[Indicator]
-
-        if indicator not in self._indicators_for_bars[bar_type]:
-            self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars.")
-        else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars.")
+        self.order_id_tag = order_id_tag
 
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
+        # Log configuration
+        self._log.info(f"{self.config.oms_type=}", LogColor.BLUE)
+        self._log.info(f"{self.config.external_order_claims=}", LogColor.BLUE)
+        self._log.info(f"{self.config.manage_gtd_expiry=}", LogColor.BLUE)
+
         cdef set client_order_ids = self.cache.client_order_ids(
             venue=None,
             instrument_id=None,
@@ -410,15 +335,34 @@ cdef class Strategy(Actor):
         cdef int order_id_count = len(client_order_ids)
         cdef int order_list_id_count = len(order_list_ids)
         self.order_factory.set_client_order_id_count(order_id_count)
+        self.log.info(
+            f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.",
+            LogColor.BLUE,
+        )
         self.order_factory.set_order_list_id_count(order_list_id_count)
-        self.log.info(f"Set ClientOrderIdGenerator client_order_id count to {order_id_count}.")
-        self.log.info(f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.")
+        self.log.info(
+            f"Set ClientOrderIdGenerator order_list_id count to {order_list_id_count}.",
+            LogColor.BLUE,
+        )
+
+        cdef list open_orders = self.cache.orders_open(
+            venue=None,
+            instrument_id=None,
+            strategy_id=self.id,
+        )
+
+        if self.manage_gtd_expiry:
+            for order in open_orders:
+                if order.time_in_force == TimeInForce.GTD and not self._has_gtd_expiry_timer(order.client_order_id):
+                    self._set_gtd_expiry(order)
 
         self.on_start()
 
     cpdef void _reset(self):
         if self.order_factory:
             self.order_factory.reset()
+
+        self._pending_requests.clear()
 
         self._indicators.clear()
         self._indicators_for_quotes.clear()
@@ -427,13 +371,350 @@ cdef class Strategy(Actor):
 
         self.on_reset()
 
+# -- ABSTRACT METHODS -----------------------------------------------------------------------------
+
+    cpdef void on_order_event(self, OrderEvent event):
+        """
+        Actions to be performed when running and receives an order event.
+
+        Parameters
+        ----------
+        event : OrderEvent
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_initialized(self, OrderInitialized event):
+        """
+        Actions to be performed when running and receives an order initialized event.
+
+        Parameters
+        ----------
+        event : OrderInitialized
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_denied(self, OrderDenied event):
+        """
+        Actions to be performed when running and receives an order denied event.
+
+        Parameters
+        ----------
+        event : OrderDenied
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_emulated(self, OrderEmulated event):
+        """
+        Actions to be performed when running and receives an order initialized event.
+
+        Parameters
+        ----------
+        event : OrderEmulated
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_released(self, OrderReleased event):
+        """
+        Actions to be performed when running and receives an order released event.
+
+        Parameters
+        ----------
+        event : OrderReleased
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_submitted(self, OrderSubmitted event):
+        """
+        Actions to be performed when running and receives an order submitted event.
+
+        Parameters
+        ----------
+        event : OrderSubmitted
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_rejected(self, OrderRejected event):
+        """
+        Actions to be performed when running and receives an order rejected event.
+
+        Parameters
+        ----------
+        event : OrderRejected
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_accepted(self, OrderAccepted event):
+        """
+        Actions to be performed when running and receives an order accepted event.
+
+        Parameters
+        ----------
+        event : OrderAccepted
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_canceled(self, OrderCanceled event):
+        """
+        Actions to be performed when running and receives an order canceled event.
+
+        Parameters
+        ----------
+        event : OrderCanceled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_expired(self, OrderExpired event):
+        """
+        Actions to be performed when running and receives an order expired event.
+
+        Parameters
+        ----------
+        event : OrderExpired
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_triggered(self, OrderTriggered event):
+        """
+        Actions to be performed when running and receives an order triggered event.
+
+        Parameters
+        ----------
+        event : OrderTriggered
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_pending_update(self, OrderPendingUpdate event):
+        """
+        Actions to be performed when running and receives an order pending update event.
+
+        Parameters
+        ----------
+        event : OrderPendingUpdate
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_pending_cancel(self, OrderPendingCancel event):
+        """
+        Actions to be performed when running and receives an order pending cancel event.
+
+        Parameters
+        ----------
+        event : OrderPendingCancel
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_modify_rejected(self, OrderModifyRejected event):
+        """
+        Actions to be performed when running and receives an order modify rejected event.
+
+        Parameters
+        ----------
+        event : OrderModifyRejected
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_cancel_rejected(self, OrderCancelRejected event):
+        """
+        Actions to be performed when running and receives an order cancel rejected event.
+
+        Parameters
+        ----------
+        event : OrderCancelRejected
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_updated(self, OrderUpdated event):
+        """
+        Actions to be performed when running and receives an order updated event.
+
+        Parameters
+        ----------
+        event : OrderUpdated
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_order_filled(self, OrderFilled event):
+        """
+        Actions to be performed when running and receives an order filled event.
+
+        Parameters
+        ----------
+        event : OrderFilled
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_event(self, PositionEvent event):
+        """
+        Actions to be performed when running and receives a position event.
+
+        Parameters
+        ----------
+        event : PositionEvent
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_opened(self, PositionOpened event):
+        """
+        Actions to be performed when running and receives a position opened event.
+
+        Parameters
+        ----------
+        event : PositionOpened
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_changed(self, PositionChanged event):
+        """
+        Actions to be performed when running and receives a position changed event.
+
+        Parameters
+        ----------
+        event : PositionChanged
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_position_closed(self, PositionClosed event):
+        """
+        Actions to be performed when running and receives a position closed event.
+
+        Parameters
+        ----------
+        event : PositionClosed
+            The event received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
 # -- TRADING COMMANDS -----------------------------------------------------------------------------
 
     cpdef void submit_order(
         self,
         Order order,
         PositionId position_id = None,
-        bint manage_gtd_expiry = False,
         ClientId client_id = None,
     ):
         """
@@ -453,8 +734,6 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        manage_gtd_expiry : bool, default False
-            If any GTD time in force order expiry should be managed by the strategy.
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -498,7 +777,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
+        if self.manage_gtd_expiry and order.time_in_force == TimeInForce.GTD:
             self._set_gtd_expiry(order)
 
         # Route order
@@ -513,7 +792,6 @@ cdef class Strategy(Actor):
         self,
         OrderList order_list,
         PositionId position_id = None,
-        bint manage_gtd_expiry = False,
         ClientId client_id = None
     ):
         """
@@ -533,8 +811,6 @@ cdef class Strategy(Actor):
         position_id : PositionId, optional
             The position ID to submit the order against. If a position does not
             yet exist, then any position opened will have this identifier assigned.
-        manage_gtd_expiry : bool, default False
-            If any GTD time in force order expiry should be managed by the strategy.
         client_id : ClientId, optional
             The specific execution client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -596,7 +872,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        if manage_gtd_expiry:
+        if self.manage_gtd_expiry:
             for order in command.order_list.orders:
                 if order.time_in_force == TimeInForce.GTD:
                     self._set_gtd_expiry(order)
@@ -616,6 +892,7 @@ cdef class Strategy(Actor):
         Price price = None,
         Price trigger_price = None,
         ClientId client_id = None,
+        bint batch_more = False,
     ):
         """
         Modify the given order with optional parameters and routing instructions.
@@ -643,6 +920,11 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
+        batch_more : bool, default False
+            Indicates if this command should be batched (grouped) with subsequent modify order
+            commands for the venue. When set to `True`, we expect more calls to `modify_order`
+            which will add to the current batch. Final processing of the batch occurs on a call
+            with `batch_more=False`. For proper behavior, maintain the correct call sequence.
 
         Raises
         ------
@@ -656,6 +938,10 @@ cdef class Strategy(Actor):
         If the order is already closed or at `PENDING_CANCEL` status
         then the command will not be generated, and a warning will be logged.
 
+        The `batch_more` flag is an advanced feature which may have unintended consequences if not
+        called in the correct sequence. If a series of `batch_more=True` calls are not followed by
+        a `batch_more=False`, then no command will be sent from the strategy.
+
         References
         ----------
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
@@ -664,72 +950,19 @@ cdef class Strategy(Actor):
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
-        cdef bint updating = False  # Set validation flag (must become true)
-
-        if quantity is not None and quantity != order.quantity:
-            updating = True
-
-        if price is not None:
-            Condition.true(
-                order.order_type in VALID_LIMIT_ORDER_TYPES,
-                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
-            )
-            if price != order.price:
-                updating = True
-
-        if trigger_price is not None:
-            Condition.true(
-                order.order_type in VALID_STOP_ORDER_TYPES,
-                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
-            )
-            if trigger_price != order.trigger_price:
-                updating = True
-
-        if not updating:
-            self.log.error(
-                "Cannot create command ModifyOrder: "
-                "quantity, price and trigger were either None "
-                "or the same as existing values.",
-            )
+        if batch_more:
+            self._log.error("The `batch_more` feature is not currently implemented.")
             return
 
-        if order.is_closed_c() or order.is_pending_cancel_c():
-            self.log.warning(
-                f"Cannot create command ModifyOrder: "
-                f"state is {order.status_string_c()}, {order}.",
-            )
-            return  # Cannot send command
-
-        cdef OrderPendingUpdate event
-        if not order.is_active_local_c():
-            # Generate and apply event
-            event = self._generate_order_pending_update(order)
-            try:
-                order.apply(event)
-                self.cache.update_order(order)
-            except InvalidStateTrigger as e:
-                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
-                return
-
-            # Publish event
-            self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}",
-                msg=event,
-            )
-
-        cdef ModifyOrder command = ModifyOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
+        cdef ModifyOrder command = self._create_modify_order(
+            order=order,
             quantity=quantity,
             price=price,
             trigger_price=trigger_price,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
             client_id=client_id,
         )
+        if command is None:
+            return
 
         if order.is_emulated_c():
             self._send_emulator_command(command)
@@ -741,9 +974,7 @@ cdef class Strategy(Actor):
         Cancel the given order with optional routing instructions.
 
         A `CancelOrder` command will be created and then sent to **either** the
-        `OrderEmulator` or the `RiskEngine` (depending on whether the order is emulated).
-
-        Logs an error if no `VenueOrderId` has been assigned to the order.
+        `OrderEmulator` or the `ExecutionEngine` (depending on whether the order is emulated).
 
         Parameters
         ----------
@@ -757,48 +988,93 @@ cdef class Strategy(Actor):
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
-        if order.is_closed_c() or order.is_pending_cancel_c():
-            self.log.warning(
-                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
-            )
-            return  # Cannot send command
-
-        cdef OrderStatus order_status = order.status_c()
-
-        cdef OrderPendingCancel event
-        if not order.is_active_local_c():
-            # Generate and apply event
-            event = self._generate_order_pending_cancel(order)
-            try:
-                order.apply(event)
-                self.cache.update_order(order)
-            except InvalidStateTrigger as e:
-                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
-                return
-
-            # Publish event
-            self._msgbus.publish_c(
-                topic=f"events.order.{order.strategy_id.to_str()}",
-                msg=event,
-            )
-
-        cdef CancelOrder command = CancelOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
+        cdef CancelOrder command = self._create_cancel_order(
+            order=order,
             client_id=client_id,
         )
+        if command is None:
+            return
 
-        if order.is_emulated_c():
+        if order.is_emulated_c() or order.emulation_trigger != TriggerType.NO_TRIGGER:
             self._send_emulator_command(command)
         elif order.exec_algorithm_id is not None and order.is_active_local_c():
             self._send_algo_command(command, order.exec_algorithm_id)
         else:
             self._send_exec_command(command)
+
+    cpdef void cancel_orders(self, list orders, ClientId client_id = None):
+        """
+        Batch cancel the given list of orders with optional routing instructions.
+
+        For each order in the list, a `CancelOrder` command will be created and added to a
+        `BatchCancelOrders` command. This command is then sent to the `ExecutionEngine`.
+
+        Logs an error if the `orders` list contains local/emulated orders.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders to cancel.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+
+        Raises
+        ------
+        ValueError
+            If `orders` is empty.
+        TypeError
+            If `orders` contains a type other than `Order`.
+
+        """
+        Condition.not_empty(orders, "orders")
+        Condition.list_type(orders, Order, "orders")
+
+        cdef list cancels = []
+
+        cdef:
+            Order order
+            Order first = None
+            CancelOrder cancel
+        for order in orders:
+            if first is None:
+                first = order
+            else:
+                if first.instrument_id != order.instrument_id:
+                    self._log.error(
+                        "Cannot cancel all orders: instrument_id mismatch "
+                        f"{first.instrument_id} vs {order.instrument_id}.",
+                    )
+                    return
+                if order.is_emulated_c():
+                    self._log.error(
+                        "Cannot include emulated orders in a batch cancel."
+                    )
+                    return
+
+            cancel = self._create_cancel_order(
+                order=order,
+                client_id=client_id,
+            )
+            if cancel is None:
+                continue
+            cancels.append(cancel)
+
+        if not cancels:
+            self._log.warning("Cannot send `BatchCancelOrders`, no valid cancel commands.")
+            return
+
+        cdef command = BatchCancelOrders(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=first.instrument_id,
+            cancels=cancels,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
+        self._send_exec_command(command)
 
     cpdef void cancel_all_orders(
         self,
@@ -1030,6 +1306,118 @@ cdef class Strategy(Actor):
 
         self._send_exec_command(command)
 
+    cdef ModifyOrder _create_modify_order(
+        self,
+        Order order,
+        Quantity quantity = None,
+        Price price = None,
+        Price trigger_price = None,
+        ClientId client_id = None,
+    ):
+        cdef bint updating = False  # Set validation flag (must become true)
+
+        if quantity is not None and quantity != order.quantity:
+            updating = True
+
+        if price is not None:
+            Condition.true(
+                order.order_type in VALID_LIMIT_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
+            )
+            if price != order.price:
+                updating = True
+
+        if trigger_price is not None:
+            Condition.true(
+                order.order_type in VALID_STOP_ORDER_TYPES,
+                fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
+            )
+            if trigger_price != order.trigger_price:
+                updating = True
+
+        if not updating:
+            self.log.error(
+                "Cannot create command ModifyOrder: "
+                "quantity, price and trigger were either None "
+                "or the same as existing values.",
+            )
+            return None  # Cannot send command
+
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot create command ModifyOrder: "
+                f"state is {order.status_string_c()}, {order}.",
+            )
+            return None  # Cannot send command
+
+        cdef OrderPendingUpdate event
+        if not order.is_active_local_c():
+            # Generate and apply event
+            event = self._generate_order_pending_update(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return  # Cannot send command
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
+        return ModifyOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            quantity=quantity,
+            price=price,
+            trigger_price=trigger_price,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
+    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id = None):
+        if order.is_closed_c() or order.is_pending_cancel_c():
+            self.log.warning(
+                f"Cannot cancel order: state is {order.status_string_c()}, {order}.",
+            )
+            return None  # Cannot send command
+
+        cdef OrderStatus order_status = order.status_c()
+
+        cdef OrderPendingCancel event
+        if not order.is_active_local_c():
+            # Generate and apply event
+            event = self._generate_order_pending_cancel(order)
+            try:
+                order.apply(event)
+                self.cache.update_order(order)
+            except InvalidStateTrigger as e:
+                self._log.warning(f"InvalidStateTrigger: {e}, did not apply {event}")
+                return None  # Cannot send command
+
+            # Publish event
+            self._msgbus.publish_c(
+                topic=f"events.order.{order.strategy_id.to_str()}",
+                msg=event,
+            )
+
+        return CancelOrder(
+            trader_id=self.trader_id,
+            strategy_id=self.id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+            client_id=client_id,
+        )
+
     cpdef void cancel_gtd_expiry(self, Order order):
         """
         Cancel the managed GTD expiry for the given order.
@@ -1065,18 +1453,17 @@ cdef class Strategy(Actor):
         return timer_name in self._clock.timer_names
 
     cdef void _set_gtd_expiry(self, Order order):
-        self._log.info(
-            f"Setting managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
-            LogColor.BLUE,
-        )
         cdef str timer_name = self._get_gtd_expiry_timer_name(order.client_order_id)
         self._clock.set_time_alert_ns(
             name=timer_name,
             alert_time_ns=order.expire_time_ns,
             callback=self._expire_gtd_order,
         )
-        # For now, we flip this opt-in flag
-        self._manage_gtd_expiry = True
+
+        self._log.info(
+            f"Set managed GTD expiry timer for {order.client_order_id} @ {order.expire_time.isoformat()}.",
+            LogColor.BLUE,
+        )
 
     cpdef void _expire_gtd_order(self, TimeEvent event):
         cdef ClientOrderId client_order_id = ClientOrderId(event.to_str().partition(":")[2])
@@ -1094,219 +1481,6 @@ cdef class Strategy(Actor):
         self.cancel_order(order)
 
     # -- HANDLERS -------------------------------------------------------------------------------------
-
-    cpdef void handle_quote_tick(self, QuoteTick tick):
-        """
-        Handle the given quote tick.
-
-        If state is ``RUNNING`` then passes to `on_quote_tick`.
-
-        Parameters
-        ----------
-        tick : QuoteTick
-            The tick received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(tick, "tick")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(tick.instrument_id)
-        if indicators:
-            self._handle_indicators_for_quote(indicators, tick)
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_quote_tick(tick)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(tick)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_quote_ticks(self, list ticks):
-        """
-        Handle the given historical quote tick data by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[QuoteTick]
-            The ticks received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef QuoteTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <QuoteTick[{length}]> data for {instrument_id}.")
-        else:
-            self._log.warning("Received <QuoteTick[]> data with no ticks.")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_quotes.get(first.instrument_id)
-
-        cdef:
-            int i
-            QuoteTick tick
-        for i in range(length):
-            tick = ticks[i]
-            if indicators:
-                self._handle_indicators_for_quote(indicators, tick)
-            self.handle_historical_data(tick)
-
-    cpdef void handle_trade_tick(self, TradeTick tick):
-        """
-        Handle the given trade tick.
-
-        If state is ``RUNNING`` then passes to `on_trade_tick`.
-
-        Parameters
-        ----------
-        tick : TradeTick
-            The tick received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(tick, "tick")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(tick.instrument_id)
-        if indicators:
-            self._handle_indicators_for_trade(indicators, tick)
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_trade_tick(tick)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(tick)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_trade_ticks(self, list ticks):
-        """
-        Handle the given historical trade tick data by handling each tick individually.
-
-        Parameters
-        ----------
-        ticks : list[TradeTick]
-            The ticks received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(ticks, "ticks")  # Could be empty
-
-        cdef int length = len(ticks)
-        cdef TradeTick first = ticks[0] if length > 0 else None
-        cdef InstrumentId instrument_id = first.instrument_id if first is not None else None
-
-        if length > 0:
-            self._log.info(f"Received <TradeTick[{length}]> data for {instrument_id}.")
-        else:
-            self._log.warning("Received <TradeTick[]> data with no ticks.")
-            return
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_trades.get(first.instrument_id)
-
-        cdef:
-            int i
-            TradeTick tick
-        for i in range(length):
-            tick = ticks[i]
-            if indicators:
-                self._handle_indicators_for_trade(indicators, tick)
-            self.handle_historical_data(tick)
-
-    cpdef void handle_bar(self, Bar bar):
-        """
-        Handle the given bar data.
-
-        If state is ``RUNNING`` then passes to `on_bar`.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(bar, "bar")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(bar.bar_type)
-        if indicators:
-            self._handle_indicators_for_bar(indicators, bar)
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_bar(bar)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(bar)}", e)
-                raise
-
-    @cython.boundscheck(False)
-    @cython.wraparound(False)
-    cpdef void handle_bars(self, list bars):
-        """
-        Handle the given historical bar data by handling each bar individually.
-
-        Parameters
-        ----------
-        bars : list[Bar]
-            The bars to handle.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(bars, "bars")  # Can be empty
-
-        cdef int length = len(bars)
-        cdef Bar first = bars[0] if length > 0 else None
-        cdef Bar last = bars[length - 1] if length > 0 else None
-
-        if length > 0:
-            self._log.info(f"Received <Bar[{length}]> data for {first.bar_type}.")
-        else:
-            self._log.error(f"Received <Bar[{length}]> data for unknown bar type.")
-            return
-
-        if length > 0 and first.ts_init > last.ts_init:
-            raise RuntimeError(f"cannot handle <Bar[{length}]> data: incorrectly sorted")
-
-        # Update indicators
-        cdef list indicators = self._indicators_for_bars.get(first.bar_type)
-
-        cdef:
-            int i
-            Bar bar
-        for i in range(length):
-            bar = bars[i]
-            if indicators:
-                self._handle_indicators_for_bar(indicators, bar)
-            self.handle_historical_data(bar)
 
     cpdef void handle_event(self, Event event):
         """
@@ -1332,34 +1506,79 @@ cdef class Strategy(Actor):
             self.log.info(f"{RECV}{EVT} {event}.")
 
         cdef Order order
-        if self._manage_gtd_expiry and isinstance(event, OrderEvent):
+        if self.manage_gtd_expiry and isinstance(event, OrderEvent):
             order = self.cache.order(event.client_order_id)
             if order is not None and order.is_closed_c() and self._has_gtd_expiry_timer(order.client_order_id):
                 self.cancel_gtd_expiry(order)
 
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_event(event)
-            except Exception as e:
-                self.log.exception(f"Error on handling {repr(event)}", e)
-                raise
+        if self._fsm.state != ComponentState.RUNNING:
+            return
 
-# -- HANDLERS -------------------------------------------------------------------------------------
+        try:
+            # Send to specific event handler
+            if isinstance(event, OrderInitialized):
+                self.on_order_initialized(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderDenied):
+                self.on_order_denied(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderEmulated):
+                self.on_order_emulated(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderReleased):
+                self.on_order_released(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderSubmitted):
+                self.on_order_submitted(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderRejected):
+                self.on_order_rejected(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderAccepted):
+                self.on_order_accepted(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderCanceled):
+                self.on_order_canceled(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderExpired):
+                self.on_order_expired(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderTriggered):
+                self.on_order_triggered(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderPendingUpdate):
+                self.on_order_pending_update(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderPendingCancel):
+                self.on_order_pending_cancel(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderModifyRejected):
+                self.on_order_modify_rejected(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderCancelRejected):
+                self.on_order_cancel_rejected(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderUpdated):
+                self.on_order_updated(event)
+                self.on_order_event(event)
+            elif isinstance(event, OrderFilled):
+                self.on_order_filled(event)
+                self.on_order_event(event)
+            elif isinstance(event, PositionOpened):
+                self.on_position_opened(event)
+                self.on_position_event(event)
+            elif isinstance(event, PositionChanged):
+                self.on_position_changed(event)
+                self.on_position_event(event)
+            elif isinstance(event, PositionClosed):
+                self.on_position_closed(event)
+                self.on_position_event(event)
 
-    cdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_quote_tick(tick)
-
-    cdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_trade_tick(tick)
-
-    cdef void _handle_indicators_for_bar(self, list indicators, Bar bar):
-        cdef Indicator indicator
-        for indicator in indicators:
-            indicator.handle_bar(bar)
+            # Always send to general event handler
+            self.on_event(event)
+        except Exception as e:  # pragma: no cover
+            self.log.exception(f"Error on handling {repr(event)}", e)
+            raise
 
 # -- EVENTS ---------------------------------------------------------------------------------------
 

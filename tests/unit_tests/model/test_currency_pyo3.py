@@ -17,19 +17,14 @@ import pickle
 
 import pytest
 
-from nautilus_trader.model.currencies import AUD
-from nautilus_trader.model.currencies import BTC
-from nautilus_trader.model.currencies import ETH
-from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.enums import CurrencyType
-from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.core.nautilus_pyo3.model import Currency
+from nautilus_trader.core.nautilus_pyo3.model import CurrencyType
 
 
-AUDUSD_SIM = TestIdStubs.audusd_id()
-GBPUSD_SIM = TestIdStubs.gbpusd_id()
-
-pytestmark = pytest.mark.skip(reason="WIP")
+AUD = Currency.from_str("AUD")
+BTC = Currency.from_str("BTC")
+ETH = Currency.from_str("ETH")
+GBP = Currency.from_str("GBP")
 
 
 class TestCurrency:
@@ -190,15 +185,17 @@ class TestCurrency:
         assert result.currency_type == CurrencyType.FIAT
 
     def test_from_internal_map_when_unknown(self):
-        # Arrange, Act
-        result = Currency.from_internal_map("SOME_CURRENCY")
+        # Arrange, Act, Assert
+        result = Currency.from_str("SOME_CURRENCY")
 
         # Assert
-        assert result is None
+        assert result.code == "SOME_CURRENCY"
+        assert result.precision == 8
+        assert result.currency_type == CurrencyType.CRYPTO
 
     def test_from_internal_map_when_exists(self):
         # Arrange, Act
-        result = Currency.from_internal_map("AUD")
+        result = Currency.from_str("AUD")
 
         # Assert
         assert result.code == "AUD"
@@ -207,12 +204,10 @@ class TestCurrency:
         assert result.name == "Australian dollar"
         assert result.currency_type == CurrencyType.FIAT
 
-    def test_from_str_in_strict_mode_given_unknown_code_returns_none(self):
-        # Arrange, Act
-        result = Currency.from_str("SOME_CURRENCY", strict=True)
-
-        # Assert
-        assert result is None
+    def test_from_str_in_strict_mode_given_unknown_code_raises_value_error(self):
+        # Arrange, Act, Assert
+        with pytest.raises(ValueError):
+            Currency.from_str("SOME_CURRENCY", strict=True)
 
     def test_from_str_not_in_strict_mode_returns_crypto(self):
         # Arrange, Act
@@ -238,7 +233,7 @@ class TestCurrency:
 
     @pytest.mark.parametrize(
         ("string", "expected"),
-        [["AUD", True], ["ZZZ", False]],
+        [["AUD", True], ["BTC", False], ["XAG", False]],
     )
     def test_is_fiat(self, string, expected):
         # Arrange, Act
@@ -249,11 +244,22 @@ class TestCurrency:
 
     @pytest.mark.parametrize(
         ("string", "expected"),
-        [["BTC", True], ["ZZZ", False]],
+        [["BTC", True], ["AUD", False], ["XAG", False]],
     )
     def test_is_crypto(self, string, expected):
         # Arrange, Act
         result = Currency.is_crypto(string)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("string", "expected"),
+        [["BTC", False], ["AUD", False], ["XAG", True]],
+    )
+    def test_is_commodity_backed(self, string, expected):
+        # Arrange, Act
+        result = Currency.is_commodity_backed(string)
 
         # Assert
         assert result == expected

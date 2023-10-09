@@ -123,6 +123,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             logger=logger,
         )
 
+        # Configuration
         self._binance_account_type = account_type
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
         self._log.info(f"Account type: {self._binance_account_type.value}.", LogColor.BLUE)
@@ -266,7 +267,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(
                 "Cannot subscribe to order book deltas: "
                 "L3_MBO data is not published by Binance. "
-                "Valid book types are L1_TBBO, L2_MBP.",
+                "Valid book types are L1_MBP, L2_MBP.",
             )
             return
 
@@ -364,7 +365,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             symbol=bar_type.instrument_id.symbol.value,
             interval=interval.value,
         )
-        self._add_subscription_bars(bar_type)
 
     async def _unsubscribe(self, data_type: DataType) -> None:
         # Replace method in child class, for exchange specific data types.
@@ -383,16 +383,39 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         pass  # TODO: Unsubscribe from Binance if no other subscriptions
 
     async def _unsubscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        await self._ws_client.unsubscribe_ticker(instrument_id.symbol.value)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        await self._ws_client.unsubscribe_book_ticker(instrument_id.symbol.value)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        await self._ws_client.unsubscribe_trades(instrument_id.symbol.value)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
-        pass  # TODO: Unsubscribe from Binance if no other subscriptions
+        if not bar_type.spec.is_time_aggregated():
+            self._log.error(
+                f"Cannot unsubscribe from {bar_type}: only time bars are aggregated by Binance.",
+            )
+            return
+
+        resolution = self._enum_parser.parse_internal_bar_agg(bar_type.spec.aggregation)
+        if self._binance_account_type.is_futures and resolution == "s":
+            self._log.error(
+                f"Cannot unsubscribe from {bar_type}. ",
+                "Second interval bars are not aggregated by Binance Futures.",
+            )
+        try:
+            interval = BinanceKlineInterval(f"{bar_type.spec.step}{resolution}")
+        except ValueError:
+            self._log.error(
+                f"Bar interval {bar_type.spec.step}{resolution} not supported by Binance.",
+            )
+            return
+
+        await self._ws_client.unsubscribe_bars(
+            symbol=bar_type.instrument_id.symbol.value,
+            interval=interval.value,
+        )
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
@@ -558,6 +581,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # TODO(cs): Uncomment for development
         # self._log.info(str(raw), LogColor.CYAN)
         wrapper = self._decoder_data_msg_wrapper.decode(raw)
+        if not wrapper.stream:
+            # Control message response
+            return
         try:
             handled = False
             for handler in self._ws_handlers:

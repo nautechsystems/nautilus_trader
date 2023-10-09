@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from datetime import timedelta
 from decimal import Decimal
 
@@ -1246,7 +1245,7 @@ class TestTimeBarAggregator:
     )
     def test_aggregation_for_same_sec_and_minute_intervals(self, step, aggregation):
         # Arrange - prepare data
-        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
+        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
@@ -1273,7 +1272,7 @@ class TestTimeBarAggregator:
                 event.handle()
 
         # Assert
-        assert clock.timestamp_ns() == 1610064046674000128
+        assert clock.timestamp_ns() == 1610064046674000000
         assert aggregator.interval_ns == 1_000_000_000
         assert aggregator.next_close_ns == 1610064047000000000
         assert handler[0].open == Price.from_str("39432.99")
@@ -1286,7 +1285,7 @@ class TestTimeBarAggregator:
 
     def test_do_not_build_with_no_updates(self):
         # Arrange
-        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
+        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
@@ -1318,7 +1317,7 @@ class TestTimeBarAggregator:
 
     def test_timestamp_on_close_false_timestamps_ts_event_as_open(self):
         # Arrange
-        path = os.path.join(TEST_DATA_DIR, "binance-btcusdt-quotes.parquet")
+        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)

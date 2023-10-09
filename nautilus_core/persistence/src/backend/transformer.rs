@@ -19,7 +19,10 @@ use datafusion::arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
 };
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::data::{
+    bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
+    trade::TradeTick,
+};
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
@@ -29,12 +32,13 @@ use pyo3::{
 use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
 
 const ERROR_EMPTY_DATA: &str = "`data` was empty";
+const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
 #[pyclass]
 pub struct DataTransformer {}
 
 impl DataTransformer {
-    /// Transforms the given Python objects `data` into a vector of [`OrderBookDelta`] objects.
+    /// Transforms the given `data` Python objects into a vector of [`OrderBookDelta`] objects.
     fn pyobjects_to_order_book_deltas(
         py: Python<'_>,
         data: Vec<PyObject>,
@@ -43,33 +47,57 @@ impl DataTransformer {
             .into_iter()
             .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<OrderBookDelta>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&deltas) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(deltas)
     }
 
-    /// Transforms the given Python objects `data` into a vector of [`QuoteTick`] objects.
+    /// Transforms the given `data` Python objects into a vector of [`QuoteTick`] objects.
     fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
         let ticks: Vec<QuoteTick> = data
             .into_iter()
             .map(|obj| QuoteTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&ticks) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(ticks)
     }
 
-    /// Transforms the given Python objects `data` into a vector of [`TradeTick`] objects.
+    /// Transforms the given `data` Python objects into a vector of [`TradeTick`] objects.
     fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
         let ticks: Vec<TradeTick> = data
             .into_iter()
             .map(|obj| TradeTick::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&ticks) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(ticks)
     }
 
-    /// Transforms the given Python objects `data` into a vector of [`Bar`] objects.
+    /// Transforms the given `data` Python objects into a vector of [`Bar`] objects.
     fn pyobjects_to_bars(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<Bar>> {
         let bars: Vec<Bar> = data
             .into_iter()
             .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
             .collect::<PyResult<Vec<Bar>>>()?;
+
+        // Validate monotonically increasing
+        if !is_monotonically_increasing_by_init(&bars) {
+            return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+        }
+
         Ok(bars)
     }
 
@@ -136,7 +164,7 @@ impl DataTransformer {
 
         let data_type: String = data
             .first()
-            .unwrap() // SAFETY: already checked that `data` not empty above
+            .unwrap() // SAFETY: already checked that `data` not empty
             .as_ref(py)
             .getattr("__class__")?
             .getattr("__name__")?
@@ -175,7 +203,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty above
+        // SAFETY: already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = OrderBookDelta::get_metadata(
             &first.instrument_id,
@@ -208,7 +236,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty above
+        // SAFETY: already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = QuoteTick::get_metadata(
             &first.instrument_id,
@@ -241,7 +269,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty above
+        // SAFETY: already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = TradeTick::get_metadata(
             &first.instrument_id,
@@ -271,7 +299,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty above
+        // SAFETY: already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = Bar::get_metadata(
             &first.bar_type,

@@ -14,20 +14,33 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::{check_string_contains, check_valid_string};
-use pyo3::prelude::*;
+use nautilus_core::{
+    correctness::{check_string_contains, check_valid_string},
+    string::cstr_to_str,
+};
 use ustr::Ustr;
 
+/// Represents a valid account ID.
+///
+/// Must be correctly formatted with two valid strings either side of a hyphen '-'.
+/// It is expected an account ID is the name of the issuer with an account number
+/// separated by a hyphen.
+///
+/// Example: "IB-D02851908".
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct AccountId {
+    /// The account ID value.
     pub value: Ustr,
 }
 
@@ -79,8 +92,7 @@ impl From<&str> for AccountId {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    AccountId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    AccountId::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]
@@ -114,7 +126,7 @@ pub mod stubs {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
+    use std::ffi::{CStr, CString};
 
     use rstest::rstest;
 

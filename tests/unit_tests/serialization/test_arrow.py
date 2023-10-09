@@ -51,7 +51,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 CATALOG_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/unit_tests/persistence/data_catalog")
 
 
-def _reset(catalog: ParquetDataCatalog):
+def _reset(catalog: ParquetDataCatalog) -> None:
     """
     Cleanup resources before each test run.
     """
@@ -99,10 +99,10 @@ class TestArrowSerializer:
         self.order_cancelled = copy.copy(self.order_pending_cancel)
         self.order_cancelled.apply(TestEventStubs.order_canceled(self.order_pending_cancel))
 
-    def _test_serialization(self, obj: Any):
-        cls = type(obj)
+    def _test_serialization(self, obj: Any) -> bool:
+        data_cls = type(obj)
         serialized = ArrowSerializer.serialize(obj)
-        deserialized = ArrowSerializer.deserialize(cls, serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls, serialized)
 
         # Assert
         expected = obj
@@ -111,9 +111,9 @@ class TestArrowSerializer:
         # TODO - Can't compare rust vs python types?
         # assert deserialized == expected
         self.catalog.write_data([obj])
-        df = self.catalog.query(cls=cls)
+        df = self.catalog.query(data_cls=data_cls)
         assert len(df) in (1, 2)
-        nautilus = self.catalog.query(cls=cls, as_dataframe=False)[0]
+        nautilus = self.catalog.query(data_cls=data_cls, as_dataframe=False)[0]
         assert nautilus.ts_init == 0
         return True
 
@@ -125,16 +125,11 @@ class TestArrowSerializer:
             TestDataStubs.bar_5decimal(),
         ],
     )
-    @pytest.mark.skip(
-        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
-    )
     def test_serialize_and_deserialize_tick(self, tick):
         self._test_serialization(obj=tick)
 
-    @pytest.mark.skip(
-        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
-    )
     def test_serialize_and_deserialize_order_book_delta(self):
+        # Arrange
         delta = OrderBookDelta(
             instrument_id=TestIdStubs.audusd_id(),
             action=BookAction.CLEAR,
@@ -143,21 +138,23 @@ class TestArrowSerializer:
             ts_init=0,
         )
 
+        # Act
         serialized = ArrowSerializer.serialize(delta)
-        [deserialized] = ArrowSerializer.deserialize(cls=OrderBookDelta, batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=OrderBookDelta, batch=serialized)
 
         # Assert
         OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[delta],
         )
-        # TODO (cs) can't compare rust vs python types?
-        # assert str(deserialized) == str(expected)
         self.catalog.write_data([delta])
         deltas = self.catalog.order_book_deltas()
         assert len(deltas) == 1
+        assert isinstance(deltas[0], OrderBookDelta)
+        assert not isinstance(deserialized[0], OrderBookDelta)  # TODO: Legacy wrangler
 
     def test_serialize_and_deserialize_order_book_deltas(self):
+        # Arrange
         deltas = OrderBookDeltas(
             instrument_id=TestIdStubs.audusd_id(),
             deltas=[
@@ -196,14 +193,18 @@ class TestArrowSerializer:
             ],
         )
 
+        # Act
         serialized = ArrowSerializer.serialize(deltas)
-        deserialized = ArrowSerializer.deserialize(cls=OrderBookDeltas, batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=OrderBookDeltas, batch=serialized)
 
-        # Assert
-        # assert deserialized == deltas.deltas
         self.catalog.write_data(deserialized)
 
+        # Assert
+        assert len(deserialized) == 2
+        # assert len(self.catalog.order_book_deltas()) == 1
+
     def test_serialize_and_deserialize_order_book_deltas_grouped(self):
+        # Arrange
         kw = {
             "instrument_id": "AUD/USD.SIM",
             "ts_event": 0,
@@ -260,8 +261,9 @@ class TestArrowSerializer:
             deltas=[OrderBookDelta.from_dict({**kw, **d}) for d in deltas],
         )
 
+        # Act
         serialized = ArrowSerializer.serialize(deltas)
-        deserialized = ArrowSerializer.deserialize(cls=OrderBookDeltas, batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=OrderBookDeltas, batch=serialized)
 
         # Assert
         # assert deserialized == deltas.deltas # TODO - rust vs python types
@@ -274,10 +276,15 @@ class TestArrowSerializer:
         ]
 
     def test_serialize_and_deserialize_component_state_changed(self):
+        # Arrange
         event = TestEventStubs.component_state_changed()
 
+        # Act
         serialized = ArrowSerializer.serialize(event)
-        [deserialized] = ArrowSerializer.deserialize(cls=ComponentStateChanged, batch=serialized)
+        [deserialized] = ArrowSerializer.deserialize(
+            data_cls=ComponentStateChanged,
+            batch=serialized,
+        )
 
         # Assert
         assert deserialized == event
@@ -285,10 +292,12 @@ class TestArrowSerializer:
         self.catalog.write_data([event])
 
     def test_serialize_and_deserialize_trading_state_changed(self):
+        # Arrange
         event = TestEventStubs.trading_state_changed()
 
+        # Act
         serialized = ArrowSerializer.serialize(event)
-        [deserialized] = ArrowSerializer.deserialize(cls=TradingStateChanged, batch=serialized)
+        [deserialized] = ArrowSerializer.deserialize(data_cls=TradingStateChanged, batch=serialized)
 
         # Assert
         assert deserialized == event
@@ -303,8 +312,9 @@ class TestArrowSerializer:
         ],
     )
     def test_serialize_and_deserialize_account_state(self, event):
-        serialized = ArrowSerializer.serialize(event, cls=AccountState)
-        [deserialized] = ArrowSerializer.deserialize(cls=AccountState, batch=serialized)
+        # Arrange, Act
+        serialized = ArrowSerializer.serialize(event, data_cls=AccountState)
+        [deserialized] = ArrowSerializer.deserialize(data_cls=AccountState, batch=serialized)
 
         # Assert
         assert deserialized == event
@@ -348,7 +358,7 @@ class TestArrowSerializer:
         ],
     )
     def test_serialize_and_deserialize_order_events_post_accepted(self, event_func):
-        # Act
+        # Arrange, Act, Assert
         event = event_func(order=self.order_accepted)
         assert self._test_serialization(obj=event)
 
@@ -359,7 +369,7 @@ class TestArrowSerializer:
         ],
     )
     def test_serialize_and_deserialize_order_events_filled(self, event_func):
-        # Act
+        # Arrange, Act, Assert
         event = event_func(order=self.order_accepted, instrument=AUDUSD_SIM)
         self._test_serialization(obj=event)
 
@@ -445,7 +455,7 @@ class TestArrowSerializer:
     def test_serialize_and_deserialize_instruments(self, instrument):
         serialized = ArrowSerializer.serialize(instrument)
         assert serialized
-        deserialized = ArrowSerializer.deserialize(cls=type(instrument), batch=serialized)
+        deserialized = ArrowSerializer.deserialize(data_cls=type(instrument), batch=serialized)
 
         # Assert
         assert deserialized == [instrument]
@@ -454,9 +464,6 @@ class TestArrowSerializer:
         assert len(df) == 1
 
     @pytest.mark.parametrize("obj", nautilus_objects())
-    @pytest.mark.skip(
-        reason="pyo3_runtime.PanicException: Failed new_query with error Object Store error",
-    )
     def test_serialize_and_deserialize_all(self, obj):
-        # Arrange, Act
+        # Arrange, Act, Assert
         assert self._test_serialization(obj)

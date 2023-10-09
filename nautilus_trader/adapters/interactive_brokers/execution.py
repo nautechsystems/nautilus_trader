@@ -287,7 +287,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_status = map_order_status[ib_order.order_state.status]
         ts_init = self._clock.timestamp_ns()
         price = (
-            None if ib_order.lmtPrice == UNSET_DOUBLE else Price.from_str(str(ib_order.lmtPrice))
+            None if ib_order.lmtPrice == UNSET_DOUBLE else instrument.make_price(ib_order.lmtPrice)
         )
         expire_time = (
             timestring_to_timestamp(ib_order.goodTillDate) if ib_order.tif == "GTD" else None
@@ -314,7 +314,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             # contingency_type=,
             expire_time=expire_time,
             price=price,
-            trigger_price=Price.from_str(str(ib_order.auxPrice)),
+            trigger_price=instrument.make_price(ib_order.auxPrice),
             trigger_type=TriggerType.BID_ASK,
             # limit_offset=,
             # trailing_offset=,
@@ -648,10 +648,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 continue
             if self._account_summary_tags - set(self._account_summary[currency].keys()) == set():
                 self._log.info(f"{self._account_summary}", LogColor.GREEN)
-                free = self._account_summary[currency]["FullAvailableFunds"]
+                # free = self._account_summary[currency]["FullAvailableFunds"]
                 locked = self._account_summary[currency]["FullMaintMarginReq"]
-                # total = self._account_summary[currency]["NetLiquidation"]
-                total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
+                total = self._account_summary[currency]["NetLiquidation"]
+                if total - locked < locked:
+                    total = 400000  # TODO: Bug; Cannot recalculate balance when no current balance
                 free = total - locked
                 account_balance = AccountBalance(
                     total=Money(total, Currency.from_str(currency)),
@@ -732,6 +733,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
 
+    async def handle_order_status_report(self, ib_order: IBOrder):
+        report = await self._parse_ib_order_to_order_status_report(ib_order)
+        self._send_order_status_report(report)
+
     def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState):
         if not order.orderRef:
             self._log.warning(
@@ -739,10 +744,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
         if not (nautilus_order := self._cache.order(ClientOrderId(order_ref))):
-            # report = await self._parse_ib_order_to_order_status_report(order)
-            self._log.warning(
-                "Placeholder to claim external Orders during runtime using OrderStatusReport.",
-            )
+            self.create_task(self.handle_order_status_report(order))
             return
 
         if order.whatIf and order_state.status == "PreSubmitted":

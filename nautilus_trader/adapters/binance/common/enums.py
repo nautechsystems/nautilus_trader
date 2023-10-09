@@ -454,6 +454,7 @@ class BinanceErrorCode(Enum):
     EXCEED_MAXIMUM_MODIFY_ORDER_LIMIT = -5026
     SAME_ORDER = -5027
     ME_RECVWINDOW_REJECT = -5028
+    INVALID_GOOD_TILL_DATE = -5040
 
 
 class BinanceEnumParser:

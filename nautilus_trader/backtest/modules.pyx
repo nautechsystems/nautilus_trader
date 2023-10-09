@@ -24,6 +24,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.data cimport Data
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AssetClass
 from nautilus_trader.model.enums_c cimport PriceType
@@ -68,6 +69,10 @@ cdef class SimulationModule(Actor):
         Condition.not_none(exchange, "exchange")
 
         self.exchange = exchange
+
+    cpdef void pre_process(self, Data data):
+        """Abstract method (implement in subclass)."""
+        pass
 
     cpdef void process(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""

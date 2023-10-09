@@ -12,10 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import asyncio
 from unittest.mock import patch
 
 import pytest
+import pytest_asyncio
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
 from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
@@ -24,6 +25,7 @@ from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.model.events.account import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import Venue
@@ -88,6 +90,7 @@ def data_client(
         loop=event_loop,
         name=venue.value,
         config=BetfairDataClientConfig(
+            account_currency="GBP",
             username="username",
             password="password",
             app_key="app_key",
@@ -147,7 +150,7 @@ def exec_client(
             username="username",
             password="password",
             app_key="app_key",
-            base_currency="GBP",
+            account_currency="GBP",
         ),
         msgbus=msgbus,
         cache=cache,
@@ -169,3 +172,54 @@ def data_catalog() -> ParquetDataCatalog:
     catalog: ParquetDataCatalog = data_catalog_setup(protocol="memory", path="/")
     load_betfair_data(catalog)
     return catalog
+
+
+@pytest.fixture()
+def parser() -> BetfairParser:
+    return BetfairParser(currency="GBP")
+
+
+async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def write():
+        writer.write(b"connected\r\n")
+        while True:
+            writer.write(b"hello\r\n")
+            await asyncio.sleep(0.1)
+
+    asyncio.get_event_loop().create_task(write())
+
+    while True:
+        req = await reader.readline()
+        if req.strip() == b"close":
+            writer.close()
+
+
+@pytest_asyncio.fixture()
+async def socket_server():
+    server = await asyncio.start_server(handle_echo, "127.0.0.1", 0)
+    addr = server.sockets[0].getsockname()
+    async with server:
+        await server.start_serving()
+        yield addr
+
+
+@pytest_asyncio.fixture(name="closing_socket_server")
+async def fixture_closing_socket_server():
+    async def handler(_, writer: asyncio.StreamWriter):
+        async def write():
+            print("SERVER CONNECTING")
+            writer.write(b"connected\r\n")
+            await asyncio.sleep(0.5)
+            await writer.drain()
+            writer.close()
+            await writer.wait_closed()
+            writer._transport.abort()
+            await asyncio.sleep(0.1)
+            print("Server closed")
+
+        await write()
+
+    server = await asyncio.start_server(handler, "127.0.0.1", 0)
+    addr = server.sockets[0].getsockname()
+    async with server:
+        yield addr

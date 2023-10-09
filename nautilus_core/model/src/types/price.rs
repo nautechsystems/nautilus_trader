@@ -35,6 +35,7 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::{Deserialize, Deserializer, Serialize};
+use thousands::Separable;
 
 use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
@@ -52,7 +53,7 @@ pub const ERROR_PRICE: Price = Price {
 #[derive(Copy, Clone, Eq, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Price {
     pub raw: i64,
@@ -70,10 +71,9 @@ impl Price {
         })
     }
 
-    #[must_use]
-    pub fn from_raw(raw: i64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
-        Self { raw, precision }
+    pub fn from_raw(raw: i64, precision: u8) -> Result<Self> {
+        check_fixed_precision(precision)?;
+        Ok(Self { raw, precision })
     }
 
     #[must_use]
@@ -115,6 +115,11 @@ impl Price {
         // Scale down the raw value to match the precision
         let rescaled_raw = self.raw / i64::pow(10, (FIXED_PRECISION - self.precision) as u32);
         Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
+
+    #[must_use]
+    pub fn to_formatted_string(&self) -> String {
+        format!("{self}").separate_with_underscores()
     }
 }
 
@@ -598,8 +603,7 @@ impl Price {
     #[staticmethod]
     #[pyo3(name = "from_raw")]
     fn py_from_raw(raw: i64, precision: u8) -> PyResult<Price> {
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Price::from_raw(raw, precision))
+        Price::from_raw(raw, precision).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
@@ -640,6 +644,11 @@ impl Price {
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()
     }
+
+    #[pyo3(name = "to_formatted_str")]
+    fn py_to_formatted_str(&self) -> String {
+        self.to_formatted_string()
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -655,7 +664,7 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
-    Price::from_raw(raw, precision)
+    Price::from_raw(raw, precision).unwrap()
 }
 
 #[cfg(feature = "ffi")]
@@ -700,7 +709,7 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Price::from_raw(1, 10);
+        let _ = Price::from_raw(1, 10).unwrap();
     }
 
     #[rstest]

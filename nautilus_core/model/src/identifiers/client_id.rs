@@ -14,20 +14,24 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
+    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
+use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
 use ustr::Ustr;
 
+/// Represents a system client ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct ClientId {
+    /// The client ID value.
     pub value: Ustr,
 }
 
@@ -70,8 +74,7 @@ impl From<&str> for ClientId {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn client_id_new(ptr: *const c_char) -> ClientId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    ClientId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+    ClientId::from(cstr_to_str(ptr))
 }
 
 #[cfg(feature = "ffi")]
@@ -105,6 +108,8 @@ pub mod stubs {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::ffi::CStr;
+
     use rstest::rstest;
 
     use super::{stubs::*, *};

@@ -28,19 +28,17 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data import DataType
-from nautilus_trader.model.data import GenericData
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.persistence.streaming.engine import StreamingEngine
-from nautilus_trader.persistence.streaming.engine import extract_generic_data_client_ids
-from nautilus_trader.persistence.streaming.engine import groupby_datatype
+from nautilus_trader.persistence.catalog.types import CatalogDataResult
 
 
 class BacktestNode:
@@ -137,7 +135,7 @@ class BacktestNode:
 
         return results
 
-    def _validate_configs(self, configs: list[BacktestRunConfig]):
+    def _validate_configs(self, configs: list[BacktestRunConfig]) -> None:
         venue_ids: list[Venue] = []
         for config in configs:
             venue_ids += [Venue(c.name) for c in config.venues]
@@ -204,15 +202,15 @@ class BacktestNode:
 
         return engine
 
-    def _load_engine_data(self, engine: BacktestEngine, data) -> None:
-        if is_nautilus_class(data["type"]):
-            engine.add_data(data=data["data"])
+    def _load_engine_data(self, engine: BacktestEngine, result: CatalogDataResult) -> None:
+        if is_nautilus_class(result.data_cls):
+            engine.add_data(data=result.data)
         else:
-            if "client_id" not in data:
+            if not result.client_id:
                 raise ValueError(
-                    f"Data type {data['type']} not setup for loading into backtest engine",
+                    f"Data type {result.data_cls} not setup for loading into `BacktestEngine`",
                 )
-            engine.add_data(data=data["data"], client_id=data["client_id"])
+            engine.add_data(data=result.data, client_id=result.client_id)
 
     def _run(
         self,
@@ -256,25 +254,41 @@ class BacktestNode:
         data_configs: list[BacktestDataConfig],
         batch_size_bytes: int,
     ) -> None:
-        data_client_ids = extract_generic_data_client_ids(data_configs=data_configs)
+        # Create session for entire stream
+        session = DataBackendSession(chunk_size=batch_size_bytes)
 
-        streaming_engine = StreamingEngine(
-            data_configs=data_configs,
-            target_batch_size_bytes=batch_size_bytes,
-        )
+        # Add query for all data configs
+        for config in data_configs:
+            catalog = config.catalog()
+            if config.data_type == Bar:
+                # TODO: Temporary hack - improve bars config and decide implementation with `filter_expr`
+                assert config.instrument_id, "No `instrument_id` for Bar data config"
+                assert config.bar_spec, "No `bar_spec` for Bar data config"
+                bar_type = config.instrument_id + "-" + config.bar_spec + "-EXTERNAL"
+            else:
+                bar_type = None
+            session = catalog.backend_session(
+                data_cls=config.data_type,
+                instrument_ids=[config.instrument_id]
+                if config.instrument_id and not bar_type
+                else [],
+                bar_types=[bar_type] if bar_type else [],
+                start=config.start_time,
+                end=config.end_time,
+                session=session,
+            )
 
-        for batch in streaming_engine:
-            engine.clear_data()
-            grouped = groupby_datatype(batch)
-            for data in grouped:
-                if data["type"] in data_client_ids:
-                    # Generic data - manually re-add client_id as it gets lost in the streaming join
-                    data.update({"client_id": ClientId(data_client_ids[data["type"]])})
-                    data["data"] = [
-                        GenericData(data_type=DataType(data["type"]), data=d) for d in data["data"]
-                    ]
-                self._load_engine_data(engine=engine, data=data)
-            engine.run(run_config_id=run_config_id, streaming=True)
+        # Stream data
+        for chunk in session.to_query_result():
+            engine.add_data(
+                data=capsule_to_list(chunk),
+                validate=False,  # Cannot validate mixed type stream
+                sort=False,  # Already sorted from kmerge
+            )
+            engine.run(
+                run_config_id=run_config_id,
+                streaming=True,
+            )
 
         engine.end()
         engine.dispose()
@@ -291,21 +305,21 @@ class BacktestNode:
             engine._log.info(
                 f"Reading {config.data_type} data for instrument={config.instrument_id}.",
             )
-            d = config.load()
-            if config.instrument_id and d["instrument"] is None:
+            result: CatalogDataResult = config.load()
+            if config.instrument_id and result.instrument is None:
                 engine._log.warning(
-                    f"Requested instrument_id={d['instrument']} from data_config not found in catalog",
+                    f"Requested instrument_id={result.instrument} from data_config not found in catalog",
                 )
                 continue
-            if not d["data"]:
+            if not result.data:
                 engine._log.warning(f"No data found for {config}")
                 continue
 
             t1 = pd.Timestamp.now()
             engine._log.info(
-                f"Read {len(d['data']):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
+                f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
             )
-            self._load_engine_data(engine=engine, data=d)
+            self._load_engine_data(engine=engine, result=result)
             t2 = pd.Timestamp.now()
             engine._log.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 

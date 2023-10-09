@@ -13,24 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod ema;
-
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::{prelude::*, types::PyModule, Python};
+
+pub mod average;
+pub mod indicator;
+pub mod momentum;
+pub mod ratio;
+
+#[cfg(test)]
+mod stubs;
 
 /// Loaded as nautilus_pyo3.indicators
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<ema::ExponentialMovingAverage>()?;
+    // average
+    m.add_class::<average::ema::ExponentialMovingAverage>()?;
+    m.add_class::<average::sma::SimpleMovingAverage>()?;
+    m.add_class::<average::ama::AdaptiveMovingAverage>()?;
+    m.add_class::<average::dema::DoubleExponentialMovingAverage>()?;
+    // ratio
+    m.add_class::<ratio::efficiency_ratio::EfficiencyRatio>()?;
+    // momentum
+    m.add_class::<momentum::rsi::RelativeStrengthIndex>()?;
     Ok(())
-}
-
-pub trait Indicator {
-    fn name(&self) -> String;
-    fn has_inputs(&self) -> bool;
-    fn is_initialized(&self) -> bool;
-    fn handle_quote_tick(&mut self, tick: &QuoteTick);
-    fn handle_trade_tick(&mut self, tick: &TradeTick);
-    fn handle_bar(&mut self, bar: &Bar);
-    fn reset(&mut self);
 }

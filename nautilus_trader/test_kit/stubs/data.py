@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import json
 from datetime import datetime
-from typing import Any, Optional
+from os import PathLike
+from typing import Any
 
 import pandas as pd
 import pytz
@@ -28,13 +31,13 @@ from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import InstrumentClose
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import VenueStatusUpdate
+from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
@@ -63,7 +66,7 @@ UNIX_EPOCH = datetime(1970, 1, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
 class TestDataStubs:
     @staticmethod
-    def ticker(instrument_id: Optional[InstrumentId] = None) -> Ticker:
+    def ticker(instrument_id: InstrumentId | None = None) -> Ticker:
         return Ticker(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             ts_event=0,
@@ -72,7 +75,7 @@ class TestDataStubs:
 
     @staticmethod
     def quote_tick(
-        instrument: Optional[Instrument] = None,
+        instrument: Instrument | None = None,
         bid_price: float = 1.0,
         ask_price: float = 1.0,
         bid_size: float = 100_000.0,
@@ -93,7 +96,7 @@ class TestDataStubs:
 
     @staticmethod
     def trade_tick(
-        instrument: Optional[Instrument] = None,
+        instrument: Instrument | None = None,
         price: float = 1.0,
         size: float = 100_000,
         aggressor_side: AggressorSide = AggressorSide.BUYER,
@@ -236,7 +239,7 @@ class TestDataStubs:
 
     @staticmethod
     def order_book(
-        instrument_id: Optional[InstrumentId] = None,
+        instrument_id: InstrumentId | None = None,
         book_type: BookType = BookType.L2_MBP,
         bid_price: float = 10.0,
         ask_price: float = 15.0,
@@ -268,7 +271,7 @@ class TestDataStubs:
 
     @staticmethod
     def order_book_snapshot(
-        instrument_id: Optional[InstrumentId] = None,
+        instrument_id: InstrumentId | None = None,
         bid_price: float = 10.0,
         ask_price: float = 15.0,
         bid_size: float = 10.0,
@@ -312,20 +315,22 @@ class TestDataStubs:
 
     @staticmethod
     def order_book_delta(
-        instrument_id: Optional[InstrumentId] = None,
-        order: Optional[BookOrder] = None,
+        instrument_id: InstrumentId | None = None,
+        order: BookOrder | None = None,
+        ts_event: int = 0,
+        ts_init: int = 0,
     ) -> OrderBookDeltas:
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
             action=BookAction.UPDATE,
             order=order or TestDataStubs.order(),
-            ts_event=0,
-            ts_init=0,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
     @staticmethod
     def order_book_delta_clear(
-        instrument_id: Optional[InstrumentId] = None,
+        instrument_id: InstrumentId | None = None,
     ) -> OrderBookDeltas:
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
@@ -337,8 +342,8 @@ class TestDataStubs:
 
     @staticmethod
     def order_book_deltas(
-        instrument_id: Optional[InstrumentId] = None,
-        deltas: Optional[list[OrderBookDelta]] = None,
+        instrument_id: InstrumentId | None = None,
+        deltas: list[OrderBookDelta] | None = None,
     ) -> OrderBookDeltas:
         return OrderBookDeltas(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
@@ -349,8 +354,8 @@ class TestDataStubs:
     def make_book(
         instrument: Instrument,
         book_type: BookType,
-        bids: Optional[list[tuple]] = None,
-        asks: Optional[list[tuple]] = None,
+        bids: list[tuple] | None = None,
+        asks: list[tuple] | None = None,
     ) -> OrderBook:
         book = OrderBook(
             instrument_id=instrument.id,
@@ -382,11 +387,11 @@ class TestDataStubs:
         return book
 
     @staticmethod
-    def venue_status_update(
-        venue: Optional[Venue] = None,
-        status: Optional[MarketStatus] = None,
-    ) -> VenueStatusUpdate:
-        return VenueStatusUpdate(
+    def venue_status(
+        venue: Venue | None = None,
+        status: MarketStatus | None = None,
+    ) -> VenueStatus:
+        return VenueStatus(
             venue=venue or Venue("BINANCE"),
             status=status or MarketStatus.OPEN,
             ts_event=0,
@@ -394,11 +399,11 @@ class TestDataStubs:
         )
 
     @staticmethod
-    def instrument_status_update(
-        instrument_id: Optional[InstrumentId] = None,
-        status: Optional[MarketStatus] = None,
-    ) -> InstrumentStatusUpdate:
-        return InstrumentStatusUpdate(
+    def instrument_status(
+        instrument_id: InstrumentId | None = None,
+        status: MarketStatus | None = None,
+    ) -> InstrumentStatus:
+        return InstrumentStatus(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
             status=status or MarketStatus.PAUSE,
             ts_event=0,
@@ -425,7 +430,7 @@ class TestDataStubs:
         return updates
 
     @staticmethod
-    def l2_feed(filename: str) -> list:
+    def l2_feed(filename: PathLike[str] | str) -> list:
         def parse_line(d):
             if "status" in d:
                 return {}
@@ -467,7 +472,7 @@ class TestDataStubs:
         return [parse_line(line) for line in json.loads(open(filename).read())]
 
     @staticmethod
-    def l3_feed(filename: str) -> list[dict[str, Any]]:
+    def l3_feed(filename: PathLike[str] | str) -> list[dict[str, Any]]:
         def parser(data):
             parsed = data
             if not isinstance(parsed, list):

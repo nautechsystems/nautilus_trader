@@ -26,6 +26,7 @@ from aiohttp.test_utils import TestServer
 
 async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     async def write():
+        writer.write(b"connected\r\n")
         while True:
             writer.write(b"hello\r\n")
             await asyncio.sleep(0.1)
@@ -34,7 +35,7 @@ async def handle_echo(reader: asyncio.StreamReader, writer: asyncio.StreamWriter
 
     while True:
         req = await reader.readline()
-        if req == b"CLOSE_STREAM":
+        if req.strip() == b"close":
             writer.close()
 
 
@@ -51,7 +52,7 @@ async def socket_server():
 async def fixture_closing_socket_server():
     async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         async def write():
-            writer.write(b"hello\r\n")
+            writer.write(b"connected\r\n")
             await asyncio.sleep(0.1)
             await writer.drain()
             writer.close()

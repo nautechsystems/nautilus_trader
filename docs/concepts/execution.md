@@ -20,6 +20,7 @@ methods. It also provides methods for managing orders and trade execution:
 - `submit_order_list(...)`
 - `modify_order(...)`
 - `cancel_order(...)`
+- `cancel_orders(...)`
 - `cancel_all_orders(...)`
 - `close_position(...)`
 - `close_all_positions(...)`
@@ -40,13 +41,13 @@ individual order parameters (as explained below).
 
 An `OrderFactory` is provided on the base class for every `Strategy` as a convenience, reducing
 the amount of boilerplate required to create different `Order` objects (although these objects
-can still be initialized directly with the `Order.__init__` constructor if the trader prefers).
+can still be initialized directly with the `Order.__init__(...)` constructor if the trader prefers).
 
 The component an order flows to when submitted for execution depends on the following:
 
-- If an `emulation_trigger` is specified, the order will first be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified, the order will first be sent to the relevant `ExecAlgorithm` (assuming it exists and has been registered correctly)
-- Otherwise, the order is sent to the `RiskEngine`
+- If an `emulation_trigger` is specified, the order will _firstly_ be sent to the `OrderEmulator`
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the order will _firstly_ be sent to the relevant `ExecAlgorithm` (assuming it exists and has been registered correctly)
+- Otherwise, the order will _firstly_ be sent to the `RiskEngine`
 
 The following examples show method implementations for a `Strategy`.
 

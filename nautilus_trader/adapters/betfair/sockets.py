@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import asyncio
 import itertools
 from typing import Callable, Optional
@@ -22,6 +23,7 @@ from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3.network import SocketClient
+from nautilus_trader.core.nautilus_pyo3.network import SocketConfig
 
 
 HOST = "stream-api.betfair.com"
@@ -30,6 +32,7 @@ PORT = 443
 CRLF = b"\r\n"
 ENCODING = "utf-8"
 UNIQUE_ID = itertools.count()
+USE_SSL = True
 
 
 class BetfairStreamClient:
@@ -53,13 +56,13 @@ class BetfairStreamClient:
         self.host = host or HOST
         self.port = port or PORT
         self.crlf = crlf or CRLF
+        self.use_ssl = USE_SSL
         self.encoding = encoding or ENCODING
         self._client: Optional[SocketClient] = None
         self.unique_id = next(UNIQUE_ID)
         self.is_connected: bool = False
         self.disconnecting: bool = False
         self._loop = asyncio.get_event_loop()
-        self._watch_stream_task: Optional[asyncio.Task] = None
 
     async def connect(self):
         if not self._http_client.session_token:
@@ -70,53 +73,53 @@ class BetfairStreamClient:
             return
 
         self._log.info("Connecting betfair socket client..")
-        self._client = await SocketClient.connect(
+        config = SocketConfig(
             url=f"{self.host}:{self.port}",
             handler=self.handler,
-            ssl=True,
+            ssl=self.use_ssl,
             suffix=self.crlf,
         )
-
+        self._client = await SocketClient.connect(
+            config,
+            None,
+            self.post_reconnection,
+            None,
+            # TODO - waiting for async handling
+            # self.post_connection,
+            # self.post_reconnection,
+            # self.post_disconnection,
+        )
         self._log.debug("Running post connect")
         await self.post_connection()
 
         self.is_connected = True
         self._log.info("Connected.")
 
-    async def post_connection(self):
-        """
-        Actions to be performed post connection.
-        """
-        self._watch_stream_task = self._loop.create_task(
-            self.watch_stream(),
-            name="watch_stream",
-        )
-
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
         self.disconnecting = True
-        self._client.close()
+        self._client.disconnect()
+
+        self._log.debug("Running post disconnect")
         await self.post_disconnection()
+
         self.is_connected = False
         self._log.info("Disconnected.")
+
+    async def post_connection(self) -> None:
+        """
+        Actions to be performed post connection.
+        """
+
+    def post_reconnection(self) -> None:
+        """
+        Actions to be performed post connection.
+        """
 
     async def post_disconnection(self) -> None:
         """
         Actions to be performed post disconnection.
         """
-        # Override to implement additional disconnection related behavior
-        # (canceling ping tasks etc.).
-        self._watch_stream_task.cancel()
-        try:
-            await self._watch_stream_task
-        except asyncio.CancelledError:
-            return
-
-    async def reconnect(self):
-        self._log.info("Triggering reconnect..")
-        await self.disconnect()
-        await self.connect()
-        self._log.info("Reconnected.")
 
     async def send(self, message: bytes):
         self._log.debug(f"[SEND] {message.decode()}")
@@ -130,21 +133,6 @@ class BetfairStreamClient:
             "appKey": self._http_client.app_key,
             "session": self._http_client.session_token,
         }
-
-    # TODO - remove when we get socket reconnect in rust.
-    async def watch_stream(self) -> None:
-        """
-        Ensure socket stream is connected.
-        """
-        while True:
-            try:
-                if self.disconnecting:
-                    return
-                if not self.is_connected:
-                    await self.connect()
-                await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                return
 
 
 class BetfairOrderStreamClient(BetfairStreamClient):
@@ -186,6 +174,9 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         await self.send(msgspec.json.encode(self.auth_message()))
         await self.send(msgspec.json.encode(subscribe_msg))
 
+    def post_reconnection(self):
+        self._loop.create_task(self.post_connection())
+
 
 class BetfairMarketStreamClient(BetfairStreamClient):
     """
@@ -226,6 +217,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         subscribe_book_updates=True,
         subscribe_trade_updates=True,
         subscribe_market_definitions=True,
+        subscribe_ticker=True,
         subscribe_bsp_updates=True,
         subscribe_bsp_projected=True,
     ):
@@ -265,6 +257,8 @@ class BetfairMarketStreamClient(BetfairStreamClient):
             data_fields.append("EX_ALL_OFFERS")
         if subscribe_trade_updates:
             data_fields.append("EX_TRADED")
+        if subscribe_ticker:
+            data_fields.extend(["EX_TRADED_VOL", "EX_LTP"])
         if subscribe_market_definitions:
             data_fields.append("EX_MARKET_DEF")
         if subscribe_bsp_updates:
@@ -288,3 +282,6 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     async def post_connection(self):
         await super().post_connection()
         await self.send(msgspec.json.encode(self.auth_message()))
+
+    def post_reconnection(self):
+        self._loop.create_task(self.post_connection())
