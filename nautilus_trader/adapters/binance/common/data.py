@@ -22,6 +22,7 @@ import pandas as pd
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
+from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceAggregatedTradeMsg
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestickMsg
@@ -34,6 +35,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.common.types import BinanceTicker
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -181,6 +183,17 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
+        # Retry logic (hard coded for now)
+        self._max_retries: int = 3
+        self._retry_delay: float = 1.0
+        self._retry_errors: set[BinanceErrorCode] = {
+            BinanceErrorCode.DISCONNECTED,
+            BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
+            BinanceErrorCode.TIMEOUT,
+            BinanceErrorCode.INVALID_TIMESTAMP,
+            BinanceErrorCode.ME_RECVWINDOW_REJECT,
+        }
+
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
@@ -189,17 +202,33 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._update_instruments_task = self.create_task(self._update_instruments())
 
     async def _update_instruments(self) -> None:
-        try:
+        while True:
+            retries = 0
             while True:
-                self._log.debug(
-                    f"Scheduled `update_instruments` to run in "
-                    f"{self._update_instrument_interval}s.",
-                )
-                await asyncio.sleep(self._update_instrument_interval)
-                await self._instrument_provider.load_all_async()
-                self._send_all_instruments_to_data_engine()
-        except asyncio.CancelledError:
-            self._log.debug("`update_instruments` task was canceled.")
+                try:
+                    self._log.debug(
+                        f"Scheduled `update_instruments` to run in "
+                        f"{self._update_instrument_interval}s.",
+                    )
+                    await asyncio.sleep(self._update_instrument_interval)
+                    await self._instrument_provider.load_all_async()
+                    self._send_all_instruments_to_data_engine()
+                except BinanceError as e:
+                    error_code = BinanceErrorCode(e.message["code"])
+                    retries += 1
+
+                    if not self._should_retry(error_code, retries):
+                        self._log.error(f"Error updating instruments: {e}")
+                        break
+
+                    self._log.warning(
+                        f"{error_code.name}: retrying update instruments "
+                        f"{retries}/{self._max_retries} in {self._retry_delay}s ...",
+                    )
+                    await asyncio.sleep(self._retry_delay)
+                except asyncio.CancelledError:
+                    self._log.debug("`update_instruments` task was canceled.")
+                    return
 
     async def _disconnect(self) -> None:
         # Cancel update instruments task
@@ -209,6 +238,15 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._update_instruments_task = None
 
         await self._ws_client.disconnect()
+
+    def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
+        if (
+            error_code not in self._retry_errors
+            or not self._max_retries
+            or retries > self._max_retries
+        ):
+            return False
+        return True
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
