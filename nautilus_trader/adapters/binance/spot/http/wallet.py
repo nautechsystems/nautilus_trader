@@ -74,7 +74,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         symbol: Optional[BinanceSymbol] = None
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
+    async def get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         if parameters.symbol is not None:
@@ -122,7 +122,7 @@ class BinanceSpotWalletHttpAPI:
         symbol: Optional[str] = None,
         recv_window: Optional[str] = None,
     ) -> list[BinanceSpotTradeFee]:
-        fees = await self._endpoint_spot_trade_fee._get(
+        fees = await self._endpoint_spot_trade_fee.get(
             parameters=self._endpoint_spot_trade_fee.GetParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol) if symbol is not None else None,
