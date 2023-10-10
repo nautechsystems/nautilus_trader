@@ -75,7 +75,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceFuturesCommissionRate:
+    async def get(self, parameters: GetParameters) -> BinanceFuturesCommissionRate:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -130,7 +130,7 @@ class BinanceFuturesWalletHttpAPI:
         """
         Get Futures commission rates for a given symbol.
         """
-        rate = await self._endpoint_futures_commission_rate._get(
+        rate = await self._endpoint_futures_commission_rate.get(
             parameters=self._endpoint_futures_commission_rate.GetParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),

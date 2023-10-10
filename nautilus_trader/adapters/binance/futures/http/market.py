@@ -54,7 +54,7 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BinanceFuturesExchangeInfo)
 
-    async def _get(self) -> BinanceFuturesExchangeInfo:
+    async def get(self) -> BinanceFuturesExchangeInfo:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, None)
         return self._get_resp_decoder.decode(raw)
@@ -97,4 +97,4 @@ class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
         """
         Retrieve Binance Futures exchange information.
         """
-        return await self._endpoint_futures_exchange_info._get()
+        return await self._endpoint_futures_exchange_info.get()
