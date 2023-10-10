@@ -1,17 +1,18 @@
 name: build-wheels
 
-# Build Linux wheels for NautilusTrader
+# Build Linux wheels on successful completion of the `coverage` workflow on the `develop` branch
 
 on:
   workflow_run:
     workflows:
-      - build
+      - coverage
     branches: [develop]
     types:
       - completed
 
 jobs:
-  build:
+  build-wheels:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:

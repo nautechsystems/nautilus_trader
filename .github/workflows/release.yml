@@ -1,6 +1,6 @@
 name: release
 
-# Release NautilusTrader on successful completion of the `build` workflow
+# Release on successful completion of the `build` workflow on the `master` branch
 
 on:
   workflow_run:
