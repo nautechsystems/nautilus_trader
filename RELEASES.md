@@ -17,6 +17,7 @@ This will be the final release with support for Python 3.9.
 - Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
 - Implemented Binance `WebSocketClient` live subscribe and unsubscribe
+- Implemented `BinanceCommonDataClient` retries for `update_instruments`
 - Decythonized `Trader`
 
 ### Breaking Changes
