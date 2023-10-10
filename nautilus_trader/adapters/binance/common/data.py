@@ -213,6 +213,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     await asyncio.sleep(self._update_instrument_interval)
                     await self._instrument_provider.load_all_async()
                     self._send_all_instruments_to_data_engine()
+                    break
                 except BinanceError as e:
                     error_code = BinanceErrorCode(e.message["code"])
                     retries += 1
