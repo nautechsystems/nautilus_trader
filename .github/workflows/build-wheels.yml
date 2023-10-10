@@ -1,24 +1,21 @@
 name: build-wheels
 
 # Build Linux wheels on successful completion of the `coverage` workflow on the `develop` branch
+# Temporarily build wheels on every push to `develop` branch
 
 on:
-  workflow_run:
-    workflows:
-      - coverage
+  push:
     branches: [develop]
-    types:
-      - completed
 
 jobs:
   build-wheels:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    # if: ${{ github.event.workflow_run.conclusion == 'success' }}
     strategy:
       fail-fast: false
       matrix:
         arch: [x64]
         os: [ubuntu-latest]
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
