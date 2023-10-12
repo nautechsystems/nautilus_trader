@@ -4,7 +4,8 @@ name: docker
 
 on:
   push:
-    branches: [master, develop]
+    # branches: [master, develop]
+    branches: [test-docker]  # Temporarily disable for testing
 
 jobs:
   build-docker-images:
