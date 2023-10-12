@@ -80,7 +80,7 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "^23.9.1"
 docformatter = "^1.7.5"
-mypy = "^1.5.1"
+mypy = "^1.6.0"
 pre-commit = "^3.4.0"
 ruff = "^0.0.292"
 types-pytz = "^2023.3"
