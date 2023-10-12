@@ -1,6 +1,6 @@
-# Guides
+# Tutorials
 
-Welcome to the guides for the NautilusTrader platform! We hope these guides will be a helpful 
+Welcome to the tutorials for the NautilusTrader platform! We hope these will be a helpful 
 resource as you explore the different features and capabilities of the platform.
 
 To get started, you can take a look at the table of contents on the left-hand side of the page. 
@@ -24,5 +24,5 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
    :titlesonly:
    :hidden:
    
-   backtest_example.md
+   backtest_high_level.md
 ```

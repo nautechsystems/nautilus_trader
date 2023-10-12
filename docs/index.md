@@ -110,7 +110,7 @@ does not need to have Rust installed to run NautilusTrader. In the future as mor
 
    getting_started/index.md
    concepts/index.md
-   guides/index.md
+   tutorials/index.md
    integrations/index.md
    api_reference/index.md
    developer_guide/index.md

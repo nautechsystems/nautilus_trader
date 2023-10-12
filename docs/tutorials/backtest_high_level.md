@@ -1,6 +1,6 @@
-# Complete Backtest Example
+# Backtest (High-level API)
 
-This example runs through how to load raw data (external to Nautilus) into the data catalog, through to a single 'one-shot' backtest run.
+This tutorial runs through how to load raw data (external to Nautilus) into the data catalog, through to a single 'one-shot' backtest run.
 
 ## Imports
 

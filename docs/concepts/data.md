@@ -3,20 +3,20 @@
 The NautilusTrader platform defines a range of built-in data types crafted specifically to represent 
 a trading domain:
 
-- `OrderBookDelta` (L1/L2/L3): Most granular order book updates
-- `OrderBookDeltas` (L1/L2/L3): Bundles multiple order book deltas
-- `QuoteTick`: Top-of-book best bid and ask prices and sizes
-- `TradeTick`: A single trade/match event between counterparties
-- `Bar`: OHLCV data aggregated using a specific method
-- `Ticker`: General base class for a symbol ticker
-- `Instrument`: General base class for a tradable instrument
-- `VenueStatus`: A venue level status event
-- `InstrumentStatus`: An instrument level status event
-- `InstrumentClose`: An instrument closing price
+- `OrderBookDelta` (L1/L2/L3) - Most granular order book updates
+- `OrderBookDeltas` (L1/L2/L3) - Bundles multiple order book deltas
+- `QuoteTick` - Top-of-book best bid and ask prices and sizes
+- `TradeTick` - A single trade/match event between counterparties
+- `Bar` - OHLCV data aggregated using a specific method
+- `Ticker` - General base class for a symbol ticker
+- `Instrument` - General base class for a tradable instrument
+- `VenueStatus` - A venue level status event
+- `InstrumentStatus` - An instrument level status event
+- `InstrumentClose` - An instrument closing price
 
 Each of these data types inherits from `Data`, which defines two fields:
-- `ts_event`: The UNIX timestamp (nanoseconds) when the data event occurred
-- `ts_init`: The UNIX timestamp (nanoseconds) when the object was initialized
+- `ts_event` - The UNIX timestamp (nanoseconds) when the data event occurred
+- `ts_init` - The UNIX timestamp (nanoseconds) when the object was initialized
 
 This inheritance ensures chronological data ordering, vital for backtesting, while also enhancing analytics.
 
