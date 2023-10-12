@@ -25,8 +25,8 @@ Log level (`LogLevel`) values include:
 - 'WARNING' or 'WRN'
 - 'ERROR' or 'ERR'
 
-```{tip}
-See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
+```{note}
+See the `LoggingConfig` [API Reference](../api_reference/config.md#LoggingConfig) for further details.
 ```
 
 Logging can be configured in the following ways:

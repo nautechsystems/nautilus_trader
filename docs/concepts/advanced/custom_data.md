@@ -1,4 +1,4 @@
-# Custom/Generic data
+# Custom/Generic Data
 Due to the modular nature of the Nautilus design, it is possible to set up systems 
 with very flexible data streams, including custom user defined data types. This
 guide covers some possible use cases for this functionality.

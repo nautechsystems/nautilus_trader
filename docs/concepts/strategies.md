@@ -27,6 +27,10 @@ The main capabilities of a strategy include:
 - Accessing the portfolio
 - Creating and managing orders
 
+```{note}
+See the `Strategy` [API reference](/docs/api_reference/trading#Strategy) for a complete list of available methods.
+```
+
 ## Implementation
 Since a trading strategy is a class which inherits from `Strategy`, you must define
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
@@ -52,7 +56,7 @@ handler to react to a range of related events (using switch type logic). The cal
 These handlers are triggered by lifecycle state changes of the `Strategy`. It's recommended to:
 
 - Use the `on_start` method to initialize your strategy (e.g., fetch instruments, subscribe to data)
-- Use the `on_stop` method for cleanup tasks (e.g., unsubscribe from data)
+- Use the `on_stop` method for cleanup tasks (e.g., cancel open orders, close open positions, unsubscribe from data)
 
 ```python
 def on_start(self) -> None:
@@ -89,7 +93,7 @@ def on_data(self, data: Data) -> None:  # Generic data passed to this handler
 #### Order management
 
 Handlers in this category are triggered by events related to orders.
-`OrderEvent` type messages are passed to handlers in this sequence:
+`OrderEvent` type messages are passed to handlers in the following sequence:
 
 1. Specific handler (e.g., `on_order_accepted`, `on_order_rejected`, etc.)
 2. `on_order_event(...)`
@@ -118,7 +122,7 @@ def on_order_event(self, event: OrderEvent) -> None:  # All order event messages
 #### Position management
 
 Handlers in this category are triggered by events related to positions.
-`PositionEvent` type messages are passed to handlers in this sequence:
+`PositionEvent` type messages are passed to handlers in the following sequence:
 
 1. Specific handler (e.g., `on_position_opened`, `on_position_changed`, etc.)
 2. `on_position_event(...)`
@@ -139,6 +143,75 @@ which no other specific handler exists.
 ```python
 def on_event(self, event: Event) -> None:
 ```
+
+### Clock and timers
+
+Strategies have access to a comprehensive `Clock` which provides a number of methods for creating
+different timestamps, as well as setting time alerts or timers.
+
+```{note}
+See the `Clock` [API reference](/docs/api_reference/common.md#Clock) for a complete list of available methods.
+```
+
+#### Current timestamps
+
+While there are multiple ways to obtain current timestamps, here are two commonly used methods as examples:
+
+- **UTC Timestamp:** This method returns a timezone-aware (UTC) timestamp.
+```python
+now: pd.Timestamp = self.clock.utc_now()
+```
+
+- **Unix Nanoseconds:** This method provides the current timestamp in nanoseconds since the UNIX epoch.
+```python
+unix_nanos: int = self.clock.timestamp_ns()
+```
+
+#### Time alerts
+
+Time alerts can be set which will result in a `TimeEvent` being dispatched to the `on_event` handler at the
+specified alert time. In a live context, this might be slightly delayed by a few microseconds.
+
+This example sets a time alert to trigger one minute from the current time:
+```python
+self.clock.set_alert_time(
+    name="MyTimeAlert1",
+    alert_time=self.clock.utc_now() + pd.Timedelta(minutes=1),
+)
+```
+
+#### Timers
+
+Continuous timers can be setup which will generate `TimeEvent`s at regular intervals until expired
+or canceled.
+
+This example sets a timer to fire once per minute, starting immediately:
+```python
+self.clock.set_timer(
+    name="MyTimer1",
+    interval=pd.Timedelta(minutes=1),
+)
+```
+
+### Trading commands
+
+NautilusTrader offers a comprehensive suite of trading commands, enabling granular order management 
+tailored for algorithmic trading. These commands are essential for executing strategies, managing risk, 
+and ensuring seamless interaction with various trading venues. In the following sections, we will 
+delve into the specifics of each command and its use cases.
+
+#### Managed GTD expiry
+
+It's possible for the strategy to manage expiry for orders with a time in force of GTD (_Good 'till Date_).
+This may be desirable if the exchange/broker does not support this time in force option, or for any
+reason you prefer the strategy to manage this.
+
+To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
+a time in force of GTD, the strategy will automatically start an internal time alert.
+Once the internal GTD time alert is reached, the order will be canceled (if not already closed).
+
+Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
+`managed_gtd_expiry` you should set `use_gtd=False` for your execution client config.
 
 ## Configuration
 
@@ -219,15 +292,3 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
 ```
 
-### Managed GTD expiry
-
-It's possible for the strategy to manage expiry for orders with a time in force of GTD (_Good 'till Date_).
-This may be desirable if the exchange/broker does not support this time in force option, or for any
-reason you prefer the strategy to manage this.
-
-To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
-a time in force of GTD, the strategy will automatically start an internal time alert.
-Once the internal GTD time alert is reached, the order will be canceled (if not already closed).
-
-Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
-`managed_gtd_expiry` you should set `use_gtd=False` for your execution client config.

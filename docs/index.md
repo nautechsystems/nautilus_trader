@@ -113,5 +113,19 @@ does not need to have Rust installed to run NautilusTrader. In the future as mor
    guides/index.md
    integrations/index.md
    api_reference/index.md
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: Rust API Reference
+
+   /core/index.html
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+   :titlesonly:
+   :hidden:
+
    developer_guide/index.md
 ```

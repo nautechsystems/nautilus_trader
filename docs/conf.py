@@ -87,7 +87,12 @@ html_theme_options = {
         {
             "href": "/api_reference/index",
             "internal": True,
-            "title": "API Reference",
+            "title": "Python API Reference",
+        },
+        {
+            "href": "/core/index.html",
+            "internal": True,
+            "title": "Rust API Reference",
         },
         {
             "href": "/integrations/index",
