@@ -55,7 +55,7 @@ pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsIni
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
-/// a Vec of data by types that implement [`DecodeFromRecordBatch`].
+/// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
 #[pyclass]
 pub struct DataBackendSession {
     session_ctx: SessionContext,

@@ -99,7 +99,7 @@ Handlers in this category are triggered by events related to orders.
 2. `on_order_event(...)`
 3. `on_event(...)`
 
-```{python}
+```python
 def on_order_initialized(self, event: OrderInitialized) -> None:
 def on_order_denied(self, event: OrderDenied) -> None:
 def on_order_emulated(self, event: OrderEmulated) -> None:
