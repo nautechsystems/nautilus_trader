@@ -16,15 +16,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v1
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
-        uses: docker/login-action@v1
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -37,7 +39,7 @@ jobs:
       - name: Build nautilus_trader image (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
         id: docker_build_trader_develop
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
@@ -50,7 +52,7 @@ jobs:
       - name: Build nautilus_trader image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         id: docker_build_trader_latest
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           file: ".docker/nautilus_trader.dockerfile"
           push: true
@@ -63,7 +65,7 @@ jobs:
       - name: Build jupyterlab image (develop)
         if: ${{ steps.branch-name.outputs.current_branch == 'develop' }}
         id: docker_build_jupyterlab_develop
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           file: ".docker/jupyterlab.dockerfile"
           push: true
@@ -78,7 +80,7 @@ jobs:
       - name: Build jupyterlab image (latest)
         if: ${{ steps.branch-name.outputs.current_branch == 'master' }}
         id: docker_build_jupyterlab_latest
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v5
         with:
           file: ".docker/jupyterlab.dockerfile"
           push: true
