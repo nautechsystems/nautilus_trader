@@ -1,4 +1,4 @@
-# Synthetic instruments
+# Synthetic Instruments
 
 The platform supports the definition of customized synthetic instruments. 
 These instruments can generate synthetic quote and trade ticks, which are beneficial for:

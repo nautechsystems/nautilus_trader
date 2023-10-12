@@ -72,11 +72,8 @@ It's possible to query for emulated orders through the following `Cache` methods
 
 See the full [API reference](../../api_reference/cache) for additional details.
 
-You can also query order objects directly in Python:
+You can also query order objects directly:
 - `order.is_emulated`
-
-Or through the C API if in Cython:
-- `order.is_emulated_c()`
 
 If either of these return `False`, then the order has been _released_ from the
 `OrderEmulator`, and so is no longer considered an emulated order.
@@ -90,5 +87,3 @@ on the `Cache` which is made for the job.
 ## Persisted emulated orders
 If a running system either crashes or shuts down with active emulated orders, then
 they will be reloaded inside the `OrderEmulator` from any configured cache database.
-It should be remembered that any custom `position_id` originally assigned to the
-submit order command will be lost (as per the above warning).
