@@ -79,14 +79,6 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.common.queue
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
 .. automodule:: nautilus_trader.common.throttler
    :show-inheritance:
    :inherited-members:
