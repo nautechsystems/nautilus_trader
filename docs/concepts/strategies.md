@@ -28,7 +28,7 @@ The main capabilities of a strategy include:
 - Creating and managing orders
 
 ```{note}
-See the `Strategy` [API reference](/docs/api_reference/trading#Strategy) for a complete list of available methods.
+See the `Strategy` [API reference](../docs/api_reference/trading#Strategy) for a complete list of available methods.
 ```
 
 ## Implementation
