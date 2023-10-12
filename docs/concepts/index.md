@@ -7,14 +7,15 @@
    :titlesonly:
    :hidden:
    
+   overview.md
    architecture.md
    strategies.md
    instruments.md
+   orders.md
+   execution.md
    backtesting.md
    data.md
    adapters.md
-   orders.md
-   execution.md
    logging.md
    advanced/index.md
 ```
@@ -31,113 +32,27 @@ doc tests in the near future to help with this.
 The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
 ```
 
-There are three main use cases for this software package:
+## Guides
 
-- Backtesting trading systems with historical data (`backtest`)
-- Testing trading systems with real-time data and simulated execution (`sandbox`)
-- Deploying trading systems with real-time data and executing on venues with real (or paper) accounts (`live`)
+Explore the core concepts of NautilusTrader through these guides:
 
-The projects codebase provides a framework for implementing the software layer of systems which achieve the above. You will find
-the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
-be built using the sandbox adapter.
+### Fundamentals
+- [Overview](/docs/concepts/overview.md)
+- [Architecture](/docs/concepts/architecture.md)
+- [Strategies](/docs/concepts/strategies.md)
 
-```{note}
-All examples will utilize these default system implementations.
-```
+### Trading essentials
+- [Instruments](/docs/concepts/instruments.md)
+- [Orders](/docs/concepts/orders.md)
+- [Execution](/docs/concepts/execution.md)
+- [Backtesting](/docs/concepts/backtesting.md)
 
-```{note}
-We consider trading strategies to be subcomponents of end-to-end trading systems, these systems
-include the application and infrastructure layers.
-```
+### Data & integrations
+- [Data](/docs/concepts/data.md)
+- [Adapters](/docs/concepts/adapters.md)
 
-## Distributed
-The platform is designed to be easily integrated into a larger distributed system. 
-To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
+### Utilities
+- [Logging](/docs/concepts/logging.md)
 
-## Common core
-The common system core is utilized by both the backtest, sandbox, and live trading nodes. 
-User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
-
-## Backtesting
-Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
-a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the data through the system with nanosecond resolution.
-
-## Live trading
-A `TradingNode` can ingest data and events from multiple data and execution clients. 
-Live deployments can use both demo/paper trading accounts, or real accounts.
-
-For live trading, a `TradingNode` can ingest data and events from multiple data and execution clients. 
-The platform supports both demo/paper trading accounts and real accounts. High performance can be achieved by running
-asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
-with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
-
-```{tip}
-Python 3.11 offers improved run-time performance, while Python 3.12 additionally offers improved asyncio performance.
-```
-
-## Domain model
-The platform features a comprehensive trading domain model that includes various value types such as 
-`Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects, 
-which are used to aggregate multiple events to determine state.
-
-### Data Types
-The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.
-- `OrderBookDelta` (L1/L2/L3)
-- `Ticker`
-- `QuoteTick`
-- `TradeTick`
-- `Bar`
-- `Instrument`
-- `VenueStatus`
-- `InstrumentStatus`
-- `InstrumentClose`
-
-The following PriceType options can be used for bar aggregations;
-- `BID`
-- `ASK`
-- `MID`
-- `LAST`
-
-The following BarAggregation options are possible;
-- `MILLISECOND`
-- `SECOND`
-- `MINUTE`
-- `HOUR`
-- `DAY`
-- `WEEK`
-- `MONTH`
-- `TICK`
-- `VOLUME`
-- `VALUE` (a.k.a Dollar bars)
-- `TICK_IMBALANCE`
-- `TICK_RUNS`
-- `VOLUME_IMBALANCE`
-- `VOLUME_RUNS`
-- `VALUE_IMBALANCE`
-- `VALUE_RUNS`
-
-The price types and bar aggregations can be combined with step sizes >= 1 in any way through a `BarSpecification`. 
-This enables maximum flexibility and now allows alternative bars to be aggregated for live trading.
-
-### Account Types
-The following account types are available for both live and backtest environments;
-
-- `Cash` single-currency (base currency)
-- `Cash` multi-currency
-- `Margin` single-currency (base currency)
-- `Margin` multi-currency
-- `Betting` single-currency
-
-### Order Types
-The following order types are available (when possible on a venue);
-
-- `MARKET`
-- `LIMIT`
-- `STOP_MARKET`
-- `STOP_LIMIT`
-- `MARKET_TO_LIMIT`
-- `MARKET_IF_TOUCHED`
-- `LIMIT_IF_TOUCHED`
-- `TRAILING_STOP_MARKET`
-- `TRAILING_STOP_LIMIT`
-
+### Advanced topics
+- [Advanced](/docs/concepts/advanced/index.md)

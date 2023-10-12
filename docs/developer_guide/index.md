@@ -43,3 +43,12 @@ types and how these map to their corresponding `PyObject` types.
    testing.md
    packaged_data.md
 ```
+
+## Contents
+
+- [Environment Setup](/docs/developer_guide/environment_setup.md)
+- [Coding Standards](/docs/developer_guide/coding_standards.md)
+- [Cython](/docs/developer_guide/cython.md)
+- [Rust](/docs/developer_guide/rust.md)
+- [Testing](/docs/developer_guide/testing.md)
+- [Packaged Data](/docs/developer_guide/packaged_data.md)
