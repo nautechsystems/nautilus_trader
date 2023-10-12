@@ -37,22 +37,22 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
 Explore the core concepts of NautilusTrader through these guides:
 
 ### Fundamentals
-- [Overview](docs/concepts/overview.md)
-- [Architecture](docs/concepts/architecture.md)
-- [Strategies](docs/concepts/strategies.md)
+- [Overview](overview.md)
+- [Architecture](architecture.md)
+- [Strategies](strategies.md)
 
 ### Trading essentials
-- [Instruments](docs/concepts/instruments.md)
-- [Orders](docs/concepts/orders.md)
-- [Execution](docs/concepts/execution.md)
+- [Instruments](instruments.md)
+- [Orders](orders.md)
+- [Execution](execution.md)
 - [Backtesting](backtesting.md)
 
 ### Data & integrations
-- [Data](docs/concepts/data.md)
-- [Adapters](docs/concepts/adapters.md)
+- [Data](data.md)
+- [Adapters](adapters.md)
 
 ### Utilities
-- [Logging](docs/concepts/logging.md)
+- [Logging](logging.md)
 
 ### Advanced topics
-- [Advanced](docs/concepts/advanced/index.md)
+- [Advanced](advanced/index.md)

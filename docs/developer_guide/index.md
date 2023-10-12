@@ -46,9 +46,9 @@ types and how these map to their corresponding `PyObject` types.
 
 ## Contents
 
-- [Environment Setup](/docs/developer_guide/environment_setup.md)
-- [Coding Standards](/docs/developer_guide/coding_standards.md)
-- [Cython](/docs/developer_guide/cython.md)
-- [Rust](/docs/developer_guide/rust.md)
-- [Testing](/docs/developer_guide/testing.md)
-- [Packaged Data](/docs/developer_guide/packaged_data.md)
+- [Environment Setup](environment_setup.md)
+- [Coding Standards](coding_standards.md)
+- [Cython](cython.md)
+- [Rust](rust.md)
+- [Testing](testing.md)
+- [Packaged Data](packaged_data.md)
