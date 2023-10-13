@@ -42,6 +42,8 @@ This will be the final release with support for Python 3.9.
 - Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
 - Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed Binance Futures fee rates for backtesting
+- Fixed `Timer` missing condition check for non-positive intervals
+- Fixed `Condition` checks involving integers, was previously defaulting to 32-bit and overflowing
 
 ---
 
