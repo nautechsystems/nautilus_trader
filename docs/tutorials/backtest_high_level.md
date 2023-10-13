@@ -1,4 +1,4 @@
-# Backtest (High-level API)
+# Backtest (high-level API)
 
 This tutorial runs through how to load raw data (external to Nautilus) into the data catalog, through to a single 'one-shot' backtest run.
 
@@ -27,7 +27,7 @@ from nautilus_trader.test_kit.providers import CSVTickDataLoader
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 ```
 
-## Getting some raw data
+## Getting raw data
 
 As a once off before we start the notebook - we need to download some sample data for backtesting.
 

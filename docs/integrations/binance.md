@@ -42,13 +42,13 @@ E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within t
 ## Order types
 |                        | Spot                            | Margin                          | Futures           |
 |------------------------|---------------------------------|---------------------------------|-------------------|
-| `MARKET`               | Yes                             | Yes                             | Yes               |
-| `LIMIT`                | Yes                             | Yes                             | Yes               |
-| `STOP_MARKET`          | No                              | Yes                             | Yes               |
-| `STOP_LIMIT`           | Yes (`post-only` not available) | Yes (`post-only` not available) | Yes               |
-| `MARKET_IF_TOUCHED`    | No                              | No                              | Yes               |
-| `LIMIT_IF_TOUCHED`     | Yes                             | Yes                             | Yes               |
-| `TRAILING_STOP_MARKET` | No                              | No                              | Yes               |
+| `MARKET`               | ✓                               | ✓                               | ✓                 |
+| `LIMIT`                | ✓                               | ✓                               | ✓                 |
+| `STOP_MARKET`          |                                 | ✓                               | ✓                 |
+| `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
+| `MARKET_IF_TOUCHED`    |                                 |                                 | ✓                 |
+| `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
+| `TRAILING_STOP_MARKET` |                                 |                                 | ✓                 |
 
 ### Trailing stops
 Binance use the concept of an *activation price* for trailing stops ([see docs](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292)).

@@ -53,15 +53,15 @@ trading venue.
 ## Order types
 |                        | Can emulate | Released type |
 |------------------------|-------------|---------------|
-| `MARKET`               | No          | -             |
-| `MARKET_TO_LIMIT`      | No          | -             |
-| `LIMIT`                | Yes         | `MARKET`      |
-| `STOP_MARKET`          | Yes         | `MARKET`      |
-| `STOP_LIMIT`           | Yes         | `LIMIT`       |
-| `MARKET_IF_TOUCHED`    | Yes         | `MARKET`      |
-| `LIMIT_IF_TOUCHED`     | Yes         | `LIMIT`       |
-| `TRAILING_STOP_MARKET` | Yes         | `MARKET`      |
-| `TRAILING_STOP_LIMIT`  | Yes         | `LIMIT`       |
+| `MARKET`               |             | -             |
+| `MARKET_TO_LIMIT`      |             | -             |
+| `LIMIT`                | ✓           | `MARKET`      |
+| `STOP_MARKET`          | ✓           | `MARKET`      |
+| `STOP_LIMIT`           | ✓           | `LIMIT`       |
+| `MARKET_IF_TOUCHED`    | ✓           | `MARKET`      |
+| `LIMIT_IF_TOUCHED`     | ✓           | `LIMIT`       |
+| `TRAILING_STOP_MARKET` | ✓           | `MARKET`      |
+| `TRAILING_STOP_LIMIT`  | ✓           | `LIMIT`       |
 
 ## Querying
 When writing trading strategies, it may be necessary to know the state of emulated orders in the system.
