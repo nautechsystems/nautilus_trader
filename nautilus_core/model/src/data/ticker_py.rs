@@ -18,7 +18,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
+use nautilus_core::{
+    python::to_pyvalue_err,
+    serialization::{from_dict_pyo3, Serializable},
+    time::UnixNanos,
+};
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
 use super::ticker::Ticker;
@@ -90,14 +94,7 @@ impl Ticker {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Extract to JSON string
-        let json_str: String = PyModule::import(py, "json")?
-            .call_method("dumps", (values,), None)?
-            .extract()?;
-
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
-        Ok(instance)
+        from_dict_pyo3(py, values)
     }
 
     #[staticmethod]

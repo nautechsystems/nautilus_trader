@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::{Deserialize, Serialize};
+use pyo3::{prelude::*, types::PyDict, Py, PyErr, Python};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+
+use crate::python::to_pyvalue_err;
 
 /// Represents types which are serializable for JSON and `MsgPack` specifications.
 pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
@@ -36,4 +39,19 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     fn as_msgpack_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
         rmp_serde::to_vec_named(self)
     }
+}
+
+#[cfg(feature = "python")]
+pub fn from_dict_pyo3<T>(py: Python<'_>, values: Py<PyDict>) -> Result<T, PyErr>
+where
+    T: DeserializeOwned,
+{
+    // Extract to JSON string
+    let json_str: String = PyModule::import(py, "json")?
+        .call_method("dumps", (values,), None)?
+        .extract()?;
+
+    // Deserialize to object
+    let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
+    Ok(instance)
 }
