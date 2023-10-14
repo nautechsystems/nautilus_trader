@@ -71,6 +71,8 @@ wrangler = QuoteTickDataWrangler(EURUSD)
 ticks = wrangler.process(df)
 ```
 
+See the [Loading data](../concepts/data) guide for more details.
+
 Next, we simply instantiate a `ParquetDataCatalog` (passing in a directory where to store the data, by default we will just use the current directory).
 We can then write the instrument and tick data to the catalog, it should only take a couple of minutes to load the data (depending on how many months).
 
@@ -107,6 +109,8 @@ end =  dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz="UTC"))
 
 catalog.quote_ticks(instrument_ids=[EURUSD.id.value], start=start, end=end)
 ```
+
+See the [Data catalog](../concepts/data) guide for more details.
 
 ## Configuring backtests
 
