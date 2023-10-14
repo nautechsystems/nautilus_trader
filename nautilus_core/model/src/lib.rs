@@ -31,6 +31,7 @@ pub mod types;
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // data
     m.add_class::<data::bar::BarSpecification>()?;
     m.add_class::<data::bar::BarType>()?;
     m.add_class::<data::bar::Bar>()?;
@@ -38,6 +39,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<data::delta::OrderBookDelta>()?;
     m.add_class::<data::quote::QuoteTick>()?;
     m.add_class::<data::trade::TradeTick>()?;
+    // enums
     m.add_class::<enums::AccountType>()?;
     m.add_class::<enums::AggregationSource>()?;
     m.add_class::<enums::AggressorSide>()?;
@@ -62,6 +64,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::TradingState>()?;
     m.add_class::<enums::TrailingOffsetType>()?;
     m.add_class::<enums::TriggerType>()?;
+    // identifiers
     m.add_class::<identifiers::account_id::AccountId>()?;
     m.add_class::<identifiers::client_id::ClientId>()?;
     m.add_class::<identifiers::client_order_id::ClientOrderId>()?;
@@ -76,6 +79,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<identifiers::trader_id::TraderId>()?;
     m.add_class::<identifiers::venue::Venue>()?;
     m.add_class::<identifiers::venue_order_id::VenueOrderId>()?;
+    // orders
     m.add_class::<orders::limit::LimitOrder>()?;
     m.add_class::<orders::limit_if_touched::LimitIfTouchedOrder>()?;
     m.add_class::<orders::market::MarketOrder>()?;
@@ -88,5 +92,13 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<types::money::Money>()?;
     m.add_class::<types::price::Price>()?;
     m.add_class::<types::quantity::Quantity>()?;
+    // instruments
+    m.add_class::<instruments::crypto_future::CryptoFuture>()?;
+    m.add_class::<instruments::crypto_perpetual::CryptoPerpetual>()?;
+    m.add_class::<instruments::currency_pair::CurrencyPair>()?;
+    m.add_class::<instruments::equity::Equity>()?;
+    m.add_class::<instruments::futures_contract::FuturesContract>()?;
+    m.add_class::<instruments::options_contract::OptionsContract>()?;
+    m.add_class::<instruments::synthetic::SyntheticInstrument>()?;
     Ok(())
 }
