@@ -1,6 +1,6 @@
 # Tutorials
 
-Welcome to the tutorials for the NautilusTrader platform! We hope these will be a helpful 
+Welcome to the tutorials for NautilusTrader! We hope these will be a helpful 
 resource as you explore the different features and capabilities of the platform.
 
 To get started, you can take a look at the table of contents on the left-hand side of the page. 
@@ -26,3 +26,7 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
    
    backtest_high_level.md
 ```
+
+## [Backtest (high-level API)](backtest_high_level.md)
+This tutorial runs through how to load raw data (external to Nautilus) into the data catalog, 
+and then use this data with a `BacktestNode` to run a single backtest.

@@ -22,37 +22,58 @@
 
 Welcome to NautilusTrader!
 
+
+Explore the foundational concepts of NautilusTrader through the following guides.
+
+```{note}
 It's important to note that the [API Reference](../api_reference/index.md) documentation should be 
 considered the source of truth for the platform. If there are any discrepancies between concepts described here
 and the API Reference, then the API Reference should be considered the correct information. We are 
 working to ensure that concepts stay up-to-date with the API Reference and will be introducing 
 doc tests in the near future to help with this.
 
-```{note}
 The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
 ```
 
-## Guides
+## [Overview](overview.md)
+The **Overview** guide covers the main use cases for the platform.
 
-Explore the core concepts of NautilusTrader through these guides:
+## [Architecture](architecture.md)
+The **Architecture** guide dives deep into the foundational principles, structures, and designs that underpin
+the platform. Whether you're a developer, system architect, or just curious about the inner workings 
+of NautilusTrader.
 
-### Fundamentals
-- [Overview](overview.md)
-- [Architecture](architecture.md)
-- [Strategies](strategies.md)
+## [Strategies](strategies.md)
+The heart of the NautilusTrader user experience is in writing and working with
+trading strategies. The **Strategies** guide covers how to implement trading strategies for the platform.
 
-### Trading essentials
-- [Instruments](instruments.md)
-- [Orders](orders.md)
-- [Execution](execution.md)
-- [Backtesting](backtesting.md)
+## [Instruments](instruments.md)
+The `Instrument` base class represents the core specification for any tradable asset/contract.
 
-### Data & integrations
-- [Data](data.md)
-- [Adapters](adapters.md)
+## [Orders](orders.md)
+The **Orders** guide provides more details about the available order types for the platform, along with
+the execution instructions supported for each.
 
-### Utilities
-- [Logging](logging.md)
+## [Execution](execution.md)
+NautilusTrader can handle trade execution and order management for multiple strategies and venues
+simultaneously (per instance). Several interacting components are involved in execution, making it 
+crucial to understand the possible flows of execution messages (commands and events).
 
-### Advanced topics
-- [Advanced](advanced/index.md)
+## [Backtesting](backtesting.md)
+Backtesting with NautilusTrader is a methodical simulation process that replicates trading
+activities using a specific system implementation.
+
+## [Data](data.md)
+The NautilusTrader platform defines a range of built-in data types crafted specifically to represent 
+a trading domain
+
+## [Adapters](adapters.md)
+The NautilusTrader design allows for integrating data publishers and/or trading venues
+through adapter implementations, these can be found in the top level `adapters` subpackage. 
+
+## [Logging](logging.md)
+The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
+
+## [Advanced](advanced/index.md)
+Here you will find more detailed documentation and examples covering the more advanced
+features and functionality of the platform.
