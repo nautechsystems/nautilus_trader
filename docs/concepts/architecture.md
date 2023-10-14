@@ -1,7 +1,7 @@
 # Architecture
 
 Welcome to the architectural overview of NautilusTrader.
-This document dives deep into the foundational principles, structures, and designs that underpin
+This guide dives deep into the foundational principles, structures, and designs that underpin
 the platform. Whether you're a developer, system architect, or just curious about the inner workings 
 of NautilusTrader, this exposition covers:
 

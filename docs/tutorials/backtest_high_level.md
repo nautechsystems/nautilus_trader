@@ -1,6 +1,9 @@
 # Backtest (high-level API)
 
-This tutorial runs through how to load raw data (external to Nautilus) into the data catalog, through to a single 'one-shot' backtest run.
+This tutorial runs through the following: 
+- How to load raw data (external to Nautilus) into the data catalog
+- How to setup configuration objects for a `BacktestNode`
+- How to run backtests with a  `BacktestNode`
 
 ## Imports
 

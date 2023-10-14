@@ -26,8 +26,8 @@ highest to lowest level (although they are self-contained and can be read in any
 
 Explore more advanced concepts of NautilusTrader through these guides:
 
-- [Custom/Generic data](/docs/concepts/advanced/custom_data.md)
-- [Advanced Orders](/docs/concepts/advanced/advanced_orders.md)
-- [Emulated Orders](/docs/concepts/advanced/emulated_orders.md)
-- [Synthetic Instruments](/docs/concepts/advanced/synthetic_instruments.md)
-- [Portfolio Statistics](/docs/concepts/advanced/portfolio_statistics.md)
+- [Custom/Generic data](custom_data.md)
+- [Advanced Orders](advanced_orders.md)
+- [Emulated Orders](emulated_orders.md)
+- [Synthetic Instruments](synthetic_instruments.md)
+- [Portfolio Statistics](portfolio_statistics.md)

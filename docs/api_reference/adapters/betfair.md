@@ -78,10 +78,10 @@
    :member-order: bysource
 ```
 
-## Historic
+## OrderBook
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.adapters.betfair.historic
+.. automodule:: nautilus_trader.adapters.betfair.orderbook
    :show-inheritance:
    :inherited-members:
    :members:

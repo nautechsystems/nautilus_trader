@@ -525,7 +525,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def check_account_currency(self) -> None:
         """
-        Check account currency against BetfairHttpClient.
+        Check account currency against `BetfairHttpClient`.
         """
         self._log.debug("Checking account currency")
         PyCondition.not_none(self.base_currency, "self.base_currency")
@@ -638,7 +638,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     def _handle_stream_executable_order_update(self, unmatched_order: UnmatchedOrder) -> None:
         """
-        Handle update containing "E" (executable) order update.
+        Handle update containing 'E' (executable) order update.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self.venue_order_id_to_client_order_id[venue_order_id]
@@ -721,7 +721,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         unmatched_order: UnmatchedOrder,
     ) -> None:
         """
-        Handle "EC" (execution complete) order updates.
+        Handle 'EC' (execution complete) order updates.
         """
         venue_order_id = VenueOrderId(str(unmatched_order.id))
         client_order_id = self._cache.client_order_id(venue_order_id=venue_order_id)
