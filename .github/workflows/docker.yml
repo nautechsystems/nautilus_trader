@@ -19,6 +19,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: false
+          dotnet: false
+          haskell: false
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
