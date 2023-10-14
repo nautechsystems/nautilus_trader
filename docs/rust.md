@@ -1,7 +1,7 @@
 # Rust API
 
 The core of NautilusTrader is written in Rust, and one day it will be possible to run systems
-entirely programmed and compiled from Rust. 
+entirely programmed and compiled from Rust 🦀.
 
 The API reference provides detailed technical documentation for the core NautilusTrader crates,
 the docs are generated from source code using `cargo doc`.
