@@ -29,11 +29,11 @@ However, this documentation aims to assist you in learning and understanding Nau
 
 If you have any questions or need further assistance, please reach out to the NautilusTrader community for support.
 
-The following is a brief summary of what you'll find in the documentation, and how to use each section.
-
 ```{note}
 The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
 ```
+
+The following is a brief summary of what you'll find in the documentation, and how to use each section.
 
 ## [Getting Started](getting_started/index.md)
 
@@ -53,13 +53,14 @@ From basic tasks to more advanced operations, these tutorials cater to a wide ra
 
 ## [Integrations](integrations/index.md)
 
-The **Integrations** guides for the platform, covers differences in configuration, available features and capabilities between adapters,
+The **Integrations** guides for the platform, covers adapter differences in configuration, available features and capabilities,
 as well as providing tips for a smoother trading experience.
 
 ## [API Reference](api_reference/index.md)
 
-The **API Reference** provides comprehensive technical information on available functions, classes, methods, and other components. 
+The **API Reference** provides comprehensive technical information on available modules, functions, classes, methods, and other components for both the Python and Rust APIs.
 
 ## [Developer Guide](developer_guide/index.md)
 
-The **Developer Guide** is tailored for those who wish to delve into the codebase. It provides insights into the architectural decisions, coding standards, and best practices, ensuring a smooth development experience.
+The **Developer Guide** is tailored for those who wish to delve further into and potentially modify the codebase.
+It provides insights into the architectural decisions, coding standards, and best practices, helping to ensuring a pleasant and productive development experience.

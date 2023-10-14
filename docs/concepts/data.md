@@ -43,13 +43,42 @@ Conceretely, this would involve for example:
 - `BinanceOrderBookDeltaDataLoader.load(...)` which reads CSV files provided by Binance from disk, and returns a `pd.DataFrame`
 - `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`
 
+The following example shows how to accomplish the above in Python:
+```python
+import os
+
+from nautilus_trader import PACKAGE_ROOT
+from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
+from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
+
+# Load raw data
+data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance-btcusdt-depth-snap.csv")
+df = BinanceOrderBookDeltaDataLoader.load(data_path)
+
+# Setup a wrangler
+instrument = TestInstrumentProvider.btcusdt_binance()
+wrangler = OrderBookDeltaDataWrangler(instrument)
+
+# Process to a list `OrderBookDelta` Nautilus objects
+deltas = wrangler.process(df)
+```
+
 ## Data catalog
 
 The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
 
-We have chosen parquet as the storage format for the following reasons:
+We have chosen Parquet as the storage format for the following reasons:
 - It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance
 - It does not require any separate running components (for example a database)
 - It is quick and simple to get up and running with
+
+The Arrow schemas used for the Parquet format are either single sourced in the core `persistence` Rust library, or available
+from the `/serialization/arrow/schema.py` module.
+
+```{note}
+2023-10-14: The current plan is to eventually phase out the Python schemas module, so that all schemas are single sourced in the Rust core.
+```
 
 **This doc is an evolving work in progress and will continue to describe the data catalog more fully...**

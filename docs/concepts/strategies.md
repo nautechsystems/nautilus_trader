@@ -2,7 +2,7 @@
 
 The heart of the NautilusTrader user experience is in writing and working with
 trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
-and implementing the methods required by the strategy.
+and implementing the methods required by the users trading strategy logic.
 
 Using the basic building blocks of data ingest, event handling, and order management (which we will discuss
 below), it's possible to implement any type of trading strategy including directional, momentum, re-balancing,
@@ -27,10 +27,6 @@ The main capabilities of a strategy include:
 - Accessing the portfolio
 - Creating and managing orders
 
-```{note}
-See the `Strategy` [API reference](../docs/api_reference/trading#Strategy) for a complete list of available methods.
-```
-
 ## Implementation
 Since a trading strategy is a class which inherits from `Strategy`, you must define
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
@@ -40,6 +36,9 @@ class MyStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
+
+From here, you can implement handlers as necessary to perform actions based on state transitions
+and events.
 
 ### Handlers
 
@@ -144,25 +143,56 @@ which no other specific handler exists.
 def on_event(self, event: Event) -> None:
 ```
 
+#### Handler example
+
+The following example shows a typical `on_start` handler method implementation (taken from the example EMA cross strategy).
+Here we can see the following:
+- Indicators being registered to receive bar updates
+- Historical data being requested (to hydrate the indicators)
+- Live data being subscribed to
+
+```python
+def on_start(self) -> None:
+    """
+    Actions to be performed on strategy start.
+    """
+    self.instrument = self.cache.instrument(self.instrument_id)
+    if self.instrument is None:
+        self.log.error(f"Could not find instrument for {self.instrument_id}")
+        self.stop()
+        return
+
+    # Register the indicators for updating
+    self.register_indicator_for_bars(self.bar_type, self.fast_ema)
+    self.register_indicator_for_bars(self.bar_type, self.slow_ema)
+
+    # Get historical data
+    self.request_bars(self.bar_type)
+
+    # Subscribe to live data
+    self.subscribe_bars(self.bar_type)
+    self.subscribe_quote_ticks(self.instrument_id)
+```
+
 ### Clock and timers
 
 Strategies have access to a comprehensive `Clock` which provides a number of methods for creating
 different timestamps, as well as setting time alerts or timers.
 
 ```{note}
-See the `Clock` [API reference](/docs/api_reference/common.md#Clock) for a complete list of available methods.
+See the `Clock` [API reference](../api_reference/common.md#Clock) for a complete list of available methods.
 ```
 
 #### Current timestamps
 
 While there are multiple ways to obtain current timestamps, here are two commonly used methods as examples:
 
-- **UTC Timestamp:** This method returns a timezone-aware (UTC) timestamp.
+**UTC Timestamp:** This method returns a timezone-aware (UTC) timestamp:
 ```python
 now: pd.Timestamp = self.clock.utc_now()
 ```
 
-- **Unix Nanoseconds:** This method provides the current timestamp in nanoseconds since the UNIX epoch.
+**Unix Nanoseconds:** This method provides the current timestamp in nanoseconds since the UNIX epoch:
 ```python
 unix_nanos: int = self.clock.timestamp_ns()
 ```
@@ -182,8 +212,8 @@ self.clock.set_alert_time(
 
 #### Timers
 
-Continuous timers can be setup which will generate `TimeEvent`s at regular intervals until expired
-or canceled.
+Continuous timers can be setup which will generate a `TimeEvent` at regular intervals until the timer expires
+or is canceled.
 
 This example sets a timer to fire once per minute, starting immediately:
 ```python

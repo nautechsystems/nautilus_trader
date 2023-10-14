@@ -15,6 +15,7 @@ highest to lowest level (although they are self-contained and can be read in any
    :titlesonly:
    :hidden:
    
+   actors.md
    custom_data.md
    advanced_orders.md
    emulated_orders.md
@@ -26,6 +27,7 @@ highest to lowest level (although they are self-contained and can be read in any
 
 Explore more advanced concepts of NautilusTrader through these guides:
 
+- [Actors](actors.md)
 - [Custom/Generic data](custom_data.md)
 - [Advanced Orders](advanced_orders.md)
 - [Emulated Orders](emulated_orders.md)
