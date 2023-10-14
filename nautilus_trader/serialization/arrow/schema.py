@@ -95,6 +95,8 @@ NAUTILUS_ARROW_SCHEMA = {
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
             "status": pa.dictionary(pa.int8(), pa.string()),
+            "trading_session": pa.string(),
+            "halt_reason": pa.dictionary(pa.int8(), pa.string()),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },
