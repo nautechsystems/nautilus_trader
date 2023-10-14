@@ -13,14 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod crypto_future;
-mod crypto_perpetual;
-mod currency_pair;
-mod equity;
-mod futures_contract;
-mod options_contract;
-mod synthetic;
-mod synthetic_api;
+pub mod crypto_future;
+pub mod crypto_perpetual;
+pub mod currency_pair;
+pub mod equity;
+pub mod futures_contract;
+pub mod options_contract;
+pub mod synthetic;
+pub mod synthetic_api;
 
 use anyhow::Result;
 use rust_decimal::Decimal;
