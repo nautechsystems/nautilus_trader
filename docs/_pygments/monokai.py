@@ -1,3 +1,4 @@
+# fmt: off
 from pygments.style import Style
 from pygments.token import Comment
 from pygments.token import Error
@@ -38,10 +39,10 @@ class MonokaiStyle(Style):
         Comment.Single:          "",                     # class: 'c1'
         Comment.Special:         "",                     # class: 'cs'
 
-        Keyword:                 "#66d9ef",              # class: 'k'
+        Keyword:                 "#D9C4FF",              # class: 'k'
         Keyword.Constant:        "",                     # class: 'kc'
         Keyword.Declaration:     "",                     # class: 'kd'
-        Keyword.Namespace:       "#f92672",              # class: 'kn'
+        Keyword.Namespace:       "#D9C4FF",              # class: 'kn'
         Keyword.Pseudo:          "",                     # class: 'kp'
         Keyword.Reserved:        "",                     # class: 'kr'
         Keyword.Type:            "",                     # class: 'kt'
@@ -52,41 +53,41 @@ class MonokaiStyle(Style):
         Punctuation:             "#f8f8f2",              # class: 'p'
 
         Name:                    "#f8f8f2",              # class: 'n'
-        Name.Attribute:          "#a6e22e",              # class: 'na' - to be revised
+        Name.Attribute:          "#D9C4FF",              # class: 'na' - to be revised
         Name.Builtin:            "",                     # class: 'nb'
         Name.Builtin.Pseudo:     "",                     # class: 'bp'
-        Name.Class:              "#a6e22e",              # class: 'nc' - to be revised
-        Name.Constant:           "#66d9ef",              # class: 'no' - to be revised
-        Name.Decorator:          "#a6e22e",              # class: 'nd' - to be revised
+        Name.Class:              "#A0D8F0",              # class: 'nc' - to be revised
+        Name.Constant:           "#A0D8F0",              # class: 'no' - to be revised
+        Name.Decorator:          "#e6db74",              # class: 'nd' - to be revised
         Name.Entity:             "",                     # class: 'ni'
-        Name.Exception:          "#a6e22e",              # class: 'ne'
-        Name.Function:           "#a6e22e",              # class: 'nf'
+        Name.Exception:          "#D9C4FF",              # class: 'ne'
+        Name.Function:           "#A0D8F0",              # class: 'nf'
         Name.Property:           "",                     # class: 'py'
         Name.Label:              "",                     # class: 'nl'
         Name.Namespace:          "",                     # class: 'nn' - to be revised
-        Name.Other:              "#a6e22e",              # class: 'nx'
+        Name.Other:              "#D9C4FF",              # class: 'nx'
         Name.Tag:                "#f92672",              # class: 'nt' - like a keyword
         Name.Variable:           "",                     # class: 'nv' - to be revised
-        Name.Variable.Class:     "",                     # class: 'vc' - to be revised
+        Name.Variable.Class:     "#A0D8F0",              # class: 'vc' - to be revised
         Name.Variable.Global:    "",                     # class: 'vg' - to be revised
         Name.Variable.Instance:  "",                     # class: 'vi' - to be revised
 
-        Number:                  "#ae81ff",              # class: 'm'
+        Number:                  "#e6db74",              # class: 'm'
         Number.Float:            "",                     # class: 'mf'
         Number.Hex:              "",                     # class: 'mh'
         Number.Integer:          "",                     # class: 'mi'
         Number.Integer.Long:     "",                     # class: 'il'
         Number.Oct:              "",                     # class: 'mo'
 
-        Literal:                 "#ae81ff",              # class: 'l'
-        Literal.Date:            "#e6db74",              # class: 'ld'
+        Literal:                 "#D9C4FF",              # class: 'l'
+        Literal.Date:            "#A3BE8C",              # class: 'ld'
 
-        String:                  "#e6db74",              # class: 's'
+        String:                  "#A3BE8C",              # class: 's'
         String.Backtick:         "",                     # class: 'sb'
         String.Char:             "",                     # class: 'sc'
         String.Doc:              "",                     # class: 'sd' - like a comment
         String.Double:           "",                     # class: 's2'
-        String.Escape:           "#ae81ff",              # class: 'se'
+        String.Escape:           "#D9C4FF",              # class: 'se'
         String.Heredoc:          "",                     # class: 'sh'
         String.Interpol:         "",                     # class: 'si'
         String.Other:            "",                     # class: 'sx'
@@ -99,7 +100,7 @@ class MonokaiStyle(Style):
         Generic.Emph:            "italic",               # class: 'ge'
         Generic.Error:           "",                     # class: 'gr'
         Generic.Heading:         "",                     # class: 'gh'
-        Generic.Inserted:        "#a6e22e",              # class: 'gi'
+        Generic.Inserted:        "#D9C4FF",              # class: 'gi'
         Generic.Output:          "",                     # class: 'go'
         Generic.Prompt:          "",                     # class: 'gp'
         Generic.Strong:          "bold",                 # class: 'gs'
