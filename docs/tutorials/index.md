@@ -1,22 +1,5 @@
 # Tutorials
 
-Welcome to the tutorials for NautilusTrader! We hope these will be a helpful 
-resource as you explore the different features and capabilities of the platform.
-
-To get started, you can take a look at the table of contents on the left-hand side of the page. 
-The topics are generally ordered from highest to lowest level, so you can start with the higher-level 
-concepts and then dive into the more specific details as needed.
-
-It's important to note that the [API Reference](../api_reference/index.md) documentation should be 
-considered the source of truth for the platform. If there are any discrepancies between the user 
-guide and the API Reference, the API Reference should be considered the correct information. We are 
-working to ensure that the user guide stays up-to-date with the API Reference and will be introducing 
-doc tests in the near future to help with this.
-
-```{note}
-The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
-```
-
 ```{eval-rst}
 .. toctree::
    :maxdepth: 1
@@ -27,6 +10,17 @@ The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably th
    backtest_high_level.md
 ```
 
+Welcome to the tutorials for NautilusTrader! 
+
+This section offers a guided learning experience with a series of comprehensive step-by-step walkthroughs. 
+Each tutorial targets specific features or workflows, allowing you to learn by doing. 
+From basic tasks to more advanced operations, these tutorials cater to a wide range of skill levels.
+
+```{tip}
+Make sure you are following the tutorial docs which match the version of NautilusTrader you are running:
+- **Latest** - These docs are built from the HEAD of the `master` branch and work with the latest stable release.
+- **Develop** - These docs are built from the HEAD of the `develop` branch and work with bleeding edge and experimental changes/features currently in development.
+```
 ## [Backtest (high-level API)](backtest_high_level.md)
 This tutorial runs through how to load raw data (external to Nautilus) into the data catalog, 
 and then use this data with a `BacktestNode` to run a single backtest.

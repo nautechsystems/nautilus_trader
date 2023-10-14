@@ -12,6 +12,7 @@
    tutorials/index.md
    integrations/index.md
    api_reference/index.md
+   rust.md
    developer_guide/index.md
 
 ```
@@ -26,37 +27,39 @@ The platform boasts an extensive array of features and capabilities, coupled wit
 trading systems using the framework. Given the breadth of information, and required pre-requisite knowledge, both beginners and experts alike may find the learning curve steep. 
 However, this documentation aims to assist you in learning and understanding NautilusTrader, so that you can then leverage it to achieve your algorithmic trading goals.
 
+If you have any questions or need further assistance, please reach out to the NautilusTrader community for support.
+
 The following is a brief summary of what you'll find in the documentation, and how to use each section.
+
+```{note}
+The terms "NautilusTrader", "Nautilus" and "platform" are used interchageably throughout the documentation.
+```
 
 ## [Getting Started](getting_started/index.md)
 
-If you're new to NautilusTrader, dive right in. The **Getting Started** section offers an introductory overview of the platform, 
+The **Getting Started** section offers an introductory overview of the platform, 
 a step-by-step guide to installing NautilusTrader, and a tutorial on setting up and running your first backtest. 
 This section is crafted for those who are hands-on learners and are eager to see results quickly.
 
 ## [Concepts](concepts/index.md)
 
-To form a strong foundation and understand the core principles behind NautilusTrader, the **Concepts** section is your go-to resource. 
-It breaks down the fundamental ideas, terminologies, and components of the platform, ensuring you have a solid grasp before diving deeper.
+The **Concepts** section breaks down the fundamental ideas, terminologies, and components of the platform, ensuring you have a solid grasp before diving deeper.
 
 ## [Tutorials](tutorials/index.md)
 
-For a more guided learning experience, the **Tutorials** section offers a series of comprehensive step-by-step walkthroughs. 
-Each tutorial targets specific features or workflows, allowing you to learn by doing. 
+The **Tutorials** section offers a guided learning experience with a series of comprehensive step-by-step walkthroughs. 
+Each tutorial targets specific features or workflows, allowing you to learn by doing.
 From basic tasks to more advanced operations, these tutorials cater to a wide range of skill levels.
 
 ## [Integrations](integrations/index.md)
 
-These guides cover specific data and trading venue **Integrations** for the platform, including differences in configuration, available features and capabilities,
-as well as tips for a smoother trading experience.
+The **Integrations** guides for the platform, covers differences in configuration, available features and capabilities between adapters,
+as well as providing tips for a smoother trading experience.
 
 ## [API Reference](api_reference/index.md)
 
-For detailed technical information on available functions, classes, methods, and other components, the **API Reference** section is your comprehensive resource. 
-It's structured to offer quick access to specific functionalities, complete with explanations, parameter details, options, and example usages.
+The **API Reference** provides comprehensive technical information on available functions, classes, methods, and other components. 
 
 ## [Developer Guide](developer_guide/index.md)
 
-Are you looking to customize, extend, or integrate with NautilusTrader? The **Developer Guide** is tailored for those who wish to delve into the codebase. 
-It provides insights into the architectural decisions, coding standards, and best practices, ensuring a smooth development experience.
-
+The **Developer Guide** is tailored for those who wish to delve into the codebase. It provides insights into the architectural decisions, coding standards, and best practices, ensuring a smooth development experience.

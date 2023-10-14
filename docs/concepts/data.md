@@ -45,4 +45,11 @@ Conceretely, this would involve for example:
 
 ## Data catalog
 
+The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
+
+We have chosen parquet as the storage format for the following reasons:
+- It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance
+- It does not require any separate running components (for example a database)
+- It is quick and simple to get up and running with
+
 **This doc is an evolving work in progress and will continue to describe the data catalog more fully...**

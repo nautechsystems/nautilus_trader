@@ -1,5 +1,18 @@
 # Integrations
 
+```{eval-rst}
+.. toctree::
+   :maxdepth: 2
+   :glob:
+   :titlesonly:
+   :hidden:
+   
+   betfair.md
+   binance.md
+   ib.md
+
+```
+
 NautilusTrader is designed in a modular way to work with 'adapters' which provide
 connectivity to data publishers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
@@ -47,16 +60,3 @@ this means there is some normalization and standardization needed.
 
 - All symbols will match the native/local symbol for the exchange, unless there are conflicts (such as Binance using the same symbol for both Spot and Perpetual Futures markets).
 - All timestamps will be either normalized to UNIX nanoseconds, or clearly marked as UNIX milliseconds by appending `_ms` to param and property names.
-
-```{eval-rst}
-.. toctree::
-   :maxdepth: 2
-   :glob:
-   :titlesonly:
-   :hidden:
-   
-   betfair.md
-   binance.md
-   ib.md
-
-```

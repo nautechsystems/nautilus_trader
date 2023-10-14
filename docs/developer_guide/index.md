@@ -1,5 +1,18 @@
 # Developer Guide
 
+```{eval-rst}
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   
+   environment_setup.md
+   coding_standards.md
+   cython.md
+   rust.md
+   testing.md
+   packaged_data.md
+```
+
 Welcome to the developer guide for NautilusTrader!
 
 Here you will find information related to developing and extending the NautilusTrader codebase. 
@@ -30,19 +43,6 @@ concepts, and where C typing is being introduced.
 It's not necessary to become a C language expert, however it's helpful to understand how Cython C 
 syntax is used in function and method definitions, in local code blocks, and the common primitive C 
 types and how these map to their corresponding `PyObject` types.
-
-```{eval-rst}
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   
-   environment_setup.md
-   coding_standards.md
-   cython.md
-   rust.md
-   testing.md
-   packaged_data.md
-```
 
 ## Contents
 

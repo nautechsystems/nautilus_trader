@@ -7,16 +7,13 @@
    :titlesonly:
    :hidden:
    
-   introduction.md
    installation.md
    quickstart.md
 ```
 
-Welcome to the NautilusTrader getting started section!
-
-## [Introduction](introduction.md)
-The **Introduction** covers the value proposition for the platform and why NautilusTrader exists, as 
-well as a very high-level summary of the main features.
+To get started with NautilusTrader you will need the following:
+- A Python environment with `nautilus_trader` installed
+- A way to launch Python scripts for backtesting and live trading (either from the command line, or jupyter notebook etc)
 
 ## [Installation](installation.md)
 The **Installation** guide will help to ensure that NautilusTrader is properly installed on your machine.
