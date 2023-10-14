@@ -52,16 +52,7 @@ assert raw_files, f"Unable to find any histdata files in directory {path}"
 raw_files
 ```
 
-## The Data Catalog
-
-Next we will load this raw data into the data catalog. The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
-
-We have chosen parquet as the storage format for the following reasons:
-- It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance
-- It does not require any separate running components (for example a database)
-- It is quick and simple to get up and running with
-
-## Loading data into the catalog
+## Loading data into the Data Catalog
 
 The FX data from `histdata` is stored in CSV/text format, with fields `timestamp, bid_price, ask_price`.
 Firstly, we need to load this raw data into a `pandas.DataFrame` which has a compatible schema for Nautilus quote ticks.

@@ -45,6 +45,8 @@ Throughout the documentation, the term _"Nautilus system boundary"_ refers to op
 the runtime of a single Nautilus node (also known as a "trader instance").
 ```
 
+![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
+
 ### Environment contexts
 - `Backtest` - Historical data with simulated venues
 - `Sandbox` - Real-time data with simulated venues
