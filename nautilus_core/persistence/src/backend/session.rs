@@ -16,7 +16,12 @@
 use std::{collections::HashMap, sync::Arc, vec::IntoIter};
 
 use compare::Compare;
-use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
+use datafusion::{
+    error::Result,
+    logical_expr::{col, expr::Sort},
+    physical_plan::SendableRecordBatchStream,
+    prelude::*,
+};
 use futures::StreamExt;
 use nautilus_core::{cvec::CVec, python::to_pyruntime_err};
 use nautilus_model::data::{
@@ -112,6 +117,11 @@ impl DataBackendSession {
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
+            file_sort_order: vec![vec![Expr::Sort(Sort {
+                expr: Box::new(col("ts_init")),
+                asc: true,
+                nulls_first: true,
+            })]],
             ..Default::default()
         };
         self.runtime.block_on(self.session_ctx.register_parquet(
