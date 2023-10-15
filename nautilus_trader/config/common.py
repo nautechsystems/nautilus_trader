@@ -349,15 +349,12 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
         The fsspec file system protocol for the data catalog.
     fs_storage_options : dict, optional
         The fsspec storage options for the data catalog.
-    use_rust : bool, default False
-        If queries will be for Rust schema versions (when implemented).
 
     """
 
     path: str
     fs_protocol: Optional[str] = None
     fs_storage_options: Optional[dict] = None
-    use_rust: bool = False
 
 
 class ActorConfig(NautilusConfig, kw_only=True, frozen=True):

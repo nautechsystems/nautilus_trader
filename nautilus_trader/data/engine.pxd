@@ -48,7 +48,6 @@ cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
     cdef readonly object _catalog
-    cdef readonly bint _use_rust
 
     cdef readonly dict _clients
     cdef readonly dict _routing_map
