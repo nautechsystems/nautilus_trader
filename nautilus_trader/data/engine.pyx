@@ -131,7 +131,6 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
         self._catalog: Optional[ParquetDataCatalog] = None
-        self._use_rust: bool = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -229,7 +228,7 @@ cdef class DataEngine(Component):
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
-    def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
+    def register_catalog(self, catalog: ParquetDataCatalog) -> None:
         """
         Register the given data catalog with the engine.
 
@@ -242,7 +241,6 @@ cdef class DataEngine(Component):
         Condition.not_none(catalog, "catalog")
 
         self._catalog = catalog
-        self._use_rust = use_rust
 
     cpdef void register_client(self, DataClient client):
         """
@@ -1302,25 +1300,18 @@ cdef class DataEngine(Component):
             if instrument_id is None:
                 data = self._catalog.instruments(as_nautilus=True)
             else:
-                data = self._catalog.instruments(
-                    instrument_ids=[str(instrument_id)],
-                    as_nautilus=True,
-                )
+                data = self._catalog.instruments(instrument_ids=[str(instrument_id)])
         elif request.data_type.type == QuoteTick:
             data = self._catalog.quote_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=self._use_rust,
             )
         elif request.data_type.type == TradeTick:
             data = self._catalog.trade_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=self._use_rust,
             )
         elif request.data_type.type == Bar:
             bar_type = request.data_type.metadata.get("bar_type")
@@ -1332,16 +1323,12 @@ cdef class DataEngine(Component):
                 bar_type=str(bar_type),
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=False,  # Until implemented
             )
         elif request.data_type.type == InstrumentClose:
             data = self._catalog.instrument_closes(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=False,  # Until implemented
             )
         else:
             data = self._catalog.generic_data(
@@ -1349,7 +1336,6 @@ cdef class DataEngine(Component):
                 metadata=request.data_type.metadata,
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
             )
 
         # Validation data is not from the future
