@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.core.nautilus_pyo3.model import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
 from nautilus_trader.core.nautilus_pyo3.model import Money
