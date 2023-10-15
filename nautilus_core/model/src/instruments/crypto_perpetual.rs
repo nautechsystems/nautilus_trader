@@ -35,7 +35,10 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct CryptoPerpetual {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,

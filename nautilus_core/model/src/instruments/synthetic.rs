@@ -31,7 +31,10 @@ use crate::{
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
 #[derive(Clone, Debug)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
     pub price_precision: u8,
