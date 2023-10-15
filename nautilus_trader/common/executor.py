@@ -31,7 +31,7 @@ from nautilus_trader.core.uuid import UUID4
 @dataclass(frozen=True)
 class TaskId:
     """
-    Represents a unique identifier for a task managed by the ActorExecutor.
+    Represents a unique identifier for a task managed by the `ActorExecutor`.
 
     This ID can be associated with a task that is either queued for execution or
     actively executing as an `asyncio.Future`.
@@ -60,7 +60,7 @@ class ActorExecutor:
     """
     Provides an executor for `Actor` and `Strategy` classes.
 
-    Provides an executor designed to handle asynchronous tasks for `Actor` and `Strategy` classes.
+    The executor is designed to handle asynchronous tasks for `Actor` and `Strategy` classes.
     This custom executor queues and executes tasks within a given event loop and is tailored for
     single-threaded applications.
 
