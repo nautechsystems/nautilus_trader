@@ -289,7 +289,7 @@ impl CryptoPerpetual {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
-        dict.set_item("type", "CryptoPerpetual".to_string())?;
+        dict.set_item("type", stringify!(CryptoPerpetual))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("base_currency", self.base_currency.code.to_string())?;
