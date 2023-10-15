@@ -37,6 +37,33 @@ The general execution flow looks like the following (each arrow indicates moveme
 The `OrderEmulator` and `ExecAlgorithm`(s) components are optional in the flow, depending on
 individual order parameters (as explained below).
 
+```
+                    ┌───────────────────┐
+                    │                   │
+                    │                   │
+            ┌───────►                   ├────────────┐
+            │       │   OrderEmulator   │            │
+            │       │                   │            │
+  ┌─────────┴──┐    │                   │            │
+  │            │    │                   │    ┌───────▼────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+  │            │    └───────┬───▲───────┘    │                │   │                     │   │                     │
+  │            │            │   │            │                ├───►                     ├───►                     │
+  │  Strategy  ◄────────────┼───┼────────────┤                │   │                     │   │                     │
+  │            │            │   │            │   RiskEngine   │   │   ExecutionEngine   │   │   ExecutionClient   │
+  │            │            │   │            │                ◄───┤                     ◄───┤                     │
+  │            │    ┌───────▼───┴───────┐    │                │   │                     │   │                     │
+  │            │    │                   │    │                │   │                     │   │                     │
+  └─────────┬──┘    │                   │    └────────▲───────┘   └─────────────────────┘   └─────────────────────┘
+            │       │                   │             │
+            │       │   ExecAlgorithm   ├─────────────┘
+            │       │                   │
+            └───────►                   │
+                    │                   │
+                    └───────────────────┘
+
+- This diagram illustrates message flow (commands and events) across the Nautilus execution components.
+```
+
 ## Execution algorithms
 
 The platform supports customized execution algorithm components and provides some built-in 
@@ -190,7 +217,7 @@ or confusion with the "parent" and "child" contingency orders terminology (an ex
 The `Cache` provides several methods to aid in managing (keeping track of) the activity of
 an execution algorithm:
 
-```python
+```cython
 
 cpdef list orders_for_exec_algorithm(
     self,

@@ -19,19 +19,19 @@ specific exchange they are being routed to.
 These contingency types relate to ContingencyType FIX tag <1385> https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html.
 ```
 
-### One Triggers the Other (OTO)
+### *'One Triggers the Other'* (OTO)
 An OTO orders involves two orders—a parent order and a child order. The parent order is a live 
 marketplace order. The child order, held in a separate order file, is not. If the parent order 
 executes in full, the child order is released to the marketplace and becomes live. 
 An OTO order can be made up of stock orders, option orders, or a combination of both.
 
-### One Cancels the Other (OCO)
+### *'One Cancels the Other'* (OCO)
 An OCO order is an order whose execution results in the immediate cancellation of another order 
 linked to it. Cancellation of the Contingent Order happens on a best efforts basis. 
 In an OCO order, both orders are live in the marketplace at the same time. The execution of either 
 order triggers an attempt to cancel the other unexecuted order. Partial executions will also trigger an attempt to cancel the other order.
 
-### One Updates the Other (OUO)
+### *'One Updates the Other'* (OUO)
 An OUO order is an order whose execution results in the immediate reduction of quantity in another 
 order linked to it. The quantity reduction happens on a best effort basis. In an OUO order both 
 orders are live in the marketplace at the same time. The execution of either order triggers an 

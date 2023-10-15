@@ -74,7 +74,7 @@ The platform is designed to be easily integrated into a larger distributed syste
 To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
 ## Common core
-The common system core is utilized by both the backtest, sandbox, and live trading nodes. 
+The common system core is utilized by all node contexts `backtest`, `sandbox`, and `live`.
 User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
 
 ## Backtesting

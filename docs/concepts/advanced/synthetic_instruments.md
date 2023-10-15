@@ -3,7 +3,7 @@
 The platform supports the definition of customized synthetic instruments. 
 These instruments can generate synthetic quote and trade ticks, which are beneficial for:
 
-- Allowing actors (and strategies) to subscribe to quote or trade feeds (for any purpose)
+- Allowing `Actor` (and `Strategy`) components to subscribe to quote or trade feeds (for any purpose)
 - Facilitating the triggering of emulated orders
 - Constructing bars from synthetic quotes or trades
 
@@ -67,7 +67,7 @@ self.subscribe_quote_ticks(self._synthetic_id)
 ```
 
 ```{note}
-The `instrument_id` for the synthetic instrument in the above example will be structured as `{symbol}.{SYNTH}`, resulting in 'BTC-ETH:BINANCE.SYNTH'.
+The `instrument_id` for the synthetic instrument in the above example will be structured as `{symbol}.{SYNTH}`, resulting in `'BTC-ETH:BINANCE.SYNTH'`.
 ```
 
 ## Updating formulas
