@@ -2,7 +2,7 @@
 
 The platform makes it possible to emulate most order types locally, regardless
 of whether the type is supported on a trading venue. The logic and code paths for 
-order emulation are exactly the same for all environment contexts (backtest, sandbox, live), 
+order emulation are exactly the same for all environment contexts (`backtest`, `sandbox`, `live`)
 and utilize a common `OrderEmulator` component.
 
 ```{note}
