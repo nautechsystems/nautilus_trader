@@ -57,11 +57,11 @@ fsspec = "==2023.6.0"  # Pinned for stability
 importlib_metadata = "^6.8.0"
 msgspec = "^0.18.4"
 pandas = "^2.1.1"
-psutil = "^5.9.5"
+psutil = "^5.9.6"
 pyarrow = ">=12.0.1"  # Minimum version set one major version behind the latest for compatibility
 pytz = "^2023.3.0"
 tqdm = "^4.66.1"
-uvloop = {version = "^0.17.0", markers = "sys_platform != 'win32'"}
+uvloop = {version = "^0.18.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.3", optional = true}
 redis = {version = "^5.0.1", optional = true}
 docker = {version = "^6.1.3", optional = true}
