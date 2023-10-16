@@ -566,7 +566,7 @@ class BinanceEnumParser:
                 f"unrecognized Binance kline resolution, was {bar_agg}",
             )
 
-    def parse_internal_bar_agg(self, bar_agg: BarAggregation) -> str:
+    def parse_nautilus_bar_aggregation(self, bar_agg: BarAggregation) -> str:
         try:
             return self.int_to_ext_bar_agg[bar_agg]
         except KeyError:
