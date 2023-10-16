@@ -1540,7 +1540,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_bars(self, list bars, Bar partial):
         self._cache.add_bars(bars)
 
-        cdef TimeBarAggregator aggregator
+        cdef BarAggregator aggregator
         if partial is not None and partial.bar_type.is_internally_aggregated():
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.bar_type)

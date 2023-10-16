@@ -300,6 +300,20 @@ cdef class BarAggregator:
             ts_event=tick.ts_event,
         )
 
+    cpdef void set_partial(self, Bar partial_bar):
+        """
+        Set the initial values for a partially completed bar.
+
+        This method can only be called once per instance.
+
+        Parameters
+        ----------
+        partial_bar : Bar
+            The partial bar with values to set.
+
+        """
+        self._builder.set_partial(partial_bar)
+
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -637,20 +651,6 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
         return start_time
-
-    cpdef void set_partial(self, Bar partial_bar):
-        """
-        Set the initial values for a partially completed bar.
-
-        This method can only be called once per instance.
-
-        Parameters
-        ----------
-        partial_bar : Bar
-            The partial bar with values to set.
-
-        """
-        self._builder.set_partial(partial_bar)
 
     cpdef void stop(self):
         """
