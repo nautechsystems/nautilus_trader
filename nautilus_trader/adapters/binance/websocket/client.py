@@ -39,6 +39,8 @@ class BinanceWebSocketClient:
         The base URL for the WebSocket connection.
     handler : Callable[[bytes], None]
         The callback handler for message events.
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
 
     References
     ----------
@@ -52,6 +54,7 @@ class BinanceWebSocketClient:
         logger: Logger,
         base_url: str,
         handler: Callable[[bytes], None],
+        loop: asyncio.AbstractEventLoop,
     ) -> None:
         self._clock = clock
         self._logger = logger
@@ -59,6 +62,7 @@ class BinanceWebSocketClient:
 
         self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
+        self._loop = loop
 
         self._streams: list[str] = []
         self._inner: Optional[WebSocketClient] = None
@@ -137,8 +141,7 @@ class BinanceWebSocketClient:
         self._log.warning(f"Reconnected to {self._base_url}.")
 
         # Re-subscribe to all streams
-        loop = asyncio.get_event_loop()
-        loop.create_task(self._subscribe_all())
+        self._loop.create_task(self._subscribe_all())
 
     async def disconnect(self) -> None:
         """

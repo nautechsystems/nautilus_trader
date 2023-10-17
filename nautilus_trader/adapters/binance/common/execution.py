@@ -187,6 +187,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             logger=logger,
             handler=self._handle_user_ws_message,
             base_url=base_url_ws,
+            loop=self._loop,
         )
 
         # Hot caches

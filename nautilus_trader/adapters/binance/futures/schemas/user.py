@@ -68,8 +68,8 @@ class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
     Provides a wrapper for execution WebSocket messages from `Binance`.
     """
 
-    stream: str
-    data: BinanceFuturesUserMsgData
+    data: Optional[BinanceFuturesUserMsgData] = None
+    stream: Optional[str] = None
 
 
 class MarginCallPosition(msgspec.Struct, frozen=True):
