@@ -222,9 +222,11 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: pa.Table,
         path: str,
         fs: fsspec.AbstractFileSystem,
+        basename_template: str = "part-{i}",
     ) -> None:
+        name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
-        pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs)
+        pq.write_table(table, where=f"{path}/{name}.parquet", filesystem=fs)
 
     def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
         def key(obj: Any) -> tuple[str, str | None]:
