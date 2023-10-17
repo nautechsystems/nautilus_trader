@@ -41,6 +41,7 @@ This will be the final release with support for Python 3.9.
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
 - Fixed open position snapshots race condition (added `open_only` flag)
 - Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
+- Fixed `BinanceWebSocketClient` reconnect behavior (reconnect handler was not being called due event loop issue from Rust)
 - Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed Binance Futures fee rates for backtesting
 - Fixed `Timer` missing condition check for non-positive intervals

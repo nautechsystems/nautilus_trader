@@ -31,6 +31,7 @@ async def test_binance_websocket_client():
         logger=Logger(clock=clock),
         handler=print,
         base_url="wss://fstream.binance.com",
+        loop=asyncio.get_event_loop(),
     )
 
     await client.connect()

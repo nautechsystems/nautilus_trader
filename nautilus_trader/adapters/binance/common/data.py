@@ -155,6 +155,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             logger=logger,
             handler=self._handle_ws_message,
             base_url=base_url_ws,
+            loop=self._loop,
         )
 
         # Hot caches
