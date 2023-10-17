@@ -15,6 +15,8 @@
 
 from decimal import Decimal
 
+import pandas as pd
+
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -129,7 +131,7 @@ class EMACross(Strategy):
         self.register_indicator_for_bars(self.bar_type, self.slow_ema)
 
         # Get historical data
-        self.request_bars(self.bar_type)
+        self.request_bars(self.bar_type, start=self._clock.utc_now() - pd.Timedelta(days=1))
         # self.request_quote_ticks(self.instrument_id)
         # self.request_trade_ticks(self.instrument_id)
 
