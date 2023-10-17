@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
+import time
 from typing import Optional
 
 import msgspec
@@ -35,6 +36,7 @@ from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
@@ -750,7 +752,7 @@ class BinanceMarketHttpAPI:
         self,
         instrument_id: InstrumentId,
         ts_init: int,
-        limit: int = 1000,
+        limit: Optional[int] = 1000,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         from_id: Optional[int] = None,
@@ -764,6 +766,9 @@ class BinanceMarketHttpAPI:
         """
         ticks: list[TradeTick] = []
         next_start_time = start_time
+
+        if end_time is None:
+            end_time = sys.maxsize
 
         if from_id is not None and (start_time or end_time) is not None:
             raise RuntimeError(
@@ -806,10 +811,14 @@ class BinanceMarketHttpAPI:
                     ),
                 )
 
-            if len(response) < limit and interval_limited is False:
+            if limit and len(response) < limit and interval_limited is False:
                 # end loop regardless when limit is not hit
                 break
-            if start_time is None or end_time is None:
+            if (
+                start_time is None
+                or end_time is None
+                or next_end_time >= nanos_to_millis(time.time_ns())
+            ):
                 break
             else:
                 last = response[-1]

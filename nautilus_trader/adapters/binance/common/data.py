@@ -548,9 +548,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return
 
-        if limit == 0 or limit > 1000:
-            limit = 1000
-
         start_time_ms = None
         if start is not None:
             start_time_ms = secs_to_millis(start.timestamp())
@@ -559,7 +556,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if end is not None:
             end_time_ms = secs_to_millis(end.timestamp())
 
-        if bar_type.is_externally_aggregated():
+        if bar_type.is_externally_aggregated() or bar_type.spec.is_time_aggregated():
             if not bar_type.spec.is_time_aggregated():
                 self._log.error(
                     f"Cannot request {bar_type}: only time bars are aggregated by Binance.",
@@ -580,20 +577,27 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     "not supported.",
                 )
                 return
+
             bars = await self._http_market.request_binance_bars(
                 bar_type=bar_type,
                 interval=interval,
                 start_time=start_time_ms,
                 end_time=end_time_ms,
-                limit=limit,
+                limit=limit if limit > 0 else None,
                 ts_init=self._clock.timestamp_ns(),
             )
+
+            if bar_type.is_internally_aggregated():
+                self._log.info(
+                    "Inferred INTERNAL time bars from EXTERNAL time bars.",
+                    LogColor.BLUE,
+                )
         else:
             bars = await self._aggregate_internal_from_agg_trade_ticks(
                 bar_type=bar_type,
                 start_time_ms=start_time_ms,
                 end_time_ms=end_time_ms,
-                limit=limit,
+                limit=limit if limit > 0 else None,
             )
 
         partial: Bar = bars.pop()
@@ -613,18 +617,18 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return []
 
+        self._log.info("Requesting aggregated trade ticks to infer INTERNAL bars...", LogColor.BLUE)
+
         ticks = await self._http_market.request_agg_trade_ticks(
             instrument_id=instrument.id,
             start_time=start_time_ms,
             end_time=end_time_ms,
             ts_init=self._clock.timestamp_ns(),
+            limit=limit,
         )
 
         bars: list[Bar] = []
-        if bar_type.spec.is_time_aggregated():
-            self._log.error("Internally aggregating historical time bars not yet supported.")
-            return bars
-        elif bar_type.spec.aggregation == BarAggregation.TICK:
+        if bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
@@ -656,7 +660,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             aggregator.handle_trade_tick(tick)
 
         self._log.info(
-            f"Internally aggregated {len(ticks)} external trade ticks to {len(bars)} {bar_type} bars.",
+            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trade ticks.",
             LogColor.BLUE,
         )
 
