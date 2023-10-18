@@ -13,9 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import msgspec.json
 
 from nautilus_trader.config import ImportableConfig
+from nautilus_trader.config import StrategyConfig
+
+
+class TestStrategyConfig(StrategyConfig, kw_only=True, frozen=True):
+    instrument_id: str
+    trade_size: Decimal
+    period: int
+    close_positions_on_stop: bool = True
 
 
 class TestConfigCommon:
@@ -35,3 +45,39 @@ class TestConfigCommon:
 
         # Assert
         assert config.api_key == "abc"
+
+    def test_return_false_for_invalid_data_types_1(self):
+        # Arrange
+        config = TestStrategyConfig(
+            instrument_id=123,  # <-- instrument_id is not str
+            trade_size=Decimal("100_0000"),
+            period=20,
+            close_positions_on_stop=True,
+        )
+
+        # Assert
+        assert config.validate() is False
+
+    def test_return_false_for_invalid_data_types_2(self):
+        # Arrange
+        config = TestStrategyConfig(
+            instrument_id="EUR/USD.IDEALPRO",
+            trade_size="100_0000",  # <-- trade_size is not Decimal
+            period=20,
+            close_positions_on_stop=True,
+        )
+
+        # Assert
+        assert config.validate() is False
+
+    def test_return_false_for_invalid_data_types_3(self):
+        # Arrange
+        config = TestStrategyConfig(
+            instrument_id="EUR/USD.IDEALPRO",
+            trade_size=Decimal("100_0000"),
+            period=20.0,  # <-- period is not int
+            close_positions_on_stop=True,
+        )
+
+        # Assert
+        assert config.validate() is False

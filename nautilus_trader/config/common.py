@@ -96,7 +96,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         """
         return msgspec.json.decode(raw, type=cls)
 
-    def validate(self) -> bool:
+    def validate(self, suppress_exception=True) -> bool:
         """
         Return whether the configuration can be represented as valid JSON.
 
@@ -105,7 +105,12 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         bool
 
         """
-        return bool(msgspec.json.decode(self.json(), type=self.__class__))
+        try:
+            return self == self.parse(self.json())
+        except Exception:
+            if suppress_exception:
+                return False
+            raise  # Re-raise the caught exception
 
 
 class CacheConfig(NautilusConfig, frozen=True):
