@@ -208,12 +208,14 @@ class ParquetDataCatalog(BaseDataCatalog):
             self._fast_write(table=table, path=path, fs=self.fs)
         else:
             # Write parquet file
+            min_max_rows_per_group = 5000
             pds.write_dataset(
                 data=table,
                 base_dir=path,
                 format="parquet",
                 filesystem=self.fs,
-                max_rows_per_group=5000,
+                min_rows_per_group=min_max_rows_per_group,
+                max_rows_per_group=min_max_rows_per_group,
                 **self.dataset_kwargs,
                 **kwargs,
             )
