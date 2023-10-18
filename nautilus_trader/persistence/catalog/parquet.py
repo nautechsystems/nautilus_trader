@@ -213,6 +213,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 base_dir=path,
                 format="parquet",
                 filesystem=self.fs,
+                max_rows_per_group=5000,
                 **self.dataset_kwargs,
                 **kwargs,
             )
@@ -224,7 +225,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs: fsspec.AbstractFileSystem,
     ) -> None:
         fs.mkdirs(path, exist_ok=True)
-        pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs)
+        pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs, row_group_size=5000)
 
     def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
         def key(obj: Any) -> tuple[str, str | None]:
