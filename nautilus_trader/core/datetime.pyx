@@ -184,12 +184,12 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
 
     Parameters
     ----------
-    dt : pd.Timestamp, optional
+    dt : pd.Timestamp
         The datetime to convert.
 
     Returns
     -------
-    uint64_t or ``None``
+    uint64_t
 
     Warnings
     --------
@@ -209,7 +209,7 @@ cpdef maybe_unix_nanos_to_dt(nanos):
     """
     Return the datetime (UTC) from the given UNIX time (nanoseconds), or ``None``.
 
-    If nanos is ``None``, then will return None.
+    If nanos is ``None``, then will return ``None``.
 
     Parameters
     ----------
@@ -231,7 +231,7 @@ cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     """
     Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
 
-    If dt is ``None``, then will return None.
+    If dt is ``None``, then will return ``None``.
 
     Parameters
     ----------
