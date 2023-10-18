@@ -45,7 +45,7 @@ an entirely different format to [Databento Binary Encoding (DBN)](https://docs.d
 
 ### Data wranglers
 
-Data wranglers are implemented per specific Nautilus data type, and can be found in the `nautilus_trader.persistence.wranglers` modules.
+Data wranglers are implemented per specific Nautilus data type, and can be found in the `nautilus_trader.persistence.wranglers` module.
 Currently there exists:
 - `OrderBookDeltaDataWrangler`
 - `QuoteTickDataWrangler`
@@ -145,6 +145,11 @@ The following example shows the above list of Binance `OrderBookDelta` objects b
 catalog.write_data(deltas)
 ```
 
+```{warning}
+Existing data for the same data type, `instrument_id`, and date will be overwritten without prior warning.
+Ensure you have appropriate backups or safeguards in place before performing this action.
+```
+
 Rust Arrow schema implementations and available for the follow data types (enhanced performance):
 - `OrderBookDelta`
 - `QuoteTick`
@@ -174,5 +179,5 @@ data_config = BacktestDataConfig(
 )
 ```
 
-This configuration object then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
+This configuration object can then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
 See the [Backtest (high-level API)](../tutorials/backtest_high_level.md) tutorial for more details.
