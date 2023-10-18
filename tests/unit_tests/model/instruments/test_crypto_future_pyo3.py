@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.core.nautilus_pyo3.model import CryptoFuture
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
@@ -31,16 +30,16 @@ class TestCryptoFuture:
         assert hash(crypto_future_btcusdt) == hash(crypto_future_btcusdt)
 
     def test_to_dict(self):
-        dict = crypto_future_btcusdt.to_dict()
-        assert CryptoFuture.from_dict(dict) == crypto_future_btcusdt
-        assert dict == {
+        result = crypto_future_btcusdt.to_dict()
+        assert CryptoFuture.from_dict(result) == crypto_future_btcusdt
+        assert result == {
             "type": "CryptoPerpetual",
             "id": "BTCUSDT_220325.BINANCE",
             "raw_symbol": "BTCUSDT",
             "underlying": "BTC",
             "quote_currency": "USDT",
             "settlement_currency": "USDT",
-            "expiration": 1648162800000000000,
+            "expiration": 1648126800000000000,
             "price_precision": 2,
             "size_precision": 6,
             "price_increment": "0.01",
