@@ -37,10 +37,6 @@ typedef struct UUID4_t {
     uint8_t value[37];
 } UUID4_t;
 
-void cvec_drop(struct CVec cvec);
-
-struct CVec cvec_new(void);
-
 /**
  * Converts seconds to nanoseconds (ns).
  */
@@ -75,6 +71,11 @@ uint64_t nanos_to_millis(uint64_t nanos);
  * Converts nanoseconds (ns) to microseconds (μs).
  */
 uint64_t nanos_to_micros(uint64_t nanos);
+
+/**
+ * Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
+ */
+const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
 
 /**
  * Return the decimal precision inferred from the given C string.
@@ -121,6 +122,10 @@ uint64_t unix_timestamp_us(void);
  * Returns the current nanoseconds since the UNIX epoch.
  */
 uint64_t unix_timestamp_ns(void);
+
+void cvec_drop(struct CVec cvec);
+
+struct CVec cvec_new(void);
 
 struct UUID4_t uuid4_new(void);
 

@@ -21,7 +21,7 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_core::{python::to_pyvalue_err, serialization::from_dict_pyo3};
+use nautilus_core::python::{serialization::from_dict_pyo3, to_pyvalue_err};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::{prelude::*, Decimal};
 use serde::{Deserialize, Serialize};

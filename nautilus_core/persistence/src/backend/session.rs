@@ -23,7 +23,7 @@ use datafusion::{
     prelude::*,
 };
 use futures::StreamExt;
-use nautilus_core::{cvec::CVec, python::to_pyruntime_err};
+use nautilus_core::{ffi::cvec::CVec, python::to_pyruntime_err};
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data, HasTsInit,
 };

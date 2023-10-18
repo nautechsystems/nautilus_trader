@@ -14,22 +14,14 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::hash_map::DefaultHasher,
-    ffi::{c_char, CStr, CString},
+    ffi::{CStr, CString},
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
+    hash::Hash,
     str::FromStr,
 };
 
-use pyo3::{
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyBytes, PyTuple},
-};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
-
-use crate::python::to_pyvalue_err;
 
 /// Represents a pseudo-random UUID (universally unique identifier)
 /// version 4 based on a 128-bit label as specified in RFC 4122.
@@ -40,7 +32,7 @@ use crate::python::to_pyvalue_err;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.core")
 )]
 pub struct UUID4 {
-    value: [u8; 37],
+    pub value: [u8; 37],
 }
 
 impl UUID4 {
@@ -115,139 +107,10 @@ impl<'de> Deserialize<'de> for UUID4 {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl UUID4 {
-    #[new]
-    fn py_new(value: Option<&str>) -> PyResult<Self> {
-        match value {
-            Some(val) => Self::from_str(val).map_err(to_pyvalue_err),
-            None => Ok(Self::new()),
-        }
-    }
-
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let bytes: &PyBytes = state.extract(py)?;
-        let slice = bytes.as_bytes();
-
-        if slice.len() != 37 {
-            return Err(to_pyvalue_err(
-                "Invalid state for deserialzing, incorrect bytes length",
-            ));
-        }
-
-        self.value.copy_from_slice(slice);
-        Ok(())
-    }
-
-    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(_py, &self.value).to_object(_py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
-
-    #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new()) // Safe default
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{}('{}')", stringify!(UUID4), self)
-    }
-
-    #[getter]
-    #[pyo3(name = "value")]
-    fn py_value(&self) -> String {
-        self.to_string()
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<Self> {
-        Self::from_str(value).map_err(to_pyvalue_err)
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn uuid4_new() -> UUID4 {
-    UUID4::new()
-}
-
-/// Returns a [`UUID4`] from C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-///
-/// # Panics
-///
-/// - If `ptr` cannot be cast to a valid C string.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn uuid4_from_cstr(ptr: *const c_char) -> UUID4 {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    UUID4::from(
-        CStr::from_ptr(ptr)
-            .to_str()
-            .unwrap_or_else(|_| panic!("CStr::from_ptr failed")),
-    )
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn uuid4_to_cstr(uuid: &UUID4) -> *const c_char {
-    uuid.to_cstr().as_ptr()
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn uuid4_eq(lhs: &UUID4, rhs: &UUID4) -> u8 {
-    u8::from(lhs == rhs)
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn uuid4_hash(uuid: &UUID4) -> u64 {
-    let mut h = DefaultHasher::new();
-    uuid.hash(&mut h);
-    h.finish()
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::ffi::CString;
-
     use rstest::*;
     use uuid;
 
@@ -294,50 +157,5 @@ mod tests {
         let uuid = UUID4::from(uuid_string);
         let result_string = format!("{uuid}");
         assert_eq!(result_string, uuid_string);
-    }
-
-    #[rstest]
-    fn test_c_api_uuid4_new() {
-        let uuid = uuid4_new();
-        let uuid_string = uuid.to_string();
-        let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
-        assert_eq!(uuid_parsed.get_version().unwrap(), uuid::Version::Random);
-    }
-
-    #[rstest]
-    fn test_c_api_uuid4_from_cstr() {
-        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-        let uuid_cstring = CString::new(uuid_string).expect("CString::new failed");
-        let uuid_ptr = uuid_cstring.as_ptr();
-        let uuid = unsafe { uuid4_from_cstr(uuid_ptr) };
-        assert_eq!(uuid_string, uuid.to_string());
-    }
-
-    #[rstest]
-    fn test_c_api_uuid4_to_cstr() {
-        let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
-        let uuid = UUID4::from(uuid_string);
-        let uuid_ptr = uuid4_to_cstr(&uuid);
-        let uuid_cstr = unsafe { CStr::from_ptr(uuid_ptr) };
-        let uuid_result_string = uuid_cstr.to_str().expect("CStr::to_str failed").to_string();
-        assert_eq!(uuid_string, uuid_result_string);
-    }
-
-    #[rstest]
-    fn test_c_api_uuid4_eq() {
-        let uuid1 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-        let uuid2 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-        let uuid3 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c9");
-        assert_eq!(uuid4_eq(&uuid1, &uuid2), 1);
-        assert_eq!(uuid4_eq(&uuid1, &uuid3), 0);
-    }
-
-    #[rstest]
-    fn test_c_api_uuid4_hash() {
-        let uuid1 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-        let uuid2 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
-        let uuid3 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c9");
-        assert_eq!(uuid4_hash(&uuid1), uuid4_hash(&uuid2));
-        assert_ne!(uuid4_hash(&uuid1), uuid4_hash(&uuid3));
     }
 }

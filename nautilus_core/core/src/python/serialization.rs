@@ -13,29 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt;
+use pyo3::{prelude::*, types::PyDict, Py, PyErr, Python};
+use serde::de::DeserializeOwned;
 
-use pyo3::{
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
-    prelude::*,
-};
+pub fn from_dict_pyo3<T>(py: Python<'_>, values: Py<PyDict>) -> Result<T, PyErr>
+where
+    T: DeserializeOwned,
+{
+    // Extract to JSON string
+    use crate::python::to_pyvalue_err;
+    let json_str: String = PyModule::import(py, "json")?
+        .call_method("dumps", (values,), None)?
+        .extract()?;
 
-/// Gets the type name for the given Python `obj`.
-pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p str> {
-    obj.as_ref(py).get_type().name()
-}
-
-/// Converts any type that implements `Display` to a Python `ValueError`.
-pub fn to_pyvalue_err(e: impl fmt::Display) -> PyErr {
-    PyValueError::new_err(e.to_string())
-}
-
-/// Converts any type that implements `Display` to a Python `TypeError`.
-pub fn to_pytype_err(e: impl fmt::Display) -> PyErr {
-    PyTypeError::new_err(e.to_string())
-}
-
-/// Converts any type that implements `Display` to a Python `RuntimeError`.
-pub fn to_pyruntime_err(e: impl fmt::Display) -> PyErr {
-    PyRuntimeError::new_err(e.to_string())
+    // Deserialize to object
+    let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
+    Ok(instance)
 }

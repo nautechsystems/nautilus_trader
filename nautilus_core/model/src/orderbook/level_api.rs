@@ -15,7 +15,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_core::cvec::CVec;
+use nautilus_core::ffi::cvec::CVec;
 
 use super::{ladder::BookPrice, level::Level};
 use crate::{data::order::BookOrder, enums::OrderSide, types::price::Price};

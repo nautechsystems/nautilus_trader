@@ -19,8 +19,8 @@ use std::{
 };
 
 use nautilus_core::{
-    python::to_pyvalue_err,
-    serialization::{from_dict_pyo3, Serializable},
+    python::{serialization::from_dict_pyo3, to_pyvalue_err},
+    serialization::Serializable,
     time::UnixNanos,
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
