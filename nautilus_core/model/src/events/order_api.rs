@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
+use nautilus_core::{ffi::string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
 
 use super::order::{
     OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,

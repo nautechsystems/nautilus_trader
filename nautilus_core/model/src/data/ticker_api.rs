@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::{string::str_to_cstr, time::UnixNanos};
+use nautilus_core::{ffi::string::str_to_cstr, time::UnixNanos};
 
 use super::ticker::Ticker;
 use crate::identifiers::instrument_id::InstrumentId;

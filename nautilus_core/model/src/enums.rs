@@ -17,7 +17,7 @@
 
 use std::{ffi::c_char, str::FromStr};
 
-use nautilus_core::string::{cstr_to_str, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};

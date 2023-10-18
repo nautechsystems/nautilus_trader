@@ -19,9 +19,11 @@ use std::{
 };
 
 use nautilus_core::{
-    ffi::cvec::CVec,
-    parsing::{bytes_to_string_vec, string_vec_to_bytes},
-    string::{cstr_to_string, str_to_cstr},
+    ffi::{
+        cvec::CVec,
+        parsing::{bytes_to_string_vec, string_vec_to_bytes},
+        string::{cstr_to_string, str_to_cstr},
+    },
     time::UnixNanos,
 };
 

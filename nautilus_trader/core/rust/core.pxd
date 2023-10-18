@@ -45,6 +45,22 @@ cdef extern from "../includes/core.h":
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
 
+    # Returns the current seconds since the UNIX epoch.
+    double unix_timestamp();
+
+    # Returns the current milliseconds since the UNIX epoch.
+    uint64_t unix_timestamp_ms();
+
+    # Returns the current microseconds since the UNIX epoch.
+    uint64_t unix_timestamp_us();
+
+    # Returns the current nanoseconds since the UNIX epoch.
+    uint64_t unix_timestamp_ns();
+
+    void cvec_drop(CVec cvec);
+
+    CVec cvec_new();
+
     # Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
     const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
 
@@ -69,22 +85,6 @@ cdef extern from "../includes/core.h":
     #
     # - If `ptr` is null.
     void cstr_drop(const char *ptr);
-
-    # Returns the current seconds since the UNIX epoch.
-    double unix_timestamp();
-
-    # Returns the current milliseconds since the UNIX epoch.
-    uint64_t unix_timestamp_ms();
-
-    # Returns the current microseconds since the UNIX epoch.
-    uint64_t unix_timestamp_us();
-
-    # Returns the current nanoseconds since the UNIX epoch.
-    uint64_t unix_timestamp_ns();
-
-    void cvec_drop(CVec cvec);
-
-    CVec cvec_new();
 
     UUID4_t uuid4_new();
 

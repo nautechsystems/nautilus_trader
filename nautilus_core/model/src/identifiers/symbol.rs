@@ -20,7 +20,7 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
+use nautilus_core::{correctness::check_valid_string, ffi::string::cstr_to_str};
 use ustr::Ustr;
 
 /// Represents a valid ticker symbol ID for a tradable financial market instrument.

@@ -21,7 +21,7 @@ use std::{
 };
 
 use nautilus_core::{
-    string::{cstr_to_str, str_to_cstr},
+    ffi::string::{cstr_to_str, str_to_cstr},
     time::UnixNanos,
 };
 

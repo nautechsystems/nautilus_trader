@@ -16,7 +16,7 @@
 use std::ffi::c_char;
 
 use nautilus_core::{
-    string::{cstr_to_string, str_to_cstr},
+    ffi::string::{cstr_to_string, str_to_cstr},
     uuid::UUID4,
 };
 

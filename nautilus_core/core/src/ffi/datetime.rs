@@ -13,8 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod cvec;
-pub mod datetime;
-pub mod parsing;
-pub mod string;
-pub mod uuid;
+use std::ffi::c_char;
+
+use crate::{datetime::unix_nanos_to_iso8601, ffi::string::str_to_cstr};
+
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char {
+    str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns))
+}

@@ -22,8 +22,8 @@ use std::{
 use anyhow::{anyhow, Result};
 use nautilus_core::{
     correctness::check_valid_string,
+    ffi::string::{cstr_to_string, str_to_cstr},
     python::to_pyvalue_err,
-    string::{cstr_to_string, str_to_cstr},
 };
 use pyo3::{
     exceptions::PyRuntimeError,
@@ -384,7 +384,7 @@ pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency
 mod tests {
     use std::ffi::{CStr, CString};
 
-    use nautilus_core::string::str_to_cstr;
+    use nautilus_core::ffi::string::str_to_cstr;
     use rstest::rstest;
 
     use super::*;
