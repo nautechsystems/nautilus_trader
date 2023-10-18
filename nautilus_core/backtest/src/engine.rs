@@ -16,7 +16,7 @@
 use std::ops::{Deref, DerefMut};
 
 use nautilus_common::{clock::TestClock, clock_api::TestClock_API, timer::TimeEventHandler};
-use nautilus_core::{cvec::CVec, time::UnixNanos};
+use nautilus_core::{ffi::cvec::CVec, time::UnixNanos};
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {

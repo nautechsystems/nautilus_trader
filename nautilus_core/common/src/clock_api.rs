@@ -18,7 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::{cvec::CVec, string::cstr_to_string, time::UnixNanos};
+use nautilus_core::{ffi::cvec::CVec, string::cstr_to_string, time::UnixNanos};
 use pyo3::{
     ffi,
     prelude::*,

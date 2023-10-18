@@ -13,12 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::time::{Duration, UNIX_EPOCH};
+use std::{
+    ffi::c_char,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use chrono::{
     prelude::{DateTime, Utc},
     SecondsFormat,
 };
+
+use crate::string::str_to_cstr;
 
 const MILLISECONDS_IN_SECOND: u64 = 1_000;
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
@@ -26,59 +31,67 @@ const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
 const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
 /// Converts seconds to nanoseconds (ns).
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn secs_to_nanos(secs: f64) -> u64 {
     (secs * NANOSECONDS_IN_SECOND as f64) as u64
 }
 
 /// Converts seconds to milliseconds (ms).
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn secs_to_millis(secs: f64) -> u64 {
     (secs * MILLISECONDS_IN_SECOND as f64) as u64
 }
 
 /// Converts milliseconds (ms) to nanoseconds (ns).
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn millis_to_nanos(millis: f64) -> u64 {
     (millis * NANOSECONDS_IN_MILLISECOND as f64) as u64
 }
 
 /// Converts microseconds (μs) to nanoseconds (ns).
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn micros_to_nanos(micros: f64) -> u64 {
     (micros * NANOSECONDS_IN_MICROSECOND as f64) as u64
 }
 
 /// Converts nanoseconds (ns) to seconds.
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
     nanos as f64 / NANOSECONDS_IN_SECOND as f64
 }
 
 /// Converts nanoseconds (ns) to milliseconds (ms).
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
-#[no_mangle]
 #[inline]
+#[no_mangle]
 pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }
 
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted string.
 #[inline]
 #[must_use]
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
+}
+
+/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char {
+    str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

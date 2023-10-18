@@ -13,15 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod correctness;
-pub mod datetime;
-pub mod parsing;
-pub mod serialization;
-pub mod string;
-pub mod time;
+pub mod cvec;
 pub mod uuid;
-
-#[cfg(feature = "ffi")]
-pub mod ffi;
-#[cfg(feature = "python")]
-pub mod python;

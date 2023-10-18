@@ -100,7 +100,7 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
 
     // Core
-    let submodule = pyo3::wrap_pymodule!(nautilus_core::core);
+    let submodule = pyo3::wrap_pymodule!(nautilus_core::python::core);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(
         "nautilus_trader.core.nautilus_pyo3.core",
