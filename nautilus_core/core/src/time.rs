@@ -28,32 +28,25 @@ pub fn duration_since_unix_epoch() -> Duration {
         .expect("Error calling `SystemTime::now.duration_since`")
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
 /// Returns the current seconds since the UNIX epoch.
-#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn unix_timestamp() -> f64 {
     duration_since_unix_epoch().as_secs_f64()
 }
 
 /// Returns the current milliseconds since the UNIX epoch.
-#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ms() -> u64 {
     duration_since_unix_epoch().as_millis() as u64
 }
 
 /// Returns the current microseconds since the UNIX epoch.
-#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn unix_timestamp_us() -> u64 {
     duration_since_unix_epoch().as_micros() as u64
 }
 
 /// Returns the current nanoseconds since the UNIX epoch.
-#[cfg(feature = "ffi")]
 #[no_mangle]
 pub extern "C" fn unix_timestamp_ns() -> u64 {
     duration_since_unix_epoch().as_nanos() as u64

@@ -19,8 +19,10 @@ use std::{
 };
 
 use nautilus_core::{
-    parsing::optional_bytes_to_json,
-    string::{cstr_to_string, optional_cstr_to_string, str_to_cstr},
+    ffi::{
+        parsing::optional_bytes_to_json,
+        string::{cstr_to_string, optional_cstr_to_string, str_to_cstr},
+    },
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;

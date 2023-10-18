@@ -17,7 +17,6 @@ pub mod correctness;
 pub mod datetime;
 pub mod parsing;
 pub mod serialization;
-pub mod string;
 pub mod time;
 pub mod uuid;
 

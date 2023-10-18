@@ -23,8 +23,8 @@ use std::{
 
 use anyhow::{anyhow, bail, Result};
 use nautilus_core::{
+    ffi::string::{cstr_to_str, str_to_cstr},
     python::to_pyvalue_err,
-    string::{cstr_to_str, str_to_cstr},
 };
 use pyo3::{
     prelude::*,

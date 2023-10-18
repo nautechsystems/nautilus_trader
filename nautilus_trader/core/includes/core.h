@@ -73,6 +73,30 @@ uint64_t nanos_to_millis(uint64_t nanos);
 uint64_t nanos_to_micros(uint64_t nanos);
 
 /**
+ * Returns the current seconds since the UNIX epoch.
+ */
+double unix_timestamp(void);
+
+/**
+ * Returns the current milliseconds since the UNIX epoch.
+ */
+uint64_t unix_timestamp_ms(void);
+
+/**
+ * Returns the current microseconds since the UNIX epoch.
+ */
+uint64_t unix_timestamp_us(void);
+
+/**
+ * Returns the current nanoseconds since the UNIX epoch.
+ */
+uint64_t unix_timestamp_ns(void);
+
+void cvec_drop(struct CVec cvec);
+
+struct CVec cvec_new(void);
+
+/**
  * Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
  */
 const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
@@ -102,30 +126,6 @@ uint8_t precision_from_cstr(const char *ptr);
  * - If `ptr` is null.
  */
 void cstr_drop(const char *ptr);
-
-/**
- * Returns the current seconds since the UNIX epoch.
- */
-double unix_timestamp(void);
-
-/**
- * Returns the current milliseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_ms(void);
-
-/**
- * Returns the current microseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_us(void);
-
-/**
- * Returns the current nanoseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_ns(void);
-
-void cvec_drop(struct CVec cvec);
-
-struct CVec cvec_new(void);
 
 struct UUID4_t uuid4_new(void);
 

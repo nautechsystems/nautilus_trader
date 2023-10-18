@@ -15,7 +15,7 @@
 
 use std::{ffi::c_char, fmt::Debug, str::FromStr};
 
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_to_string, str_to_cstr};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 

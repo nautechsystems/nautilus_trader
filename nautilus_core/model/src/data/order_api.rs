@@ -19,7 +19,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::string::str_to_cstr;
+use nautilus_core::ffi::string::str_to_cstr;
 
 use super::order::BookOrder;
 use crate::{

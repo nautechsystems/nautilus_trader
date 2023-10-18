@@ -18,7 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::{ffi::cvec::CVec, string::str_to_cstr};
+use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
 use super::{book::OrderBook, level_api::Level_API};
 use crate::{

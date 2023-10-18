@@ -21,7 +21,7 @@ use std::{
 use anyhow::Result;
 use nautilus_core::{
     correctness::{check_string_contains, check_valid_string},
-    string::cstr_to_str,
+    ffi::string::cstr_to_str,
 };
 use ustr::Ustr;
 

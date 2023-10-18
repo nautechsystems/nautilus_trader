@@ -13,17 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    time::{Duration, UNIX_EPOCH},
-};
+use std::time::{Duration, UNIX_EPOCH};
 
 use chrono::{
     prelude::{DateTime, Utc},
     SecondsFormat,
 };
-
-use crate::string::str_to_cstr;
 
 const MILLISECONDS_IN_SECOND: u64 = 1_000;
 const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
@@ -85,13 +80,6 @@ pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
-}
-
-/// Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn unix_nanos_to_iso8601_cstr(timestamp_ns: u64) -> *const c_char {
-    str_to_cstr(&unix_nanos_to_iso8601(timestamp_ns))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
