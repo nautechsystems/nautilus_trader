@@ -16,6 +16,9 @@
 from datetime import datetime
 from typing import Optional
 
+import pandas as pd
+import pytz
+
 from nautilus_trader.core.nautilus_pyo3.model import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3.model import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
@@ -53,9 +56,10 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
-    def btcusdt_future_binance(expiry: Optional[datetime] = None) -> CryptoFuture:
+    def btcusdt_future_binance(expiry: Optional[pd.Timestamp] = None) -> CryptoFuture:
         if expiry is None:
-            expiry = datetime(2022, 3, 25)
+            expiry = pd.Timestamp(datetime(2022, 3, 25), tz=pytz.UTC)
+            nanos_expiry = int(expiry.timestamp() * 1e9)
         instrument_id_str = f"BTCUSDT_{expiry.strftime('%y%m%d')}.BINANCE"
         return CryptoFuture(
             InstrumentId.from_str(instrument_id_str),
@@ -63,7 +67,7 @@ class TestInstrumentProviderPyo3:
             TestTypesProviderPyo3.currency_btc(),
             TestTypesProviderPyo3.currency_usdt(),
             TestTypesProviderPyo3.currency_usdt(),
-            int(expiry.timestamp() * 1e9),
+            nanos_expiry,
             2,
             6,
             Price.from_str("0.01"),

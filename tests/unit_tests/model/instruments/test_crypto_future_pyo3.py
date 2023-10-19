@@ -39,7 +39,7 @@ class TestCryptoFuture:
             "underlying": "BTC",
             "quote_currency": "USDT",
             "settlement_currency": "USDT",
-            "expiration": 1648126800000000000,
+            "expiration": 1648166400000000000,
             "price_precision": 2,
             "size_precision": 6,
             "price_increment": "0.01",
