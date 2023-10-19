@@ -71,7 +71,7 @@ class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        filled_orders = [o.to_dict() for o in orders if o.status == OrderStatus.FILLED or o.status == OrderStatus.PARTIALLY_FILLED]
+        filled_orders = [o.to_dict() for o in orders if o.filled_qty > 0]
         if not filled_orders:
             return pd.DataFrame()
 
