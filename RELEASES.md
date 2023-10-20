@@ -16,6 +16,7 @@ This will be the final release with support for Python 3.9.
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
 - Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
+- Added `ReportProvider.generate_fills_report(...)` which provides a row per individual fill event, thanks @r3k4mn14r
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
 - Implemented Binance `WebSocketClient` live subscribe and unsubscribe
 - Implemented `BinanceCommonDataClient` retries for `update_instruments`
@@ -46,6 +47,7 @@ This will be the final release with support for Python 3.9.
 - Fixed Binance Futures fee rates for backtesting
 - Fixed `Timer` missing condition check for non-positive intervals
 - Fixed `Condition` checks involving integers, was previously defaulting to 32-bit and overflowing
+- Fixed `ReportProvider.generate_order_fills_report(...)` which was missing partial fills for orders not in a final `FILLED` status, thanks @r3k4mn14r
 
 ---
 
