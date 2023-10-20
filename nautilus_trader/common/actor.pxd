@@ -156,7 +156,7 @@ cdef class Actor(Component):
     cpdef void subscribe_ticker(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, ClientId client_id=*)
-    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*)
+    cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint await_partial=*)
     cpdef void subscribe_venue_status(self, Venue venue, ClientId client_id=*)
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*)
