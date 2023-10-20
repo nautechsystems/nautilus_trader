@@ -100,7 +100,9 @@ class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        fills = [OrderFilled.to_dict(e) for o in orders for e in o.events if isinstance(e, OrderFilled)]
+        fills = [
+            OrderFilled.to_dict(e) for o in orders for e in o.events if isinstance(e, OrderFilled)
+        ]
         if not fills:
             return pd.DataFrame()
 
