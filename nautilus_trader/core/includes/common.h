@@ -206,6 +206,42 @@ typedef struct Logger_t Logger_t;
 typedef struct TestClock TestClock;
 
 /**
+ * Represents a time event occurring at the event timestamp.
+ */
+typedef struct TimeEvent_t {
+    /**
+     * The event name.
+     */
+    char* name;
+    /**
+     * The event ID.
+     */
+    UUID4_t event_id;
+    /**
+     * The message category
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the object was initialized.
+     */
+    uint64_t ts_init;
+} TimeEvent_t;
+
+/**
+ * Represents a time event and its associated handler.
+ */
+typedef struct TimeEventHandler_t {
+    /**
+     * The event.
+     */
+    struct TimeEvent_t event;
+    /**
+     * The event ID.
+     */
+    PyObject *callback_ptr;
+} TimeEventHandler_t;
+
+/**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
  *
  * This struct wraps `TestClock` in a way that makes it compatible with C function
@@ -248,41 +284,47 @@ typedef struct Logger_API {
     struct Logger_t *_0;
 } Logger_API;
 
-/**
- * Represents a time event occurring at the event timestamp.
- */
-typedef struct TimeEvent_t {
-    /**
-     * The event name.
-     */
-    char* name;
-    /**
-     * The event ID.
-     */
-    UUID4_t event_id;
-    /**
-     * The message category
-     */
-    uint64_t ts_event;
-    /**
-     * The UNIX timestamp (nanoseconds) when the object was initialized.
-     */
-    uint64_t ts_init;
-} TimeEvent_t;
+const char *component_state_to_cstr(enum ComponentState value);
 
 /**
- * Represents a time event and its associated handler.
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
  */
-typedef struct TimeEventHandler_t {
-    /**
-     * The event.
-     */
-    struct TimeEvent_t event;
-    /**
-     * The event ID.
-     */
-    PyObject *callback_ptr;
-} TimeEventHandler_t;
+enum ComponentState component_state_from_cstr(const char *ptr);
+
+const char *component_trigger_to_cstr(enum ComponentTrigger value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+const char *log_level_to_cstr(enum LogLevel value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogLevel log_level_from_cstr(const char *ptr);
+
+const char *log_color_to_cstr(enum LogColor value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogColor log_color_from_cstr(const char *ptr);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 
 struct TestClock_API test_clock_new(void);
 
@@ -369,46 +411,6 @@ uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
 
 uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
 
-const char *component_state_to_cstr(enum ComponentState value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum ComponentState component_state_from_cstr(const char *ptr);
-
-const char *component_trigger_to_cstr(enum ComponentTrigger value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
-
-const char *log_level_to_cstr(enum LogLevel value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum LogLevel log_level_from_cstr(const char *ptr);
-
-const char *log_color_to_cstr(enum LogColor value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum LogColor log_color_from_cstr(const char *ptr);
-
 /**
  * Creates a new logger.
  *
@@ -454,8 +456,6 @@ void logger_log(struct Logger_API *logger,
                 enum LogColor color,
                 const char *component_ptr,
                 const char *message_ptr);
-
-struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 
 /**
  * # Safety

@@ -113,6 +113,24 @@ cdef extern from "../includes/common.h":
     cdef struct TestClock:
         pass
 
+    # Represents a time event occurring at the event timestamp.
+    cdef struct TimeEvent_t:
+        # The event name.
+        char* name;
+        # The event ID.
+        UUID4_t event_id;
+        # The message category
+        uint64_t ts_event;
+        # The UNIX timestamp (nanoseconds) when the object was initialized.
+        uint64_t ts_init;
+
+    # Represents a time event and its associated handler.
+    cdef struct TimeEventHandler_t:
+        # The event.
+        TimeEvent_t event;
+        # The event ID.
+        PyObject *callback_ptr;
+
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
     #
     # This struct wraps `TestClock` in a way that makes it compatible with C function
@@ -147,23 +165,39 @@ cdef extern from "../includes/common.h":
     cdef struct Logger_API:
         Logger_t *_0;
 
-    # Represents a time event occurring at the event timestamp.
-    cdef struct TimeEvent_t:
-        # The event name.
-        char* name;
-        # The event ID.
-        UUID4_t event_id;
-        # The message category
-        uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the object was initialized.
-        uint64_t ts_init;
+    const char *component_state_to_cstr(ComponentState value);
 
-    # Represents a time event and its associated handler.
-    cdef struct TimeEventHandler_t:
-        # The event.
-        TimeEvent_t event;
-        # The event ID.
-        PyObject *callback_ptr;
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentState component_state_from_cstr(const char *ptr);
+
+    const char *component_trigger_to_cstr(ComponentTrigger value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+    const char *log_level_to_cstr(LogLevel value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogLevel log_level_from_cstr(const char *ptr);
+
+    const char *log_color_to_cstr(LogColor value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogColor log_color_from_cstr(const char *ptr);
+
+    TimeEventHandler_t dummy(TimeEventHandler_t v);
 
     TestClock_API test_clock_new();
 
@@ -238,38 +272,6 @@ cdef extern from "../includes/common.h":
 
     uint64_t live_clock_timestamp_ns(LiveClock_API *clock);
 
-    const char *component_state_to_cstr(ComponentState value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    ComponentState component_state_from_cstr(const char *ptr);
-
-    const char *component_trigger_to_cstr(ComponentTrigger value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    ComponentTrigger component_trigger_from_cstr(const char *ptr);
-
-    const char *log_level_to_cstr(LogLevel value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    LogLevel log_level_from_cstr(const char *ptr);
-
-    const char *log_color_to_cstr(LogColor value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    LogColor log_color_from_cstr(const char *ptr);
-
     # Creates a new logger.
     #
     # # Safety
@@ -311,8 +313,6 @@ cdef extern from "../includes/common.h":
                     LogColor color,
                     const char *component_ptr,
                     const char *message_ptr);
-
-    TimeEventHandler_t dummy(TimeEventHandler_t v);
 
     # # Safety
     #
