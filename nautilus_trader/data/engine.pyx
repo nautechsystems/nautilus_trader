@@ -683,6 +683,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
+                command.data_type.metadata.get("await_partial"),
             )
         elif command.data_type.type == VenueStatus:
             self._handle_subscribe_venue_status(
@@ -979,6 +980,7 @@ cdef class DataEngine(Component):
         self,
         MarketDataClient client,
         BarType bar_type,
+        bint await_partial,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
@@ -986,7 +988,7 @@ cdef class DataEngine(Component):
         if bar_type.is_internally_aggregated():
             # Internal aggregation
             if bar_type not in self._bar_aggregators:
-                self._start_bar_aggregator(client, bar_type)
+                self._start_bar_aggregator(client, bar_type, await_partial)
         else:
             # External aggregation
             if bar_type.instrument_id.is_synthetic():
@@ -1544,6 +1546,8 @@ cdef class DataEngine(Component):
         if partial is not None and partial.bar_type.is_internally_aggregated():
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.bar_type)
+            aggregator.set_await_partial(False)
+
             if aggregator:
                 self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}.")
                 aggregator.set_partial(partial)
@@ -1599,7 +1603,12 @@ cdef class DataEngine(Component):
                 f"no order book found, {snap_event}.",
             )
 
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type):
+    cpdef void _start_bar_aggregator(
+        self,
+        MarketDataClient client,
+        BarType bar_type,
+        bint await_partial,
+    ):
         cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1645,6 +1654,9 @@ cdef class DataEngine(Component):
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "  # pragma: no cover (design-time error)
                 f"not supported in open-source"  # pragma: no cover (design-time error)
             )
+
+        # Set if awaiting initial partial bar
+        aggregator.set_await_partial(await_partial)
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator
