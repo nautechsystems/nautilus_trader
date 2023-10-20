@@ -13,19 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod currencies;
-pub mod data;
-pub mod enums;
-pub mod events;
-pub mod identifiers;
-pub mod instruments;
-pub mod macros;
-pub mod orderbook;
-pub mod orders;
-pub mod position;
-pub mod types;
+use std::ops::{AddAssign, SubAssign};
 
-#[cfg(feature = "ffi")]
-pub mod ffi;
-#[cfg(feature = "python")]
-pub mod python;
+use crate::types::price::Price;
+
+// TODO: Document panic
+#[no_mangle]
+pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
+    // SAFETY: Assumes `value` and `precision` are properly validated
+    Price::new(value, precision).unwrap()
+}
+
+#[no_mangle]
+pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
+    Price::from_raw(raw, precision).unwrap()
+}
+
+#[no_mangle]
+pub extern "C" fn price_as_f64(price: &Price) -> f64 {
+    price.as_f64()
+}
+
+#[no_mangle]
+pub extern "C" fn price_add_assign(mut a: Price, b: Price) {
+    a.add_assign(b);
+}
+
+#[no_mangle]
+pub extern "C" fn price_sub_assign(mut a: Price, b: Price) {
+    a.sub_assign(b);
+}

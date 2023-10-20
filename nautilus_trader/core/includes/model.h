@@ -974,85 +974,6 @@ typedef struct Ticker {
 } Ticker;
 
 /**
- * Represents a valid trader ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen.
- * It is expected a trader ID is the abbreviated name of the trader
- * with an order ID tag number separated by a hyphen.
- *
- * Example: "TESTER-001".
- * The reason for the numerical component of the ID is so that order and position IDs
- * do not collide with those from another node instance.
- */
-typedef struct TraderId_t {
-    /**
-     * The trader ID value.
-     */
-    char* value;
-} TraderId_t;
-
-/**
- * Represents a valid strategy ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen.
- * It is expected a strategy ID is the class name of the strategy,
- * with an order ID tag number separated by a hyphen.
- *
- * Example: "EMACross-001".
- *
- * The reason for the numerical component of the ID is so that order and position IDs
- * do not collide with those from another strategy within the node instance.
- */
-typedef struct StrategyId_t {
-    /**
-     * The strategy ID value.
-     */
-    char* value;
-} StrategyId_t;
-
-/**
- * Represents a valid client order ID (assigned by the Nautilus system).
- */
-typedef struct ClientOrderId_t {
-    /**
-     * The client order ID value.
-     */
-    char* value;
-} ClientOrderId_t;
-
-typedef struct OrderDenied_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    char* reason;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderDenied_t;
-
-typedef struct OrderEmulated_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderEmulated_t;
-
-typedef struct OrderReleased_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct Price_t released_price;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderReleased_t;
-
-/**
  * Represents a valid account ID.
  *
  * Must be correctly formatted with two valid strings either side of a hyphen '-'.
@@ -1068,53 +989,6 @@ typedef struct AccountId_t {
     char* value;
 } AccountId_t;
 
-typedef struct OrderSubmitted_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct AccountId_t account_id;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderSubmitted_t;
-
-/**
- * Represents a valid venue order ID (assigned by a trading venue).
- */
-typedef struct VenueOrderId_t {
-    /**
-     * The venue assigned order ID value.
-     */
-    char* value;
-} VenueOrderId_t;
-
-typedef struct OrderAccepted_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct VenueOrderId_t venue_order_id;
-    struct AccountId_t account_id;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-    uint8_t reconciliation;
-} OrderAccepted_t;
-
-typedef struct OrderRejected_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct AccountId_t account_id;
-    char* reason;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-    uint8_t reconciliation;
-} OrderRejected_t;
-
 /**
  * Represents a system client ID.
  */
@@ -1124,6 +998,16 @@ typedef struct ClientId_t {
      */
     char* value;
 } ClientId_t;
+
+/**
+ * Represents a valid client order ID (assigned by the Nautilus system).
+ */
+typedef struct ClientOrderId_t {
+    /**
+     * The client order ID value.
+     */
+    char* value;
+} ClientOrderId_t;
 
 /**
  * Represents a valid component ID.
@@ -1164,6 +1048,53 @@ typedef struct PositionId_t {
      */
     char* value;
 } PositionId_t;
+
+/**
+ * Represents a valid strategy ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a strategy ID is the class name of the strategy,
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "EMACross-001".
+ *
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another strategy within the node instance.
+ */
+typedef struct StrategyId_t {
+    /**
+     * The strategy ID value.
+     */
+    char* value;
+} StrategyId_t;
+
+/**
+ * Represents a valid trader ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a trader ID is the abbreviated name of the trader
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "TESTER-001".
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another node instance.
+ */
+typedef struct TraderId_t {
+    /**
+     * The trader ID value.
+     */
+    char* value;
+} TraderId_t;
+
+/**
+ * Represents a valid venue order ID (assigned by a trading venue).
+ */
+typedef struct VenueOrderId_t {
+    /**
+     * The venue assigned order ID value.
+     */
+    char* value;
+} VenueOrderId_t;
 
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -1207,6 +1138,75 @@ typedef struct OrderBook_API {
 typedef struct Level_API {
     struct Level *_0;
 } Level_API;
+
+typedef struct OrderDenied_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    char* reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderDenied_t;
+
+typedef struct OrderEmulated_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderEmulated_t;
+
+typedef struct OrderReleased_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct Price_t released_price;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderReleased_t;
+
+typedef struct OrderSubmitted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderSubmitted_t;
+
+typedef struct OrderAccepted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct VenueOrderId_t venue_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderAccepted_t;
+
+typedef struct OrderRejected_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    char* reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderRejected_t;
 
 typedef struct Currency_t {
     char* code;
@@ -1658,76 +1658,6 @@ const char *trigger_type_to_cstr(enum TriggerType value);
  */
 enum TriggerType trigger_type_from_cstr(const char *ptr);
 
-/**
- * # Safety
- *
- * - Assumes valid C string pointers.
- * # Safety
- *
- * - Assumes `reason_ptr` is a valid C string pointer.
- */
-struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
-                                      struct StrategyId_t strategy_id,
-                                      struct InstrumentId_t instrument_id,
-                                      struct ClientOrderId_t client_order_id,
-                                      const char *reason_ptr,
-                                      UUID4_t event_id,
-                                      uint64_t ts_event,
-                                      uint64_t ts_init);
-
-struct OrderEmulated_t order_emulated_new(struct TraderId_t trader_id,
-                                          struct StrategyId_t strategy_id,
-                                          struct InstrumentId_t instrument_id,
-                                          struct ClientOrderId_t client_order_id,
-                                          UUID4_t event_id,
-                                          uint64_t ts_event,
-                                          uint64_t ts_init);
-
-struct OrderReleased_t order_released_new(struct TraderId_t trader_id,
-                                          struct StrategyId_t strategy_id,
-                                          struct InstrumentId_t instrument_id,
-                                          struct ClientOrderId_t client_order_id,
-                                          struct Price_t released_price,
-                                          UUID4_t event_id,
-                                          uint64_t ts_event,
-                                          uint64_t ts_init);
-
-struct OrderSubmitted_t order_submitted_new(struct TraderId_t trader_id,
-                                            struct StrategyId_t strategy_id,
-                                            struct InstrumentId_t instrument_id,
-                                            struct ClientOrderId_t client_order_id,
-                                            struct AccountId_t account_id,
-                                            UUID4_t event_id,
-                                            uint64_t ts_event,
-                                            uint64_t ts_init);
-
-struct OrderAccepted_t order_accepted_new(struct TraderId_t trader_id,
-                                          struct StrategyId_t strategy_id,
-                                          struct InstrumentId_t instrument_id,
-                                          struct ClientOrderId_t client_order_id,
-                                          struct VenueOrderId_t venue_order_id,
-                                          struct AccountId_t account_id,
-                                          UUID4_t event_id,
-                                          uint64_t ts_event,
-                                          uint64_t ts_init,
-                                          uint8_t reconciliation);
-
-/**
- * # Safety
- *
- * - Assumes `reason_ptr` is a valid C string pointer.
- */
-struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
-                                          struct StrategyId_t strategy_id,
-                                          struct InstrumentId_t instrument_id,
-                                          struct ClientOrderId_t client_order_id,
-                                          struct AccountId_t account_id,
-                                          const char *reason_ptr,
-                                          UUID4_t event_id,
-                                          uint64_t ts_event,
-                                          uint64_t ts_init,
-                                          uint8_t reconciliation);
-
 void interned_string_stats(void);
 
 /**
@@ -2053,6 +1983,76 @@ double level_exposure(const struct Level_API *level);
 void vec_levels_drop(CVec v);
 
 void vec_orders_drop(CVec v);
+
+/**
+ * # Safety
+ *
+ * - Assumes valid C string pointers.
+ * # Safety
+ *
+ * - Assumes `reason_ptr` is a valid C string pointer.
+ */
+struct OrderDenied_t order_denied_new(struct TraderId_t trader_id,
+                                      struct StrategyId_t strategy_id,
+                                      struct InstrumentId_t instrument_id,
+                                      struct ClientOrderId_t client_order_id,
+                                      const char *reason_ptr,
+                                      UUID4_t event_id,
+                                      uint64_t ts_event,
+                                      uint64_t ts_init);
+
+struct OrderEmulated_t order_emulated_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+struct OrderReleased_t order_released_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct Price_t released_price,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init);
+
+struct OrderSubmitted_t order_submitted_new(struct TraderId_t trader_id,
+                                            struct StrategyId_t strategy_id,
+                                            struct InstrumentId_t instrument_id,
+                                            struct ClientOrderId_t client_order_id,
+                                            struct AccountId_t account_id,
+                                            UUID4_t event_id,
+                                            uint64_t ts_event,
+                                            uint64_t ts_init);
+
+struct OrderAccepted_t order_accepted_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct VenueOrderId_t venue_order_id,
+                                          struct AccountId_t account_id,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init,
+                                          uint8_t reconciliation);
+
+/**
+ * # Safety
+ *
+ * - Assumes `reason_ptr` is a valid C string pointer.
+ */
+struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
+                                          struct StrategyId_t strategy_id,
+                                          struct InstrumentId_t instrument_id,
+                                          struct ClientOrderId_t client_order_id,
+                                          struct AccountId_t account_id,
+                                          const char *reason_ptr,
+                                          UUID4_t event_id,
+                                          uint64_t ts_event,
+                                          uint64_t ts_init,
+                                          uint8_t reconciliation);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.
