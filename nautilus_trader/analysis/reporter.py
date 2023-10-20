@@ -58,6 +58,8 @@ class ReportProvider:
         """
         Generate an order fills report.
 
+        This report provides a row per order.
+
         Parameters
         ----------
         orders : list[Order]
@@ -85,6 +87,8 @@ class ReportProvider:
     def generate_fills_report(orders: list[Order]) -> pd.DataFrame:
         """
         Generate a fills report.
+
+        This report provides a row per individual fill event.
 
         Parameters
         ----------
