@@ -90,11 +90,11 @@ impl WebSocketClientInner {
     #[inline]
     pub async fn connect_with_server(url: &str,headers:Vec<(String,String)>) -> Result<(MessageWriter, MessageReader), Error> {
 
-       let mut request = url.into_client_request().unwrap();
-       for (key,value) in headers
-       {
-        request.headers_mut().insert((HeaderName::from_bytes((key).as_bytes())).unwrap(),(value).parse().unwrap());
-       }
+        let mut request = url.into_client_request().unwrap();
+        for (key,value) in headers
+        {
+         request.headers_mut().insert((HeaderName::from_bytes((key).as_bytes())).unwrap(),(value).parse().unwrap());
+        }
         connect_async(request).await.map(|resp| resp.0.split())
     }
 
