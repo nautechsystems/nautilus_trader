@@ -2066,6 +2066,7 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "cbindgen",
+ "chrono",
  "criterion",
  "derive_builder",
  "evalexpr",
