@@ -116,7 +116,7 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     )?;
 
     // Model
-    let submodule = pyo3::wrap_pymodule!(nautilus_model::model);
+    let submodule = pyo3::wrap_pymodule!(nautilus_model::python::model);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(
         "nautilus_trader.core.nautilus_pyo3.model",

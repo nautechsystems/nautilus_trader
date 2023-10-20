@@ -17,10 +17,10 @@ use std::ffi::c_char;
 
 use nautilus_core::{ffi::string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
 
-use super::order::{
-    OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,
-};
 use crate::{
+    events::order::{
+        OrderAccepted, OrderDenied, OrderEmulated, OrderRejected, OrderReleased, OrderSubmitted,
+    },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,

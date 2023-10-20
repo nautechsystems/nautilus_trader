@@ -522,67 +522,6 @@ cdef extern from "../includes/model.h":
         # The UNIX timestamp (nanoseconds) when the data object was initialized.
         uint64_t ts_init;
 
-    # Represents a valid trader ID.
-    #
-    # Must be correctly formatted with two valid strings either side of a hyphen.
-    # It is expected a trader ID is the abbreviated name of the trader
-    # with an order ID tag number separated by a hyphen.
-    #
-    # Example: "TESTER-001".
-    # The reason for the numerical component of the ID is so that order and position IDs
-    # do not collide with those from another node instance.
-    cdef struct TraderId_t:
-        # The trader ID value.
-        char* value;
-
-    # Represents a valid strategy ID.
-    #
-    # Must be correctly formatted with two valid strings either side of a hyphen.
-    # It is expected a strategy ID is the class name of the strategy,
-    # with an order ID tag number separated by a hyphen.
-    #
-    # Example: "EMACross-001".
-    #
-    # The reason for the numerical component of the ID is so that order and position IDs
-    # do not collide with those from another strategy within the node instance.
-    cdef struct StrategyId_t:
-        # The strategy ID value.
-        char* value;
-
-    # Represents a valid client order ID (assigned by the Nautilus system).
-    cdef struct ClientOrderId_t:
-        # The client order ID value.
-        char* value;
-
-    cdef struct OrderDenied_t:
-        TraderId_t trader_id;
-        StrategyId_t strategy_id;
-        InstrumentId_t instrument_id;
-        ClientOrderId_t client_order_id;
-        char* reason;
-        UUID4_t event_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-
-    cdef struct OrderEmulated_t:
-        TraderId_t trader_id;
-        StrategyId_t strategy_id;
-        InstrumentId_t instrument_id;
-        ClientOrderId_t client_order_id;
-        UUID4_t event_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-
-    cdef struct OrderReleased_t:
-        TraderId_t trader_id;
-        StrategyId_t strategy_id;
-        InstrumentId_t instrument_id;
-        ClientOrderId_t client_order_id;
-        Price_t released_price;
-        UUID4_t event_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-
     # Represents a valid account ID.
     #
     # Must be correctly formatted with two valid strings either side of a hyphen '-'.
@@ -594,48 +533,14 @@ cdef extern from "../includes/model.h":
         # The account ID value.
         char* value;
 
-    cdef struct OrderSubmitted_t:
-        TraderId_t trader_id;
-        StrategyId_t strategy_id;
-        InstrumentId_t instrument_id;
-        ClientOrderId_t client_order_id;
-        AccountId_t account_id;
-        UUID4_t event_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-
-    # Represents a valid venue order ID (assigned by a trading venue).
-    cdef struct VenueOrderId_t:
-        # The venue assigned order ID value.
-        char* value;
-
-    cdef struct OrderAccepted_t:
-        TraderId_t trader_id;
-        StrategyId_t strategy_id;
-        InstrumentId_t instrument_id;
-        ClientOrderId_t client_order_id;
-        VenueOrderId_t venue_order_id;
-        AccountId_t account_id;
-        UUID4_t event_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-        uint8_t reconciliation;
-
-    cdef struct OrderRejected_t:
-        TraderId_t trader_id;
-        StrategyId_t strategy_id;
-        InstrumentId_t instrument_id;
-        ClientOrderId_t client_order_id;
-        AccountId_t account_id;
-        char* reason;
-        UUID4_t event_id;
-        uint64_t ts_event;
-        uint64_t ts_init;
-        uint8_t reconciliation;
-
     # Represents a system client ID.
     cdef struct ClientId_t:
         # The client ID value.
+        char* value;
+
+    # Represents a valid client order ID (assigned by the Nautilus system).
+    cdef struct ClientOrderId_t:
+        # The client order ID value.
         char* value;
 
     # Represents a valid component ID.
@@ -656,6 +561,38 @@ cdef extern from "../includes/model.h":
     # Represents a valid position ID.
     cdef struct PositionId_t:
         # The position ID value.
+        char* value;
+
+    # Represents a valid strategy ID.
+    #
+    # Must be correctly formatted with two valid strings either side of a hyphen.
+    # It is expected a strategy ID is the class name of the strategy,
+    # with an order ID tag number separated by a hyphen.
+    #
+    # Example: "EMACross-001".
+    #
+    # The reason for the numerical component of the ID is so that order and position IDs
+    # do not collide with those from another strategy within the node instance.
+    cdef struct StrategyId_t:
+        # The strategy ID value.
+        char* value;
+
+    # Represents a valid trader ID.
+    #
+    # Must be correctly formatted with two valid strings either side of a hyphen.
+    # It is expected a trader ID is the abbreviated name of the trader
+    # with an order ID tag number separated by a hyphen.
+    #
+    # Example: "TESTER-001".
+    # The reason for the numerical component of the ID is so that order and position IDs
+    # do not collide with those from another node instance.
+    cdef struct TraderId_t:
+        # The trader ID value.
+        char* value;
+
+    # Represents a valid venue order ID (assigned by a trading venue).
+    cdef struct VenueOrderId_t:
+        # The venue assigned order ID value.
         char* value;
 
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying
@@ -691,6 +628,69 @@ cdef extern from "../includes/model.h":
     # having to manually acce wss the underlying `Level` instance.
     cdef struct Level_API:
         Level *_0;
+
+    cdef struct OrderDenied_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        char* reason;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct OrderEmulated_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct OrderReleased_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        Price_t released_price;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct OrderSubmitted_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        AccountId_t account_id;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+
+    cdef struct OrderAccepted_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        VenueOrderId_t venue_order_id;
+        AccountId_t account_id;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+        uint8_t reconciliation;
+
+    cdef struct OrderRejected_t:
+        TraderId_t trader_id;
+        StrategyId_t strategy_id;
+        InstrumentId_t instrument_id;
+        ClientOrderId_t client_order_id;
+        AccountId_t account_id;
+        char* reason;
+        UUID4_t event_id;
+        uint64_t ts_event;
+        uint64_t ts_init;
+        uint8_t reconciliation;
 
     cdef struct Currency_t:
         char* code;
@@ -1063,72 +1063,6 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
 
-    # # Safety
-    #
-    # - Assumes valid C string pointers.
-    # # Safety
-    #
-    # - Assumes `reason_ptr` is a valid C string pointer.
-    OrderDenied_t order_denied_new(TraderId_t trader_id,
-                                   StrategyId_t strategy_id,
-                                   InstrumentId_t instrument_id,
-                                   ClientOrderId_t client_order_id,
-                                   const char *reason_ptr,
-                                   UUID4_t event_id,
-                                   uint64_t ts_event,
-                                   uint64_t ts_init);
-
-    OrderEmulated_t order_emulated_new(TraderId_t trader_id,
-                                       StrategyId_t strategy_id,
-                                       InstrumentId_t instrument_id,
-                                       ClientOrderId_t client_order_id,
-                                       UUID4_t event_id,
-                                       uint64_t ts_event,
-                                       uint64_t ts_init);
-
-    OrderReleased_t order_released_new(TraderId_t trader_id,
-                                       StrategyId_t strategy_id,
-                                       InstrumentId_t instrument_id,
-                                       ClientOrderId_t client_order_id,
-                                       Price_t released_price,
-                                       UUID4_t event_id,
-                                       uint64_t ts_event,
-                                       uint64_t ts_init);
-
-    OrderSubmitted_t order_submitted_new(TraderId_t trader_id,
-                                         StrategyId_t strategy_id,
-                                         InstrumentId_t instrument_id,
-                                         ClientOrderId_t client_order_id,
-                                         AccountId_t account_id,
-                                         UUID4_t event_id,
-                                         uint64_t ts_event,
-                                         uint64_t ts_init);
-
-    OrderAccepted_t order_accepted_new(TraderId_t trader_id,
-                                       StrategyId_t strategy_id,
-                                       InstrumentId_t instrument_id,
-                                       ClientOrderId_t client_order_id,
-                                       VenueOrderId_t venue_order_id,
-                                       AccountId_t account_id,
-                                       UUID4_t event_id,
-                                       uint64_t ts_event,
-                                       uint64_t ts_init,
-                                       uint8_t reconciliation);
-
-    # # Safety
-    #
-    # - Assumes `reason_ptr` is a valid C string pointer.
-    OrderRejected_t order_rejected_new(TraderId_t trader_id,
-                                       StrategyId_t strategy_id,
-                                       InstrumentId_t instrument_id,
-                                       ClientOrderId_t client_order_id,
-                                       AccountId_t account_id,
-                                       const char *reason_ptr,
-                                       UUID4_t event_id,
-                                       uint64_t ts_event,
-                                       uint64_t ts_init,
-                                       uint8_t reconciliation);
-
     void interned_string_stats();
 
     # Returns a Nautilus identifier from a C string pointer.
@@ -1413,6 +1347,72 @@ cdef extern from "../includes/model.h":
     void vec_levels_drop(CVec v);
 
     void vec_orders_drop(CVec v);
+
+    # # Safety
+    #
+    # - Assumes valid C string pointers.
+    # # Safety
+    #
+    # - Assumes `reason_ptr` is a valid C string pointer.
+    OrderDenied_t order_denied_new(TraderId_t trader_id,
+                                   StrategyId_t strategy_id,
+                                   InstrumentId_t instrument_id,
+                                   ClientOrderId_t client_order_id,
+                                   const char *reason_ptr,
+                                   UUID4_t event_id,
+                                   uint64_t ts_event,
+                                   uint64_t ts_init);
+
+    OrderEmulated_t order_emulated_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
+
+    OrderReleased_t order_released_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       Price_t released_price,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init);
+
+    OrderSubmitted_t order_submitted_new(TraderId_t trader_id,
+                                         StrategyId_t strategy_id,
+                                         InstrumentId_t instrument_id,
+                                         ClientOrderId_t client_order_id,
+                                         AccountId_t account_id,
+                                         UUID4_t event_id,
+                                         uint64_t ts_event,
+                                         uint64_t ts_init);
+
+    OrderAccepted_t order_accepted_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       VenueOrderId_t venue_order_id,
+                                       AccountId_t account_id,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init,
+                                       uint8_t reconciliation);
+
+    # # Safety
+    #
+    # - Assumes `reason_ptr` is a valid C string pointer.
+    OrderRejected_t order_rejected_new(TraderId_t trader_id,
+                                       StrategyId_t strategy_id,
+                                       InstrumentId_t instrument_id,
+                                       ClientOrderId_t client_order_id,
+                                       AccountId_t account_id,
+                                       const char *reason_ptr,
+                                       UUID4_t event_id,
+                                       uint64_t ts_event,
+                                       uint64_t ts_init,
+                                       uint8_t reconciliation);
 
     # Returns a [`Currency`] from pointers and primitives.
     #
