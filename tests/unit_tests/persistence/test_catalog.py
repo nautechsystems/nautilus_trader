@@ -313,7 +313,7 @@ class TestPersistenceCatalog:
 
         # Assert
         assert result == ["abc"]
-    
+
     def test_partioning_min_rows_per_group(
         self,
         betfair_catalog: ParquetDataCatalog,
@@ -337,8 +337,8 @@ class TestPersistenceCatalog:
         )
         quote_ticks = []
 
-        # Num quotes needs to be not divisible by 5000 (default value for min_rows_per_group)
-        expected_num_quotes = 5500
+        # Num quotes needs to be less than 5000 (default value for min_rows_per_group)
+        expected_num_quotes = 100
 
         for _ in range(expected_num_quotes):
             quote_tick = QuoteTick(
@@ -351,11 +351,11 @@ class TestPersistenceCatalog:
                 ts_init=0,
             )
             quote_ticks.append(quote_tick)
-        
+
         # Act
         self.catalog.write_data(data=quote_ticks, partitioning=["ts_event"])
 
         result = len(self.catalog.quote_ticks())
-        
+
         # Assert
         assert result == expected_num_quotes
