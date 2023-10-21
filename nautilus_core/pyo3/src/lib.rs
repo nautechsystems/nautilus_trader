@@ -132,7 +132,7 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     )?;
 
     // Persistence
-    let submodule = pyo3::wrap_pymodule!(nautilus_persistence::persistence);
+    let submodule = pyo3::wrap_pymodule!(nautilus_persistence::python::persistence);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(
         "nautilus_trader.core.nautilus_pyo3.persistence",
