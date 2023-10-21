@@ -13,8 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod data;
-pub mod events;
-pub mod identifiers;
-pub mod orderbook;
-pub mod types;
+use std::ffi::c_char;
+
+use nautilus_core::ffi::string::cstr_to_str;
+
+use crate::identifiers::venue::Venue;
+
+/// Returns a Nautilus identifier from a C string pointer.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
+    Venue::from(cstr_to_str(ptr))
+}
+
+#[no_mangle]
+pub extern "C" fn venue_hash(id: &Venue) -> u64 {
+    id.value.precomputed_hash()
+}
+
+#[no_mangle]
+pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
+    u8::from(venue.is_synthetic())
+}

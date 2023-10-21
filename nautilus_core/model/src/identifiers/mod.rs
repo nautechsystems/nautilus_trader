@@ -24,6 +24,8 @@ use pyo3::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
+use crate::identifier_for_python;
+
 #[macro_use]
 mod macros;
 

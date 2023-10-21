@@ -20,11 +20,12 @@ use std::{
 
 use nautilus_core::ffi::{cvec::CVec, string::str_to_cstr};
 
-use super::{book::OrderBook, level_api::Level_API};
+use super::level::Level_API;
 use crate::{
     data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
     enums::{BookType, OrderSide},
     identifiers::instrument_id::InstrumentId,
+    orderbook::book::OrderBook,
     types::{price::Price, quantity::Quantity},
 };
 

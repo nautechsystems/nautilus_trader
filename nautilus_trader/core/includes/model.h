@@ -956,6 +956,118 @@ typedef struct Data_t {
 } Data_t;
 
 /**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying
+ * [`SyntheticInstrument`].
+ *
+ * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
+ * calls, enabling interaction with `SyntheticInstrument` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
+ * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
+ * having to manually access the underlying instance.
+ */
+typedef struct SyntheticInstrument_API {
+    struct SyntheticInstrument *_0;
+} SyntheticInstrument_API;
+
+/**
+ * Represents a single quote tick in a financial market.
+ */
+typedef struct Ticker {
+    /**
+     * The quotes instrument ID.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The UNIX timestamp (nanoseconds) when the tick event occurred.
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the data object was initialized.
+     */
+    uint64_t ts_init;
+} Ticker;
+
+/**
+ * Represents a valid trader ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a trader ID is the abbreviated name of the trader
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "TESTER-001".
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another node instance.
+ */
+typedef struct TraderId_t {
+    /**
+     * The trader ID value.
+     */
+    char* value;
+} TraderId_t;
+
+/**
+ * Represents a valid strategy ID.
+ *
+ * Must be correctly formatted with two valid strings either side of a hyphen.
+ * It is expected a strategy ID is the class name of the strategy,
+ * with an order ID tag number separated by a hyphen.
+ *
+ * Example: "EMACross-001".
+ *
+ * The reason for the numerical component of the ID is so that order and position IDs
+ * do not collide with those from another strategy within the node instance.
+ */
+typedef struct StrategyId_t {
+    /**
+     * The strategy ID value.
+     */
+    char* value;
+} StrategyId_t;
+
+/**
+ * Represents a valid client order ID (assigned by the Nautilus system).
+ */
+typedef struct ClientOrderId_t {
+    /**
+     * The client order ID value.
+     */
+    char* value;
+} ClientOrderId_t;
+
+typedef struct OrderDenied_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    char* reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderDenied_t;
+
+typedef struct OrderEmulated_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderEmulated_t;
+
+typedef struct OrderReleased_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct Price_t released_price;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderReleased_t;
+
+/**
  * Represents a valid account ID.
  *
  * Must be correctly formatted with two valid strings either side of a hyphen '-'.
@@ -971,6 +1083,53 @@ typedef struct AccountId_t {
     char* value;
 } AccountId_t;
 
+typedef struct OrderSubmitted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+} OrderSubmitted_t;
+
+/**
+ * Represents a valid venue order ID (assigned by a trading venue).
+ */
+typedef struct VenueOrderId_t {
+    /**
+     * The venue assigned order ID value.
+     */
+    char* value;
+} VenueOrderId_t;
+
+typedef struct OrderAccepted_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct VenueOrderId_t venue_order_id;
+    struct AccountId_t account_id;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderAccepted_t;
+
+typedef struct OrderRejected_t {
+    struct TraderId_t trader_id;
+    struct StrategyId_t strategy_id;
+    struct InstrumentId_t instrument_id;
+    struct ClientOrderId_t client_order_id;
+    struct AccountId_t account_id;
+    char* reason;
+    UUID4_t event_id;
+    uint64_t ts_event;
+    uint64_t ts_init;
+    uint8_t reconciliation;
+} OrderRejected_t;
+
 /**
  * Represents a system client ID.
  */
@@ -980,16 +1139,6 @@ typedef struct ClientId_t {
      */
     char* value;
 } ClientId_t;
-
-/**
- * Represents a valid client order ID (assigned by the Nautilus system).
- */
-typedef struct ClientOrderId_t {
-    /**
-     * The client order ID value.
-     */
-    char* value;
-} ClientOrderId_t;
 
 /**
  * Represents a valid component ID.
@@ -1032,68 +1181,6 @@ typedef struct PositionId_t {
 } PositionId_t;
 
 /**
- * Represents a valid strategy ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen.
- * It is expected a strategy ID is the class name of the strategy,
- * with an order ID tag number separated by a hyphen.
- *
- * Example: "EMACross-001".
- *
- * The reason for the numerical component of the ID is so that order and position IDs
- * do not collide with those from another strategy within the node instance.
- */
-typedef struct StrategyId_t {
-    /**
-     * The strategy ID value.
-     */
-    char* value;
-} StrategyId_t;
-
-/**
- * Represents a valid trader ID.
- *
- * Must be correctly formatted with two valid strings either side of a hyphen.
- * It is expected a trader ID is the abbreviated name of the trader
- * with an order ID tag number separated by a hyphen.
- *
- * Example: "TESTER-001".
- * The reason for the numerical component of the ID is so that order and position IDs
- * do not collide with those from another node instance.
- */
-typedef struct TraderId_t {
-    /**
-     * The trader ID value.
-     */
-    char* value;
-} TraderId_t;
-
-/**
- * Represents a valid venue order ID (assigned by a trading venue).
- */
-typedef struct VenueOrderId_t {
-    /**
-     * The venue assigned order ID value.
-     */
-    char* value;
-} VenueOrderId_t;
-
-/**
- * Provides a C compatible Foreign Function Interface (FFI) for an underlying
- * [`SyntheticInstrument`].
- *
- * This struct wraps `SyntheticInstrument` in a way that makes it compatible with C function
- * calls, enabling interaction with `SyntheticInstrument` in a C environment.
- *
- * It implements the `Deref` trait, allowing instances of `SyntheticInstrument_API` to be
- * dereferenced to `SyntheticInstrument`, providing access to `SyntheticInstruments`'s methods without
- * having to manually access the underlying instance.
- */
-typedef struct SyntheticInstrument_API {
-    struct SyntheticInstrument *_0;
-} SyntheticInstrument_API;
-
-/**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`OrderBook`].
  *
  * This struct wraps `OrderBook` in a way that makes it compatible with C function
@@ -1120,93 +1207,6 @@ typedef struct OrderBook_API {
 typedef struct Level_API {
     struct Level *_0;
 } Level_API;
-
-/**
- * Represents a single quote tick in a financial market.
- */
-typedef struct Ticker {
-    /**
-     * The quotes instrument ID.
-     */
-    struct InstrumentId_t instrument_id;
-    /**
-     * The UNIX timestamp (nanoseconds) when the tick event occurred.
-     */
-    uint64_t ts_event;
-    /**
-     * The UNIX timestamp (nanoseconds) when the data object was initialized.
-     */
-    uint64_t ts_init;
-} Ticker;
-
-typedef struct OrderDenied_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    char* reason;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderDenied_t;
-
-typedef struct OrderEmulated_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderEmulated_t;
-
-typedef struct OrderReleased_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct Price_t released_price;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderReleased_t;
-
-typedef struct OrderSubmitted_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct AccountId_t account_id;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-} OrderSubmitted_t;
-
-typedef struct OrderAccepted_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct VenueOrderId_t venue_order_id;
-    struct AccountId_t account_id;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-    uint8_t reconciliation;
-} OrderAccepted_t;
-
-typedef struct OrderRejected_t {
-    struct TraderId_t trader_id;
-    struct StrategyId_t strategy_id;
-    struct InstrumentId_t instrument_id;
-    struct ClientOrderId_t client_order_id;
-    struct AccountId_t account_id;
-    char* reason;
-    UUID4_t event_id;
-    uint64_t ts_event;
-    uint64_t ts_init;
-    uint8_t reconciliation;
-} OrderRejected_t;
 
 typedef struct Currency_t {
     char* code;
@@ -1483,180 +1483,6 @@ enum TriggerType trigger_type_from_cstr(const char *ptr);
 void interned_string_stats(void);
 
 /**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct AccountId_t account_id_new(const char *ptr);
-
-uint64_t account_id_hash(const struct AccountId_t *id);
-
-/**
- * Returns a Nautilus identifier from C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct ClientId_t client_id_new(const char *ptr);
-
-uint64_t client_id_hash(const struct ClientId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct ClientOrderId_t client_order_id_new(const char *ptr);
-
-uint64_t client_order_id_hash(const struct ClientOrderId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct ComponentId_t component_id_new(const char *ptr);
-
-uint64_t component_id_hash(const struct ComponentId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
-
-uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
-
-struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
-
-/**
- * Returns any [`InstrumentId`] parsing error from the provided C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-const char *instrument_id_check_parsing(const char *ptr);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct InstrumentId_t instrument_id_from_cstr(const char *ptr);
-
-/**
- * Returns an [`InstrumentId`] as a C string pointer.
- */
-const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
-
-uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
-
-uint8_t instrument_id_is_synthetic(const struct InstrumentId_t *instrument_id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct OrderListId_t order_list_id_new(const char *ptr);
-
-uint64_t order_list_id_hash(const struct OrderListId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct PositionId_t position_id_new(const char *ptr);
-
-uint64_t position_id_hash(const struct PositionId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct StrategyId_t strategy_id_new(const char *ptr);
-
-uint64_t strategy_id_hash(const struct StrategyId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct Symbol_t symbol_new(const char *ptr);
-
-uint64_t symbol_hash(const struct Symbol_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct TradeId_t trade_id_new(const char *ptr);
-
-uint64_t trade_id_hash(const struct TradeId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct TraderId_t trader_id_new(const char *ptr);
-
-uint64_t trader_id_hash(const struct TraderId_t *id);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct Venue_t venue_new(const char *ptr);
-
-uint64_t venue_hash(const struct Venue_t *id);
-
-uint8_t venue_is_synthetic(const struct Venue_t *venue);
-
-/**
- * Returns a Nautilus identifier from a C string pointer.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- */
-struct VenueOrderId_t venue_order_id_new(const char *ptr);
-
-uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
-
-/**
  * # Safety
  *
  * - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
@@ -1705,106 +1531,6 @@ void synthetic_instrument_change_formula(struct SyntheticInstrument_API *synth,
 
 struct Price_t synthetic_instrument_calculate(struct SyntheticInstrument_API *synth,
                                               const CVec *inputs_ptr);
-
-struct OrderBook_API orderbook_new(struct InstrumentId_t instrument_id, enum BookType book_type);
-
-void orderbook_drop(struct OrderBook_API book);
-
-void orderbook_reset(struct OrderBook_API *book);
-
-struct InstrumentId_t orderbook_instrument_id(const struct OrderBook_API *book);
-
-enum BookType orderbook_book_type(const struct OrderBook_API *book);
-
-uint64_t orderbook_sequence(const struct OrderBook_API *book);
-
-uint64_t orderbook_ts_last(const struct OrderBook_API *book);
-
-uint64_t orderbook_count(const struct OrderBook_API *book);
-
-void orderbook_add(struct OrderBook_API *book,
-                   struct BookOrder_t order,
-                   uint64_t ts_event,
-                   uint64_t sequence);
-
-void orderbook_update(struct OrderBook_API *book,
-                      struct BookOrder_t order,
-                      uint64_t ts_event,
-                      uint64_t sequence);
-
-void orderbook_delete(struct OrderBook_API *book,
-                      struct BookOrder_t order,
-                      uint64_t ts_event,
-                      uint64_t sequence);
-
-void orderbook_clear(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
-
-void orderbook_clear_bids(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
-
-void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
-
-void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
-
-CVec orderbook_bids(struct OrderBook_API *book);
-
-CVec orderbook_asks(struct OrderBook_API *book);
-
-uint8_t orderbook_has_bid(struct OrderBook_API *book);
-
-uint8_t orderbook_has_ask(struct OrderBook_API *book);
-
-struct Price_t orderbook_best_bid_price(struct OrderBook_API *book);
-
-struct Price_t orderbook_best_ask_price(struct OrderBook_API *book);
-
-struct Quantity_t orderbook_best_bid_size(struct OrderBook_API *book);
-
-struct Quantity_t orderbook_best_ask_size(struct OrderBook_API *book);
-
-double orderbook_spread(struct OrderBook_API *book);
-
-double orderbook_midpoint(struct OrderBook_API *book);
-
-double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
-                                         struct Quantity_t qty,
-                                         enum OrderSide order_side);
-
-double orderbook_get_quantity_for_price(struct OrderBook_API *book,
-                                        struct Price_t price,
-                                        enum OrderSide order_side);
-
-void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
-
-void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
-
-CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
-
-void orderbook_check_integrity(const struct OrderBook_API *book);
-
-void vec_fills_drop(CVec v);
-
-/**
- * Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
- */
-const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
-
-struct Level_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
-
-void level_drop(struct Level_API level);
-
-struct Level_API level_clone(const struct Level_API *level);
-
-struct Price_t level_price(const struct Level_API *level);
-
-CVec level_orders(const struct Level_API *level);
-
-double level_size(const struct Level_API *level);
-
-double level_exposure(const struct Level_API *level);
-
-void vec_levels_drop(CVec v);
-
-void vec_orders_drop(CVec v);
 
 struct BarSpecification_t bar_specification_new(uintptr_t step,
                                                 uint8_t aggregation,
@@ -2053,6 +1779,280 @@ struct OrderRejected_t order_rejected_new(struct TraderId_t trader_id,
                                           uint64_t ts_event,
                                           uint64_t ts_init,
                                           uint8_t reconciliation);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct AccountId_t account_id_new(const char *ptr);
+
+uint64_t account_id_hash(const struct AccountId_t *id);
+
+/**
+ * Returns a Nautilus identifier from C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct ClientId_t client_id_new(const char *ptr);
+
+uint64_t client_id_hash(const struct ClientId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct ClientOrderId_t client_order_id_new(const char *ptr);
+
+uint64_t client_order_id_hash(const struct ClientOrderId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct ComponentId_t component_id_new(const char *ptr);
+
+uint64_t component_id_hash(const struct ComponentId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct ExecAlgorithmId_t exec_algorithm_id_new(const char *ptr);
+
+uint64_t exec_algorithm_id_hash(const struct ExecAlgorithmId_t *id);
+
+struct InstrumentId_t instrument_id_new(struct Symbol_t symbol, struct Venue_t venue);
+
+/**
+ * Returns any [`InstrumentId`] parsing error from the provided C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+const char *instrument_id_check_parsing(const char *ptr);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct InstrumentId_t instrument_id_from_cstr(const char *ptr);
+
+/**
+ * Returns an [`InstrumentId`] as a C string pointer.
+ */
+const char *instrument_id_to_cstr(const struct InstrumentId_t *instrument_id);
+
+uint64_t instrument_id_hash(const struct InstrumentId_t *instrument_id);
+
+uint8_t instrument_id_is_synthetic(const struct InstrumentId_t *instrument_id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct OrderListId_t order_list_id_new(const char *ptr);
+
+uint64_t order_list_id_hash(const struct OrderListId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct PositionId_t position_id_new(const char *ptr);
+
+uint64_t position_id_hash(const struct PositionId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct StrategyId_t strategy_id_new(const char *ptr);
+
+uint64_t strategy_id_hash(const struct StrategyId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct Symbol_t symbol_new(const char *ptr);
+
+uint64_t symbol_hash(const struct Symbol_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct TradeId_t trade_id_new(const char *ptr);
+
+uint64_t trade_id_hash(const struct TradeId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct TraderId_t trader_id_new(const char *ptr);
+
+uint64_t trader_id_hash(const struct TraderId_t *id);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct Venue_t venue_new(const char *ptr);
+
+uint64_t venue_hash(const struct Venue_t *id);
+
+uint8_t venue_is_synthetic(const struct Venue_t *venue);
+
+/**
+ * Returns a Nautilus identifier from a C string pointer.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+struct VenueOrderId_t venue_order_id_new(const char *ptr);
+
+uint64_t venue_order_id_hash(const struct VenueOrderId_t *id);
+
+struct OrderBook_API orderbook_new(struct InstrumentId_t instrument_id, enum BookType book_type);
+
+void orderbook_drop(struct OrderBook_API book);
+
+void orderbook_reset(struct OrderBook_API *book);
+
+struct InstrumentId_t orderbook_instrument_id(const struct OrderBook_API *book);
+
+enum BookType orderbook_book_type(const struct OrderBook_API *book);
+
+uint64_t orderbook_sequence(const struct OrderBook_API *book);
+
+uint64_t orderbook_ts_last(const struct OrderBook_API *book);
+
+uint64_t orderbook_count(const struct OrderBook_API *book);
+
+void orderbook_add(struct OrderBook_API *book,
+                   struct BookOrder_t order,
+                   uint64_t ts_event,
+                   uint64_t sequence);
+
+void orderbook_update(struct OrderBook_API *book,
+                      struct BookOrder_t order,
+                      uint64_t ts_event,
+                      uint64_t sequence);
+
+void orderbook_delete(struct OrderBook_API *book,
+                      struct BookOrder_t order,
+                      uint64_t ts_event,
+                      uint64_t sequence);
+
+void orderbook_clear(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+
+void orderbook_clear_bids(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+
+void orderbook_clear_asks(struct OrderBook_API *book, uint64_t ts_event, uint64_t sequence);
+
+void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
+
+CVec orderbook_bids(struct OrderBook_API *book);
+
+CVec orderbook_asks(struct OrderBook_API *book);
+
+uint8_t orderbook_has_bid(struct OrderBook_API *book);
+
+uint8_t orderbook_has_ask(struct OrderBook_API *book);
+
+struct Price_t orderbook_best_bid_price(struct OrderBook_API *book);
+
+struct Price_t orderbook_best_ask_price(struct OrderBook_API *book);
+
+struct Quantity_t orderbook_best_bid_size(struct OrderBook_API *book);
+
+struct Quantity_t orderbook_best_ask_size(struct OrderBook_API *book);
+
+double orderbook_spread(struct OrderBook_API *book);
+
+double orderbook_midpoint(struct OrderBook_API *book);
+
+double orderbook_get_avg_px_for_quantity(struct OrderBook_API *book,
+                                         struct Quantity_t qty,
+                                         enum OrderSide order_side);
+
+double orderbook_get_quantity_for_price(struct OrderBook_API *book,
+                                        struct Price_t price,
+                                        enum OrderSide order_side);
+
+void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *tick);
+
+void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
+
+CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
+
+void orderbook_check_integrity(const struct OrderBook_API *book);
+
+void vec_fills_drop(CVec v);
+
+/**
+ * Returns a pretty printed [`OrderBook`] number of levels per side, as a C string pointer.
+ */
+const char *orderbook_pprint_to_cstr(const struct OrderBook_API *book, uintptr_t num_levels);
+
+struct Level_API level_new(enum OrderSide order_side, struct Price_t price, CVec orders);
+
+void level_drop(struct Level_API level);
+
+struct Level_API level_clone(const struct Level_API *level);
+
+struct Price_t level_price(const struct Level_API *level);
+
+CVec level_orders(const struct Level_API *level);
+
+double level_size(const struct Level_API *level);
+
+double level_exposure(const struct Level_API *level);
+
+void vec_levels_drop(CVec v);
+
+void vec_orders_drop(CVec v);
 
 /**
  * Returns a [`Currency`] from pointers and primitives.
