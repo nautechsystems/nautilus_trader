@@ -22,10 +22,11 @@ use pyo3::{
 use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use crate::{enums, instruments};
+use crate::enums;
 
 pub mod data;
 pub mod identifiers;
+pub mod instruments;
 pub mod macros;
 pub mod orders;
 pub mod types;
@@ -286,12 +287,12 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::types::price::Price>()?;
     m.add_class::<crate::types::quantity::Quantity>()?;
     // instruments
-    m.add_class::<instruments::crypto_future::CryptoFuture>()?;
-    m.add_class::<instruments::crypto_perpetual::CryptoPerpetual>()?;
-    m.add_class::<instruments::currency_pair::CurrencyPair>()?;
-    m.add_class::<instruments::equity::Equity>()?;
-    m.add_class::<instruments::futures_contract::FuturesContract>()?;
-    m.add_class::<instruments::options_contract::OptionsContract>()?;
-    m.add_class::<instruments::synthetic::SyntheticInstrument>()?;
+    m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
+    m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
+    m.add_class::<crate::instruments::currency_pair::CurrencyPair>()?;
+    m.add_class::<crate::instruments::equity::Equity>()?;
+    m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
+    m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
+    m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     Ok(())
 }
