@@ -30,6 +30,9 @@ include = [
     # Include the py.typed file for type checking support
     { path = "nautilus_trader/py.typed", format = "sdist" },
     { path = "nautilus_trader/py.typed", format = "wheel" },
+    # Include Python interface files for type checking support
+    { path = "nautilus_trader/**/*.pyi", format = "sdist" },
+    { path = "nautilus_trader/**/*.pyi", format = "wheel" },
 ]
 
 [build-system]
