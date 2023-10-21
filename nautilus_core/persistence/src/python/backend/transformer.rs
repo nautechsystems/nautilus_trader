@@ -130,7 +130,6 @@ impl DataTransformer {
     }
 }
 
-#[cfg(feature = "python")]
 #[pymethods]
 impl DataTransformer {
     #[staticmethod]
