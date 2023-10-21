@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, ffi::string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a valid client order ID (assigned by the Nautilus system).
@@ -90,26 +89,6 @@ impl From<&str> for ClientOrderId {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
-    ClientOrderId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
-    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

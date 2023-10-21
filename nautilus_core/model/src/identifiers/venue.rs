@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, ffi::string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
@@ -81,32 +80,6 @@ impl From<&str> for Venue {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
-    Venue::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn venue_hash(id: &Venue) -> u64 {
-    id.value.precomputed_hash()
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
-    u8::from(venue.is_synthetic())
 }
 
 ////////////////////////////////////////////////////////////////////////////////

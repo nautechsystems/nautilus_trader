@@ -22,9 +22,10 @@ use pyo3::{
 use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use crate::{enums, identifiers, instruments, orders};
+use crate::{enums, instruments, orders};
 
 pub mod data;
+pub mod identifiers;
 pub mod macros;
 pub mod types;
 
@@ -256,20 +257,20 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<enums::TrailingOffsetType>()?;
     m.add_class::<enums::TriggerType>()?;
     // identifiers
-    m.add_class::<identifiers::account_id::AccountId>()?;
-    m.add_class::<identifiers::client_id::ClientId>()?;
-    m.add_class::<identifiers::client_order_id::ClientOrderId>()?;
-    m.add_class::<identifiers::component_id::ComponentId>()?;
-    m.add_class::<identifiers::exec_algorithm_id::ExecAlgorithmId>()?;
-    m.add_class::<identifiers::instrument_id::InstrumentId>()?;
-    m.add_class::<identifiers::order_list_id::OrderListId>()?;
-    m.add_class::<identifiers::position_id::PositionId>()?;
-    m.add_class::<identifiers::strategy_id::StrategyId>()?;
-    m.add_class::<identifiers::symbol::Symbol>()?;
-    m.add_class::<identifiers::trade_id::TradeId>()?;
-    m.add_class::<identifiers::trader_id::TraderId>()?;
-    m.add_class::<identifiers::venue::Venue>()?;
-    m.add_class::<identifiers::venue_order_id::VenueOrderId>()?;
+    m.add_class::<crate::identifiers::account_id::AccountId>()?;
+    m.add_class::<crate::identifiers::client_id::ClientId>()?;
+    m.add_class::<crate::identifiers::client_order_id::ClientOrderId>()?;
+    m.add_class::<crate::identifiers::component_id::ComponentId>()?;
+    m.add_class::<crate::identifiers::exec_algorithm_id::ExecAlgorithmId>()?;
+    m.add_class::<crate::identifiers::instrument_id::InstrumentId>()?;
+    m.add_class::<crate::identifiers::order_list_id::OrderListId>()?;
+    m.add_class::<crate::identifiers::position_id::PositionId>()?;
+    m.add_class::<crate::identifiers::strategy_id::StrategyId>()?;
+    m.add_class::<crate::identifiers::symbol::Symbol>()?;
+    m.add_class::<crate::identifiers::trade_id::TradeId>()?;
+    m.add_class::<crate::identifiers::trader_id::TraderId>()?;
+    m.add_class::<crate::identifiers::venue::Venue>()?;
+    m.add_class::<crate::identifiers::venue_order_id::VenueOrderId>()?;
     // orders
     m.add_class::<orders::limit::LimitOrder>()?;
     m.add_class::<orders::limit_if_touched::LimitIfTouchedOrder>()?;

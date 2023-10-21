@@ -17,8 +17,12 @@ use std::ops::{Deref, DerefMut};
 
 use nautilus_core::ffi::cvec::CVec;
 
-use super::{ladder::BookPrice, level::Level};
-use crate::{data::order::BookOrder, enums::OrderSide, types::price::Price};
+use crate::{
+    data::order::BookOrder,
+    enums::OrderSide,
+    orderbook::{ladder::BookPrice, level::Level},
+    types::price::Price,
+};
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying order book[`Level`].
 ///

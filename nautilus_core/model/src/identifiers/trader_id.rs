@@ -13,16 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    fmt::{Debug, Display, Formatter},
-};
+use std::fmt::{Debug, Display, Formatter};
 
 use anyhow::Result;
-use nautilus_core::{
-    correctness::{check_string_contains, check_valid_string},
-    ffi::string::cstr_to_str,
-};
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid trader ID.
@@ -81,26 +75,6 @@ impl From<&str> for TraderId {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
-    TraderId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn trader_id_hash(id: &TraderId) -> u64 {
-    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
