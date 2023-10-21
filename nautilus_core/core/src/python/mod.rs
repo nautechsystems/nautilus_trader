@@ -20,7 +20,7 @@ use pyo3::{
     prelude::*,
     wrap_pyfunction,
 };
-
+pub mod casing;
 pub mod datetime;
 pub mod serialization;
 pub mod uuid;
@@ -49,6 +49,7 @@ pub fn to_pyruntime_err(e: impl fmt::Display) -> PyErr {
 #[pymodule]
 pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::uuid::UUID4>()?;
+    m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_millis, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_millis_to_nanos, m)?)?;
