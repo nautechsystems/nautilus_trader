@@ -206,42 +206,6 @@ typedef struct Logger_t Logger_t;
 typedef struct TestClock TestClock;
 
 /**
- * Represents a time event occurring at the event timestamp.
- */
-typedef struct TimeEvent_t {
-    /**
-     * The event name.
-     */
-    char* name;
-    /**
-     * The event ID.
-     */
-    UUID4_t event_id;
-    /**
-     * The message category
-     */
-    uint64_t ts_event;
-    /**
-     * The UNIX timestamp (nanoseconds) when the object was initialized.
-     */
-    uint64_t ts_init;
-} TimeEvent_t;
-
-/**
- * Represents a time event and its associated handler.
- */
-typedef struct TimeEventHandler_t {
-    /**
-     * The event.
-     */
-    struct TimeEvent_t event;
-    /**
-     * The event ID.
-     */
-    PyObject *callback_ptr;
-} TimeEventHandler_t;
-
-/**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
  *
  * This struct wraps `TestClock` in a way that makes it compatible with C function
@@ -284,6 +248,42 @@ typedef struct Logger_API {
     struct Logger_t *_0;
 } Logger_API;
 
+/**
+ * Represents a time event occurring at the event timestamp.
+ */
+typedef struct TimeEvent_t {
+    /**
+     * The event name.
+     */
+    char* name;
+    /**
+     * The event ID.
+     */
+    UUID4_t event_id;
+    /**
+     * The message category
+     */
+    uint64_t ts_event;
+    /**
+     * The UNIX timestamp (nanoseconds) when the object was initialized.
+     */
+    uint64_t ts_init;
+} TimeEvent_t;
+
+/**
+ * Represents a time event and its associated handler.
+ */
+typedef struct TimeEventHandler_t {
+    /**
+     * The event.
+     */
+    struct TimeEvent_t event;
+    /**
+     * The event ID.
+     */
+    PyObject *callback_ptr;
+} TimeEventHandler_t;
+
 const char *component_state_to_cstr(enum ComponentState value);
 
 /**
@@ -323,8 +323,6 @@ const char *log_color_to_cstr(enum LogColor value);
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum LogColor log_color_from_cstr(const char *ptr);
-
-struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
 
 struct TestClock_API test_clock_new(void);
 
@@ -471,3 +469,5 @@ struct TimeEvent_t time_event_new(const char *name_ptr,
  * Returns a [`TimeEvent`] as a C string pointer.
  */
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

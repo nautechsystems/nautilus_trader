@@ -20,7 +20,7 @@ use nautilus_core::{
     uuid::UUID4,
 };
 
-use crate::timer::TimeEvent;
+use crate::timer::{TimeEvent, TimeEventHandler};
 
 /// # Safety
 ///
@@ -39,4 +39,9 @@ pub unsafe extern "C" fn time_event_new(
 #[no_mangle]
 pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {
     str_to_cstr(&event.to_string())
+}
+
+#[no_mangle]
+pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
+    v
 }

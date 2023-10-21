@@ -27,7 +27,7 @@ use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub struct MonotonicClock {
-    /// The last recorded duration value from the clock.
+    /// The last recorded duration value for the clock.
     last: Duration,
 }
 
