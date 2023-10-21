@@ -27,9 +27,9 @@ use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{Data, HasTsInit};
 use pyo3::prelude::*;
 
-use crate::{
-    arrow::{DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream},
-    kmerge_batch::{EagerStream, ElementBatchIter, KMerge},
+use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
+use crate::arrow::{
+    DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
 
 #[derive(Debug, Default)]
