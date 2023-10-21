@@ -71,8 +71,8 @@ The `instrument_id` for the synthetic instrument in the above example will be st
 ```
 
 ## Updating formulas
-It's also possible to update a synthetic instruments formula at any time. The following examples
-shows up to achieve this with an actor/strategy.
+It's also possible to update a synthetic instrument formulas at any time. The following example
+shows how to achieve this with an actor/strategy.
 
 ```
 # Recover the synthetic instrument from the cache (assuming `synthetic_id` was assigned)
