@@ -9,7 +9,7 @@ below), it's possible to implement any type of trading strategy including direct
 pairs, market making etc.
 
 Refer to the `Strategy` in the [API Reference](../api_reference/trading.md) for a complete description
-of all the possible functionality.
+of all available methods.
 
 There are two main parts of a Nautilus trading strategy:
 - The strategy implementation itself, defined by inheriting the `Strategy` class
@@ -23,9 +23,9 @@ The main capabilities of a strategy include:
 - Historical data requests
 - Live data feed subscriptions
 - Setting time alerts or timers
-- Accessing the cache
-- Accessing the portfolio
-- Creating and managing orders
+- Cache access
+- Portfolio access
+- Creating and managing orders and positions
 
 ## Implementation
 Since a trading strategy is a class which inherits from `Strategy`, you must define
@@ -221,6 +221,76 @@ self.clock.set_timer(
     name="MyTimer1",
     interval=pd.Timedelta(minutes=1),
 )
+```
+
+### Cache access
+
+The traders central `Cache` can be accessed to fetch data and execution objects (orders, positions etc).
+There are many methods available often with filtering functionality, here we go through some basic use cases.
+
+#### Fetching data
+
+The following example shows how data can be fetched from the cache (assuming some instrument ID attribute is assigned):
+
+```python
+last_quote = self.cache.quote_tick(self.instrument_id)
+last_trade = self.cache.trade_tick(self.instrument_id)
+last_bar = self.cache.bar(<SOME_BAR_TYPE>)
+```
+
+#### Fetching execution objects
+
+The following example shows how individual order and position objects can be fetched from the cache:
+
+```python
+order = self.cache.order(<SOME_CLIENT_ORDER_ID>)
+position = self.cache.position(<SOME_POSITION_ID>)
+
+```
+
+Refer to the `Cache` in the [API Reference](../api_reference/cache.md) for a complete description
+of all available methods.
+
+### Portfolio access
+
+The traders central `Portfolio` can be accessed to fetch account and positional information.
+The following shows a general outline of available methods.
+
+#### Account and positional information
+
+```python
+def account(self, venue: Venue) -> Account
+
+def balances_locked(self, venue: Venue) -> dict[Currency, Money]
+def margins_init(self, venue: Venue) -> dict[Currency, Money]
+def margins_maint(self, venue: Venue) -> dict[Currency, Money]
+def unrealized_pnls(self, venue: Venue) -> dict[Currency, Money]
+def net_exposures(self, venue: Venue) -> dict[Currency, Money]
+
+def unrealized_pnl(self, instrument_id: InstrumentId) -> Money
+def net_exposure(self, instrument_id: InstrumentId) -> Money
+def net_position(self, instrument_id: InstrumentId) -> decimal.Decimal
+
+def is_net_long(self, instrument_id: InstrumentId) -> bool
+def is_net_short(self, instrument_id: InstrumentId) -> bool
+def is_flat(self, instrument_id: InstrumentId) -> bool
+def is_completely_flat(self) -> bool
+```
+
+Refer to the `Portfolio` in the [API Reference](../api_reference/portfolio.md) for a complete description
+of all available methods.
+
+#### Reports and analysis
+
+The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed with a flexible amount of data 
+(to accommodate different lookback windows). The analyzer can provide tracking for and generating of performance
+metrics and statistics.
+
+Refer to the `PortfolioAnalyzer` in the [API Reference](../api_reference/analysis.md) for a complete description
+of all available methods.
+
+```{tip}
+Also see the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
 ```
 
 ### Trading commands
