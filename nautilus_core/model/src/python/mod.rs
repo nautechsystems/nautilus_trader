@@ -34,14 +34,12 @@ pub mod types;
 pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
 
 /// Python iterator over the variants of an enum.
-#[cfg(feature = "python")]
 #[pyclass]
 pub struct EnumIterator {
     // Type erasure for code reuse. Generic types can't be exposed to Python.
     iter: Box<dyn Iterator<Item = PyObject> + Send>,
 }
 
-#[cfg(feature = "python")]
 #[pymethods]
 impl EnumIterator {
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
@@ -53,7 +51,6 @@ impl EnumIterator {
     }
 }
 
-#[cfg(feature = "python")]
 impl EnumIterator {
     pub fn new<E>(py: Python<'_>) -> Self
     where
@@ -72,7 +69,6 @@ impl EnumIterator {
     }
 }
 
-#[cfg(feature = "python")]
 pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
 
@@ -90,7 +86,6 @@ pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyDict>> {
     Ok(dict.into_py(py))
 }
 
-#[cfg(feature = "python")]
 pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
     match val {
         Value::Null => Ok(py.None()),
@@ -121,7 +116,6 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
 }
 
 #[cfg(test)]
-#[cfg(feature = "python")]
 mod tests {
     use pyo3::{
         prelude::*,
