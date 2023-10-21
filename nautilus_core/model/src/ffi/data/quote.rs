@@ -21,8 +21,8 @@ use std::{
 
 use nautilus_core::{ffi::string::str_to_cstr, time::UnixNanos};
 
-use super::quote::QuoteTick;
 use crate::{
+    data::quote::QuoteTick,
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };

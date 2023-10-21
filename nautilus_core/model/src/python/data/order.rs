@@ -24,8 +24,8 @@ use nautilus_core::{
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
-use super::order::{BookOrder, OrderId};
 use crate::{
+    data::order::{BookOrder, OrderId},
     enums::OrderSide,
     python::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},

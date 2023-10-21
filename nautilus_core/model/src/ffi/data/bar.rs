@@ -25,8 +25,8 @@ use nautilus_core::{
     time::UnixNanos,
 };
 
-use super::bar::{Bar, BarSpecification, BarType};
 use crate::{
+    data::bar::{Bar, BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::instrument_id::InstrumentId,
     types::{price::Price, quantity::Quantity},

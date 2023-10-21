@@ -25,8 +25,9 @@ use nautilus_core::{
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
-use super::ticker::Ticker;
-use crate::{identifiers::instrument_id::InstrumentId, python::PY_MODULE_MODEL};
+use crate::{
+    data::ticker::Ticker, identifiers::instrument_id::InstrumentId, python::PY_MODULE_MODEL,
+};
 
 #[pymethods]
 impl Ticker {
