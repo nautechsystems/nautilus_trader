@@ -22,11 +22,12 @@ use pyo3::{
 use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use crate::{enums, instruments, orders};
+use crate::{enums, instruments};
 
 pub mod data;
 pub mod identifiers;
 pub mod macros;
+pub mod orders;
 pub mod types;
 
 pub const PY_MODULE_MODEL: &str = "nautilus_trader.core.nautilus_pyo3.model";
@@ -272,14 +273,14 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::identifiers::venue::Venue>()?;
     m.add_class::<crate::identifiers::venue_order_id::VenueOrderId>()?;
     // orders
-    m.add_class::<orders::limit::LimitOrder>()?;
-    m.add_class::<orders::limit_if_touched::LimitIfTouchedOrder>()?;
-    m.add_class::<orders::market::MarketOrder>()?;
-    m.add_class::<orders::market_to_limit::MarketToLimitOrder>()?;
-    m.add_class::<orders::stop_limit::StopLimitOrder>()?;
-    m.add_class::<orders::stop_market::StopMarketOrder>()?;
-    m.add_class::<orders::trailing_stop_limit::TrailingStopLimitOrder>()?;
-    m.add_class::<orders::trailing_stop_market::TrailingStopMarketOrder>()?;
+    m.add_class::<crate::orders::limit::LimitOrder>()?;
+    m.add_class::<crate::orders::limit_if_touched::LimitIfTouchedOrder>()?;
+    m.add_class::<crate::orders::market::MarketOrder>()?;
+    m.add_class::<crate::orders::market_to_limit::MarketToLimitOrder>()?;
+    m.add_class::<crate::orders::stop_limit::StopLimitOrder>()?;
+    m.add_class::<crate::orders::stop_market::StopMarketOrder>()?;
+    m.add_class::<crate::orders::trailing_stop_limit::TrailingStopLimitOrder>()?;
+    m.add_class::<crate::orders::trailing_stop_market::TrailingStopMarketOrder>()?;
     m.add_class::<crate::types::currency::Currency>()?;
     m.add_class::<crate::types::money::Money>()?;
     m.add_class::<crate::types::price::Price>()?;
