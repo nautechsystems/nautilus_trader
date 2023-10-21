@@ -16,6 +16,7 @@
 use pyo3::prelude::*;
 
 mod backend;
+mod wranglers;
 
 /// Loaded as nautilus_pyo3.persistence
 #[pymodule]
@@ -24,9 +25,9 @@ pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::backend::session::DataBackendSession>()?;
     m.add_class::<crate::backend::session::DataQueryResult>()?;
     m.add_class::<backend::transformer::DataTransformer>()?;
-    m.add_class::<crate::wranglers::bar::BarDataWrangler>()?;
-    m.add_class::<crate::wranglers::delta::OrderBookDeltaDataWrangler>()?;
-    m.add_class::<crate::wranglers::quote::QuoteTickDataWrangler>()?;
-    m.add_class::<crate::wranglers::trade::TradeTickDataWrangler>()?;
+    m.add_class::<wranglers::bar::BarDataWrangler>()?;
+    m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
+    m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
+    m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
     Ok(())
 }

@@ -16,7 +16,6 @@
 pub mod arrow;
 pub mod backend;
 mod kmerge_batch;
-pub mod wranglers;
 
 #[cfg(feature = "python")]
 pub mod python;
