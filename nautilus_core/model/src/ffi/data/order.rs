@@ -21,50 +21,59 @@ use std::{
 
 use nautilus_core::ffi::string::str_to_cstr;
 
-use super::trade::TradeTick;
 use crate::{
-    enums::AggressorSide,
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    data::order::BookOrder,
+    enums::OrderSide,
     types::{price::Price, quantity::Quantity},
 };
 
 #[no_mangle]
-pub extern "C" fn trade_tick_new(
-    instrument_id: InstrumentId,
+pub extern "C" fn book_order_from_raw(
+    order_side: OrderSide,
     price_raw: i64,
     price_prec: u8,
     size_raw: u64,
     size_prec: u8,
-    aggressor_side: AggressorSide,
-    trade_id: TradeId,
-    ts_event: u64,
-    ts_init: u64,
-) -> TradeTick {
-    TradeTick::new(
-        instrument_id,
+    order_id: u64,
+) -> BookOrder {
+    BookOrder::new(
+        order_side,
         Price::from_raw(price_raw, price_prec).unwrap(),
         Quantity::from_raw(size_raw, size_prec).unwrap(),
-        aggressor_side,
-        trade_id,
-        ts_event,
-        ts_init,
+        order_id,
     )
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_eq(lhs: &TradeTick, rhs: &TradeTick) -> u8 {
+pub extern "C" fn book_order_eq(lhs: &BookOrder, rhs: &BookOrder) -> u8 {
     u8::from(lhs == rhs)
 }
 
 #[no_mangle]
-pub extern "C" fn trade_tick_hash(delta: &TradeTick) -> u64 {
+pub extern "C" fn book_order_hash(order: &BookOrder) -> u64 {
     let mut hasher = DefaultHasher::new();
-    delta.hash(&mut hasher);
+    order.hash(&mut hasher);
     hasher.finish()
 }
 
-/// Returns a [`TradeTick`] as a C string pointer.
 #[no_mangle]
-pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
-    str_to_cstr(&tick.to_string())
+pub extern "C" fn book_order_exposure(order: &BookOrder) -> f64 {
+    order.exposure()
+}
+
+#[no_mangle]
+pub extern "C" fn book_order_signed_size(order: &BookOrder) -> f64 {
+    order.signed_size()
+}
+
+/// Returns a [`BookOrder`] display string as a C string pointer.
+#[no_mangle]
+pub extern "C" fn book_order_display_to_cstr(order: &BookOrder) -> *const c_char {
+    str_to_cstr(&format!("{}", order))
+}
+
+/// Returns a [`BookOrder`] debug string as a C string pointer.
+#[no_mangle]
+pub extern "C" fn book_order_debug_to_cstr(order: &BookOrder) -> *const c_char {
+    str_to_cstr(&format!("{:?}", order))
 }

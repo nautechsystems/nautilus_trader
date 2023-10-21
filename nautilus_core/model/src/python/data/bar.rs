@@ -25,8 +25,8 @@ use nautilus_core::{
 };
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 
-use super::bar::{Bar, BarSpecification, BarType};
 use crate::{
+    data::bar::{Bar, BarSpecification, BarType},
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,

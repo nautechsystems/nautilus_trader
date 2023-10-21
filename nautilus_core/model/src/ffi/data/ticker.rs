@@ -13,6 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod data;
-pub mod events;
-pub mod types;
+use std::ffi::c_char;
+
+use nautilus_core::{ffi::string::str_to_cstr, time::UnixNanos};
+
+use crate::{data::ticker::Ticker, identifiers::instrument_id::InstrumentId};
+
+#[no_mangle]
+pub extern "C" fn ticker_new(
+    instrument_id: InstrumentId,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+) -> Ticker {
+    Ticker::new(instrument_id, ts_event, ts_init)
+}
+
+/// Returns a [`Ticker`] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn ticker_to_cstr(ticker: &Ticker) -> *const c_char {
+    str_to_cstr(&ticker.to_string())
+}

@@ -16,6 +16,7 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
+    str::FromStr,
 };
 
 use nautilus_core::{
@@ -23,34 +24,108 @@ use nautilus_core::{
     serialization::Serializable,
     time::UnixNanos,
 };
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use pyo3::{
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyDict, PyLong, PyString, PyTuple},
+};
 
-use super::{delta::OrderBookDelta, order::BookOrder};
-use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId, python::PY_MODULE_MODEL};
+use crate::{
+    data::trade::TradeTick,
+    enums::{AggressorSide, FromU8},
+    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    python::PY_MODULE_MODEL,
+    types::{price::Price, quantity::Quantity},
+};
 
 #[pymethods]
-impl OrderBookDelta {
+impl TradeTick {
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
-        action: BookAction,
-        order: BookOrder,
-        flags: u8,
-        sequence: u64,
+        price: Price,
+        size: Quantity,
+        aggressor_side: AggressorSide,
+        trade_id: TradeId,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
         Self::new(
             instrument_id,
-            action,
-            order,
-            flags,
-            sequence,
+            price,
+            size,
+            aggressor_side,
+            trade_id,
             ts_event,
             ts_init,
         )
     }
 
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let tuple: (
+            &PyString,
+            &PyLong,
+            &PyLong,
+            &PyLong,
+            &PyLong,
+            &PyLong,
+            &PyString,
+            &PyLong,
+            &PyLong,
+        ) = state.extract(py)?;
+        let instrument_id_str: &str = tuple.0.extract()?;
+        let price_raw = tuple.1.extract()?;
+        let price_prec = tuple.2.extract()?;
+        let size_raw = tuple.3.extract()?;
+        let size_prec = tuple.4.extract()?;
+        let aggressor_side_u8 = tuple.5.extract()?;
+        let trade_id_str = tuple.6.extract()?;
+
+        self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+        self.price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
+        self.size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+        self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
+        self.trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
+        self.ts_event = tuple.7.extract()?;
+        self.ts_init = tuple.8.extract()?;
+
+        Ok(())
+    }
+
+    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
+        Ok((
+            self.instrument_id.to_string(),
+            self.price.raw,
+            self.price.precision,
+            self.size.raw,
+            self.size.precision,
+            self.aggressor_side as u8,
+            self.trade_id.to_string(),
+            self.ts_event,
+            self.ts_init,
+        )
+            .to_object(_py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    }
+
+    #[staticmethod]
+    fn _safe_constructor() -> PyResult<Self> {
+        Ok(Self::new(
+            InstrumentId::from("NULL.NULL"),
+            Price::zero(0),
+            Quantity::zero(0),
+            AggressorSide::NoAggressor,
+            TradeId::from("NULL"),
+            0,
+            0,
+        ))
+        // Safe default
+    }
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),
@@ -70,7 +145,7 @@ impl OrderBookDelta {
     }
 
     fn __repr__(&self) -> String {
-        format!("{self:?}")
+        format!("{}({})", stringify!(TradeTick), self)
     }
 
     #[getter]
@@ -79,23 +154,23 @@ impl OrderBookDelta {
     }
 
     #[getter]
-    fn action(&self) -> BookAction {
-        self.action
+    fn price(&self) -> Price {
+        self.price
     }
 
     #[getter]
-    fn order(&self) -> BookOrder {
-        self.order
+    fn size(&self) -> Quantity {
+        self.size
     }
 
     #[getter]
-    fn flags(&self) -> u8 {
-        self.flags
+    fn aggressor_side(&self) -> AggressorSide {
+        self.aggressor_side
     }
 
     #[getter]
-    fn sequence(&self) -> u64 {
-        self.sequence
+    fn trade_id(&self) -> TradeId {
+        self.trade_id
     }
 
     #[getter]
@@ -111,7 +186,7 @@ impl OrderBookDelta {
     #[staticmethod]
     #[pyo3(name = "fully_qualified_name")]
     fn py_fully_qualified_name() -> String {
-        format!("{}:{}", PY_MODULE_MODEL, stringify!(OrderBookDelta))
+        format!("{}:{}", PY_MODULE_MODEL, stringify!(TradeTick))
     }
 
     /// Return a dictionary representation of the object.
@@ -173,14 +248,14 @@ impl OrderBookDelta {
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
+        // SAFETY: Unwrapping is safe when serializing a valid object
         self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
+        // SAFETY: Unwrapping is safe when serializing a valid object
         self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }
@@ -190,44 +265,44 @@ impl OrderBookDelta {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use super::*;
-    use crate::data::delta::stubs::stub_delta;
+    use crate::data::trade::{stubs::*, TradeTick};
 
     #[rstest]
-    fn test_as_dict(stub_delta: OrderBookDelta) {
+    fn test_as_dict(trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let delta = stub_delta;
+        let tick = trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict_string = delta.py_as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'OrderBookDelta', 'instrument_id': 'AAPL.NASDAQ', 'action': 'ADD', 'order': {'side': 'BUY', 'price': '100.00', 'size': '10', 'order_id': 123456}, 'flags': 0, 'sequence': 1, 'ts_event': 1, 'ts_init': 2}"#;
+            let dict_string = tick.py_as_dict(py).unwrap().to_string();
+            let expected_string = r#"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}"#;
             assert_eq!(dict_string, expected_string);
         });
     }
 
     #[rstest]
-    fn test_from_dict(stub_delta: OrderBookDelta) {
+    fn test_from_dict(trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let delta = stub_delta;
+        let tick = trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict = delta.py_as_dict(py).unwrap();
-            let parsed = OrderBookDelta::py_from_dict(py, dict).unwrap();
-            assert_eq!(parsed, delta);
+            let dict = tick.py_as_dict(py).unwrap();
+            let parsed = TradeTick::py_from_dict(py, dict).unwrap();
+            assert_eq!(parsed, tick);
         });
     }
 
     #[rstest]
-    fn test_from_pyobject(stub_delta: OrderBookDelta) {
+    fn test_from_pyobject(trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let delta = stub_delta;
+        let tick = trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let delta_pyobject = delta.into_py(py);
-            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
-            assert_eq!(parsed_delta, delta);
+            let tick_pyobject = tick.into_py(py);
+            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            assert_eq!(parsed_tick, tick);
         });
     }
 }

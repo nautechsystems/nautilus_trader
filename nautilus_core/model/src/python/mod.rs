@@ -22,8 +22,9 @@ use pyo3::{
 use serde_json::Value;
 use strum::IntoEnumIterator;
 
-use crate::{data, enums, identifiers, instruments, orders};
+use crate::{enums, identifiers, instruments, orders};
 
+pub mod data;
 pub mod macros;
 pub mod types;
 
@@ -222,13 +223,13 @@ mod tests {
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // data
-    m.add_class::<data::bar::BarSpecification>()?;
-    m.add_class::<data::bar::BarType>()?;
-    m.add_class::<data::bar::Bar>()?;
-    m.add_class::<data::order::BookOrder>()?;
-    m.add_class::<data::delta::OrderBookDelta>()?;
-    m.add_class::<data::quote::QuoteTick>()?;
-    m.add_class::<data::trade::TradeTick>()?;
+    m.add_class::<crate::data::bar::BarSpecification>()?;
+    m.add_class::<crate::data::bar::BarType>()?;
+    m.add_class::<crate::data::bar::Bar>()?;
+    m.add_class::<crate::data::order::BookOrder>()?;
+    m.add_class::<crate::data::delta::OrderBookDelta>()?;
+    m.add_class::<crate::data::quote::QuoteTick>()?;
+    m.add_class::<crate::data::trade::TradeTick>()?;
     // enums
     m.add_class::<enums::AccountType>()?;
     m.add_class::<enums::AggregationSource>()?;

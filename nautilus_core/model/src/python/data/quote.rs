@@ -30,8 +30,8 @@ use pyo3::{
     types::{PyDict, PyLong, PyString, PyTuple},
 };
 
-use super::quote::QuoteTick;
 use crate::{
+    data::quote::QuoteTick,
     enums::PriceType,
     identifiers::instrument_id::InstrumentId,
     python::PY_MODULE_MODEL,

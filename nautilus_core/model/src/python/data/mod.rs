@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod data;
-pub mod events;
-pub mod types;
+pub mod bar;
+pub mod delta;
+pub mod order;
+pub mod quote;
+pub mod ticker;
+pub mod trade;

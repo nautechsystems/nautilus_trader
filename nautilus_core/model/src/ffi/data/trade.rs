@@ -15,43 +15,56 @@
 
 use std::{
     collections::hash_map::DefaultHasher,
+    ffi::c_char,
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::time::UnixNanos;
+use nautilus_core::ffi::string::str_to_cstr;
 
-use super::{delta::OrderBookDelta, order::BookOrder};
-use crate::{enums::BookAction, identifiers::instrument_id::InstrumentId};
+use crate::{
+    data::trade::TradeTick,
+    enums::AggressorSide,
+    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    types::{price::Price, quantity::Quantity},
+};
 
 #[no_mangle]
-pub extern "C" fn orderbook_delta_new(
+pub extern "C" fn trade_tick_new(
     instrument_id: InstrumentId,
-    action: BookAction,
-    order: BookOrder,
-    flags: u8,
-    sequence: u64,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-) -> OrderBookDelta {
-    OrderBookDelta::new(
+    price_raw: i64,
+    price_prec: u8,
+    size_raw: u64,
+    size_prec: u8,
+    aggressor_side: AggressorSide,
+    trade_id: TradeId,
+    ts_event: u64,
+    ts_init: u64,
+) -> TradeTick {
+    TradeTick::new(
         instrument_id,
-        action,
-        order,
-        flags,
-        sequence,
+        Price::from_raw(price_raw, price_prec).unwrap(),
+        Quantity::from_raw(size_raw, size_prec).unwrap(),
+        aggressor_side,
+        trade_id,
         ts_event,
         ts_init,
     )
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_delta_eq(lhs: &OrderBookDelta, rhs: &OrderBookDelta) -> u8 {
+pub extern "C" fn trade_tick_eq(lhs: &TradeTick, rhs: &TradeTick) -> u8 {
     u8::from(lhs == rhs)
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_delta_hash(delta: &OrderBookDelta) -> u64 {
+pub extern "C" fn trade_tick_hash(delta: &TradeTick) -> u64 {
     let mut hasher = DefaultHasher::new();
     delta.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Returns a [`TradeTick`] as a C string pointer.
+#[no_mangle]
+pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
+    str_to_cstr(&tick.to_string())
 }
