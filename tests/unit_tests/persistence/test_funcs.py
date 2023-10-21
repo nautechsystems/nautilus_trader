@@ -18,21 +18,8 @@ import pytest
 
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.persistence.funcs import camel_to_snake_case
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import clean_windows_key
-
-
-@pytest.mark.parametrize(
-    ("s", "expected"),
-    [
-        ("BSPOrderBookDelta", "bsp_order_book_delta"),
-        ("OrderBookDelta", "order_book_delta"),
-        ("TradeTick", "trade_tick"),
-    ],
-)
-def test_camel_to_snake_case(s, expected):
-    assert camel_to_snake_case(s) == expected
 
 
 @pytest.mark.parametrize(
