@@ -354,6 +354,21 @@ impl WebSocketClient {
     }
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub struct WebSocketConfig
+{
+    url: String,
+    handler: PyObject,
+    heartbeat: Option<u64>,
+    post_connection: Option<PyObject>,
+    post_reconnection: Option<PyObject>,
+    post_disconnection: Option<PyObject>,
+    headers:Option::<Vec<(String,String)>>,
+}
 #[pymethods]
 impl WebSocketClient {
     /// Create a websocket client.
@@ -364,17 +379,22 @@ impl WebSocketClient {
     #[staticmethod]
     #[pyo3(name = "connect")]
     fn py_connect(
-        url: String,
-        handler: PyObject,
-        heartbeat: Option<u64>,
-        post_connection: Option<PyObject>,
-        post_reconnection: Option<PyObject>,
-        post_disconnection: Option<PyObject>,
+        config: WebSocketConfig,
         py: Python<'_>,
     ) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
+            let WebSocketConfig {
+                url,
+                handler,
+                heartbeat,
+                post_connection,
+                post_reconnection,
+                post_disconnection,
+                headers
+            } = config;
             Self::connect(
                 &url,
+                headers.clone(),
                 handler,
                 heartbeat,
                 post_connection,
