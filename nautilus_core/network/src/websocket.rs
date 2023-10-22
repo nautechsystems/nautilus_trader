@@ -197,7 +197,7 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        let (new_writer, reader) = Self::connect_with_server(&self.url,self.headers.clone().await?;
+        let (new_writer, reader) = Self::connect_with_server(&self.url,self.headers.clone()).await?;
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
