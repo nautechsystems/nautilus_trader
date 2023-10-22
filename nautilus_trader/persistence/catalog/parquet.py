@@ -200,7 +200,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         for original, sorted_version in zip(data, sorted_data):
             if original.ts_init != sorted_version.ts_init:
                 raise ValueError(
-                    "Data should be sorted in ascending order or remain constant based on `ts_init`: "
+                    "Data should be monotonically increasing (or non-decreasing) based on `ts_init`: "
                     f"found {original.ts_init} followed by {sorted_version.ts_init}. "
                     "Consider sorting your data with something like "
                     "`data.sort(key=lambda x: x.ts_init)` prior to writing to the catalog.",
@@ -266,12 +266,29 @@ class ParquetDataCatalog(BaseDataCatalog):
         """
         Write the given `data` to the catalog.
 
+        The function categorizes the data based on their class name and, when applicable, their
+        associated instrument ID. It then delegates the actual writing process to the
+        `write_chunk` method.
+
         Parameters
         ----------
         data : list[Data | Event]
-            The data to write.
+            The data or event objects to be written to the catalog.
         kwargs : Any
-            The key-word arguments.
+            Additional keyword arguments to be passed to the `write_chunk` method.
+
+        Notes
+        -----
+         - All data of the same type is expected to be monotonically increasing, or non-decreasing
+         - The data is sorted and grouped based on its class name and instrument ID (if applicable) before writing
+         - Instrument-specific data should have either an `instrument_id` attribute or be an instance of `Instrument`
+         - The `Bar` class is treated as a special case, being grouped based on its `bar_type` attribute
+         - The input data list must be non-empty, and all data items must be of the appropriate class type
+
+        Raises
+        ------
+        ValueError
+            If data of the same type is not monotonically increasing (or non-decreasing) based on `ts_init`.
 
         """
 
