@@ -106,7 +106,7 @@ class Controller(Actor):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If `actor` is not already registered with the trader.
 
         """
@@ -120,7 +120,7 @@ class Controller(Actor):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If `strategy` is not already registered with the trader.
 
         """
@@ -139,7 +139,7 @@ class Controller(Actor):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If `actor` is not already registered with the trader.
 
         """
@@ -158,7 +158,7 @@ class Controller(Actor):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If `strategy` is not already registered with the trader.
 
         """
@@ -177,7 +177,7 @@ class Controller(Actor):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If `actor` is not already registered with the trader.
 
         """
@@ -196,7 +196,7 @@ class Controller(Actor):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If `strategy` is not already registered with the trader.
 
         """

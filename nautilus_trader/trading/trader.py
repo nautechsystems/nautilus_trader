@@ -519,7 +519,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If an actor with the given `actor_id` is not found.
 
         """
@@ -546,7 +546,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If a strategy with the given `strategy_id` is not found.
 
         """
@@ -573,7 +573,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If an actor with the given `actor_id` is not found.
 
         """
@@ -600,7 +600,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If a strategy with the given `strategy_id` is not found.
 
         """
@@ -629,7 +629,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If an actor with the given `actor_id` is not found.
 
         """
@@ -657,7 +657,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If a strategy with the given `strategy_id` is not found.
 
         """
