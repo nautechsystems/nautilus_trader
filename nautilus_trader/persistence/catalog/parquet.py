@@ -39,8 +39,8 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
@@ -86,6 +86,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
+    min_rows_per_group : int, default 0
+        The minimum number of rows per group. When the value is greater than 0,
+        the dataset writer will batch incoming data and only write the row
+        groups to the disk when sufficient rows have accumulated.
+    max_rows_per_group : int, default 5000
+        The maximum number of rows per group. If the value is greater than 0,
+        then the dataset writer may split up large incoming batches into
+        multiple row groups.  If this value is set, then min_rows_per_group
+        should also be set. Otherwise it could end up with very small row
+        groups.
     show_query_paths : bool, default False
         If globed query paths should be printed to stdout.
 
@@ -107,6 +117,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
+        min_rows_per_group: int = 0,
+        max_rows_per_group: int = 5000,
         show_query_paths: bool = False,
     ) -> None:
         self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
@@ -117,6 +129,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
         self.serializer = ArrowSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
+        self.min_rows_per_group = min_rows_per_group
+        self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
         final_path = str(make_path_posix(str(path)))
@@ -213,7 +227,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 base_dir=path,
                 format="parquet",
                 filesystem=self.fs,
-                max_rows_per_group=5000,
+                min_rows_per_group=self.min_rows_per_group,
+                max_rows_per_group=self.max_rows_per_group,
                 **self.dataset_kwargs,
                 **kwargs,
             )
@@ -225,7 +240,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs: fsspec.AbstractFileSystem,
     ) -> None:
         fs.mkdirs(path, exist_ok=True)
-        pq.write_table(table, where=f"{path}/part-0.parquet", filesystem=fs, row_group_size=5000)
+        pq.write_table(
+            table,
+            where=f"{path}/part-0.parquet",
+            filesystem=fs,
+            row_group_size=self.max_rows_per_group,
+        )
 
     def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
         def key(obj: Any) -> tuple[str, str | None]:
@@ -287,7 +307,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             ]
         return data
 
-    def backend_session(  # noqa (too complex)
+    def backend_session(
         self,
         data_cls: type,
         instrument_ids: list[str] | None = None,
@@ -299,49 +319,35 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> DataBackendSession:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
-        name = data_cls.__name__
-        file_prefix = class_to_filename(data_cls)
-        data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
+        data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
 
         if session is None:
             session = DataBackendSession()
         if session is None:
             raise ValueError("`session` was `None` when a value was expected")
 
-        # TODO: Extract this into a function
-        if data_cls in (OrderBookDelta, OrderBookDeltas):
-            data_type = NautilusDataType.OrderBookDelta
-        elif data_cls == QuoteTick:
-            data_type = NautilusDataType.QuoteTick
-        elif data_cls == TradeTick:
-            data_type = NautilusDataType.TradeTick
-        elif data_cls == Bar:
-            data_type = NautilusDataType.Bar
-        else:
-            raise RuntimeError("unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
-
-        # TODO (bm) - fix this glob, query once on catalog creation?
+        file_prefix = class_to_filename(data_cls)
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
         dirs = self.fs.glob(glob_path)
         if self.show_query_paths:
             print(dirs)
 
-        for idx, fn in enumerate(dirs):
-            assert self.fs.exists(fn)
-            if instrument_ids and not any(urisafe_instrument_id(x) in fn for x in instrument_ids):
+        for idx, path in enumerate(dirs):
+            assert self.fs.exists(path)
+            if instrument_ids and not any(urisafe_instrument_id(x) in path for x in instrument_ids):
                 continue
-            if bar_types and not any(urisafe_instrument_id(x) in fn for x in bar_types):
+            if bar_types and not any(urisafe_instrument_id(x) in path for x in bar_types):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
-                # instrument_ids=None, # Filtering by filename for now.
+                # instrument_ids=None, # Filtering by filename for now
                 start=start,
                 end=end,
                 where=where,
             )
 
-            session.add_file(data_type, table, fn, query)
+            session.add_file(data_type, table, str(path), query)
 
         return session
 
@@ -459,6 +465,19 @@ class ParquetDataCatalog(BaseDataCatalog):
             query += f" WHERE {' AND '.join(conditions)}"
 
         return query
+
+    @staticmethod
+    def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType:
+        if data_cls in (OrderBookDelta, OrderBookDeltas):
+            return NautilusDataType.OrderBookDelta
+        elif data_cls == QuoteTick:
+            return NautilusDataType.QuoteTick
+        elif data_cls == TradeTick:
+            return NautilusDataType.TradeTick
+        elif data_cls == Bar:
+            return NautilusDataType.Bar
+        else:
+            raise RuntimeError("unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
 
     @staticmethod
     def _handle_table_nautilus(
