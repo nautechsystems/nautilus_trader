@@ -44,6 +44,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -68,7 +69,7 @@ class TestInstrumentProvider:
     @staticmethod
     def adabtc_binance() -> CurrencyPair:
         """
-        Return the Binance ADA/BTC instrument for backtesting.
+        Return the Binance Spot ADA/BTC instrument for backtesting.
 
         Returns
         -------
@@ -105,7 +106,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_binance() -> CurrencyPair:
         """
-        Return the Binance BTCUSDT instrument for backtesting.
+        Return the Binance Spot BTCUSDT instrument for backtesting.
 
         Returns
         -------
@@ -140,9 +141,47 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def btcusdt_perp_binance() -> CurrencyPair:
+        """
+        Return the Binance Futures BTCUSDT instrument for backtesting.
+
+        Returns
+        -------
+        CryptoPerpetual
+
+        """
+        return CryptoPerpetual(
+            instrument_id=InstrumentId(
+                symbol=Symbol("BTCUSDT-PERP"),
+                venue=Venue("BINANCE"),
+            ),
+            raw_symbol=Symbol("BTCUSDT"),
+            base_currency=BTC,
+            quote_currency=USDT,
+            settlement_currency=USDT,
+            is_inverse=False,
+            price_precision=1,
+            price_increment=Price.from_str("0.1"),
+            size_precision=3,
+            size_increment=Quantity.from_str("0.001"),
+            max_quantity=Quantity.from_str("1000.000"),
+            min_quantity=Quantity.from_str("0.001"),
+            max_notional=None,
+            min_notional=Money(10.00, USDT),
+            max_price=Price.from_str("809484.0"),
+            min_price=Price.from_str("261.1"),
+            margin_init=Decimal("0.0500"),
+            margin_maint=Decimal("0.0250"),
+            maker_fee=Decimal("0.000200"),
+            taker_fee=Decimal("0.000180"),
+            ts_event=1646199312128000000,
+            ts_init=1646199342953849862,
+        )
+
+    @staticmethod
     def ethusdt_binance() -> CurrencyPair:
         """
-        Return the Binance ETHUSDT instrument for backtesting.
+        Return the Binance Spot ETHUSDT instrument for backtesting.
 
         Returns
         -------
@@ -179,7 +218,7 @@ class TestInstrumentProvider:
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
         """
-        Return the Binance ETHUSDT-PERP instrument for backtesting.
+        Return the Binance Futures ETHUSDT-PERP instrument for backtesting.
 
         Returns
         -------
@@ -217,7 +256,7 @@ class TestInstrumentProvider:
     @staticmethod
     def btcusdt_future_binance(expiry: Optional[date] = None) -> CryptoFuture:
         """
-        Return the Binance BTCUSDT instrument for backtesting.
+        Return the Binance Futures BTCUSDT instrument for backtesting.
 
         Parameters
         ----------
@@ -419,21 +458,21 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def aapl_equity():
-        return TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
-
-    @staticmethod
-    def es_future() -> FuturesContract:
+    def future(
+        symbol: str = "ESZ21",
+        underlying: str = "ES",
+        venue: str = "CME",
+    ) -> FuturesContract:
         return FuturesContract(
-            instrument_id=InstrumentId(symbol=Symbol("ESZ21"), venue=Venue("CME")),
-            raw_symbol=Symbol("ESZ21"),
+            instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
+            raw_symbol=Symbol(symbol),
             asset_class=AssetClass.INDEX,
             currency=USD,
             price_precision=2,
             price_increment=Price.from_str("0.01"),
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
-            underlying="ES",
+            underlying=underlying,
             expiry_date=date(2021, 12, 17),
             ts_event=0,
             ts_init=0,
@@ -468,6 +507,31 @@ class TestInstrumentProvider:
                 TestInstrumentProvider.ethusdt_binance().id,
             ],
             formula="(BTCUSDT.BINANCE + ETHUSDT.BINANCE) / 2",
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def betting_instrument(venue: Optional[str] = None) -> BettingInstrument:
+        return BettingInstrument(
+            venue_name=venue or "BETFAIR",
+            betting_type="ODDS",
+            competition_id="12282733",
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id="29678534",
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+            event_type_id="6423",
+            event_type_name="American Football",
+            market_id="1.123456789",
+            market_name="AFC Conference Winner",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
+            market_type="SPECIAL",
+            selection_handicap=None,
+            selection_id="50214",
+            selection_name="Kansas City Chiefs",
+            currency="GBP",
             ts_event=0,
             ts_init=0,
         )
@@ -528,7 +592,7 @@ class TestDataProvider:
         with fsspec.open(uri) as f:
             return f.read()
 
-    def read_csv(self, path: str, **kwargs) -> TextFileReader:
+    def read_csv(self, path: str, **kwargs: Any) -> TextFileReader:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
             return pd.read_csv(f, **kwargs)

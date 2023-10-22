@@ -23,7 +23,6 @@ from betfair_parser.spec.accounts.operations import _GetAccountFundsParams
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import BetStatus
 from betfair_parser.spec.betting.enums import PersistenceType
-from betfair_parser.spec.betting.enums import Side
 from betfair_parser.spec.betting.listings import ListMarketCatalogue
 from betfair_parser.spec.betting.listings import _ListMarketCatalogueParams
 from betfair_parser.spec.betting.orders import CancelOrders
@@ -31,6 +30,7 @@ from betfair_parser.spec.betting.orders import ListClearedOrders
 from betfair_parser.spec.betting.orders import ListCurrentOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
+from betfair_parser.spec.betting.orders import Side
 from betfair_parser.spec.betting.orders import _CancelOrdersParams
 from betfair_parser.spec.betting.orders import _ListClearedOrdersParams
 from betfair_parser.spec.betting.orders import _ListCurrentOrdersParams
@@ -43,7 +43,7 @@ from betfair_parser.spec.betting.type_definitions import PlaceInstruction
 from betfair_parser.spec.betting.type_definitions import ReplaceInstruction
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import Response
-from betfair_parser.spec.common import RPCError
+from betfair_parser.spec.common.messages import RPCError
 from betfair_parser.spec.identity import Login
 from betfair_parser.spec.identity import _LoginParams
 from betfair_parser.spec.navigation import Menu
@@ -197,13 +197,13 @@ async def test_place_orders(betfair_client):
     expected = PlaceOrders(
         jsonrpc="2.0",
         id=1,
-        method="",
+        method="SportsAPING/v1.0/placeOrders",
         params=_PlaceOrdersParams(
             market_id="1.179082386",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
-                    selection_id="50214",
+                    selection_id=50214,
                     handicap=None,
                     side=Side.BACK,
                     limit_order=LimitOrder(
@@ -244,13 +244,13 @@ async def test_place_orders_handicap(betfair_client):
     expected = PlaceOrders(
         jsonrpc="2.0",
         id=1,
-        method="",
+        method="SportsAPING/v1.0/placeOrders",
         params=_PlaceOrdersParams(
             market_id="1.186249896",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
-                    selection_id="5304641",
+                    selection_id=5304641,
                     handicap="-5.5",
                     side=Side.BACK,
                     limit_order=LimitOrder(
@@ -301,13 +301,13 @@ async def test_place_orders_market_on_close(betfair_client):
     expected = PlaceOrders(
         jsonrpc="2.0",
         id=1,
-        method="",
+        method="SportsAPING/v1.0/placeOrders",
         params=_PlaceOrdersParams(
             market_id="1.179082386",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.MARKET_ON_CLOSE,
-                    selection_id="50214",
+                    selection_id=50214,
                     handicap=None,
                     side=Side.BACK,
                     limit_order=None,
@@ -347,40 +347,16 @@ async def test_replace_orders_single(betfair_client):
     expected = ReplaceOrders(
         jsonrpc="2.0",
         id=1,
-        method="",
+        method="SportsAPING/v1.0/replaceOrders",
         params=_ReplaceOrdersParams(
             market_id="1.179082386",
-            instructions=[ReplaceInstruction(bet_id="240718603398", new_price=2.0)],
+            instructions=[ReplaceInstruction(bet_id=240718603398, new_price=2.0)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
             async_=False,
         ),
     )
     assert request == expected
-
-
-# @pytest.mark.asyncio()
-# async def test_replace_orders_multi():
-#     instrument = betting_instrument()
-#     update_order_command = TestCommandStubs.modify_order_command(
-#         instrument_id=instrument.id,
-#         price=betfair_float_to_price(2.0),
-#         client_order_id=ClientOrderId("1628717246480-1.186260932-rpl-0"),
-#     )
-#     replace_order = order_update_to_replace_order_params(
-#         command=update_order_command,
-#         venue_order_id=VenueOrderId("240718603398"),
-#         instrument=instrument,
-#     )
-#     with mock_client_request(
-#         response=BetfairResponses.betting_replace_orders_success_multi(),
-#
-#         resp = await betfair_client.replace_orders(replace_order)
-#         assert len(resp["oc"][0]["orc"][0]["uo"]) == 2
-#
-#     expected = BetfairRequests.betting_replace_order()
-#     _, request = betfair_client._request.call_args[0]
-#     assert request == expected
 
 
 @pytest.mark.asyncio()
@@ -402,11 +378,11 @@ async def test_cancel_orders(betfair_client):
     expected = CancelOrders(
         jsonrpc="2.0",
         id=1,
-        method="",
+        method="SportsAPING/v1.0/cancelOrders",
         params=_CancelOrdersParams(
             market_id="1.179082386",
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
-            instructions=[CancelInstruction(bet_id="228302937743")],
+            instructions=[CancelInstruction(bet_id=228302937743)],
         ),
     )
     assert request == expected

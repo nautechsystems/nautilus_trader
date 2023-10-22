@@ -56,7 +56,7 @@ class TestBinanceSpotAccountHttpAPI:
         )
 
         # Act
-        await endpoint._post(
+        await endpoint.post(
             parameters=endpoint.PostParameters(
                 symbol=BinanceSymbol("ETHUSDT"),
                 side=BinanceOrderSide.SELL,
@@ -239,7 +239,7 @@ class TestBinanceSpotAccountHttpAPI:
         assert request["method"] == "POST"
         assert request["url"] == "https://api.binance.com/api/v3/order/oco"
         assert request["params"].startswith(
-            "symbol=ETHUSDT&side=BUY&quantity=100&price=5000.00&stopPrice=4000.00&listClientOrderId=1&limitClientOrderId=O-001&limitIcebergQty=50&stopClientOrderId=O-002&stopLimitPrice=3500.00&stopIcebergQty=50&stopLimitTimeInForce=GTC&recvWindow=5000&timestamp=",  # noqa
+            "symbol=ETHUSDT&side=BUY&quantity=100&price=5000.00&stopPrice=4000.00&listClientOrderId=1&limitClientOrderId=O-001&limitIcebergQty=50&stopClientOrderId=O-002&stopLimitPrice=3500.00&stopIcebergQty=50&stopLimitTimeInForce=GTC&recvWindow=5000&timestamp=",
         )
 
     @pytest.mark.asyncio()

@@ -13,30 +13,63 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
+from __future__ import annotations
+
+import abc
+from typing import Any, ClassVar
 
 import pandas as pd
 import pyarrow as pa
 
+from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3 import BarDataWrangler as RustBarDataWrangler
+
 # fmt: off
-from nautilus_trader.core.nautilus_pyo3.model import Bar as RustBar
-from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
-from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
-from nautilus_trader.core.nautilus_pyo3.persistence import BarDataWrangler as RustBarDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import OrderBookDeltaDataWrangler as RustOrderBookDeltaDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import QuoteTickDataWrangler as RustQuoteTickDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import TradeTickDataWrangler as RustTradeTickDataWrangler
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltaDataWrangler as RustOrderBookDeltaDataWrangler
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import QuoteTickDataWrangler as RustQuoteTickDataWrangler
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTickDataWrangler as RustTradeTickDataWrangler
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.instruments import Instrument
 
 
 # fmt: on
 
+
+###################################################################################################
 # These classes are only intended to be used under the hood of the ParquetDataCatalog v2 at this stage
+###################################################################################################
 
 
-class OrderBookDeltaDataWrangler:
+class WranglerBase(abc.ABC):
+    IGNORE_KEYS: ClassVar[set[bytes]] = {b"class", b"pandas"}
+
+    @classmethod
+    def from_instrument(cls, instrument: Instrument, **kwargs: Any):
+        return cls(  # type: ignore
+            instrument_id=instrument.id.value,
+            price_precision=instrument.price_precision,
+            size_precision=instrument.size_precision,
+            **kwargs,
+        )
+
+    @classmethod
+    def from_schema(cls, schema: pa.Schema):
+        def decode(k, v):
+            if k in (b"price_precision", b"size_precision"):
+                return int(v.decode())
+            elif k in (b"instrument_id", b"bar_type"):
+                return v.decode()
+
+        metadata = schema.metadata
+        return cls(
+            **{k.decode(): decode(k, v) for k, v in metadata.items() if k not in cls.IGNORE_KEYS},
+        )
+
+
+class OrderBookDeltaDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `OrderBookDelta` objects.
 
@@ -52,18 +85,22 @@ class OrderBookDeltaDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument) -> None:
-        self.instrument = instrument
+    def __init__(
+        self,
+        instrument_id: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
         self._inner = RustOrderBookDeltaDataWrangler(
-            instrument_id=instrument.id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            instrument_id=instrument_id,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[RustOrderBookDelta]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -137,7 +174,7 @@ class OrderBookDeltaDataWrangler:
         return self.from_arrow(table)
 
 
-class QuoteTickDataWrangler:
+class QuoteTickDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `QuoteTick` objects.
 
@@ -153,12 +190,11 @@ class QuoteTickDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument) -> None:
-        self.instrument = instrument
+    def __init__(self, instrument_id: str, price_precision: int, size_precision: int) -> None:
         self._inner = RustQuoteTickDataWrangler(
-            instrument_id=instrument.id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            instrument_id=instrument_id,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
@@ -255,7 +291,7 @@ class QuoteTickDataWrangler:
         return self.from_arrow(table)
 
 
-class TradeTickDataWrangler:
+class TradeTickDataWrangler(WranglerBase):
     """
     Provides a means of building lists of Nautilus `TradeTick` objects.
 
@@ -271,18 +307,22 @@ class TradeTickDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument) -> None:
-        self.instrument = instrument
+    def __init__(
+        self,
+        instrument_id: str,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
         self._inner = RustTradeTickDataWrangler(
-            instrument_id=instrument.id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            instrument_id=instrument_id,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[RustTradeTick]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -368,7 +408,8 @@ def _map_aggressor_side(val: bool) -> int:
     return 1 if val else 2
 
 
-class BarDataWrangler:
+class BarDataWrangler(WranglerBase):
+    IGNORE_KEYS = {b"class", b"pandas", b"instrument_id"}
     """
     Provides a means of building lists of Nautilus `Bar` objects.
 
@@ -384,19 +425,23 @@ class BarDataWrangler:
 
     """
 
-    def __init__(self, instrument: Instrument, bar_type: BarType) -> None:
-        self.instrument = instrument
+    def __init__(
+        self,
+        bar_type: BarType,
+        price_precision: int,
+        size_precision: int,
+    ) -> None:
         self.bar_type = bar_type
         self._inner = RustBarDataWrangler(
-            bar_type=bar_type.instrument_id.value,
-            price_precision=instrument.price_precision,
-            size_precision=instrument.size_precision,
+            bar_type=bar_type,
+            price_precision=price_precision,
+            size_precision=size_precision,
         )
 
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[RustBar]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -412,7 +457,7 @@ class BarDataWrangler:
         ts_init_delta: int = 0,
     ) -> list[RustBar]:
         """
-        Process the given `data` into Nautilus `TradeTick` objects.
+        Process the given `data` into Nautilus `Bar` objects.
 
         Parameters
         ----------

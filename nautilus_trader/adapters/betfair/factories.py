@@ -24,6 +24,7 @@ from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
 from nautilus_trader.adapters.betfair.execution import BetfairExecutionClient
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -40,7 +41,6 @@ INSTRUMENT_PROVIDER = None
 
 @lru_cache(1)
 def get_cached_betfair_client(
-    loop: asyncio.AbstractEventLoop,
     logger: Logger,
     username: Optional[str] = None,
     password: Optional[str] = None,
@@ -54,8 +54,6 @@ def get_cached_betfair_client(
 
     Parameters
     ----------
-    loop : asyncio.AbstractEventLoop
-        The event loop for the client.
     logger : Logger
         The logger for the client.
     username : str, optional
@@ -98,7 +96,7 @@ def get_cached_betfair_client(
 def get_cached_betfair_instrument_provider(
     client: BetfairHttpClient,
     logger: Logger,
-    market_filter: tuple,
+    config: BetfairInstrumentProviderConfig,
 ) -> BetfairInstrumentProvider:
     """
     Cache and return a BetfairInstrumentProvider.
@@ -111,8 +109,8 @@ def get_cached_betfair_instrument_provider(
         The client for the instrument provider.
     logger : Logger
         The logger for the instrument provider.
-    market_filter : tuple
-        The market filter to load into the instrument provider.
+    config : BetfairInstrumentProviderConfig
+        The config for the instrument provider.
 
     Returns
     -------
@@ -127,7 +125,7 @@ def get_cached_betfair_instrument_provider(
         INSTRUMENT_PROVIDER = BetfairInstrumentProvider(
             client=client,
             logger=logger,
-            filters=dict(market_filter),
+            config=config,
         )
     return INSTRUMENT_PROVIDER
 
@@ -172,20 +170,17 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
         BetfairDataClient
 
         """
-        market_filter: tuple = config.market_filter or ()
-
         # Create client
         client = get_cached_betfair_client(
             username=config.username,
             password=config.password,
             app_key=config.app_key,
             logger=logger,
-            loop=loop,
         )
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,
-            market_filter=market_filter,
+            config=config.instrument_config,
         )
 
         data_client = BetfairDataClient(
@@ -195,8 +190,8 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=dict(market_filter),
             instrument_provider=provider,
+            account_currency=config.account_currency,
         )
         return data_client
 
@@ -241,10 +236,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         BetfairExecutionClient
 
         """
-        market_filter: tuple = config.market_filter or ()
-
         client = get_cached_betfair_client(
-            loop=loop,
             username=config.username,
             password=config.password,
             app_key=config.app_key,
@@ -253,19 +245,18 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         provider = get_cached_betfair_instrument_provider(
             client=client,
             logger=logger,
-            market_filter=market_filter,
+            config=config.instrument_config,
         )
 
         # Create client
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            base_currency=Currency.from_str(config.base_currency),
+            base_currency=Currency.from_str(config.account_currency),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
-            market_filter=dict(market_filter),
             instrument_provider=provider,
         )
         return exec_client

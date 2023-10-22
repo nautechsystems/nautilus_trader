@@ -22,6 +22,7 @@ import pytest
 from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -174,6 +175,26 @@ class TestMoney:
             Money.from_str(value)
 
     @pytest.mark.parametrize(
+        ("value", "currency", "expected"),
+        [
+            [0, USDT, Money(0, USDT)],
+            [1_000_000_000, USD, Money(1.00, USD)],
+            [10_000_000_000, AUD, Money(10.00, AUD)],
+        ],
+    )
+    def test_from_raw_given_valid_values_returns_expected_result(
+        self,
+        value: str,
+        currency: Currency,
+        expected: Money,
+    ) -> None:
+        # Arrange, Act
+        result = Money.from_raw(value, currency)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
         ("value", "expected"),
         [
             ["1.00 USDT", Money(1.00, USDT)],
@@ -183,8 +204,8 @@ class TestMoney:
     )
     def test_from_str_given_valid_strings_returns_expected_result(
         self,
-        value,
-        expected,
+        value: str,
+        expected: Money,
     ) -> None:
         # Arrange, Act
         result1 = Money.from_str(value)

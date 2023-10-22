@@ -16,8 +16,15 @@
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{prelude::*, pyclass::CompareOp};
+use pyo3::{
+    prelude::*,
+    pyclass::CompareOp,
+    types::{PyString, PyTuple},
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use ustr::Ustr;
+
+use crate::identifier_for_python;
 
 #[macro_use]
 mod macros;

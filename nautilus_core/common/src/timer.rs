@@ -18,6 +18,7 @@ use std::{
     fmt::{Display, Formatter},
 };
 
+use anyhow::Result;
 use nautilus_core::{
     correctness::check_valid_string,
     time::{TimedeltaNanos, UnixNanos},
@@ -29,6 +30,10 @@ use ustr::Ustr;
 #[repr(C)]
 #[derive(Clone, Debug)]
 #[allow(clippy::redundant_allocation)] // C ABI compatibility
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 /// Represents a time event occurring at the event timestamp.
 pub struct TimeEvent {
     /// The event name.
@@ -42,16 +47,20 @@ pub struct TimeEvent {
 }
 
 impl TimeEvent {
-    #[must_use]
-    pub fn new(name: String, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
-        check_valid_string(&name, "`TimeEvent` name").unwrap();
+    pub fn new(
+        name: &str,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Result<Self> {
+        check_valid_string(name, "`TimeEvent` name")?;
 
-        TimeEvent {
-            name: Ustr::from(&name),
+        Ok(Self {
+            name: Ustr::from(name),
             event_id,
             ts_event,
             ts_init,
-        }
+        })
     }
 }
 
@@ -113,12 +122,6 @@ pub trait Timer {
     fn cancel(&mut self);
 }
 
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
-    v
-}
-
 #[derive(Clone)]
 pub struct TestTimer {
     pub name: String,
@@ -139,7 +142,7 @@ impl TestTimer {
     ) -> Self {
         check_valid_string(&name, "`TestTimer` name").unwrap();
 
-        TestTimer {
+        Self {
             name,
             interval_ns,
             start_time_ns,
@@ -149,6 +152,7 @@ impl TestTimer {
         }
     }
 
+    #[must_use]
     pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
             name: Ustr::from(&self.name),
@@ -159,7 +163,7 @@ impl TestTimer {
     }
 
     /// Advance the test timer forward to the given time, generating a sequence
-    /// of events. A [TimeEvent] is appended for each time a next event is
+    /// of events. A [`TimeEvent`] is appended for each time a next event is
     /// <= the given `to_time_ns`.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         let advances =
@@ -213,7 +217,7 @@ mod tests {
 
     use super::{TestTimer, TimeEvent};
 
-    #[test]
+    #[rstest]
     fn test_pop_event() {
         let name = String::from("test_timer");
         let mut timer = TestTimer::new(name, 0, 1, None);
@@ -233,7 +237,7 @@ mod tests {
         let _: Vec<TimeEvent> = timer.advance(3).collect();
         assert_eq!(timer.advance(4).count(), 0);
         assert_eq!(timer.next_time_ns, 5);
-        assert!(!timer.is_expired)
+        assert!(!timer.is_expired);
     }
 
     #[rstest]

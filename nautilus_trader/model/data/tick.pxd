@@ -13,11 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.mem cimport PyMem_Free
-from cpython.mem cimport PyMem_Malloc
-from cpython.pycapsule cimport PyCapsule_Destructor
-from cpython.pycapsule cimport PyCapsule_GetPointer
-from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -32,12 +27,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-
-
-cdef inline void capsule_destructor(object capsule):
-    cdef CVec* cvec = <CVec*>PyCapsule_GetPointer(capsule, NULL)
-    PyMem_Free(cvec[0].ptr) # de-allocate buffer
-    PyMem_Free(cvec) # de-allocate cvec
 
 
 cdef class QuoteTick(Data):
@@ -64,10 +53,10 @@ cdef class QuoteTick(Data):
     cdef QuoteTick from_mem_c(QuoteTick_t mem)
 
     @staticmethod
-    cdef list capsule_to_quote_tick_list(object capsule)
+    cdef list capsule_to_list_c(capsule)
 
     @staticmethod
-    cdef object quote_tick_list_to_capsule(list items)
+    cdef object list_to_capsule_c(list items)
 
     @staticmethod
     cdef QuoteTick from_dict_c(dict values)
@@ -101,10 +90,10 @@ cdef class TradeTick(Data):
     cdef TradeTick from_mem_c(TradeTick_t mem)
 
     @staticmethod
-    cdef list capsule_to_trade_tick_list(object capsule)
+    cdef list capsule_to_list_c(capsule)
 
     @staticmethod
-    cdef object trade_tick_list_to_capsule(list items)
+    cdef object list_to_capsule_c(list items)
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values)
@@ -114,6 +103,3 @@ cdef class TradeTick(Data):
 
     @staticmethod
     cdef TradeTick from_mem_c(TradeTick_t mem)
-
-    @staticmethod
-    cdef list capsule_to_trade_tick_list(object capsule)

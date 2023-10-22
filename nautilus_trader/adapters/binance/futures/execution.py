@@ -21,6 +21,7 @@ import msgspec
 
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
@@ -35,6 +36,7 @@ from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFutures
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesUserMsgWrapper
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
+from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
@@ -42,6 +44,7 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_type_to_str
@@ -235,12 +238,32 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             )
             return
 
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        # TODO: Iterate batches of 10 order cancels, also validate order is not already closed
+        try:
+            await self._futures_http_account.cancel_multiple_orders(
+                symbol=command.instrument_id.symbol.value,
+                client_order_ids=[c.client_order_id.value for c in command.cancels],
+            )
+        except BinanceError as e:
+            error_code = BinanceErrorCode(e.message["code"])
+            if error_code == BinanceErrorCode.CANCEL_REJECTED:
+                self._log.warning(f"Cancel rejected: {e.message}.")
+            else:
+                self._log.exception(
+                    f"Cannot cancel multiple orders: {e.message}",
+                    e,
+                )
+
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # TODO(cs): Uncomment for development
         # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
+        if not wrapper.stream:
+            # Control message response
+            return
         try:
             self._futures_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:

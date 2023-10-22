@@ -14,20 +14,23 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
 use ustr::Ustr;
 
+/// Represents a valid order list ID (assigned by the Nautilus system).
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct OrderListId {
+    /// The order list ID value.
     pub value: Ustr,
 }
 
@@ -57,27 +60,6 @@ impl From<&str> for OrderListId {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn order_list_id_new(ptr: *const c_char) -> OrderListId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    OrderListId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn order_list_id_hash(id: &OrderListId) -> u64 {
-    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

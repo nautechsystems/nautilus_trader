@@ -39,7 +39,10 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct TrailingStopMarketOrder {
     core: OrderCore,
     pub trigger_price: Price,

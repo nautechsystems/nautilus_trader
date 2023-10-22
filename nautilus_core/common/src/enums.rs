@@ -15,7 +15,7 @@
 
 use std::{ffi::c_char, fmt::Debug, str::FromStr};
 
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_to_string, str_to_cstr};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -172,11 +172,11 @@ pub enum LogLevel {
 impl std::fmt::Display for LogLevel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let display = match self {
-            LogLevel::Debug => "DBG",
-            LogLevel::Info => "INF",
-            LogLevel::Warning => "WRN",
-            LogLevel::Error => "ERR",
-            LogLevel::Critical => "CRT",
+            Self::Debug => "DBG",
+            Self::Info => "INF",
+            Self::Warning => "WRN",
+            Self::Error => "ERR",
+            Self::Critical => "CRT",
         };
         write!(f, "{display}")
     }

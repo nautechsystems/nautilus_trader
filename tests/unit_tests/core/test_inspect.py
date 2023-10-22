@@ -18,7 +18,6 @@ import pytest
 
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.core.inspect import get_size_of
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
@@ -39,16 +38,3 @@ from nautilus_trader.model.events import OrderAccepted
 def test_is_nautilus_class(cls, is_nautilus):
     # Arrange, Act, Assert
     assert is_nautilus_class(cls=cls) is is_nautilus
-
-
-@pytest.mark.skip(reason="Flaky and probably being removed")
-def test_get_size_of():
-    # Arrange, Act
-    result1 = get_size_of(0)
-    result2 = get_size_of(1.1)
-    result3 = get_size_of("abc")
-
-    # Assert
-    assert result1 == 24
-    assert result2 == 24
-    assert result3 == 52

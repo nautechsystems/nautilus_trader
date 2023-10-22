@@ -300,6 +300,10 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
+    cpdef bint is_order_pending_cancel_local(self, ClientOrderId client_order_id):
+        """Abstract method (implement in subclass)."""
+        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+
     cpdef int orders_open_count(self, Venue venue = None, InstrumentId instrument_id = None, StrategyId strategy_id = None, OrderSide side = OrderSide.NO_ORDER_SIDE):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

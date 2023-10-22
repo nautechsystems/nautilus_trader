@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
+from nautilus_trader.core.nautilus_pyo3 import Quantity
 
 
 class TestQuantity:
@@ -868,9 +868,9 @@ class TestQuantity:
             ["100000000", "100_000_000"],
         ],
     )
-    def test_str_and_to_str(self, value, expected):
+    def test_str_and_to_formatted_str(self, value, expected):
         # Arrange, Act, Assert
-        assert Quantity.from_str(value).to_str() == expected
+        assert Quantity.from_str(value).to_formatted_str() == expected
 
     def test_str_repr(self):
         # Arrange

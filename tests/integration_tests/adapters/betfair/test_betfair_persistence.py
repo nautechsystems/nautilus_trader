@@ -12,50 +12,48 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-import fsspec
-import pytest
-
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
+from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
-from nautilus_trader.adapters.betfair.historic import make_betfair_reader
-from nautilus_trader.persistence.external.core import RawFile
-from nautilus_trader.persistence.external.core import process_raw_file
-from nautilus_trader.serialization.arrow.serializer import ParquetSerializer
+from nautilus_trader.core.rust.model import BookAction
+from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
-from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
+from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 
-@pytest.mark.skip(reason="Reimplementing")
 class TestBetfairPersistence:
     def setup(self):
-        self.catalog = data_catalog_setup(protocol="memory")
+        self.catalog = data_catalog_setup(protocol="memory", path="/catalog")
         self.fs = self.catalog.fs
         self.instrument = betting_instrument()
 
     def test_bsp_delta_serialize(self):
         # Arrange
-        bsp_delta = BSPOrderBookDelta.from_dict(
-            {
-                "type": "BSPOrderBookDelta",
-                "instrument_id": self.instrument.id.value,
-                "action": "UPDATE",
-                "price": 0.990099,
-                "size": 60.07,
-                "side": "BUY",
-                "order_id": 1635313844283000000,
-                "ts_event": 1635313844283000000,
-                "ts_init": 1635313844283000000,
-            },
+        bsp_delta = BSPOrderBookDelta(
+            instrument_id=self.instrument.id,
+            action=BookAction.UPDATE,
+            order=BookOrder(
+                price=Price.from_str("0.990099"),
+                size=Quantity.from_str("60.07"),
+                side=OrderSide.BUY,
+                order_id=1,
+            ),
+            ts_event=1635313844283000000,
+            ts_init=1635313844283000000,
         )
 
         # Act
-        values = bsp_delta.to_dict(bsp_delta)
+        self.catalog.write_data([bsp_delta, bsp_delta])
+        values = self.catalog.generic_data(BSPOrderBookDelta)
 
         # Assert
-        assert bsp_delta.from_dict(values) == bsp_delta
-        assert values["type"] == "BSPOrderBookDelta"
+        assert len(values) == 2
+        assert values[1] == bsp_delta
 
     def test_betfair_starting_price_to_from_dict(self):
         # Arrange
@@ -70,7 +68,7 @@ class TestBetfairPersistence:
         )
 
         # Act
-        values = bsp.to_dict()
+        values = bsp.to_dict(bsp)
         result = bsp.from_dict(values)
 
         # Assert
@@ -90,25 +88,18 @@ class TestBetfairPersistence:
         )
 
         # Act
-        serialized = ParquetSerializer.serialize(bsp)
-        [result] = ParquetSerializer.deserialize(BetfairStartingPrice, [serialized])
+        serialized = ArrowSerializer.serialize(bsp)
+        [result] = ArrowSerializer.deserialize(BetfairStartingPrice, serialized)
 
         # Assert
         assert result.bsp == bsp.bsp
 
-    @pytest.mark.skip("Broken due to parquet writing")
-    def test_bsp_deltas(self):
+    def test_query_custom_type(self):
         # Arrange
-        rf = RawFile(
-            open_file=fsspec.open(f"{TEST_DATA_DIR}/betfair/1.206064380.bz2", compression="infer"),
-            block_size=None,
-        )
+        load_betfair_data(self.catalog)
 
         # Act
-        process_raw_file(catalog=self.catalog, reader=make_betfair_reader(), raw_file=rf)
-
-        # Act
-        data = self.catalog.query(BSPOrderBookDeltas)
+        data = self.catalog.query(BetfairTicker)
 
         # Assert
-        assert len(data) == 2824
+        assert len(data) == 210

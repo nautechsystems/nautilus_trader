@@ -154,7 +154,7 @@ class BinanceFuturesEnumParser(BinanceEnumParser):
 
         self.futures_valid_time_in_force = {
             TimeInForce.GTC,
-            TimeInForce.GTD,  # Will be transformed to GTC
+            TimeInForce.GTD,
             TimeInForce.FOK,
             TimeInForce.IOC,
         }

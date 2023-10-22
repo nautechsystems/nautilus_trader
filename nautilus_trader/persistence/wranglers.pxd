@@ -14,17 +14,49 @@
 # -------------------------------------------------------------------------------------------------
 
 from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.bar cimport BarType
+from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
+from nautilus_trader.model.enums_c cimport BookAction
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
-cdef list capsule_to_data_list(object capsule)
+cdef class OrderBookDeltaDataWrangler:
+    cdef readonly Instrument instrument
+
+    cpdef OrderBookDelta _build_delta_from_raw(
+        self,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint64_t size_raw,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    )
+
+    cpdef OrderBookDelta _build_delta(
+        self,
+        BookAction action,
+        OrderSide side,
+        double price,
+        double size,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    )
+
 
 cdef class QuoteTickDataWrangler:
     cdef readonly Instrument instrument

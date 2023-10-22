@@ -29,6 +29,7 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 
 
 RAW_CONFIG = msgspec.json.encode(
@@ -88,6 +89,9 @@ RAW_CONFIG = msgspec.json.encode(
 
 
 class TestTradingNodeConfiguration:
+    def teardown(self):
+        ensure_all_tasks_completed()
+
     def test_config_with_in_memory_execution_database(self):
         # Arrange
         loop = asyncio.new_event_loop()
@@ -205,6 +209,9 @@ class TestTradingNodeConfiguration:
 
 
 class TestTradingNodeOperation:
+    def teardown(self):
+        ensure_all_tasks_completed()
+
     def test_get_event_loop_returns_a_loop(self):
         # Arrange
         loop = asyncio.new_event_loop()

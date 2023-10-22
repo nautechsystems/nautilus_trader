@@ -13,74 +13,72 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, vec::IntoIter};
+use std::{collections::HashMap, sync::Arc, vec::IntoIter};
 
 use compare::Compare;
-use datafusion::{error::Result, physical_plan::SendableRecordBatchStream, prelude::*};
-use futures::{executor::block_on, Stream, StreamExt};
-use nautilus_core::cvec::CVec;
-use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data,
+use datafusion::{
+    error::Result,
+    logical_expr::{col, expr::Sort},
+    physical_plan::SendableRecordBatchStream,
+    prelude::*,
 };
-use pyo3::{prelude::*, types::PyCapsule};
-use pyo3_asyncio::tokio::get_runtime;
+use futures::StreamExt;
+use nautilus_core::ffi::cvec::CVec;
+use nautilus_model::data::{Data, HasTsInit};
+use pyo3::prelude::*;
 
-use crate::{
-    arrow::{
-        DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, NautilusDataType,
-        WriteStream,
-    },
-    kmerge_batch::{KMerge, PeekElementBatchStream},
+use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
+use crate::arrow::{
+    DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
 
-impl<S> Compare<PeekElementBatchStream<S, Data>> for TsInitComparator
+impl<I> Compare<ElementBatchIter<I, Data>> for TsInitComparator
 where
-    S: Stream<Item = IntoIter<Data>>,
+    I: Iterator<Item = IntoIter<Data>>,
 {
     fn compare(
         &self,
-        l: &PeekElementBatchStream<S, Data>,
-        r: &PeekElementBatchStream<S, Data>,
+        l: &ElementBatchIter<I, Data>,
+        r: &ElementBatchIter<I, Data>,
     ) -> std::cmp::Ordering {
         // Max heap ordering must be reversed
         l.item.get_ts_init().cmp(&r.item.get_ts_init()).reverse()
     }
 }
 
-pub struct QueryResult<T = Data> {
-    data: Box<dyn Stream<Item = Vec<T>> + Unpin>,
-}
-
-impl Iterator for QueryResult {
-    type Item = Vec<Data>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        block_on(self.data.next())
-    }
-}
+pub type QueryResult = KMerge<EagerStream<std::vec::IntoIter<Data>>, Data, TsInitComparator>;
 
 /// Provides a DataFusion session and registers DataFusion queries.
 ///
 /// The session is used to register data sources and make queries on them. A
 /// query returns a Chunk of Arrow records. It is decoded and converted into
-/// a Vec of data by types that implement [`DecodeFromRecordBatch`].
-#[pyclass]
+/// a Vec of data by types that implement [`DecodeDataFromRecordBatch`].
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+)]
 pub struct DataBackendSession {
     session_ctx: SessionContext,
-    batch_streams: Vec<Box<dyn Stream<Item = IntoIter<Data>> + Unpin + Send + 'static>>,
+    batch_streams: Vec<EagerStream<IntoIter<Data>>>,
     pub chunk_size: usize,
+    pub runtime: Arc<tokio::runtime::Runtime>,
 }
 
 impl DataBackendSession {
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         Self {
             session_ctx: SessionContext::default(),
             batch_streams: Vec::default(),
             chunk_size,
+            runtime: Arc::new(runtime),
         }
     }
 
@@ -89,69 +87,52 @@ impl DataBackendSession {
         metadata: &HashMap<String, String>,
         stream: &mut dyn WriteStream,
     ) -> Result<(), DataStreamingError> {
-        let record_batch = T::encode_batch(metadata, data);
+        let record_batch = T::encode_batch(metadata, data)?;
         stream.write(&record_batch)?;
         Ok(())
     }
 
-    // Query a file for all it's records. the caller must specify `T` to indicate
-    // the kind of data expected from this query.
-    pub async fn add_file_default_query<T>(
+    /// Query a file for its records. the caller must specify `T` to indicate
+    /// the kind of data expected from this query.
+    ///
+    /// table_name: Logical table_name assigned to this file. Queries to this file should address the
+    /// file by its table name.
+    /// file_path: Path to file
+    /// sql_query: A custom sql query to retrieve records from file. If no query is provided a default
+    /// query "SELECT * FROM <table_name>" is run.
+    ///
+    /// # Safety
+    /// The file data must be ordered by the ts_init in ascending order for this
+    /// to work correctly.
+    pub fn add_file<T>(
         &mut self,
         table_name: &str,
         file_path: &str,
+        sql_query: Option<&str>,
     ) -> Result<()>
     where
         T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
+            file_sort_order: vec![vec![Expr::Sort(Sort {
+                expr: Box::new(col("ts_init")),
+                asc: true,
+                nulls_first: true,
+            })]],
             ..Default::default()
         };
-        self.session_ctx
-            .register_parquet(table_name, file_path, parquet_options)
-            .await?;
+        self.runtime.block_on(self.session_ctx.register_parquet(
+            table_name,
+            file_path,
+            parquet_options,
+        ))?;
 
-        let batch_stream = self
-            .session_ctx
-            .sql(&format!("SELECT * FROM {} ORDER BY ts_init", &table_name))
-            .await?
-            .execute_stream()
-            .await?;
+        let default_query = format!("SELECT * FROM {}", &table_name);
+        let sql_query = sql_query.unwrap_or(&default_query);
+        let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
 
-        self.add_batch_stream::<T>(batch_stream);
-        Ok(())
-    }
-
-    // Query a file for all it's records with a custom query. The caller must
-    // specify `T` to indicate what kind of data is expected from this query.
-    //
-    // #Safety
-    // They query should ensure the records are ordered by the `ts_init` field
-    // in ascending order.
-    pub async fn add_file_with_custom_query<T>(
-        &mut self,
-        table_name: &str,
-        file_path: &str,
-        sql_query: &str,
-    ) -> Result<()>
-    where
-        T: DecodeDataFromRecordBatch + Into<Data>,
-    {
-        let parquet_options = ParquetReadOptions::<'_> {
-            skip_metadata: Some(false),
-            ..Default::default()
-        };
-        self.session_ctx
-            .register_parquet(table_name, file_path, parquet_options)
-            .await?;
-
-        let batch_stream = self
-            .session_ctx
-            .sql(sql_query)
-            .await?
-            .execute_stream()
-            .await?;
+        let batch_stream = self.runtime.block_on(query.execute_stream())?;
 
         self.add_batch_stream::<T>(batch_stream);
         Ok(())
@@ -162,180 +143,63 @@ impl DataBackendSession {
         T: DecodeDataFromRecordBatch + Into<Data>,
     {
         let transform = stream.map(|result| match result {
-            Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch).into_iter(),
+            Ok(batch) => T::decode_data_batch(batch.schema().metadata(), batch)
+                .unwrap()
+                .into_iter(),
             Err(_err) => panic!("Error getting next batch from RecordBatchStream"),
         });
 
-        self.batch_streams.push(Box::new(transform));
+        self.batch_streams
+            .push(EagerStream::from_stream_with_runtime(
+                transform,
+                self.runtime.clone(),
+            ));
     }
 
     // Consumes the registered queries and returns a [`QueryResult].
     // Passes the output of the query though the a KMerge which sorts the
     // queries in ascending order of `ts_init`.
     // QueryResult is an iterator that return Vec<Data>.
-    pub async fn get_query_result(&mut self) -> QueryResult<Data> {
-        // TODO: No need to kmerge if there is only one batch stream
+    pub fn get_query_result(&mut self) -> QueryResult {
         let mut kmerge: KMerge<_, _, _> = KMerge::new(TsInitComparator);
 
-        kmerge.push_iter_stream(self.batch_streams.drain(..)).await;
+        self.batch_streams
+            .drain(..)
+            .for_each(|eager_stream| kmerge.push_iter(eager_stream));
 
-        QueryResult {
-            data: Box::new(kmerge.chunks(self.chunk_size)),
-        }
+        kmerge
     }
 }
 
 // Note: Intended to be used on a single python thread
 unsafe impl Send for DataBackendSession {}
 
-////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl DataBackendSession {
-    #[new]
-    #[pyo3(signature=(chunk_size=5000))]
-    fn new_session(chunk_size: usize) -> Self {
-        // Initialize runtime here
-        get_runtime();
-        Self::new(chunk_size)
-    }
-
-    fn add_file(
-        mut slf: PyRefMut<'_, Self>,
-        table_name: &str,
-        file_path: &str,
-        data_type: NautilusDataType,
-    ) {
-        let rt = get_runtime();
-        let _guard = rt.enter();
-
-        match data_type {
-            NautilusDataType::OrderBookDelta => {
-                match block_on(slf.add_file_default_query::<OrderBookDelta>(table_name, file_path))
-                {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::QuoteTick => {
-                match block_on(slf.add_file_default_query::<QuoteTick>(table_name, file_path)) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::TradeTick => {
-                match block_on(slf.add_file_default_query::<TradeTick>(table_name, file_path)) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::Bar => {
-                match block_on(slf.add_file_default_query::<Bar>(table_name, file_path)) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-        }
-    }
-
-    fn add_file_with_query(
-        mut slf: PyRefMut<'_, Self>,
-        table_name: &str,
-        file_path: &str,
-        sql_query: &str,
-        data_type: NautilusDataType,
-    ) {
-        let rt = get_runtime();
-        let _guard = rt.enter();
-
-        match data_type {
-            NautilusDataType::OrderBookDelta => {
-                match block_on(
-                    slf.add_file_with_custom_query::<OrderBookDelta>(
-                        table_name, file_path, sql_query,
-                    ),
-                ) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::QuoteTick => {
-                match block_on(
-                    slf.add_file_with_custom_query::<QuoteTick>(table_name, file_path, sql_query),
-                ) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::TradeTick => {
-                match block_on(
-                    slf.add_file_with_custom_query::<TradeTick>(table_name, file_path, sql_query),
-                ) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-            NautilusDataType::Bar => {
-                match block_on(
-                    slf.add_file_with_custom_query::<Bar>(table_name, file_path, sql_query),
-                ) {
-                    Ok(_) => (),
-                    Err(err) => panic!("Failed new_query with error {err}"),
-                }
-            }
-        }
-    }
-
-    fn to_query_result(mut slf: PyRefMut<'_, Self>) -> DataQueryResult {
-        let rt = get_runtime();
-        let query_result = rt.block_on(slf.get_query_result());
-        DataQueryResult::new(query_result)
-    }
-}
-
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.persistence")
+)]
 pub struct DataQueryResult {
-    result: QueryResult<Data>,
     chunk: Option<CVec>,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl DataQueryResult {
-    /// The reader implements an iterator.
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-
-    /// Each iteration returns a chunk of values read from the parquet file.
-    fn __next__(mut slf: PyRefMut<'_, Self>) -> Option<PyObject> {
-        slf.drop_chunk();
-
-        let rt = get_runtime();
-        let _guard = rt.enter();
-
-        slf.result.next().map(|chunk| {
-            let cvec = chunk.into();
-            Python::with_gil(|py| PyCapsule::new::<CVec>(py, cvec, None).unwrap().into_py(py))
-        })
-    }
+    pub result: QueryResult,
+    pub acc: Vec<Data>,
+    pub size: usize,
 }
 
 impl DataQueryResult {
     #[must_use]
-    pub fn new(result: QueryResult<Data>) -> Self {
+    pub fn new(result: QueryResult, size: usize) -> Self {
         Self {
-            result,
             chunk: None,
+            result,
+            acc: Vec::new(),
+            size,
         }
     }
 
     /// Chunks generated by iteration must be dropped after use, otherwise
     /// it will leak memory. Current chunk is held by the reader,
     /// drop if exists and reset the field.
-    fn drop_chunk(&mut self) {
+    pub fn drop_chunk(&mut self) {
         if let Some(CVec { ptr, len, cap }) = self.chunk.take() {
             let data: Vec<Data> =
                 unsafe { Vec::from_raw_parts(ptr.cast::<nautilus_model::data::Data>(), len, cap) };

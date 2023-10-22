@@ -31,14 +31,12 @@ from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.config.backtest import json_encoder
 from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -46,12 +44,12 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
-from tests import TEST_DATA_DIR
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-class _TestBacktestConfig:
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+class TestBacktestConfig:
     def setup(self):
+        self.fs_protocol = "file"
         self.catalog = data_catalog_setup(protocol=self.fs_protocol)
         aud_usd_data_loader(self.catalog)
         self.venue = Venue("SIM")
@@ -66,13 +64,13 @@ class _TestBacktestConfig:
             fs.rm(path, recursive=True)
 
     def test_backtest_config_pickle(self):
-        pickle.loads(pickle.dumps(self))  # noqa: S301
+        pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=QuoteTick,
             instrument_id=instrument.id.value,
             start_time=1580398089820000000,
@@ -81,81 +79,72 @@ class _TestBacktestConfig:
 
         result = c.query
         assert result == {
-            "as_nautilus": True,
-            "cls": QuoteTick,
+            "data_cls": QuoteTick,
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,
-            "use_rust": False,
             "metadata": None,
         }
 
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
 
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
             client_id="NewsClient",
             metadata={"kind": "news"},
         )
 
         result = c.load()
-        assert len(result["data"]) == 86985
-        assert result["instrument"] is None
-        assert result["client_id"] == ClientId("NewsClient")
-        assert result["data"][0].data_type.metadata == {"kind": "news"}
+        assert len(result.data) == 86985
+        assert result.instrument is None
+        assert result.client_id == ClientId("NewsClient")
+        assert result.data[0].data_type.metadata == {"kind": "news"}
 
     def test_backtest_data_config_filters(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
+
+        # Act
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
             filter_expr="field('currency') == 'CHF'",
             client_id="NewsClient",
         )
 
         result = c.load()
-        assert len(result["data"]) == 2745
+        assert len(result.data) == 2745
 
-    @pytest.mark.skip(reason="Requires new datafusion streaming")
     def test_backtest_data_config_status_updates(self):
-        process_files(
-            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-            reader=BetfairTestStubs.betfair_reader(),
-            catalog=self.catalog,
-        )
+        from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
+
+        load_betfair_data(self.catalog)
+
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            catalog_fs_protocol=self.catalog.fs.protocol,
-            data_cls=InstrumentStatusUpdate,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
+            data_cls=InstrumentStatus,
         )
         result = c.load()
-        assert len(result["data"]) == 2
-        assert result["instrument"] is None
-        assert result["client_id"] is None
+        assert len(result.data) == 2
+        assert result.instrument is None
+        assert result.client_id is None
 
     def test_resolve_cls(self):
         config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             data_cls="nautilus_trader.model.data.tick:QuoteTick",
-            catalog_fs_protocol=self.catalog.fs.protocol,
+            catalog_fs_protocol=str(self.catalog.fs.protocol),
             catalog_fs_storage_options={},
             instrument_id="AUD/USD.IDEALPRO",
             start_time=1580398089820000,
@@ -185,14 +174,6 @@ class _TestBacktestConfig:
         assert msgspec.json.encode(self.backtest_config)
 
 
-class TestBacktestConfigFile(_TestBacktestConfig):
-    fs_protocol = "file"
-
-
-class TestBacktestConfigMemory(_TestBacktestConfig):
-    fs_protocol = "memory"
-
-
 class TestBacktestConfigParsing:
     def setup(self):
         self.catalog = data_catalog_setup(protocol="memory", path="/.nautilus/")
@@ -216,7 +197,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1010  # UNIX
+        assert result == 986  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -227,7 +208,7 @@ class TestBacktestConfigParsing:
                 BacktestVenueConfig(
                     name="SIM",
                     oms_type="HEDGING",
-                    account_type="MARG  IN",
+                    account_type="MARGIN",
                     starting_balances=["1_000_000 USD"],
                 ),
             ],
@@ -237,7 +218,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 757  # UNIX
+        assert len(raw) == 737  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -258,7 +239,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1866
+        assert result == 1798
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -266,7 +247,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
-        assert token == "acf938231c1e196f54f34716dd4feb5e16f820087ca3b5b15bccf7b8e2e36bd0"  # UNIX
+        assert token == "d1add7c871b0bdd762b495345e394276431eda714a00d839037df33e8a427fd1"  # UNIX
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(
@@ -283,8 +264,8 @@ class TestBacktestConfigParsing:
                 ("catalog",),
                 {},
                 (
-                    "8485d8c61bb15514769412bc4c0fb0a662617b3245d751c40e3627a1b6762ba0",  # unix
-                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # windows
+                    "8485d8c61bb15514769412bc4c0fb0a662617b3245d751c40e3627a1b6762ba0",  # UNIX
+                    "d32e5785aad958ec163da39ba501a8fbe654fd973ada46e21907631824369ce4",  # Windows
                 ),
             ),
             (

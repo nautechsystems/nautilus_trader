@@ -13,20 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::{c_char, CStr},
-    fmt::{Debug, Display, Formatter},
-};
+use std::fmt::{Debug, Display, Formatter};
 
 use anyhow::Result;
 use nautilus_core::correctness::{check_string_contains, check_valid_string};
-use pyo3::prelude::*;
 use ustr::Ustr;
 
+/// Represents a valid strategy ID.
+///
+/// Must be correctly formatted with two valid strings either side of a hyphen.
+/// It is expected a strategy ID is the class name of the strategy,
+/// with an order ID tag number separated by a hyphen.
+///
+/// Example: "EMACross-001".
+///
+/// The reason for the numerical component of the ID is so that order and position IDs
+/// do not collide with those from another strategy within the node instance.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct StrategyId {
+    /// The strategy ID value.
     pub value: Ustr,
 }
 
@@ -67,28 +77,6 @@ impl From<&str> for StrategyId {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    StrategyId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
-    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

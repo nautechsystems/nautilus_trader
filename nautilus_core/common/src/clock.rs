@@ -27,7 +27,7 @@ use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
 const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
 
 pub struct MonotonicClock {
-    /// The last recorded duration value from the clock.
+    /// The last recorded duration value for the clock.
     last: Duration,
 }
 
@@ -51,7 +51,7 @@ impl MonotonicClock {
     /// Initializes a new `MonotonicClock` instance.
     #[must_use]
     pub fn new() -> Self {
-        MonotonicClock {
+        Self {
             last: duration_since_unix_epoch(),
         }
     }
@@ -79,7 +79,7 @@ impl MonotonicClock {
 
 impl Default for MonotonicClock {
     fn default() -> Self {
-        MonotonicClock::new()
+        Self::new()
     }
 }
 
@@ -109,13 +109,13 @@ pub trait Clock {
     /// Return the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
-    /// Register a default event handler for the clock. If a [`Timer`]
+    /// Register a default event handler for the clock. If a `Timer`
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>);
 
     fn register_default_handler_py(&mut self, callback_py: PyObject);
 
-    /// Set a [`Timer`] to alert at a particular time. Optional
+    /// Set a `Timer` to alert at a particular time. Optional
     /// callback gets used to handle generated events.
     fn set_time_alert_ns_py(
         &mut self,
@@ -124,7 +124,7 @@ pub trait Clock {
         callback_py: Option<PyObject>,
     );
 
-    /// Set a [`Timer`] to start alerting at every interval
+    /// Set a `Timer` to start alerting at every interval
     /// between start and stop time. Optional callback gets
     /// used to handle generated event.
     fn set_timer_ns_py(
@@ -151,12 +151,13 @@ pub struct TestClock {
 }
 
 impl TestClock {
+    #[must_use]
     pub fn get_timers(&self) -> &HashMap<String, TestTimer> {
         &self.timers
     }
 
     pub fn set_time(&mut self, to_time_ns: UnixNanos) {
-        self.time_ns = to_time_ns
+        self.time_ns = to_time_ns;
     }
 
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
@@ -182,6 +183,7 @@ impl TestClock {
     }
 
     /// Assumes time events are sorted by their `ts_event`.
+    #[must_use]
     pub fn match_handlers_py(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
         events
             .into_iter()
@@ -205,8 +207,8 @@ impl TestClock {
 }
 
 impl Clock for TestClock {
-    fn new() -> TestClock {
-        TestClock {
+    fn new() -> Self {
+        Self {
             time_ns: 0,
             timers: HashMap::new(),
             default_callback: None,
@@ -252,7 +254,7 @@ impl Clock for TestClock {
     }
 
     fn register_default_handler_py(&mut self, callback_py: PyObject) {
-        self.default_callback_py = Some(callback_py)
+        self.default_callback_py = Some(callback_py);
     }
 
     fn set_time_alert_ns_py(
@@ -321,8 +323,8 @@ impl Clock for TestClock {
     }
 
     fn cancel_timers(&mut self) {
-        for (_, timer) in self.timers.iter_mut() {
-            timer.cancel()
+        for timer in &mut self.timers.values_mut() {
+            timer.cancel();
         }
         self.timers = HashMap::new();
     }
@@ -338,8 +340,8 @@ pub struct LiveClock {
 }
 
 impl Clock for LiveClock {
-    fn new() -> LiveClock {
-        LiveClock {
+    fn new() -> Self {
+        Self {
             internal: MonotonicClock::default(),
             timers: HashMap::new(),
             default_callback: None,
@@ -385,7 +387,7 @@ impl Clock for LiveClock {
     }
 
     fn register_default_handler_py(&mut self, callback_py: PyObject) {
-        self.default_callback_py = Some(callback_py)
+        self.default_callback_py = Some(callback_py);
     }
 
     fn set_time_alert_ns_py(
@@ -456,8 +458,8 @@ impl Clock for LiveClock {
     }
 
     fn cancel_timers(&mut self) {
-        for (_, timer) in self.timers.iter_mut() {
-            timer.cancel()
+        for timer in &mut self.timers.values_mut() {
+            timer.cancel();
         }
         self.timers = HashMap::new();
     }

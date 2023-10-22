@@ -32,16 +32,17 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OmsType
@@ -141,7 +142,7 @@ cdef class SimulatedExchange:
         Logger logger not None,
         FillModel fill_model not None,
         LatencyModel latency_model = None,
-        BookType book_type = BookType.L1_TBBO,
+        BookType book_type = BookType.L1_MBP,
         bint frozen_account = False,
         bint bar_execution = True,
         bint reject_stop_orders = True,
@@ -621,7 +622,7 @@ cdef class SimulatedExchange:
             ts = command.ts_init + self.latency_model.insert_latency_nanos
         elif isinstance(command, ModifyOrder):
             ts = command.ts_init + self.latency_model.update_latency_nanos
-        elif isinstance(command, (CancelOrder, CancelAllOrders)):
+        elif isinstance(command, (CancelOrder, CancelAllOrders, BatchCancelOrders)):
             ts = command.ts_init + self.latency_model.cancel_latency_nanos
         else:
             raise ValueError(f"invalid `TradingCommand`, was {command}")  # pragma: no cover (design-time error)
@@ -643,6 +644,10 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(delta, "delta")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(delta)
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(delta.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"No matching engine found for {delta.instrument_id}")
@@ -660,6 +665,10 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(deltas, "deltas")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(deltas)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(deltas.instrument_id)
         if matching_engine is None:
@@ -681,6 +690,10 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(tick, "tick")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(tick)
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"No matching engine found for {tick.instrument_id}")
@@ -700,6 +713,10 @@ cdef class SimulatedExchange:
 
         """
         Condition.not_none(tick, "tick")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(tick)
 
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(tick.instrument_id)
         if matching_engine is None:
@@ -721,45 +738,57 @@ cdef class SimulatedExchange:
         """
         Condition.not_none(bar, "bar")
 
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(bar)
+
         cdef OrderMatchingEngine matching_engine = self._matching_engines.get(bar.bar_type.instrument_id)
         if matching_engine is None:
             raise RuntimeError(f"No matching engine found for {bar.bar_type.instrument_id}")
 
         matching_engine.process_bar(bar)
 
-    cpdef void process_venue_status(self, VenueStatusUpdate update):
+    cpdef void process_venue_status(self, VenueStatus data):
         """
         Process the exchange for the given status.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
-            The status to process.
+        data : VenueStatus
+            The status update to process.
 
         """
-        Condition.not_none(update, "status")
+        Condition.not_none(data, "data")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(data)
 
         cdef OrderMatchingEngine matching_engine
         for matching_engine in self._matching_engines.values():
-            matching_engine.process_status(update.status)
+            matching_engine.process_status(data.status)
 
-    cpdef void process_instrument_status(self, InstrumentStatusUpdate update):
+    cpdef void process_instrument_status(self, InstrumentStatus data):
         """
         Process a specific instrument status.
 
         Parameters
         ----------
-        update : VenueStatusUpdate
-            The status to process.
+        data : VenueStatus
+            The status update to process.
 
         """
-        Condition.not_none(update, "status")
+        Condition.not_none(data, "data")
 
-        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(update.instrument_id)
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(data)
+
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(data.instrument_id)
         if matching_engine is None:
-            raise RuntimeError(f"No matching engine found for {update.instrument_id}")
+            raise RuntimeError(f"No matching engine found for {data.instrument_id}")
 
-        matching_engine.process_status(update.status)
+        matching_engine.process_status(data.status)
 
     cpdef void process(self, uint64_t ts_now):
         """
@@ -804,6 +833,8 @@ cdef class SimulatedExchange:
                 self._matching_engines[command.instrument_id].process_cancel(command, self.exec_client.account_id)
             elif isinstance(command, CancelAllOrders):
                 self._matching_engines[command.instrument_id].process_cancel_all(command, self.exec_client.account_id)
+            elif isinstance(command, BatchCancelOrders):
+                self._matching_engines[command.instrument_id].process_batch_cancel(command, self.exec_client.account_id)
 
         # Iterate over modules
         cdef SimulationModule module

@@ -14,20 +14,23 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
 use ustr::Ustr;
 
+/// Represents a valid client order ID (assigned by the Nautilus system).
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct ClientOrderId {
+    /// The client order ID value.
     pub value: Ustr,
 }
 
@@ -89,27 +92,6 @@ impl From<&str> for ClientOrderId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    ClientOrderId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -167,7 +149,7 @@ mod tests {
             ClientOrderId::from("id2"),
             ClientOrderId::from("id3"),
         ];
-        let ustr = optional_vec_client_order_ids_to_ustr(Some(client_order_ids.into())).unwrap();
+        let ustr = optional_vec_client_order_ids_to_ustr(Some(client_order_ids)).unwrap();
         assert_eq!(ustr.to_string(), "id1,id2,id3");
     }
 }

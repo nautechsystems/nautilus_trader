@@ -21,11 +21,11 @@ import pandas as pd
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import PersistenceType
+from betfair_parser.spec.betting.orders import CancelOrders
 from betfair_parser.spec.betting.orders import PlaceInstruction
+from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceInstruction
-from betfair_parser.spec.betting.orders import _CancelOrdersParams
-from betfair_parser.spec.betting.orders import _PlaceOrdersParams
-from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
+from betfair_parser.spec.betting.orders import ReplaceOrders
 from betfair_parser.spec.betting.type_definitions import CancelInstruction
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
@@ -95,7 +95,7 @@ def nautilus_limit_to_place_instructions(
     assert isinstance(command.order, NautilusLimitOrder)
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
-        selection_id=instrument.selection_id,
+        selection_id=int(instrument.selection_id),
         handicap=instrument.selection_handicap,
         side=N2B_SIDE[command.order.side],
         limit_order=LimitOrder(
@@ -122,7 +122,7 @@ def nautilus_limit_on_close_to_place_instructions(
     assert isinstance(command.order, NautilusLimitOrder)
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT_ON_CLOSE,
-        selection_id=instrument.selection_id,
+        selection_id=int(instrument.selection_id),
         handicap=instrument.selection_handicap,
         side=N2B_SIDE[command.order.side],
         limit_on_close_order=LimitOnCloseOrder(
@@ -142,13 +142,14 @@ def nautilus_market_to_place_instructions(
     instrument: BettingInstrument,
 ) -> PlaceInstruction:
     assert isinstance(command.order, NautilusMarketOrder)
+    price = MIN_BET_PRICE if command.order.side == OrderSide.BUY else MAX_BET_PRICE
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
-        selection_id=instrument.selection_id,
+        selection_id=int(instrument.selection_id),
         handicap=instrument.selection_handicap,
         side=N2B_SIDE[command.order.side],
         limit_order=LimitOrder(
-            price=MIN_BET_PRICE if command.order.side == OrderSide.BUY else MAX_BET_PRICE,
+            price=price.as_double(),
             size=command.order.quantity.as_double(),
             persistence_type=N2B_PERSISTENCE.get(
                 command.order.time_in_force,
@@ -171,7 +172,7 @@ def nautilus_market_on_close_to_place_instructions(
     assert isinstance(command.order, NautilusMarketOrder)
     instructions = PlaceInstruction(
         order_type=OrderType.MARKET_ON_CLOSE,
-        selection_id=instrument.selection_id,
+        selection_id=int(instrument.selection_id),
         handicap=instrument.selection_handicap,
         side=N2B_SIDE[command.order.side],
         market_on_close_order=MarketOnCloseOrder(
@@ -212,11 +213,11 @@ def nautilus_order_to_place_instructions(
 def order_submit_to_place_order_params(
     command: SubmitOrder,
     instrument: BettingInstrument,
-) -> _PlaceOrdersParams:
+) -> PlaceOrders:
     """
     Convert a SubmitOrder command into the data required by BetfairClient.
     """
-    params = _PlaceOrdersParams(
+    return PlaceOrders.with_params(
         market_id=instrument.market_id,
         customer_ref=command.id.value.replace(
             "-",
@@ -225,23 +226,22 @@ def order_submit_to_place_order_params(
         customer_strategy_ref=command.strategy_id.value[:15],
         instructions=[nautilus_order_to_place_instructions(command, instrument)],
     )
-    return params
 
 
 def order_update_to_replace_order_params(
     command: ModifyOrder,
     venue_order_id: VenueOrderId,
     instrument: BettingInstrument,
-) -> _ReplaceOrdersParams:
+) -> ReplaceOrders:
     """
     Convert an ModifyOrder command into the data required by BetfairClient.
     """
-    return _ReplaceOrdersParams(
+    return ReplaceOrders.with_params(
         market_id=instrument.market_id,
         customer_ref=command.id.value.replace("-", ""),
         instructions=[
             ReplaceInstruction(
-                bet_id=venue_order_id.value,
+                bet_id=int(venue_order_id.value),
                 new_price=command.price.as_double(),
             ),
         ],
@@ -251,18 +251,18 @@ def order_update_to_replace_order_params(
 def order_cancel_to_cancel_order_params(
     command: CancelOrder,
     instrument: BettingInstrument,
-) -> _CancelOrdersParams:
+) -> CancelOrders:
     """
     Convert a CancelOrder command into the data required by BetfairClient.
     """
-    return _CancelOrdersParams(
+    return CancelOrders.with_params(
         market_id=instrument.market_id,
-        instructions=[CancelInstruction(bet_id=command.venue_order_id.value)],
+        instructions=[CancelInstruction(bet_id=int(command.venue_order_id.value))],
         customer_ref=command.id.value.replace("-", ""),
     )
 
 
-def order_cancel_all_to_betfair(instrument: BettingInstrument):
+def order_cancel_all_to_betfair(instrument: BettingInstrument) -> dict[str, str]:
     """
     Convert a CancelAllOrders command into the data required by BetfairClient.
     """

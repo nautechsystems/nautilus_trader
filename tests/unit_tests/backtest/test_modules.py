@@ -23,6 +23,7 @@ from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
@@ -70,10 +71,31 @@ class TestSimulationModules:
     def test_python_module(self):
         # Arrange
         class PythonModule(SimulationModule):
-            def process(self, ts_now: int):
+            def process(self, ts_now: int) -> None:
                 assert self.exchange
 
-            def log_diagnostics(self, log: LoggerAdapter):
+            def log_diagnostics(self, log: LoggerAdapter) -> None:
+                pass
+
+        config = SimulationModuleConfig()
+        engine = self.create_engine(modules=[PythonModule(config)])
+
+        # Act
+        engine.run()
+
+    def test_pre_process_custom_order_fill(self):
+        # Arrange
+        class PythonModule(SimulationModule):
+            def pre_process(self, data: Data) -> None:
+                if data.ts_init == 1359676979900000000:
+                    assert data
+                    matching_engine = self.exchange.get_matching_engine(data.instrument_id)
+                    assert matching_engine
+
+            def process(self, ts_now: int) -> None:
+                assert self.exchange
+
+            def log_diagnostics(self, log: LoggerAdapter) -> None:
                 pass
 
         config = SimulationModuleConfig()

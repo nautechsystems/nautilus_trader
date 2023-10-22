@@ -23,21 +23,22 @@ use std::{
     io::{self, Write},
 };
 
-use datafusion::arrow::{datatypes::Schema, ipc::writer::StreamWriter, record_batch::RecordBatch};
+use datafusion::arrow::{
+    array::{Array, ArrayRef},
+    datatypes::{DataType, Schema},
+    error::ArrowError,
+    ipc::writer::StreamWriter,
+    record_batch::RecordBatch,
+};
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
 use thiserror;
 
-#[repr(C)]
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
-pub enum NautilusDataType {
-    // Custom = 0,  # First slot reserved for custom data
-    OrderBookDelta = 1,
-    QuoteTick = 2,
-    TradeTick = 3,
-    Bar = 4,
-}
+// Define metadata key constants constants
+const KEY_BAR_TYPE: &str = "bar_type";
+const KEY_INSTRUMENT_ID: &str = "instrument_id";
+const KEY_PRICE_PRECISION: &str = "price_precision";
+const KEY_SIZE_PRECISION: &str = "size_precision";
 
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
@@ -49,8 +50,24 @@ pub enum DataStreamingError {
     PythonError(#[from] PyErr),
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum EncodingError {
+    #[error("Missing metadata key: `{0}`")]
+    MissingMetadata(&'static str),
+    #[error("Missing data column: `{0}` at index {1}")]
+    MissingColumn(&'static str, usize),
+    #[error("Error parsing `{0}`: {1}")]
+    ParseError(&'static str, String),
+    #[error("Invalid column type `{0}` at index {1}: expected {2}, found {3}")]
+    InvalidColumnType(&'static str, usize, DataType, DataType),
+    #[error("Arrow error: {0}")]
+    ArrowError(#[from] datafusion::arrow::error::ArrowError),
+}
+
 pub trait ArrowSchemaProvider {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
+
+    #[must_use]
     fn get_schema_map() -> HashMap<String, String> {
         let schema = Self::get_schema(None);
         let mut map = HashMap::new();
@@ -67,14 +84,20 @@ pub trait EncodeToRecordBatch
 where
     Self: Sized + ArrowSchemaProvider,
 {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch;
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError>;
 }
 
 pub trait DecodeFromRecordBatch
 where
     Self: Sized + Into<Data> + ArrowSchemaProvider,
 {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self>;
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError>;
 }
 
 pub trait DecodeDataFromRecordBatch
@@ -84,7 +107,7 @@ where
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data>;
+    ) -> Result<Vec<Data>, EncodingError>;
 }
 
 pub trait WriteStream {
@@ -98,4 +121,26 @@ impl<T: EncodeToRecordBatch + Write> WriteStream for T {
         writer.finish()?;
         Ok(())
     }
+}
+
+pub fn extract_column<'a, T: Array + 'static>(
+    cols: &'a [ArrayRef],
+    column_key: &'static str,
+    column_index: usize,
+    expected_type: DataType,
+) -> Result<&'a T, EncodingError> {
+    let column_values = cols
+        .get(column_index)
+        .ok_or(EncodingError::MissingColumn(column_key, column_index))?;
+    let downcasted_values =
+        column_values
+            .as_any()
+            .downcast_ref::<T>()
+            .ok_or(EncodingError::InvalidColumnType(
+                column_key,
+                column_index,
+                expected_type,
+                column_values.data_type().clone(),
+            ))?;
+    Ok(downcasted_values)
 }

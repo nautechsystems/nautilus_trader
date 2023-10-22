@@ -13,10 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pickle
+
 from nautilus_trader.core.uuid import UUID4
 
 
 class TestUUID:
+    def test_pickling_round_trip(self):
+        # Arrange
+        uuid = UUID4()
+
+        # Act
+        pickled = pickle.dumps(uuid)
+        unpickled = pickle.loads(pickled)  # noqa
+
+        # Assert
+        assert unpickled == uuid
+
     def test_equality(self):
         # Arrange, Act
         uuid1 = UUID4("c2988650-5beb-8af8-e714-377a3a1c26ed")

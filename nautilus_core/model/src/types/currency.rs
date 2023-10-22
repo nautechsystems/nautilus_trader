@@ -14,16 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
     hash::{Hash, Hasher},
     str::FromStr,
 };
 
-use anyhow::Result;
-use nautilus_core::{
-    correctness::check_valid_string,
-    string::{cstr_to_string, str_to_cstr},
-};
+use anyhow::{anyhow, Result};
+use nautilus_core::correctness::check_valid_string;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
@@ -33,7 +29,10 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Currency {
     pub code: Ustr,
     pub precision: u8,
@@ -52,7 +51,7 @@ impl Currency {
     ) -> Result<Self> {
         check_valid_string(code, "`Currency` code")?;
         check_valid_string(name, "`Currency` name")?;
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision)?;
 
         Ok(Self {
             code: Ustr::from(code),
@@ -61,6 +60,34 @@ impl Currency {
             name: Ustr::from(name),
             currency_type,
         })
+    }
+
+    pub fn register(currency: Currency, overwrite: bool) -> Result<()> {
+        let mut map = CURRENCY_MAP.lock().map_err(|e| anyhow!(e.to_string()))?;
+
+        if !overwrite && map.contains_key(currency.code.as_str()) {
+            // If overwrite is false and the currency already exists, simply return
+            return Ok(());
+        }
+
+        // Insert or overwrite the currency in the map
+        map.insert(currency.code.to_string(), currency);
+        Ok(())
+    }
+
+    pub fn is_fiat(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::Fiat)
+    }
+
+    pub fn is_crypto(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::Crypto)
+    }
+
+    pub fn is_commodity_backed(code: &str) -> Result<bool> {
+        let currency = Currency::from_str(code)?;
+        Ok(currency.currency_type == CurrencyType::CommodityBacked)
     }
 }
 
@@ -77,21 +104,22 @@ impl Hash for Currency {
 }
 
 impl FromStr for Currency {
-    type Err = String;
+    type Err = anyhow::Error;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        CURRENCY_MAP
+    fn from_str(s: &str) -> Result<Self> {
+        let map_guard = CURRENCY_MAP
             .lock()
-            .unwrap()
+            .map_err(|e| anyhow!("Failed to acquire lock on `CURRENCY_MAP`: {e}"))?;
+        map_guard
             .get(s)
-            .cloned()
-            .ok_or_else(|| format!("Unknown currency: {}", s))
+            .copied()
+            .ok_or_else(|| anyhow!("Unknown currency: {s}"))
     }
 }
 
 impl From<&str> for Currency {
     fn from(input: &str) -> Self {
-        input.parse().unwrap_or_else(|err| panic!("{}", err))
+        input.parse().unwrap()
     }
 }
 
@@ -115,99 +143,13 @@ impl<'de> Deserialize<'de> for Currency {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a [`Currency`] from pointers and primitives.
-///
-/// # Safety
-///
-/// - Assumes `code_ptr` is a valid C string pointer.
-/// - Assumes `name_ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn currency_from_py(
-    code_ptr: *const c_char,
-    precision: u8,
-    iso4217: u16,
-    name_ptr: *const c_char,
-    currency_type: CurrencyType,
-) -> Currency {
-    assert!(!code_ptr.is_null(), "`code_ptr` was NULL");
-    assert!(!name_ptr.is_null(), "`name_ptr` was NULL");
-
-    Currency::new(
-        CStr::from_ptr(code_ptr)
-            .to_str()
-            .expect("CStr::from_ptr failed for `code_ptr`"),
-        precision,
-        iso4217,
-        CStr::from_ptr(name_ptr)
-            .to_str()
-            .expect("CStr::from_ptr failed for `name_ptr`"),
-        currency_type,
-    )
-    .unwrap()
-}
-
-#[no_mangle]
-pub extern "C" fn currency_to_cstr(currency: &Currency) -> *const c_char {
-    str_to_cstr(format!("{currency:?}").as_str())
-}
-
-#[no_mangle]
-pub extern "C" fn currency_code_to_cstr(currency: &Currency) -> *const c_char {
-    str_to_cstr(&currency.code)
-}
-
-#[no_mangle]
-pub extern "C" fn currency_name_to_cstr(currency: &Currency) -> *const c_char {
-    str_to_cstr(&currency.name)
-}
-
-#[no_mangle]
-pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
-    currency.code.precomputed_hash()
-}
-
-#[no_mangle]
-pub extern "C" fn currency_register(currency: Currency) {
-    CURRENCY_MAP
-        .lock()
-        .unwrap()
-        .insert(currency.code.to_string(), currency);
-}
-
-/// # Safety
-///
-/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn currency_exists(code_ptr: *const c_char) -> u8 {
-    let code = cstr_to_string(code_ptr);
-    u8::from(CURRENCY_MAP.lock().unwrap().contains_key(&code))
-}
-
-/// # Safety
-///
-/// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
-#[no_mangle]
-pub unsafe extern "C" fn currency_from_cstr(code_ptr: *const c_char) -> Currency {
-    let code = cstr_to_string(code_ptr);
-    Currency::from_str(&code).unwrap()
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::string::str_to_cstr;
     use rstest::rstest;
 
-    use super::currency_register;
-    use crate::{
-        enums::CurrencyType,
-        types::currency::{currency_exists, Currency},
-    };
+    use crate::{enums::CurrencyType, types::currency::Currency};
 
     #[rstest]
     #[should_panic(expected = "`Currency` code")]
@@ -256,19 +198,9 @@ mod tests {
 
     #[rstest]
     fn test_serialization_deserialization() {
-        let currency =
-            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let currency = Currency::USD();
         let serialized = serde_json::to_string(&currency).unwrap();
         let deserialized: Currency = serde_json::from_str(&serialized).unwrap();
         assert_eq!(currency, deserialized);
-    }
-
-    #[rstest]
-    fn test_registration() {
-        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto).unwrap();
-        currency_register(currency);
-        unsafe {
-            assert_eq!(currency_exists(str_to_cstr("MYC")), 1);
-        }
     }
 }

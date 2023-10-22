@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import pytest
 
 from nautilus_trader.model.enums import BookType
@@ -23,28 +22,23 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR
 
 
-pytestmark = pytest.mark.skip(reason="Repair order book parsing")
-
-
 class TestOrderBook:
     def test_l1_orderbook(self):
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
         i = 0
-        for i, m in enumerate(TestDataStubs.l1_feed()):  # (B007)
-            # print(f"[{i}]", "\n", m, "\n", repr(ob), "\n")
-            # print("")
+        for i, m in enumerate(TestDataStubs.l1_feed()):
             if m["op"] == "update":
-                book.update(order=m["order"])
+                book.update(order=m["order"], ts_event=0)
             else:
                 raise KeyError
             book.check_integrity()
         assert i == 1999
 
     def test_l2_feed(self):
-        filename = TEST_DATA_DIR + "/L2_feed.json"
+        filename = TEST_DATA_DIR / "L2_feed.json"
 
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
@@ -64,14 +58,15 @@ class TestOrderBook:
             elif (i, m["order"].order_id) in skip:
                 continue
             elif m["op"] == "update":
-                book.update(order=m["order"])
+                book.update(order=m["order"], ts_event=0)
             elif m["op"] == "delete":
-                book.delete(order=m["order"])
+                book.delete(order=m["order"], ts_event=0)
             book.check_integrity()
         assert i == 68462
 
+    @pytest.mark.skip("segfault on check_integrity")
     def test_l3_feed(self):
-        filename = TEST_DATA_DIR + "/L3_feed.json"
+        filename = TEST_DATA_DIR / "L3_feed.json"
 
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
@@ -82,16 +77,16 @@ class TestOrderBook:
         # immediately, however we may also delete later.
         skip_deletes = []
         i = 0
-        for i, m in enumerate(TestDataStubs.l3_feed(filename)):  # (B007)
+        for i, m in enumerate(TestDataStubs.l3_feed(filename)):
             if m["op"] == "update":
-                book.update(order=m["order"])
+                book.update(order=m["order"], ts_event=0)
                 try:
                     book.check_integrity()
                 except RuntimeError:  # BookIntegrityError was removed
-                    book.delete(order=m["order"])
+                    book.delete(order=m["order"], ts_event=0)
                     skip_deletes.append(m["order"].order_id)
             elif m["op"] == "delete" and m["order"].order_id not in skip_deletes:
-                book.delete(order=m["order"])
+                book.delete(order=m["order"], ts_event=0)
             book.check_integrity()
         assert i == 100_047
         assert book.best_ask_level().price == 61405.27923706

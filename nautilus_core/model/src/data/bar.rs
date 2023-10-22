@@ -14,14 +14,15 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
+    collections::HashMap,
     fmt::{Debug, Display, Formatter},
-    hash::{Hash, Hasher},
+    hash::Hash,
     str::FromStr,
 };
 
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
-use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
+use indexmap::IndexMap;
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
+use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror;
 
@@ -35,7 +36,10 @@ use crate::{
 /// method/rule and price type.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
     pub step: usize,
@@ -55,7 +59,10 @@ impl Display for BarSpecification {
 /// aggregation source.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BarType {
     /// The bar types instrument ID.
     pub instrument_id: InstrumentId,
@@ -131,6 +138,12 @@ impl FromStr for BarType {
     }
 }
 
+impl From<&str> for BarType {
+    fn from(input: &str) -> Self {
+        Self::from_str(input).unwrap()
+    }
+}
+
 impl Display for BarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -160,37 +173,14 @@ impl<'de> Deserialize<'de> for BarType {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl BarType {
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-}
-
 /// Represents an aggregated bar.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Bar {
     /// The bar type for this bar.
     pub bar_type: BarType,
@@ -250,8 +240,24 @@ impl Bar {
         metadata
     }
 
+    /// Returns the field map for the type, for use with arrow schemas.
+    pub fn get_fields() -> IndexMap<String, String> {
+        let mut metadata = IndexMap::new();
+        metadata.insert("open".to_string(), "Int64".to_string());
+        metadata.insert("high".to_string(), "Int64".to_string());
+        metadata.insert("low".to_string(), "Int64".to_string());
+        metadata.insert("close".to_string(), "Int64".to_string());
+        metadata.insert("volume".to_string(), "UInt64".to_string());
+        metadata.insert("ts_event".to_string(), "UInt64".to_string());
+        metadata.insert("ts_init".to_string(), "UInt64".to_string());
+        metadata
+    }
+
     /// Create a new [`Bar`] extracted from the given [`PyAny`].
+    #[cfg(feature = "python")]
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        use nautilus_core::python::to_pyvalue_err;
+
         let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
         let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
         let bar_type = BarType::from_str(bar_type_str)
@@ -261,24 +267,24 @@ impl Bar {
         let open_py: &PyAny = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
         let open_raw: i64 = open_py.getattr("raw")?.extract()?;
-        let open = Price::from_raw(open_raw, price_prec);
+        let open = Price::from_raw(open_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let high_py: &PyAny = obj.getattr("high")?;
         let high_raw: i64 = high_py.getattr("raw")?.extract()?;
-        let high = Price::from_raw(high_raw, price_prec);
+        let high = Price::from_raw(high_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let low_py: &PyAny = obj.getattr("low")?;
         let low_raw: i64 = low_py.getattr("raw")?.extract()?;
-        let low = Price::from_raw(low_raw, price_prec);
+        let low = Price::from_raw(low_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let close_py: &PyAny = obj.getattr("close")?;
         let close_raw: i64 = close_py.getattr("raw")?.extract()?;
-        let close = Price::from_raw(close_raw, price_prec);
+        let close = Price::from_raw(close_raw, price_prec).map_err(to_pyvalue_err)?;
 
         let volume_py: &PyAny = obj.getattr("volume")?;
         let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
-        let volume = Quantity::from_raw(volume_raw, volume_prec);
+        let volume = Quantity::from_raw(volume_raw, volume_prec).map_err(to_pyvalue_err)?;
 
         let ts_event: UnixNanos = obj.getattr("ts_event")?.extract()?;
         let ts_init: UnixNanos = obj.getattr("ts_init")?.extract()?;
@@ -301,147 +307,22 @@ impl Display for Bar {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-#[allow(clippy::too_many_arguments)]
-impl Bar {
-    #[new]
-    fn py_new(
-        bar_type: BarType,
-        open: Price,
-        high: Price,
-        low: Price,
-        close: Price,
-        volume: Quantity,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{self:?}")
-    }
-
-    #[getter]
-    fn bar_type(&self) -> BarType {
-        self.bar_type
-    }
-
-    #[getter]
-    fn open(&self) -> Price {
-        self.open
-    }
-
-    #[getter]
-    fn high(&self) -> Price {
-        self.high
-    }
-
-    #[getter]
-    fn low(&self) -> Price {
-        self.low
-    }
-
-    #[getter]
-    fn close(&self) -> Price {
-        self.close
-    }
-
-    #[getter]
-    fn volume(&self) -> Quantity {
-        self.volume
-    }
-
-    #[getter]
-    fn ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    fn ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-
-    /// Return a dictionary representation of the object.
-    pub fn as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
-        Ok(py_dict)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    pub fn from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        // Extract to JSON string
-        let json_str: String = PyModule::import(py, "json")?
-            .call_method("dumps", (values,), None)?
-            .extract()?;
-
-        // Deserialize to object
-        let instance = serde_json::from_slice(&json_str.into_bytes()).map_err(to_pyvalue_err)?;
-        Ok(instance)
-    }
-
-    #[staticmethod]
-    fn from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    fn from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    /// Return JSON encoded bytes representation of the object.
-    fn as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_json_bytes().unwrap().into_py(py)
-    }
-
-    /// Return MsgPack encoded bytes representation of the object.
-    fn as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // Unwrapping is safe when serializing a valid object
-        self.as_msgpack_bytes().unwrap().into_py(py)
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
-// Tests
+// Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests {
-    use rstest::rstest;
+pub mod stubs {
+    use rstest::fixture;
 
-    use super::*;
     use crate::{
-        enums::BarAggregation,
-        identifiers::{symbol::Symbol, venue::Venue},
+        data::bar::{Bar, BarSpecification, BarType},
+        enums::{AggregationSource, BarAggregation, PriceType},
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+        types::{price::Price, quantity::Quantity},
     };
 
-    fn create_stub_bar() -> Bar {
+    #[fixture]
+    pub fn bar_audusd_sim_minute_bid() -> Bar {
         let instrument_id = InstrumentId {
             symbol: Symbol::new("AUDUSD").unwrap(),
             venue: Venue::new("SIM").unwrap(),
@@ -457,7 +338,7 @@ mod tests {
             aggregation_source: AggregationSource::External,
         };
         Bar {
-            bar_type: bar_type.clone(),
+            bar_type,
             open: Price::from("1.00001"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),
@@ -467,6 +348,20 @@ mod tests {
             ts_init: 1,
         }
     }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::{stubs::*, *};
+    use crate::{
+        enums::BarAggregation,
+        identifiers::{symbol::Symbol, venue::Venue},
+    };
 
     #[rstest]
     fn test_bar_spec_string_reprs() {
@@ -497,6 +392,7 @@ mod tests {
             }
         );
         assert_eq!(bar_type.aggregation_source, AggregationSource::External);
+        assert_eq!(bar_type, BarType::from(input));
     }
 
     #[rstest]
@@ -579,13 +475,13 @@ mod tests {
             price_type: PriceType::Bid,
         };
         let bar_type1 = BarType {
-            instrument_id: instrument_id1.clone(),
-            spec: bar_spec.clone(),
+            instrument_id: instrument_id1,
+            spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
             instrument_id: instrument_id1,
-            spec: bar_spec.clone(),
+            spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
@@ -615,13 +511,13 @@ mod tests {
             price_type: PriceType::Bid,
         };
         let bar_type1 = BarType {
-            instrument_id: instrument_id1.clone(),
-            spec: bar_spec.clone(),
+            instrument_id: instrument_id1,
+            spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
         let bar_type2 = BarType {
             instrument_id: instrument_id1,
-            spec: bar_spec.clone(),
+            spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
         let bar_type3 = BarType {
@@ -653,7 +549,7 @@ mod tests {
             aggregation_source: AggregationSource::External,
         };
         let bar1 = Bar {
-            bar_type: bar_type.clone(),
+            bar_type,
             open: Price::from("1.00001"),
             high: Price::from("1.00004"),
             low: Price::from("1.00002"),
@@ -678,54 +574,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_as_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let bar = create_stub_bar();
-
-        Python::with_gil(|py| {
-            let dict_string = bar.as_dict(py).unwrap().to_string();
-            let expected_string = r#"{'type': 'Bar', 'bar_type': 'AUDUSD.SIM-1-MINUTE-BID-EXTERNAL', 'open': '1.00001', 'high': '1.00004', 'low': '1.00002', 'close': '1.00003', 'volume': '100000', 'ts_event': 0, 'ts_init': 1}"#;
-            assert_eq!(dict_string, expected_string);
-        });
-    }
-
-    #[rstest]
-    fn test_as_from_dict() {
-        pyo3::prepare_freethreaded_python();
-
-        let bar = create_stub_bar();
-
-        Python::with_gil(|py| {
-            let dict = bar.as_dict(py).unwrap();
-            let parsed = Bar::from_dict(py, dict).unwrap();
-            assert_eq!(parsed, bar);
-        });
-    }
-
-    #[rstest]
-    fn test_from_pyobject() {
-        pyo3::prepare_freethreaded_python();
-        let bar = create_stub_bar();
-
-        Python::with_gil(|py| {
-            let bar_pyobject = bar.into_py(py);
-            let parsed_bar = Bar::from_pyobject(bar_pyobject.as_ref(py)).unwrap();
-            assert_eq!(parsed_bar, bar);
-        });
-    }
-
-    #[rstest]
-    fn test_json_serialization() {
-        let bar = create_stub_bar();
+    fn test_json_serialization(bar_audusd_sim_minute_bid: Bar) {
+        let bar = bar_audusd_sim_minute_bid;
         let serialized = bar.as_json_bytes().unwrap();
         let deserialized = Bar::from_json_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);
     }
 
     #[rstest]
-    fn test_msgpack_serialization() {
-        let bar = create_stub_bar();
+    fn test_msgpack_serialization(bar_audusd_sim_minute_bid: Bar) {
+        let bar = bar_audusd_sim_minute_bid;
         let serialized = bar.as_msgpack_bytes().unwrap();
         let deserialized = Bar::from_msgpack_bytes(serialized).unwrap();
         assert_eq!(deserialized, bar);

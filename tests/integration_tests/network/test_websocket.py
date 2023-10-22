@@ -19,7 +19,7 @@ import msgspec
 import pytest
 from aiohttp.test_utils import TestServer
 
-from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.test_kit.functions import eventually
 
 

@@ -5,11 +5,6 @@ of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
-```{warning}
-This integration is still under construction. Consider it to be in an
-unstable beta phase and exercise caution.
-```
-
 ## Overview
 The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Binance integration consists of an assortment of components,
@@ -47,13 +42,13 @@ E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within t
 ## Order types
 |                        | Spot                            | Margin                          | Futures           |
 |------------------------|---------------------------------|---------------------------------|-------------------|
-| `MARKET`               | Yes                             | Yes                             | Yes               |
-| `LIMIT`                | Yes                             | Yes                             | Yes               |
-| `STOP_MARKET`          | No                              | Yes                             | Yes               |
-| `STOP_LIMIT`           | Yes (`post-only` not available) | Yes (`post-only` not available) | Yes               |
-| `MARKET_IF_TOUCHED`    | No                              | No                              | Yes               |
-| `LIMIT_IF_TOUCHED`     | Yes                             | Yes                             | Yes               |
-| `TRAILING_STOP_MARKET` | No                              | No                              | Yes               |
+| `MARKET`               | ✓                               | ✓                               | ✓                 |
+| `LIMIT`                | ✓                               | ✓                               | ✓                 |
+| `STOP_MARKET`          |                                 | ✓                               | ✓                 |
+| `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
+| `MARKET_IF_TOUCHED`    |                                 |                                 | ✓                 |
+| `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
+| `TRAILING_STOP_MARKET` |                                 |                                 | ✓                 |
 
 ### Trailing stops
 Binance use the concept of an *activation price* for trailing stops ([see docs](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292)).

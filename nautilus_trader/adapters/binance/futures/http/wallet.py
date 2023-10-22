@@ -24,7 +24,7 @@ from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFutur
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
@@ -75,7 +75,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
         symbol: BinanceSymbol
         recvWindow: Optional[str] = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceFuturesCommissionRate:
+    async def get(self, parameters: GetParameters) -> BinanceFuturesCommissionRate:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -130,7 +130,7 @@ class BinanceFuturesWalletHttpAPI:
         """
         Get Futures commission rates for a given symbol.
         """
-        rate = await self._endpoint_futures_commission_rate._get(
+        rate = await self._endpoint_futures_commission_rate.get(
             parameters=self._endpoint_futures_commission_rate.GetParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),

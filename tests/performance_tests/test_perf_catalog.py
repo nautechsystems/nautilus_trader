@@ -20,12 +20,12 @@ import tempfile
 import pytest
 
 from nautilus_trader import PACKAGE_ROOT
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
-from nautilus_trader.persistence.wranglers import list_from_capsule
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
+from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
-from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalogFile
+from tests.unit_tests.persistence.test_catalog import TestPersistenceCatalog
 
 
 # TODO: skip in CI
@@ -40,7 +40,7 @@ class TestCatalogPerformance(PerformanceHarness):
 
         def setup():
             # Arrange
-            cls = TestPersistenceCatalogFile()
+            cls = TestPersistenceCatalog()
 
             cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
 
@@ -50,7 +50,7 @@ class TestCatalogPerformance(PerformanceHarness):
             return (cls.catalog,), {}
 
         def run(catalog):
-            quotes = catalog.quote_ticks(as_nautilus=True)
+            quotes = catalog.quote_ticks()
             assert len(quotes) == 9500
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
@@ -62,17 +62,17 @@ class TestCatalogPerformance(PerformanceHarness):
 
         def setup():
             # Arrange
-            cls = TestPersistenceCatalogFile()
+            cls = TestPersistenceCatalog()
 
             cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
 
-            cls._load_quote_ticks_into_catalog(use_rust=True)
+            cls._load_quote_ticks_into_catalog()
 
             # Act
             return (cls.catalog,), {}
 
         def run(catalog):
-            quotes = catalog.quote_ticks(as_nautilus=True, use_rust=True)
+            quotes = catalog.quote_ticks()
             assert len(quotes) == 9500
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
@@ -89,7 +89,7 @@ class TestCatalogPerformance(PerformanceHarness):
         def run(result):
             count = 0
             for chunk in result:
-                count += len(list_from_capsule(chunk))
+                count += len(capsule_to_list(chunk))
 
             assert count == 9689614
 
@@ -118,10 +118,10 @@ class TestCatalogPerformance(PerformanceHarness):
         def run(result):
             count = 0
             for chunk in result:
-                ticks = list_from_capsule(chunk)
+                ticks = capsule_to_list(chunk)
                 count += len(ticks)
 
-            # check total count is correct
-            assert count == 72536038
+            # Check total count is correct
+            assert count == 72_536_038
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)

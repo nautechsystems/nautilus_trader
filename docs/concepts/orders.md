@@ -121,6 +121,8 @@ For clarity, any optional parameters will be clearly marked with a comment which
 
 ## Order Types
 
+The following order types are available for the platform.
+
 ### Market
 A _Market_ order is an instruction by the trader to immediately trade
 the given quantity at the best price available. You can also specify several
@@ -132,12 +134,12 @@ to BUY 100,000 AUD using USD:
 
 ```python
 order: MarketOrder = self.order_factory.market(
-        instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
-        order_side=OrderSide.BUY,
-        quantity=Quantity.from_int(100_000),
-        time_in_force=TimeInForce.IOC,  # <-- optional (default GTC)
-        reduce_only=False,  # <-- optional (default False)
-        tags="ENTRY",  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(100_000),
+    time_in_force=TimeInForce.IOC,  # <-- optional (default GTC)
+    reduce_only=False,  # <-- optional (default False)
+    tags="ENTRY",  # <-- optional (default None)
 )
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
@@ -151,16 +153,16 @@ contracts at a limit price of 5000 USDT, as a market maker.
 
 ```python
 order: LimitOrder = self.order_factory.limit(
-        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-        order_side=OrderSide.SELL,
-        quantity=Quantity.from_int(20),
-        price=Price.from_str("5000.00"),
-        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
-        expire_time=None,  # <-- optional (default None)
-        post_only=True,  # <-- optional (default False)
-        reduce_only=False,  # <-- optional (default False)
-        display_qty=None,  # <-- optional (default None which indicates full display)
-        tags=None,  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_int(20),
+    price=Price.from_str("5000.00"),
+    time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+    expire_time=None,  # <-- optional (default None)
+    post_only=True,  # <-- optional (default False)
+    reduce_only=False,  # <-- optional (default False)
+    display_qty=None,  # <-- optional (default None which indicates full display)
+    tags=None,  # <-- optional (default None)
 )
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
@@ -175,15 +177,15 @@ to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
 
 ```python
 order: StopMarketOrder = self.order_factory.stop_market(
-        instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
-        order_side=OrderSide.SELL,
-        quantity=Quantity.from_int(1),
-        trigger_price=Price.from_int(100_000),
-        trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
-        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
-        expire_time=None,  # <-- optional (default None)
-        reduce_only=False,  # <-- optional (default False)
-        tags=None,  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_int(1),
+    trigger_price=Price.from_int(100_000),
+    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+    expire_time=None,  # <-- optional (default None)
+    reduce_only=False,  # <-- optional (default False)
+    tags=None,  # <-- optional (default None)
 )
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
@@ -197,17 +199,17 @@ once the market hits the trigger price of 1.30010 USD, active until midday 6th J
 
 ```python
 order: StopLimitOrder = self.order_factory.stop_limit(
-        instrument_id=InstrumentId.from_str("GBP/USD.CURRENEX"),
-        order_side=OrderSide.BUY,
-        quantity=Quantity.from_int(50_000),
-        price=Price.from_str("1.30000"),
-        trigger_price=Price.from_str("1.30010"),
-        trigger_type=TriggerType.BID,  # <-- optional (default DEFAULT)
-        time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
-        expire_time=pd.Timestamp("2022-06-06T12:00"),
-        post_only=True,  # <-- optional (default False)
-        reduce_only=False,  # <-- optional (default False)
-        tags=None,  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("GBP/USD.CURRENEX"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(50_000),
+    price=Price.from_str("1.30000"),
+    trigger_price=Price.from_str("1.30010"),
+    trigger_type=TriggerType.BID,  # <-- optional (default DEFAULT)
+    time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
+    expire_time=pd.Timestamp("2022-06-06T12:00"),
+    post_only=True,  # <-- optional (default False)
+    reduce_only=False,  # <-- optional (default False)
+    tags=None,  # <-- optional (default None)
 )
 ```
 [API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
@@ -222,13 +224,13 @@ to BUY 200,000 USD using JPY:
 
 ```python
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
-        instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
-        order_side=OrderSide.BUY,
-        quantity=Quantity.from_int(200_000),
-        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
-        reduce_only=False,  # <-- optional (default False)
-        display_qty=None,  # <-- optional (default None which indicates full display)
-        tags=None,  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(200_000),
+    time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+    reduce_only=False,  # <-- optional (default False)
+    display_qty=None,  # <-- optional (default None which indicates full display)
+    tags=None,  # <-- optional (default None)
 )
 ```
 
@@ -245,15 +247,15 @@ to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000
 
 ```python
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
-        instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-        order_side=OrderSide.SELL,
-        quantity=Quantity.from_int(10),
-        trigger_price=Price.from_int("10000.00"),
-        trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
-        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
-        expire_time=None,  # <-- optional (default None)
-        reduce_only=False,  # <-- optional (default False)
-        tags="ENTRY",  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_int(10),
+    trigger_price=Price.from_int("10000.00"),
+    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+    expire_time=None,  # <-- optional (default None)
+    reduce_only=False,  # <-- optional (default False)
+    tags="ENTRY",  # <-- optional (default None)
 )
 ```
 
@@ -269,17 +271,17 @@ active until midday 6th June, 2022 (UTC):
 
 ```python
 order: StopLimitOrder = self.order_factory.limit_if_touched(
-        instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
-        order_side=OrderSide.BUY,
-        quantity=Quantity.from_int(5),
-        price=Price.from_str("30100"),
-        trigger_price=Price.from_str("30150"),
-        trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
-        time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
-        expire_time=pd.Timestamp("2022-06-06T12:00"),
-        post_only=True,  # <-- optional (default False)
-        reduce_only=False,  # <-- optional (default False)
-        tags="TAKE_PROFIT",  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(5),
+    price=Price.from_str("30100"),
+    trigger_price=Price.from_str("30150"),
+    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
+    expire_time=pd.Timestamp("2022-06-06T12:00"),
+    post_only=True,  # <-- optional (default False)
+    reduce_only=False,  # <-- optional (default False)
+    tags="TAKE_PROFIT",  # <-- optional (default None)
 )
 ```
 
@@ -295,17 +297,17 @@ Perpetual Futures Contracts activating at a trigger price of 5000 USD, then trai
 
 ```python
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
-        instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
-        order_side=OrderSide.SELL,
-        quantity=Quantity.from_int(10),
-        trigger_price=Price.from_str("5000"),
-        trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
-        trailing_offset=Decimal(100),
-        trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
-        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
-        expire_time=None,  # <-- optional (default None)
-        reduce_only=True,  # <-- optional (default False)
-        tags="TRAILING_STOP-1",  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
+    order_side=OrderSide.SELL,
+    quantity=Quantity.from_int(10),
+    trigger_price=Price.from_str("5000"),
+    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    trailing_offset=Decimal(100),
+    trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
+    time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+    expire_time=None,  # <-- optional (default None)
+    reduce_only=True,  # <-- optional (default False)
+    tags="TRAILING_STOP-1",  # <-- optional (default None)
 )
 ```
 
@@ -322,19 +324,19 @@ away from the current ask price, active until further notice:
 
 ```python
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
-        instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),
-        order_side=OrderSide.BUY,
-        quantity=Quantity.from_int(1_250_000),
-        price=Price.from_str("0.71000"),
-        trigger_price=Price.from_str("0.72000"),
-        trigger_type=TriggerType.BID_ASK,  # <-- optional (default DEFAULT)
-        limit_offset=Decimal("0.00050"),
-        trailing_offset=Decimal("0.00100"),
-        trailing_offset_type=TrailingOffsetType.PRICE,
-        time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
-        expire_time=None,  # <-- optional (default None)
-        reduce_only=True,  # <-- optional (default False)
-        tags="TRAILING_STOP",  # <-- optional (default None)
+    instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(1_250_000),
+    price=Price.from_str("0.71000"),
+    trigger_price=Price.from_str("0.72000"),
+    trigger_type=TriggerType.BID_ASK,  # <-- optional (default DEFAULT)
+    limit_offset=Decimal("0.00050"),
+    trailing_offset=Decimal("0.00100"),
+    trailing_offset_type=TrailingOffsetType.PRICE,
+    time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
+    expire_time=None,  # <-- optional (default None)
+    reduce_only=True,  # <-- optional (default False)
+    tags="TRAILING_STOP",  # <-- optional (default None)
 )
 ```
 

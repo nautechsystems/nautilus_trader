@@ -31,7 +31,10 @@ use crate::{
 /// Represents a synthetic instrument with prices derived from component instruments using a
 /// formula.
 #[derive(Clone, Debug)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct SyntheticInstrument {
     pub id: InstrumentId,
     pub price_precision: u8,
@@ -160,7 +163,7 @@ mod tests {
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),
             2,
-            vec![btc_binance.clone(), ltc_binance],
+            vec![btc_binance, ltc_binance],
             formula.clone(),
             0,
             0,
@@ -185,7 +188,7 @@ mod tests {
         let mut synth = SyntheticInstrument::new(
             Symbol::new("BTC-LTC").unwrap(),
             2,
-            vec![btc_binance.clone(), ltc_binance],
+            vec![btc_binance, ltc_binance],
             formula.clone(),
             0,
             0,

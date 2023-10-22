@@ -1,3 +1,59 @@
+# NautilusTrader 1.179.0 Beta
+
+Released on 22nd October 2023 (UTC).
+
+A major feature of this release is the `ParquetDataCatalog` version 2, which represents months of
+collective effort thanks to contributions from Brad @limx0, @twitu, @ghill2 and @davidsblom.
+
+This will be the final release with support for Python 3.9.
+
+### Enhancements
+- Added `ParquetDataCatalog` v2 supporting built-in data types `OrderBookDelta`, `QuoteTick`, `TradeTick` and `Bar`
+- Added `Strategy` specific order and position event handlers
+- Added `ExecAlgorithm` specific order and position event handlers
+- Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
+- Added `BinanceTimeInForce.GTD` enum member (futures only)
+- Added Binance Futures support for GTD orders
+- Added Binance internal bar aggregation inference from aggregated trade ticks or 1-MINUTE bars (depending on lookback window)
+- Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
+- Added package version check for `nautilus_ibapi`, thanks @rsmb7z
+- Added `RiskEngine` min/max instrument notional limit checks
+- Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
+- Added `ReportProvider.generate_fills_report(...)` which provides a row per individual fill event, thanks @r3k4mn14r
+- Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
+- Implemented Binance `WebSocketClient` live subscribe and unsubscribe
+- Implemented `BinanceCommonDataClient` retries for `update_instruments`
+- Decythonized `Trader`
+
+### Breaking Changes
+- Renamed `BookType.L1_TBBO` to `BookType.L1_MBP` (more accurate definition, as L1 is the top-level price either side)
+- Renamed `VenueStatusUpdate` -> `VenueStatus`
+- Renamed `InstrumentStatusUpdate` -> `InstrumentStatus`
+- Renamed `Actor.subscribe_venue_status_updates(...)` to `Actor.subscribe_venue_status(...)`
+- Renamed `Actor.subscribe_instrument_status_updates(...)` to `Actor.subscribe_instrument_status(...)`
+- Renamed `Actor.unsubscribe_venue_status_updates(...)` to `Actor.unsubscribe_venue_status(...)`
+- Renamed `Actor.unsubscribe_instrument_status_updates(...)` to `Actor.unsubscribe_instrument_status(...)`
+- Renamed `Actor.on_venue_status_update(...)` to `Actor.on_venue_status(...)`
+- Renamed `Actor.on_instrument_status_update(...)` to `Actor.on_instrument_status(...)`
+- Changed `InstrumentStatus` fields/schema and constructor
+- Moved `manage_gtd_expiry` from `Strategy.submit_order(...)` and `Strategy.submit_order_list(...)` to `StrategyConfig` (simpler and allows re-activiting any GTD timers on start)
+
+### Fixes
+- Fixed `LimitIfTouchedOrder.create` (exec_algorithm_params were not being passed in)
+- Fixed `OrderEmulator` start-up processing of OTO contingent orders (when position from parent is open)
+- Fixed `SandboxExecutionClientConfig` `kw_only=True` to allow importing without initializing
+- Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
+- Fixed open position snapshots race condition (added `open_only` flag)
+- Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
+- Fixed `BinanceWebSocketClient` reconnect behavior (reconnect handler was not being called due event loop issue from Rust)
+- Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
+- Fixed Binance Futures fee rates for backtesting
+- Fixed `Timer` missing condition check for non-positive intervals
+- Fixed `Condition` checks involving integers, was previously defaulting to 32-bit and overflowing
+- Fixed `ReportProvider.generate_order_fills_report(...)` which was missing partial fills for orders not in a final `FILLED` status, thanks @r3k4mn14r
+
+---
+
 # NautilusTrader 1.178.0 Beta
 
 Released on 2nd September 2023 (UTC).
@@ -221,7 +277,7 @@ Released on 30th April 2023 (UTC).
 - Added `Cache.orders_for_exec_algorithm(...)`
 - Added `Cache.orders_for_exec_spawn(...)`
 - Added `TWAPExecAlgorithm` and `TWAPExecAlgorithmConfig` to examples
-- Build out `ExecAlgorithm` base class for implementing 'first class' executon algorithms
+- Build out `ExecAlgorithm` base class for implementing 'first class' execution algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
 - Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
 - Defined public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
@@ -584,7 +640,7 @@ Released on 18th November 2022 (UTC).
 Released on 3rd November 2022 (UTC).
 
 ### Breaking Changes
-- Added `LiveExecEngineConfig.reconcilation` boolean flag to control if reconciliation is active
+- Added `LiveExecEngineConfig.reconciliation` boolean flag to control if reconciliation is active
 - Removed `LiveExecEngineConfig.reconciliation_auto` (unclear naming and concept)
 - All Redis keys have changed to a lowercase convention (either migrate or flush your Redis)
 - Removed `BidAskMinMax` indicator (to reduce total package size)

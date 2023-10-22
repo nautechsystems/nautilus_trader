@@ -237,6 +237,8 @@ cdef class BarAggregator:
         The bar handler for the aggregator.
     logger : Logger
         The logger for the aggregator.
+    await_partial : bool, default False
+        If the aggregator should await an initial partial bar prior to aggregating.
 
     Raises
     ------
@@ -250,11 +252,13 @@ cdef class BarAggregator:
         BarType bar_type not None,
         handler not None: Callable[[Bar], None],
         Logger logger not None,
+        bint await_partial = False,
     ):
         Condition.equal(instrument.id, bar_type.instrument_id, "instrument.id", "bar_type.instrument_id")
 
         self.bar_type = bar_type
         self._handler = handler
+        self._await_partial = await_partial
         self._log = LoggerAdapter(
             component_name=type(self).__name__,
             logger=logger,
@@ -263,6 +267,9 @@ cdef class BarAggregator:
             instrument=instrument,
             bar_type=self.bar_type,
         )
+
+    def set_await_partial(self, bint value):
+        self._await_partial = value
 
     cpdef void handle_quote_tick(self, QuoteTick tick):
         """
@@ -276,11 +283,12 @@ cdef class BarAggregator:
         """
         Condition.not_none(tick, "tick")
 
-        self._apply_update(
-            price=tick.extract_price(self.bar_type.spec.price_type),
-            size=tick.extract_volume(self.bar_type.spec.price_type),
-            ts_event=tick.ts_event,
-        )
+        if not self._await_partial:
+            self._apply_update(
+                price=tick.extract_price(self.bar_type.spec.price_type),
+                size=tick.extract_volume(self.bar_type.spec.price_type),
+                ts_event=tick.ts_event,
+            )
 
     cpdef void handle_trade_tick(self, TradeTick tick):
         """
@@ -294,11 +302,26 @@ cdef class BarAggregator:
         """
         Condition.not_none(tick, "tick")
 
-        self._apply_update(
-            price=tick.price,
-            size=tick.size,
-            ts_event=tick.ts_event,
-        )
+        if not self._await_partial:
+            self._apply_update(
+                price=tick.price,
+                size=tick.size,
+                ts_event=tick.ts_event,
+            )
+
+    cpdef void set_partial(self, Bar partial_bar):
+        """
+        Set the initial values for a partially completed bar.
+
+        This method can only be called once per instance.
+
+        Parameters
+        ----------
+        partial_bar : Bar
+            The partial bar with values to set.
+
+        """
+        self._builder.set_partial(partial_bar)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
@@ -637,20 +660,6 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
         return start_time
-
-    cpdef void set_partial(self, Bar partial_bar):
-        """
-        Set the initial values for a partially completed bar.
-
-        This method can only be called once per instance.
-
-        Parameters
-        ----------
-        partial_bar : Bar
-            The partial bar with values to set.
-
-        """
-        self._builder.set_partial(partial_bar)
 
     cpdef void stop(self):
         """

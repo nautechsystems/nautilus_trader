@@ -47,7 +47,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.streaming.writer import StreamingFeatherWriter
+from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -403,7 +403,7 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_venue_status_update_when_not_overridden_does_nothing(self) -> None:
+    def test_on_venue_status_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -414,12 +414,12 @@ class TestActor:
         )
 
         # Act
-        actor.on_venue_status_update(TestDataStubs.venue_status_update())
+        actor.on_venue_status(TestDataStubs.venue_status())
 
         # Assert
         assert True  # Exception not raised
 
-    def test_on_instrument_status_update_when_not_overridden_does_nothing(self) -> None:
+    def test_on_instrument_status_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
         actor.register_base(
@@ -430,7 +430,7 @@ class TestActor:
         )
 
         # Act
-        actor.on_instrument_status_update(TestDataStubs.instrument_status_update())
+        actor.on_instrument_status(TestDataStubs.instrument_status())
 
         # Assert
         assert True  # Exception not raised
@@ -1947,7 +1947,7 @@ class TestActor:
             clock=self.clock,
             logger=self.logger,
         )
-        catalog = data_catalog_setup(protocol="memory")
+        catalog = data_catalog_setup(protocol="memory", path="/catalog")
 
         writer = StreamingFeatherWriter(
             path=catalog.path,
@@ -1964,7 +1964,7 @@ class TestActor:
         actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
-        assert catalog.fs.exists(f"{catalog.path}/genericdata_SignalTest.feather")
+        assert catalog.fs.exists(f"{catalog.path}/genericdata_signal_test.feather")
 
     def test_subscribe_bars(self) -> None:
         # Arrange
@@ -2006,7 +2006,7 @@ class TestActor:
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
 
-    def test_subscribe_venue_status_updates(self) -> None:
+    def test_subscribe_venue_status(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -2016,10 +2016,10 @@ class TestActor:
             logger=self.logger,
         )
 
-        actor.subscribe_venue_status_updates(Venue("NYMEX"))
+        actor.subscribe_venue_status(Venue("NYMEX"))
 
         # Assert
-        # TODO(cs): DataEngine.subscribed_venue_status_updates()
+        # TODO(cs): DataEngine.subscribed_venue_status()
 
     def test_request_data_sends_request_to_data_engine(self) -> None:
         # Arrange

@@ -16,6 +16,7 @@
 
 .benchmarks*
 .coverage*
+.history*
 .cache/
 .env/
 .git/
@@ -31,6 +32,7 @@
 __pycache__
 _build/
 build/
+catalog/
 data_catalog/
 dist/
 env/

@@ -165,12 +165,44 @@ cdef extern from "../includes/common.h":
         # The event ID.
         PyObject *callback_ptr;
 
+    const char *component_state_to_cstr(ComponentState value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentState component_state_from_cstr(const char *ptr);
+
+    const char *component_trigger_to_cstr(ComponentTrigger value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+    const char *log_level_to_cstr(LogLevel value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogLevel log_level_from_cstr(const char *ptr);
+
+    const char *log_color_to_cstr(LogColor value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogColor log_color_from_cstr(const char *ptr);
+
     TestClock_API test_clock_new();
 
     void test_clock_drop(TestClock_API clock);
 
     # # Safety
-    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_register_default_handler(TestClock_API *clock, PyObject *callback_ptr);
 
     void test_clock_set_time(TestClock_API *clock, uint64_t to_time_ns);
@@ -190,7 +222,7 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `name_ptr` is a valid C string pointer.
-    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_set_time_alert_ns(TestClock_API *clock,
                                       const char *name_ptr,
                                       uint64_t alert_time_ns,
@@ -199,7 +231,7 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `name_ptr` is a valid C string pointer.
-    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_set_timer_ns(TestClock_API *clock,
                                  const char *name_ptr,
                                  uint64_t interval_ns,
@@ -237,38 +269,6 @@ cdef extern from "../includes/common.h":
     uint64_t live_clock_timestamp_us(LiveClock_API *clock);
 
     uint64_t live_clock_timestamp_ns(LiveClock_API *clock);
-
-    const char *component_state_to_cstr(ComponentState value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    ComponentState component_state_from_cstr(const char *ptr);
-
-    const char *component_trigger_to_cstr(ComponentTrigger value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    ComponentTrigger component_trigger_from_cstr(const char *ptr);
-
-    const char *log_level_to_cstr(LogLevel value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    LogLevel log_level_from_cstr(const char *ptr);
-
-    const char *log_color_to_cstr(LogColor value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    LogColor log_color_from_cstr(const char *ptr);
 
     # Creates a new logger.
     #
@@ -312,8 +312,6 @@ cdef extern from "../includes/common.h":
                     const char *component_ptr,
                     const char *message_ptr);
 
-    TimeEventHandler_t dummy(TimeEventHandler_t v);
-
     # # Safety
     #
     # - Assumes `name_ptr` is borrowed from a valid Python UTF-8 `str`.
@@ -324,3 +322,5 @@ cdef extern from "../includes/common.h":
 
     # Returns a [`TimeEvent`] as a C string pointer.
     const char *time_event_to_cstr(const TimeEvent_t *event);
+
+    TimeEventHandler_t dummy(TimeEventHandler_t v);

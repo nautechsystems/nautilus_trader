@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
+import pickle
 
 import msgspec
 import pandas as pd
@@ -94,7 +95,7 @@ class TestOrderBook:
         updates = [OrderBookDelta.from_dict(upd) for upd in raw_updates]
 
         # Act, Assert
-        for update in updates[:2]:
+        for update in updates:
             book.apply_delta(update)
             copy.deepcopy(book)
 
@@ -117,11 +118,11 @@ class TestOrderBook:
         # Arrange, Act
         book = OrderBook(
             instrument_id=self.instrument.id,
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
 
         # Assert
-        assert book.book_type == BookType.L1_TBBO
+        assert book.book_type == BookType.L1_MBP
 
     def test_create_level_2_order_book(self):
         # Arrange, Act
@@ -360,7 +361,7 @@ class TestOrderBook:
     def test_delete_l1(self):
         book = OrderBook(
             instrument_id=self.instrument.id,
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
         )
         order = TestDataStubs.order(price=10.0, side=OrderSide.BUY)
         book.update(order, 0)
@@ -528,22 +529,22 @@ class TestOrderBook:
     #     assert self.empty_book.ts_last == delta.ts_init
 
     @pytest.mark.skip(reason="TBD")
-    def test_l3_get_price_for_volume(self):
-        bid_price = self.sample_book.get_price_for_volume(True, 5.0)
-        ask_price = self.sample_book.get_price_for_volume(False, 12.0)
+    def test_l3_get_price_for_size(self):
+        bid_price = self.sample_book.get_price_for_size(True, 5.0)
+        ask_price = self.sample_book.get_price_for_size(False, 12.0)
         assert bid_price == 0.88600
         assert ask_price == 0.0
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
-        ("is_buy", "quote_volume", "expected"),
+        ("is_buy", "quote_size", "expected"),
         [
             (True, 0.8860, 0.8860),
             (False, 0.8300, 0.8300),
         ],
     )
-    def test_l3_get_price_for_quote_volume(self, is_buy, quote_volume, expected):
-        assert self.sample_book.get_price_for_quote_volume(is_buy, quote_volume) == expected
+    def test_l3_get_price_for_quote_size(self, is_buy, quote_size, expected):
+        assert self.sample_book.get_price_for_quote_size(is_buy, quote_size) == expected
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
@@ -560,8 +561,8 @@ class TestOrderBook:
             (False, 0.88700, 0.0),
         ],
     )
-    def test_get_volume_for_price(self, is_buy, price, expected):
-        assert self.sample_book.get_volume_for_price(is_buy, price) == expected
+    def test_get_quantity_for_price(self, is_buy, price, expected):
+        assert self.sample_book.get_quantity_for_price(is_buy, price) == expected
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
@@ -578,12 +579,12 @@ class TestOrderBook:
             (False, 0.88700, 0.0),
         ],
     )
-    def test_get_quote_volume_for_price(self, is_buy, price, expected):
-        assert self.sample_book.get_quote_volume_for_price(is_buy, price) == expected
+    def test_get_quote_size_for_price(self, is_buy, price, expected):
+        assert self.sample_book.get_quote_size_for_price(is_buy, price) == expected
 
     @pytest.mark.skip(reason="TBD")
     @pytest.mark.parametrize(
-        ("is_buy", "volume", "expected"),
+        ("is_buy", "size", "expected"),
         [
             (True, 1.0, 0.886),
             (True, 3.0, 0.886),
@@ -596,8 +597,8 @@ class TestOrderBook:
             (False, 5.0, 0.828),
         ],
     )
-    def test_get_vwap_for_volume(self, is_buy, volume, expected):
-        assert self.sample_book.get_vwap_for_volume(is_buy, volume) == pytest.approx(expected, 0.01)
+    def test_get_vwap_for_size(self, is_buy, size, expected):
+        assert self.sample_book.get_vwap_for_size(is_buy, size) == pytest.approx(expected, 0.01)
 
     @pytest.mark.skip(reason="TBD")
     def test_l2_update(self):
@@ -644,3 +645,57 @@ class TestOrderBook:
         expected_bid = Price(0.990099, 6)
         expected_bid.add(BookOrder(0.990099, 2.0, OrderSide.BUY, "0.99010"))
         assert book.best_bid_price() == expected_bid
+
+    def test_book_order_pickle_round_trip(self):
+        # Arrange
+        book = TestDataStubs.make_book(
+            instrument=self.instrument,
+            book_type=BookType.L2_MBP,
+            bids=[(0.0040000, 100.0)],
+            asks=[(0.0010000, 55.81)],
+        )
+        # Act
+        pickled = pickle.dumps(book)
+        unpickled = pickle.loads(pickled)  # noqa
+
+        # Assert
+        assert str(book) == str(unpickled)
+        assert book.bids()[0].orders()[0].price == Price.from_str("0.00400")
+
+    def test_orderbook_deep_copy(self):
+        # Arrange
+        instrument_id = InstrumentId.from_str("1.166564490-237491-0.0.BETFAIR")
+        book = OrderBook(instrument_id, BookType.L2_MBP)
+
+        def make_delta(side: OrderSide, price: float, size: float, ts):
+            order = BookOrder(
+                price=Price(price, 2),
+                size=Quantity(size, 0),
+                side=side,
+                order_id=0,
+            )
+            return TestDataStubs.order_book_delta(
+                instrument_id=instrument_id,
+                order=order,
+                ts_init=ts,
+                ts_event=ts,
+            )
+
+        updates = [
+            TestDataStubs.order_book_delta_clear(instrument_id=instrument_id),
+            make_delta(OrderSide.BUY, price=2.0, size=77.0, ts=1),
+            make_delta(OrderSide.BUY, price=1.0, size=2.0, ts=2),
+            make_delta(OrderSide.BUY, price=1.0, size=40.0, ts=3),
+            make_delta(OrderSide.BUY, price=1.0, size=331.0, ts=4),
+        ]
+
+        # Act
+        for update in updates:
+            print(update)
+            book.apply_delta(update)
+            book.check_integrity()
+        new = copy.deepcopy(book)
+
+        # Assert
+        assert book.ts_last == new.ts_last
+        assert book.sequence == new.sequence

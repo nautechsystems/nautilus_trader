@@ -14,23 +14,11 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod bar;
-#[cfg(feature = "ffi")]
-pub mod bar_api;
 pub mod delta;
-#[cfg(feature = "ffi")]
-pub mod delta_api;
 pub mod order;
-#[cfg(feature = "ffi")]
-pub mod order_api;
 pub mod quote;
-#[cfg(feature = "ffi")]
-pub mod quote_api;
 pub mod ticker;
-#[cfg(feature = "ffi")]
-pub mod ticker_api;
 pub mod trade;
-#[cfg(feature = "ffi")]
-pub mod trade_api;
 
 use nautilus_core::time::UnixNanos;
 
@@ -45,16 +33,48 @@ pub enum Data {
     Bar(Bar),
 }
 
-impl Data {
-    #[must_use]
-    pub fn get_ts_init(&self) -> UnixNanos {
+pub trait HasTsInit {
+    fn get_ts_init(&self) -> UnixNanos;
+}
+
+impl HasTsInit for Data {
+    fn get_ts_init(&self) -> UnixNanos {
         match self {
-            Self::Delta(d) => d.ts_init,
-            Self::Quote(q) => q.ts_init,
-            Self::Trade(t) => t.ts_init,
-            Self::Bar(b) => b.ts_init,
+            Data::Delta(d) => d.ts_init,
+            Data::Quote(q) => q.ts_init,
+            Data::Trade(t) => t.ts_init,
+            Data::Bar(b) => b.ts_init,
         }
     }
+}
+
+impl HasTsInit for OrderBookDelta {
+    fn get_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for QuoteTick {
+    fn get_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for TradeTick {
+    fn get_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+impl HasTsInit for Bar {
+    fn get_ts_init(&self) -> UnixNanos {
+        self.ts_init
+    }
+}
+
+pub fn is_monotonically_increasing_by_init<T: HasTsInit>(data: &[T]) -> bool {
+    data.windows(2)
+        .all(|window| window[0].get_ts_init() <= window[1].get_ts_init())
 }
 
 impl From<OrderBookDelta> for Data {

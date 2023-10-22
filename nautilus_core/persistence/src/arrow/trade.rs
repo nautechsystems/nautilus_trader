@@ -16,8 +16,9 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use datafusion::arrow::{
-    array::{Array, Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
+    array::{Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
+    error::ArrowError,
     record_batch::RecordBatch,
 };
 use nautilus_model::{
@@ -27,7 +28,10 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
-use super::DecodeDataFromRecordBatch;
+use super::{
+    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+};
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for TradeTick {
@@ -48,26 +52,35 @@ impl ArrowSchemaProvider for TradeTick {
     }
 }
 
-fn parse_metadata(metadata: &HashMap<String, String>) -> (InstrumentId, u8, u8) {
-    // TODO: Properly handle errors
-    let instrument_id =
-        InstrumentId::from_str(metadata.get("instrument_id").unwrap().as_str()).unwrap();
-    let price_precision = metadata
-        .get("price_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
-    let size_precision = metadata
-        .get("size_precision")
-        .unwrap()
-        .parse::<u8>()
-        .unwrap();
+fn parse_metadata(
+    metadata: &HashMap<String, String>,
+) -> Result<(InstrumentId, u8, u8), EncodingError> {
+    let instrument_id_str = metadata
+        .get(KEY_INSTRUMENT_ID)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_INSTRUMENT_ID))?;
+    let instrument_id = InstrumentId::from_str(instrument_id_str)
+        .map_err(|e| EncodingError::ParseError(KEY_INSTRUMENT_ID, e.to_string()))?;
 
-    (instrument_id, price_precision, size_precision)
+    let price_precision = metadata
+        .get(KEY_PRICE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_PRICE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_PRICE_PRECISION, e.to_string()))?;
+
+    let size_precision = metadata
+        .get(KEY_SIZE_PRECISION)
+        .ok_or_else(|| EncodingError::MissingMetadata(KEY_SIZE_PRECISION))?
+        .parse::<u8>()
+        .map_err(|e| EncodingError::ParseError(KEY_SIZE_PRECISION, e.to_string()))?;
+
+    Ok((instrument_id, price_precision, size_precision))
 }
 
 impl EncodeToRecordBatch for TradeTick {
-    fn encode_batch(metadata: &HashMap<String, String>, data: &[Self]) -> RecordBatch {
+    fn encode_batch(
+        metadata: &HashMap<String, String>,
+        data: &[Self],
+    ) -> Result<RecordBatch, ArrowError> {
         // Create array builders
         let mut price_builder = Int64Array::builder(data.len());
         let mut size_builder = UInt64Array::builder(data.len());
@@ -106,46 +119,58 @@ impl EncodeToRecordBatch for TradeTick {
                 Arc::new(ts_init_array),
             ],
         )
-        .unwrap()
     }
 }
 
 impl DecodeFromRecordBatch for TradeTick {
-    fn decode_batch(metadata: &HashMap<String, String>, record_batch: RecordBatch) -> Vec<Self> {
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
         // Parse and validate metadata
-        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata);
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
 
         // Extract field value arrays
         let cols = record_batch.columns();
-        let price_values = cols[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let size_values = cols[1].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let aggressor_side_values = cols[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values_values = cols[3].as_any().downcast_ref::<StringArray>().unwrap();
-        let ts_event_values = cols[4].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = cols[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
-        // Construct iterator of values from arrays
-        let values = price_values
-            .into_iter()
-            .zip(size_values)
-            .zip(aggressor_side_values)
-            .zip(trade_id_values_values)
-            .zip(ts_event_values)
-            .zip(ts_init_values)
-            .map(
-                |(((((price, size), aggressor_side), trade_id), ts_event), ts_init)| Self {
+        let price_values = extract_column::<Int64Array>(cols, "price", 0, DataType::Int64)?;
+        let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
+        let aggressor_side_values =
+            extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
+        let trade_id_values = extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
+
+        // Map record batch rows to vector of objects
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let price = Price::from_raw(price_values.value(i), price_precision).unwrap();
+                let size = Quantity::from_raw(size_values.value(i), size_precision).unwrap();
+                let aggressor_side_value = aggressor_side_values.value(i);
+                let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
+                    .ok_or_else(|| {
+                        EncodingError::ParseError(
+                            stringify!(AggressorSide),
+                            format!("Invalid enum value, was {aggressor_side_value}"),
+                        )
+                    })?;
+                let trade_id = TradeId::from(trade_id_values.value(i));
+                let ts_event = ts_event_values.value(i);
+                let ts_init = ts_init_values.value(i);
+
+                Ok(Self {
                     instrument_id,
-                    price: Price::from_raw(price.unwrap(), price_precision),
-                    size: Quantity::from_raw(size.unwrap(), size_precision),
-                    aggressor_side: AggressorSide::from_repr(aggressor_side.unwrap() as usize)
-                        .expect("cannot parse enum value"),
-                    trade_id: TradeId::new(trade_id.unwrap()).unwrap(),
-                    ts_event: ts_event.unwrap(),
-                    ts_init: ts_init.unwrap(),
-                },
-            );
+                    price,
+                    size,
+                    aggressor_side,
+                    trade_id,
+                    ts_event,
+                    ts_init,
+                })
+            })
+            .collect();
 
-        values.collect()
+        result
     }
 }
 
@@ -153,9 +178,9 @@ impl DecodeDataFromRecordBatch for TradeTick {
     fn decode_data_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
-    ) -> Vec<Data> {
-        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch);
-        ticks.into_iter().map(Data::from).collect()
+    ) -> Result<Vec<Data>, EncodingError> {
+        let ticks: Vec<Self> = Self::decode_batch(metadata, record_batch)?;
+        Ok(ticks.into_iter().map(Data::from).collect())
     }
 }
 
@@ -167,7 +192,7 @@ mod tests {
     use std::sync::Arc;
 
     use datafusion::arrow::{
-        array::{Int64Array, StringArray, UInt64Array, UInt8Array},
+        array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
     use rstest::rstest;
@@ -231,7 +256,7 @@ mod tests {
         };
 
         let data = vec![tick1, tick2];
-        let record_batch = TradeTick::encode_batch(&metadata, &data);
+        let record_batch = TradeTick::encode_batch(&metadata, &data).unwrap();
 
         // Verify the encoded data
         let columns = record_batch.columns();
@@ -288,7 +313,7 @@ mod tests {
         )
         .unwrap();
 
-        let decoded_data = TradeTick::decode_batch(&metadata, record_batch);
+        let decoded_data = TradeTick::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
     }
 }

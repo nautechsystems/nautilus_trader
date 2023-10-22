@@ -13,5 +13,5 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod kmerge_batch;
 pub mod session;
-pub mod transformer;

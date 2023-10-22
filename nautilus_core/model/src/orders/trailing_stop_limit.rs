@@ -38,7 +38,10 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct TrailingStopLimitOrder {
     core: OrderCore,
     pub price: Price,

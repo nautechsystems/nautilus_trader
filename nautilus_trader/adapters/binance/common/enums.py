@@ -207,6 +207,7 @@ class BinanceTimeInForce(Enum):
     IOC = "IOC"
     FOK = "FOK"
     GTX = "GTX"  # FUTURES only, Good Till Crossing (Post Only)
+    GTD = "GTD"  # FUTURES only
     GTE_GTC = "GTE_GTC"  # Undocumented
 
 
@@ -453,6 +454,7 @@ class BinanceErrorCode(Enum):
     EXCEED_MAXIMUM_MODIFY_ORDER_LIMIT = -5026
     SAME_ORDER = -5027
     ME_RECVWINDOW_REJECT = -5028
+    INVALID_GOOD_TILL_DATE = -5040
 
 
 class BinanceEnumParser:
@@ -499,10 +501,11 @@ class BinanceEnumParser:
             BinanceTimeInForce.GTX: TimeInForce.GTC,  # Convert GTX to GTC
             BinanceTimeInForce.GTE_GTC: TimeInForce.GTC,  # Undocumented
             BinanceTimeInForce.IOC: TimeInForce.IOC,
+            BinanceTimeInForce.GTD: TimeInForce.GTD,
         }
         self.int_to_ext_time_in_force = {
             TimeInForce.GTC: BinanceTimeInForce.GTC,
-            TimeInForce.GTD: BinanceTimeInForce.GTC,  # Convert GTD to GTC
+            TimeInForce.GTD: BinanceTimeInForce.GTD,
             TimeInForce.FOK: BinanceTimeInForce.FOK,
             TimeInForce.IOC: BinanceTimeInForce.IOC,
         }
@@ -563,7 +566,7 @@ class BinanceEnumParser:
                 f"unrecognized Binance kline resolution, was {bar_agg}",
             )
 
-    def parse_internal_bar_agg(self, bar_agg: BarAggregation) -> str:
+    def parse_nautilus_bar_aggregation(self, bar_agg: BarAggregation) -> str:
         try:
             return self.int_to_ext_bar_agg[bar_agg]
         except KeyError:

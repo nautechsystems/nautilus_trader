@@ -15,25 +15,16 @@
 
 use std::{
     cmp::Ordering,
-    collections::hash_map::DefaultHasher,
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Deref, Mul, MulAssign, Neg, Sub, SubAssign},
+    ops::{Add, AddAssign, Deref, Mul, MulAssign, Sub, SubAssign},
     str::FromStr,
 };
 
 use anyhow::Result;
-use nautilus_core::{
-    correctness::check_f64_in_range_inclusive,
-    parsing::precision_from_str,
-    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
-};
-use pyo3::{
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyFloat, PyLong, PyTuple},
-};
-use rust_decimal::{Decimal, RoundingStrategy};
+use nautilus_core::{correctness::check_f64_in_range_inclusive, parsing::precision_from_str};
+use pyo3::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
 
@@ -47,7 +38,7 @@ pub const QUANTITY_MIN: f64 = 0.0;
 #[derive(Copy, Clone, Eq, Default)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
     pub raw: u64,
@@ -65,10 +56,9 @@ impl Quantity {
         })
     }
 
-    #[must_use]
-    pub fn from_raw(raw: u64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
-        Self { raw, precision }
+    pub fn from_raw(raw: u64, precision: u8) -> Result<Self> {
+        check_fixed_precision(precision)?;
+        Ok(Self { raw, precision })
     }
 
     #[must_use]
@@ -88,11 +78,6 @@ impl Quantity {
     }
 
     #[must_use]
-    pub fn as_str(&self) -> String {
-        format!("{self:?}").separate_with_underscores()
-    }
-
-    #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
@@ -102,6 +87,11 @@ impl Quantity {
         // Scale down the raw value to match the precision
         let rescaled_raw = self.raw / u64::pow(10, (FIXED_PRECISION - self.precision) as u32);
         Decimal::from_i128_with_scale(rescaled_raw as i128, self.precision as u32)
+    }
+
+    #[must_use]
+    pub fn to_formatted_string(&self) -> String {
+        format!("{self}").separate_with_underscores()
     }
 }
 
@@ -290,407 +280,6 @@ impl<'de> Deserialize<'de> for Quantity {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl Quantity {
-    #[new]
-    fn py_new(value: f64, precision: u8) -> PyResult<Self> {
-        Quantity::new(value, precision).map_err(to_pyvalue_err)
-    }
-
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyLong, &PyLong) = state.extract(py)?;
-        self.raw = tuple.0.extract()?;
-        self.precision = tuple.1.extract::<u8>()?;
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.raw, self.precision).to_object(py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
-
-    #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Quantity::zero(0)) // Safe default
-    }
-
-    fn __add__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((self.as_f64() + other_float).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() + other_qty.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((self.as_decimal() + other_dec).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __add__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __radd__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((other_float + self.as_f64()).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((other_qty.as_decimal() + self.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((other_dec + self.as_decimal()).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __radd__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __sub__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((self.as_f64() - other_float).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() - other_qty.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((self.as_decimal() - other_dec).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __sub__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __rsub__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((other_float - self.as_f64()).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((other_qty.as_decimal() - self.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((other_dec - self.as_decimal()).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __rsub__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __mul__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((self.as_f64() * other_float).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() * other_qty.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((self.as_decimal() * other_dec).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __mul__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __rmul__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((other_float * self.as_f64()).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((other_qty.as_decimal() * self.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((other_dec * self.as_decimal()).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __rmul__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __truediv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((self.as_f64() / other_float).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() / other_qty.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((self.as_decimal() / other_dec).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __truediv__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __rtruediv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((other_float / self.as_f64()).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((other_qty.as_decimal() / self.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((other_dec / self.as_decimal()).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __rtruediv__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __floordiv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((self.as_f64() / other_float).floor().into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() / other_qty.as_decimal())
-                .floor()
-                .into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((self.as_decimal() / other_dec).floor().into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __floordiv__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __rfloordiv__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((other_float / self.as_f64()).floor().into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((other_qty.as_decimal() / self.as_decimal())
-                .floor()
-                .into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((other_dec / self.as_decimal()).floor().into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __rfloordiv__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __mod__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((self.as_f64() % other_float).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((self.as_decimal() % other_qty.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((self.as_decimal() % other_dec).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __mod__, was `{pytype_name}`"
-            )))
-        }
-    }
-
-    fn __rmod__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
-        if other.as_ref(py).is_instance_of::<PyFloat>() {
-            let other_float: f64 = other.extract(py)?;
-            Ok((other_float % self.as_f64()).into_py(py))
-        } else if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            Ok((other_qty.as_decimal() % self.as_decimal()).into_py(py))
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            Ok((other_dec % self.as_decimal()).into_py(py))
-        } else {
-            let pytype_name = get_pytype_name(&other, py)?;
-            Err(to_pytype_err(format!(
-                "Unsupported type for __rmod__, was `{pytype_name}`"
-            )))
-        }
-    }
-    fn __neg__(&self) -> Decimal {
-        self.as_decimal().neg()
-    }
-
-    fn __pos__(&self) -> Decimal {
-        let mut value = self.as_decimal();
-        value.set_sign_positive(true);
-        value
-    }
-
-    fn __abs__(&self) -> Decimal {
-        self.as_decimal().abs()
-    }
-
-    fn __int__(&self) -> u64 {
-        self.as_f64() as u64
-    }
-
-    fn __float__(&self) -> f64 {
-        self.as_f64()
-    }
-
-    fn __round__(&self, ndigits: Option<u32>) -> Decimal {
-        self.as_decimal()
-            .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)
-    }
-
-    fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        if let Ok(other_qty) = other.extract::<Quantity>(py) {
-            match op {
-                CompareOp::Eq => self.eq(&other_qty).into_py(py),
-                CompareOp::Ne => self.ne(&other_qty).into_py(py),
-                CompareOp::Ge => self.ge(&other_qty).into_py(py),
-                CompareOp::Gt => self.gt(&other_qty).into_py(py),
-                CompareOp::Le => self.le(&other_qty).into_py(py),
-                CompareOp::Lt => self.lt(&other_qty).into_py(py),
-            }
-        } else if let Ok(other_dec) = other.extract::<Decimal>(py) {
-            match op {
-                CompareOp::Eq => (self.as_decimal() == other_dec).into_py(py),
-                CompareOp::Ne => (self.as_decimal() != other_dec).into_py(py),
-                CompareOp::Ge => (self.as_decimal() >= other_dec).into_py(py),
-                CompareOp::Gt => (self.as_decimal() > other_dec).into_py(py),
-                CompareOp::Le => (self.as_decimal() <= other_dec).into_py(py),
-                CompareOp::Lt => (self.as_decimal() < other_dec).into_py(py),
-            }
-        } else {
-            py.NotImplemented()
-        }
-    }
-
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("Quantity('{self:?}')")
-    }
-
-    #[getter]
-    fn raw(&self) -> u64 {
-        self.raw
-    }
-
-    #[getter]
-    fn precision(&self) -> u8 {
-        self.precision
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: u64, precision: u8) -> PyResult<Quantity> {
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Quantity::from_raw(raw, precision))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "zero")]
-    #[pyo3(signature = (precision = 0))]
-    fn py_zero(precision: u8) -> PyResult<Quantity> {
-        Quantity::new(0.0, precision).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_int")]
-    fn py_from_int(value: u64) -> PyResult<Quantity> {
-        Quantity::new(value as f64, 0).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> PyResult<Quantity> {
-        Quantity::from_str(value).map_err(to_pyvalue_err)
-    }
-
-    #[pyo3(name = "is_zero")]
-    fn py_is_zero(&self) -> bool {
-        self.is_zero()
-    }
-
-    #[pyo3(name = "is_positive")]
-    fn py_is_positive(&self) -> bool {
-        self.is_positive()
-    }
-
-    #[pyo3(name = "to_str")]
-    fn py_to_str(&self) -> String {
-        self.as_str()
-    }
-
-    #[pyo3(name = "as_decimal")]
-    fn py_as_decimal(&self) -> Decimal {
-        self.as_decimal()
-    }
-
-    #[pyo3(name = "as_double")]
-    fn py_as_double(&self) -> f64 {
-        self.as_f64()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
-    // SAFETY: Assumes `value` and `precision` were properly validated
-    Quantity::new(value, precision).unwrap()
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
-    Quantity::from_raw(raw, precision)
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_as_f64(qty: &Quantity) -> f64 {
-    qty.as_f64()
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_add_assign(mut a: Quantity, b: Quantity) {
-    a.add_assign(b);
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_add_assign_u64(mut a: Quantity, b: u64) {
-    a.add_assign(b);
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_sub_assign(mut a: Quantity, b: Quantity) {
-    a.sub_assign(b);
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn quantity_sub_assign_u64(mut a: Quantity, b: u64) {
-    a.sub_assign(b);
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -714,7 +303,7 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Quantity::from_raw(1, 10);
+        let _ = Quantity::from_raw(1, 10).unwrap();
     }
 
     #[rstest]
@@ -805,11 +394,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_str_valid_input() {
-        let input = "1000.25";
-        let expected_quantity = Quantity::new(1000.25, precision_from_str(input)).unwrap();
-        let result = Quantity::from_str(input).unwrap();
-        assert_eq!(result, expected_quantity);
+    #[case("0", 0)]
+    #[case("1.1", 1)]
+    #[case("1.123456789", 9)]
+    fn test_from_str_valid_input(#[case] input: &str, #[case] expected_prec: u8) {
+        let qty = Quantity::from_str(input).unwrap();
+        assert_eq!(qty.precision, expected_prec);
+        assert_eq!(qty.as_decimal(), Decimal::from_str(input).unwrap());
     }
 
     #[rstest]

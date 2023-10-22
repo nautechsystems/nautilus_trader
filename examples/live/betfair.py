@@ -19,10 +19,12 @@ import traceback
 from decimal import Decimal
 
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
+from nautilus_trader.adapters.betfair.config import BetfairExecClientConfig
 from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
 from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import CacheDatabaseConfig
@@ -37,42 +39,41 @@ from nautilus_trader.live.node import TradingNode
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-async def main(market_id: str):
+async def main(instrument_config: BetfairInstrumentProviderConfig):
     # Connect to Betfair client early to load instruments and account currency
-    loop = asyncio.get_event_loop()
     logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
         app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
-        cert_dir=None,  # Pass here or will source from the `BETFAIR_CERT_DIR` env var
         logger=logger,
-        loop=loop,
     )
     await client.connect()
 
     # Find instruments for a particular market_id
-    market_filter = tuple({"market_id": (market_id,)}.items())
     provider = get_cached_betfair_instrument_provider(
         client=client,
         logger=logger,
-        market_filter=market_filter,
+        config=instrument_config,
     )
     await provider.load_all_async()
     instruments = provider.list_all()
     print(f"Found instruments:\n{[ins.id for ins in instruments]}")
 
     # Determine account currency - used in execution client
-    # account = await client.get_account_details()
+    account = await client.get_account_details()
 
     # Configure trading node
     config = TradingNodeConfig(
         timeout_connection=30.0,
-        logging=LoggingConfig(log_level="INFO"),
+        timeout_disconnection=30.0,
+        timeout_post_stop=30.0,
+        logging=LoggingConfig(log_level="DEBUG"),
         cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
-                market_filter=market_filter,
+                account_currency=account.currency_code,
+                instrument_config=instrument_config,
                 # username="YOUR_BETFAIR_USERNAME",
                 # password="YOUR_BETFAIR_PASSWORD",
                 # app_key="YOUR_BETFAIR_APP_KEY",
@@ -81,21 +82,22 @@ async def main(market_id: str):
         },
         exec_clients={
             # # UNCOMMENT TO SEND ORDERS
-            # "BETFAIR": BetfairExecClientConfig(
-            #     base_currency=account["currencyCode"],
-            #     # "username": "YOUR_BETFAIR_USERNAME",
-            #     # "password": "YOUR_BETFAIR_PASSWORD",
-            #     # "app_key": "YOUR_BETFAIR_APP_KEY",
-            #     # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
-            #     market_filter=market_filter,
-            # ),
+            "BETFAIR": BetfairExecClientConfig(
+                account_currency=account.currency_code,
+                instrument_config=instrument_config,
+                # "username": "YOUR_BETFAIR_USERNAME",
+                # "password": "YOUR_BETFAIR_PASSWORD",
+                # "app_key": "YOUR_BETFAIR_APP_KEY",
+                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+            ),
         },
     )
     strategies = [
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
                 instrument_id=instrument.id.value,
-                max_trade_size=Decimal(5),
+                max_trade_size=Decimal(10),
+                trigger_min_size=10,
                 order_id_tag=instrument.selection_id,
                 subscribe_ticker=True,
             ),
@@ -113,17 +115,22 @@ async def main(market_id: str):
     node.build()
 
     try:
-        node.run()
-        await asyncio.gather(*asyncio.all_tasks())
+        await node.run_async()
     except Exception as e:
         print(e)
         print(traceback.format_exc())
     finally:
-        node.dispose()
+        await node.stop_async()
+        await asyncio.sleep(1)
+        return node
 
 
 if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    asyncio.run(main(market_id="1.207188674"))
+    config = BetfairInstrumentProviderConfig(
+        market_ids=["1.218938285"],
+    )
+    node = asyncio.run(main(instrument_config=config))
+    node.dispose()

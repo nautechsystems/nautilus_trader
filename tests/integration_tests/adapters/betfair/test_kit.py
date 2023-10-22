@@ -28,21 +28,22 @@ from betfair_parser.spec.common import EndpointType
 from betfair_parser.spec.common import Request
 from betfair_parser.spec.common import encode
 from betfair_parser.spec.streaming import MCM
+from betfair_parser.spec.streaming import OCM
+from betfair_parser.spec.streaming import MatchedOrder
+from betfair_parser.spec.streaming import Order
+from betfair_parser.spec.streaming import OrderMarketChange
+from betfair_parser.spec.streaming import OrderRunnerChange
 from betfair_parser.spec.streaming import stream_decode
-from betfair_parser.spec.streaming.ocm import OCM
-from betfair_parser.spec.streaming.ocm import MatchedOrder
-from betfair_parser.spec.streaming.ocm import OrderAccountChange
-from betfair_parser.spec.streaming.ocm import OrderChanges
-from betfair_parser.spec.streaming.ocm import UnmatchedOrder
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
-from nautilus_trader.adapters.betfair.historic import make_betfair_reader
+from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
+from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -55,7 +56,7 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.persistence.external.readers import LinePreprocessor
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
 
@@ -85,10 +86,14 @@ class BetfairTestStubs:
         return TraderId("001")
 
     @staticmethod
-    def instrument_provider(betfair_client) -> BetfairInstrumentProvider:
+    def instrument_provider(
+        betfair_client,
+        config: Optional[BetfairInstrumentProviderConfig] = None,
+    ) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
             logger=TestComponentStubs.logger(),
+            config=config or BetfairInstrumentProviderConfig(),
         )
 
     @staticmethod
@@ -173,13 +178,13 @@ class BetfairTestStubs:
 
     @staticmethod
     def parse_betfair(line):
-        parser = BetfairParser()
+        parser = BetfairParser(currency="GBP")
         yield from parser.parse(stream_decode(line))
 
     @staticmethod
-    def betfair_venue_config() -> BacktestVenueConfig:
+    def betfair_venue_config(name="BETFAIR") -> BacktestVenueConfig:
         return BacktestVenueConfig(  # typing: ignore
-            name="BETFAIR",
+            name=name,
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",
@@ -208,11 +213,18 @@ class BetfairTestStubs:
         add_strategy=True,
         bypass_risk=False,
         flush_interval_ms: Optional[int] = None,
+        bypass_logging: bool = True,
+        log_level: str = "WARNING",
+        venue_name: str = "BETFAIR",
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            logging=LoggingConfig(bypass_logging=True),
+            logging=LoggingConfig(
+                log_level=log_level,
+                bypass_logging=bypass_logging,
+            ),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(
+                catalog_fs_protocol=catalog_fs_protocol,
                 catalog_path=catalog_path,
                 flush_interval_ms=flush_interval_ms,
             )
@@ -233,7 +245,7 @@ class BetfairTestStubs:
         )
         run_config = BacktestRunConfig(  # typing: ignore
             engine=engine_config,
-            venues=[BetfairTestStubs.betfair_venue_config()],
+            venues=[BetfairTestStubs.betfair_venue_config(name=venue_name)],
             data=[
                 BacktestDataConfig(  # typing: ignore
                     data_cls=TradeTick.fully_qualified_name(),
@@ -250,13 +262,6 @@ class BetfairTestStubs:
             ],
         )
         return run_config
-
-    @staticmethod
-    def betfair_reader(
-        instrument_provider: Optional[InstrumentProvider] = None,
-        line_preprocessor: Optional[LinePreprocessor] = None,
-    ):
-        return make_betfair_reader(instrument_provider, line_preprocessor)
 
 
 class BetfairRequests:
@@ -551,6 +556,10 @@ class BetfairStreaming:
         return BetfairStreaming.load("streaming_market_updates.json", iterate=True)
 
     @staticmethod
+    def mcm_market_definition_racing():
+        return BetfairStreaming.load("streaming_market_definition_racing.json")
+
+    @staticmethod
     def generate_order_change_message(
         price=1.3,
         size=20,
@@ -560,24 +569,25 @@ class BetfairStreaming:
         sr=0,
         sc=0,
         avp=0,
-        order_id: str = "248485109136",
+        order_id: int = 248485109136,
         client_order_id: str = "",
         mb: Optional[list[MatchedOrder]] = None,
         ml: Optional[list[MatchedOrder]] = None,
     ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
+        assert isinstance(order_id, int)
         return OCM(
             id=1,
             clk="1",
             pt=0,
             oc=[
-                OrderAccountChange(
+                OrderMarketChange(
                     id="1",
                     orc=[
-                        OrderChanges(
+                        OrderRunnerChange(
                             id=1,
                             uo=[
-                                UnmatchedOrder(
+                                Order(
                                     id=order_id,
                                     p=price,
                                     s=size,
@@ -709,7 +719,7 @@ class BetfairDataProvider:
 
     @staticmethod
     def read_lines(filename: str = "1.166811431.bz2") -> list[bytes]:
-        path = pathlib.Path(f"{TEST_DATA_DIR}/betfair/{filename}")
+        path = TEST_DATA_DIR / "betfair" / filename
 
         if path.suffix == ".bz2":
             return bz2.open(path).readlines()
@@ -744,8 +754,6 @@ class BetfairDataProvider:
     @staticmethod
     def mcm_to_instruments(mcm: MCM, currency="GBP") -> list[BettingInstrument]:
         instruments: list[BettingInstrument] = []
-        if mcm.market_definition:
-            instruments.extend(market_definition_to_instruments(mcm.market_definition, currency))
         for mc in mcm.mc:
             if mc.market_definition:
                 market_def = msgspec.structs.replace(mc.market_definition, market_id=mc.id)
@@ -754,7 +762,7 @@ class BetfairDataProvider:
 
     @staticmethod
     def betfair_feed_parsed(market_id: str = "1.166564490"):
-        parser = BetfairParser()
+        parser = BetfairParser(currency="GBP")
 
         instruments: list[BettingInstrument] = []
         data = []
@@ -826,3 +834,17 @@ def betting_instrument_handicap() -> BettingInstrument:
             "ts_init": 0,
         },
     )
+
+
+def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
+    filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
+
+    # Write betting instruments
+    instruments = betting_instruments_from_file(filename)
+    catalog.write_data(instruments)
+
+    # Write data
+    data = list(parse_betfair_file(filename, currency="GBP"))
+    catalog.write_data(data)
+
+    return catalog

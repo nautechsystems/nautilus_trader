@@ -15,7 +15,10 @@
 
 use std::str::FromStr;
 
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyDict, PyString},
+};
 use tracing::Level;
 use tracing_appender::{
     non_blocking::WorkerGuard,
@@ -48,6 +51,7 @@ pub struct LogGuard {
 /// Should only be called once during an applications run, ideally at the
 /// beginning of the run.
 #[pyfunction]
+#[must_use]
 pub fn set_global_log_collector(
     stdout_level: Option<String>,
     stderr_level: Option<String>,
@@ -76,17 +80,14 @@ pub fn set_global_log_collector(
             .with_writer(non_blocking.with_max_level(file_level))
     });
 
-    if let Err(err) = Registry::default()
+    if let Err(e) = Registry::default()
         .with(stderr_sub_builder)
         .with(stdout_sub_builder)
         .with(file_sub_builder)
         .with(EnvFilter::from_default_env())
         .try_init()
     {
-        println!(
-            "Failed to set global default dispatcher because of error: {}",
-            err
-        );
+        println!("Failed to set global default dispatcher because of error: {e}");
     };
 
     LogGuard { guards }
@@ -95,54 +96,66 @@ pub fn set_global_log_collector(
 /// Need to modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
 ///
+/// Also re-exports all submodule attributes so they can be imported directly from `nautilus_pyo3`.
 /// refer: https://github.com/PyO3/pyo3/issues/2644
 #[pymodule]
 fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     let sys = PyModule::import(py, "sys")?;
     let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+    let module_name = "nautilus_trader.core.nautilus_pyo3";
 
-    // Core
-    let submodule = pyo3::wrap_pymodule!(nautilus_core::core);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(
-        "nautilus_trader.core.nautilus_pyo3.core",
-        m.getattr("core")?,
-    )?;
-
-    // Indicators
-    let submodule = pyo3::wrap_pymodule!(nautilus_indicators::indicators);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(
-        "nautilus_trader.core.nautilus_pyo3.indicators",
-        m.getattr("indicators")?,
-    )?;
-
-    // Model
-    let submodule = pyo3::wrap_pymodule!(nautilus_model::model);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(
-        "nautilus_trader.core.nautilus_pyo3.model",
-        m.getattr("model")?,
-    )?;
-
-    // Network
-    let submodule = pyo3::wrap_pymodule!(nautilus_network::network);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(
-        "nautilus_trader.core.nautilus_pyo3.network",
-        m.getattr("network")?,
-    )?;
-
-    // Persistence
-    let submodule = pyo3::wrap_pymodule!(nautilus_persistence::persistence);
-    m.add_wrapped(submodule)?;
-    sys_modules.set_item(
-        "nautilus_trader.core.nautilus_pyo3.persistence",
-        m.getattr("persistence")?,
-    )?;
+    // Set pyo3_nautilus to be recognized as a subpackage
+    sys_modules.set_item(module_name, m)?;
 
     m.add_class::<LogGuard>()?;
     m.add_function(wrap_pyfunction!(set_global_log_collector, m)?)?;
+
+    // Core
+    let n = "core";
+    let submodule = pyo3::wrap_pymodule!(nautilus_core::python::core);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
+    // Model
+    let n = "model";
+    let submodule = pyo3::wrap_pymodule!(nautilus_model::python::model);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
+    // Indicators
+    let n = "indicators";
+    let submodule = pyo3::wrap_pymodule!(nautilus_indicators::indicators);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
+    // Network
+    let n = "network";
+    let submodule = pyo3::wrap_pymodule!(nautilus_network::network);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
+    // Persistence
+    let n = "persistence";
+    let submodule = pyo3::wrap_pymodule!(nautilus_persistence::python::persistence);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
+    Ok(())
+}
+
+fn re_export_module_attributes(parent_module: &PyModule, submodule_name: &str) -> PyResult<()> {
+    let submodule = parent_module.getattr(submodule_name)?;
+    for item in submodule.dir() {
+        let item_name: &PyString = item.extract()?;
+        if let Ok(attr) = submodule.getattr(item_name) {
+            parent_module.add(item_name.to_str()?, attr)?;
+        }
+    }
 
     Ok(())
 }

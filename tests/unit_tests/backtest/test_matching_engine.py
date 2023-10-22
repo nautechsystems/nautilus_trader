@@ -67,7 +67,7 @@ class TestOrderMatchingEngine:
             instrument=self.instrument,
             raw_id=0,
             fill_model=FillModel(),
-            book_type=BookType.L1_TBBO,
+            book_type=BookType.L1_MBP,
             oms_type=OmsType.NETTING,
             reject_stop_orders=True,
             msgbus=self.msgbus,

@@ -22,4 +22,4 @@ def test_betting_instrument_notional_value(instrument):
         price=betfair_float_to_price(2.0),
         quantity=betfair_float_to_quantity(100.0),
     ).as_double()
-    assert notional == 50
+    assert notional == 100

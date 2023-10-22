@@ -17,7 +17,7 @@ from io import BytesIO
 
 import pyarrow as pa
 
-from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model.data import OrderBookDelta
 
 

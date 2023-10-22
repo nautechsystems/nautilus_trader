@@ -14,22 +14,25 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
 use ustr::Ustr;
 
 pub const SYNTHETIC_VENUE: &str = "SYNTH";
 
+/// Represents a valid trading venue ID.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Venue {
+    /// The venue ID value.
     pub value: Ustr,
 }
 
@@ -44,7 +47,7 @@ impl Venue {
 
     #[must_use]
     pub fn synthetic() -> Self {
-        // Safety: using synethtic venue constant
+        // SAFETY: using synethtic venue constant
         Self::new(SYNTHETIC_VENUE).unwrap()
     }
 
@@ -80,33 +83,6 @@ impl From<&str> for Venue {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    Venue::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn venue_hash(id: &Venue) -> u64 {
-    id.value.precomputed_hash()
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
-    u8::from(venue.is_synthetic())
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -120,7 +96,7 @@ pub mod stubs {
         Venue::from("BINANCE")
     }
     #[fixture]
-    pub fn simulation() -> Venue {
+    pub fn sim() -> Venue {
         Venue::from("SIM")
     }
 }

@@ -29,6 +29,7 @@ from nautilus_trader.common.timer import TimeEventHandler
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config.common import ImportableExecAlgorithmConfig
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.data.engine import DataEngine
@@ -172,7 +173,8 @@ class TestExecAlgorithm:
         update = TestEventStubs.margin_account_state(account_id=AccountId("BINANCE-001"))
         self.portfolio.update_account(update)
 
-        self.strategy = Strategy()
+        config = StrategyConfig(manage_gtd_expiry=True)
+        self.strategy = Strategy(config)
         self.strategy.register(
             trader_id=self.trader_id,
             portfolio=self.portfolio,
@@ -620,7 +622,7 @@ class TestExecAlgorithm:
         exec_spawn_id = original_entry_order.client_order_id
 
         # Act
-        self.strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        self.strategy.submit_order_list(bracket)
 
         # Trigger ENTRY order release
         self.data_engine.process(tick2)
@@ -714,7 +716,7 @@ class TestExecAlgorithm:
         exec_spawn_id = entry_order.client_order_id
 
         # Act
-        self.strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        self.strategy.submit_order_list(bracket)
 
         # Trigger ENTRY order release
         self.data_engine.process(tick2)
@@ -829,7 +831,7 @@ class TestExecAlgorithm:
         tp_order = bracket.orders[2]
 
         # Act
-        self.strategy.submit_order_list(bracket, manage_gtd_expiry=True)
+        self.strategy.submit_order_list(bracket)
 
         # Trigger ENTRY order release
         self.data_engine.process(tick2)

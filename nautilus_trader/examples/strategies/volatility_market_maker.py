@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Optional, Union
 
+import pandas as pd
+
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
@@ -301,7 +303,8 @@ class VolatilityMarketMaker(Strategy):
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
             price=self.instrument.make_price(price),
-            time_in_force=TimeInForce.GTC,
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=True,  # default value is True
             # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
             emulation_trigger=self.emulation_trigger,
@@ -324,7 +327,8 @@ class VolatilityMarketMaker(Strategy):
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
             price=self.instrument.make_price(price),
-            time_in_force=TimeInForce.GTC,
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=True,  # default value is True
             # display_qty=self.instrument.make_qty(self.trade_size / 2),  # iceberg
             emulation_trigger=self.emulation_trigger,
@@ -368,6 +372,10 @@ class VolatilityMarketMaker(Strategy):
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
+        # self.unsubscribe_trade_ticks(self.instrument_id)
+        # self.unsubscribe_ticker(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
 
     def on_reset(self) -> None:
         """

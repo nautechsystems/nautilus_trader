@@ -405,6 +405,7 @@ class TestCache:
         assert order not in self.cache.orders_emulated()
         assert not self.cache.is_order_inflight(order.client_order_id)
         assert not self.cache.is_order_emulated(order.client_order_id)
+        assert not self.cache.is_order_pending_cancel_local(order.client_order_id)
         assert self.cache.venue_order_id(order.client_order_id) is None
         assert order in self.cache.orders_for_exec_spawn(order.client_order_id)
         assert order in self.cache.orders_for_exec_algorithm(order.exec_algorithm_id)

@@ -22,4 +22,4 @@ import pathlib
 
 
 TESTS_PACKAGE_ROOT = os.path.dirname(os.path.abspath(__file__))
-TEST_DATA_DIR = str(pathlib.Path(TESTS_PACKAGE_ROOT).joinpath("test_data"))
+TEST_DATA_DIR = pathlib.Path(TESTS_PACKAGE_ROOT) / "test_data"

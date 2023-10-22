@@ -250,6 +250,8 @@ class LiveRiskEngine(RiskEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("Command message queue canceled.")
+        except RuntimeError as ex:
+            self._log.error(f"RuntimeError: {ex}.")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -269,6 +271,8 @@ class LiveRiskEngine(RiskEngine):
                 self._handle_event(event)
         except asyncio.CancelledError:
             self._log.warning("Event message queue canceled.")
+        except RuntimeError as ex:
+            self._log.error(f"RuntimeError: {ex}.")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():

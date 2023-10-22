@@ -18,7 +18,6 @@ use std::fs;
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use nautilus_model::data::{quote::QuoteTick, trade::TradeTick};
 use nautilus_persistence::backend::session::{DataBackendSession, QueryResult};
-use pyo3_asyncio::tokio::get_runtime;
 
 fn single_stream_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("single_stream");
@@ -30,20 +29,18 @@ fn single_stream_bench(c: &mut Criterion) {
     group.bench_function("persistence v2", |b| {
         b.iter_batched_ref(
             || {
-                let rt = get_runtime();
                 let mut catalog = DataBackendSession::new(chunk_size);
-                rt.block_on(catalog.add_file_default_query::<QuoteTick>("quote_tick", file_path))
+                catalog
+                    .add_file::<QuoteTick>("quote_tick", file_path, None)
                     .unwrap();
-                rt.block_on(catalog.get_query_result())
+                catalog.get_query_result()
             },
             |query_result: &mut QueryResult| {
-                let rt = get_runtime();
-                let _guard = rt.enter();
-                let count: usize = query_result.map(|vec| vec.len()).sum();
+                let count: usize = query_result.count();
                 assert_eq!(count, 9_689_614);
             },
             BatchSize::SmallInput,
-        )
+        );
     });
 }
 
@@ -57,7 +54,6 @@ fn multi_stream_bench(c: &mut Criterion) {
     group.bench_function("persistence v2", |b| {
         b.iter_batched_ref(
             || {
-                let rt = get_runtime();
                 let mut catalog = DataBackendSession::new(chunk_size);
 
                 for entry in fs::read_dir(dir_path).expect("No such directory") {
@@ -68,31 +64,25 @@ fn multi_stream_bench(c: &mut Criterion) {
                         let file_name = path.file_stem().unwrap().to_str().unwrap();
 
                         if file_name.contains("quotes") {
-                            rt.block_on(catalog.add_file_default_query::<QuoteTick>(
-                                file_name,
-                                path.to_str().unwrap(),
-                            ))
-                            .unwrap();
+                            catalog
+                                .add_file::<QuoteTick>(file_name, path.to_str().unwrap(), None)
+                                .unwrap();
                         } else if file_name.contains("trades") {
-                            rt.block_on(catalog.add_file_default_query::<TradeTick>(
-                                file_name,
-                                path.to_str().unwrap(),
-                            ))
-                            .unwrap();
+                            catalog
+                                .add_file::<TradeTick>(file_name, path.to_str().unwrap(), None)
+                                .unwrap();
                         }
                     }
                 }
 
-                rt.block_on(catalog.get_query_result())
+                catalog.get_query_result()
             },
             |query_result: &mut QueryResult| {
-                let rt = get_runtime();
-                let _guard = rt.enter();
-                let count: usize = query_result.map(|vec| vec.len()).sum();
+                let count: usize = query_result.count();
                 assert_eq!(count, 72_536_038);
             },
             BatchSize::SmallInput,
-        )
+        );
     });
 }
 

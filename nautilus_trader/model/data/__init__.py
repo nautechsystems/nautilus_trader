@@ -16,6 +16,10 @@
 Defines the fundamental data types represented within the trading domain.
 """
 
+from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
 from nautilus_trader.model.data.bar import Bar
 from nautilus_trader.model.data.bar import BarSpecification
 from nautilus_trader.model.data.bar import BarType
@@ -26,12 +30,12 @@ from nautilus_trader.model.data.book import NULL_ORDER
 from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
 from nautilus_trader.model.data.tick import QuoteTick
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
-from nautilus_trader.model.data.venue import VenueStatusUpdate
 
 
 __all__ = [
@@ -49,6 +53,14 @@ __all__ = [
     "Ticker",
     "TradeTick",
     "InstrumentClose",
-    "InstrumentStatusUpdate",
-    "VenueStatusUpdate",
+    "InstrumentStatus",
+    "VenueStatus",
 ]
+
+
+NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
+    RustOrderBookDelta,
+    RustQuoteTick,
+    RustTradeTick,
+    RustBar,
+)

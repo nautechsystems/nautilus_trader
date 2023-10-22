@@ -94,6 +94,7 @@ cdef class Cache(CacheFacade):
     cdef set _index_orders_closed
     cdef set _index_orders_emulated
     cdef set _index_orders_inflight
+    cdef set _index_orders_pending_cancel
     cdef set _index_positions
     cdef set _index_positions_open
     cdef set _index_positions_closed
@@ -162,11 +163,12 @@ cdef class Cache(CacheFacade):
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
     cpdef void add_position(self, Position position, OmsType oms_type)
     cpdef void snapshot_position(self, Position position)
-    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot)
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, bint open_only=*)
     cpdef void snapshot_order_state(self, Order order)
 
     cpdef void update_account(self, Account account)
     cpdef void update_order(self, Order order)
+    cpdef void update_order_pending_cancel_local(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)
     cpdef void delete_actor(self, Actor actor)

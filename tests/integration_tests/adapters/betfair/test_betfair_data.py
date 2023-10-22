@@ -23,31 +23,37 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairDataClient
-from nautilus_trader.adapters.betfair.data import BetfairParser
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
-from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDeltas
+from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
+from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.rust.model import OrderSide
 from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data.book import BookOrder
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.data.ticker import Ticker
-from nautilus_trader.model.data.venue import InstrumentClose
-from nautilus_trader.model.data.venue import InstrumentStatusUpdate
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
@@ -71,14 +77,15 @@ def instrument_list(mock_load_markets_metadata):
     loop = asyncio.get_event_loop()
     logger = Logger(clock=LiveClock(), level_stdout=LogLevel.ERROR)
     client = BetfairTestStubs.betfair_client(loop=loop, logger=logger)
-    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, filters={})
+    market_ids = BetfairDataProvider.market_ids()
+    config = BetfairInstrumentProviderConfig(market_ids=market_ids)
+    instrument_provider = BetfairInstrumentProvider(client=client, logger=logger, config=config)
 
     # Load instruments
-    market_ids = BetfairDataProvider.market_ids()
     catalog = parse_market_catalog(BetfairResponses.betting_list_market_catalogue()["result"])
     mock_load_markets_metadata.return_value = [c for c in catalog if c.market_id in market_ids]
     t = loop.create_task(
-        instrument_provider.load_all_async(market_filter={"market_id": market_ids}),
+        instrument_provider.load_all_async(),
     )
     loop.run_until_complete(t)
 
@@ -108,7 +115,7 @@ async def test_subscriptions(data_client, instrument):
     # Arrange, Act
     data_client.subscribe_trade_ticks(instrument.id)
     await asyncio.sleep(0)
-    data_client.subscribe_instrument_status_updates(instrument.id)
+    data_client.subscribe_instrument_status(instrument.id)
     await asyncio.sleep(0)
     data_client.subscribe_instrument_close(instrument.id)
     await asyncio.sleep(0)
@@ -145,7 +152,7 @@ async def test_market_sub_image_market_def(data_client, mock_data_engine_process
     # Assert - expected messages
     mock_calls = mock_data_engine_process.call_args_list
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = ["InstrumentStatusUpdate"] * 7 + ["OrderBookDeltas"] * 7
+    expected = ["BettingInstrument"] * 7 + ["InstrumentStatus"] * 7 + ["OrderBookDeltas"] * 7
     assert result == expected
 
     # Assert - Check orderbook prices
@@ -188,7 +195,7 @@ def test_market_update(data_client, mock_data_engine_process):
 def test_market_update_md(data_client, mock_data_engine_process):
     data_client.on_market_update(BetfairStreaming.mcm_UPDATE_md())
     result = [type(call.args[0]).__name__ for call in mock_data_engine_process.call_args_list]
-    expected = ["InstrumentStatusUpdate"] * 2
+    expected = ["BettingInstrument"] * 2 + ["VenueStatus"] + ["InstrumentStatus"] * 2
     assert result == expected
 
 
@@ -223,22 +230,18 @@ def test_market_bsp(data_client, mock_data_engine_process):
     mock_call_args = [call.args[0] for call in mock_data_engine_process.call_args_list]
     result = Counter([type(args).__name__ for args in mock_call_args])
     expected = {
+        "BettingInstrument": 9,
         "TradeTick": 95,
         "OrderBookDeltas": 11,
-        "InstrumentStatusUpdate": 9,
+        "InstrumentStatus": 9,
         "BetfairTicker": 8,
-        "GenericData": 8,
+        "GenericData": 30,
         "InstrumentClose": 1,
     }
-    assert result == expected
+    assert dict(result) == expected
 
     # Assert - Count of generic data messages
-    sp_deltas = [
-        d
-        for deltas in mock_call_args
-        if isinstance(deltas, GenericData)
-        for d in deltas.data.deltas
-    ]
+    sp_deltas = [deltas.data for deltas in mock_call_args if isinstance(deltas, GenericData)]
     assert len(sp_deltas) == 30
 
 
@@ -257,10 +260,9 @@ def test_orderbook_repr(data_client, mock_data_engine_process):
     assert ob.best_bid_price() == betfair_float_to_price(1.70)
 
 
-def test_orderbook_updates(data_client):
+def test_orderbook_updates(data_client, parser):
     # Arrange
     order_books: dict[InstrumentId, OrderBook] = {}
-    parser = BetfairParser()
 
     # Act
     for raw_update in BetfairStreaming.market_updates():
@@ -297,24 +299,23 @@ def test_orderbook_updates(data_client):
     assert result == expected
 
 
-def test_instrument_opening_events(data_client):
+def test_instrument_opening_events(data_client, parser):
     updates = BetfairDataProvider.market_updates()
-    parser = BetfairParser()
     messages = parser.parse(updates[0])
-    assert len(messages) == 2
-    assert isinstance(messages[0], InstrumentStatusUpdate)
-    assert messages[0].status == MarketStatus.PRE_OPEN
-    assert isinstance(messages[1], InstrumentStatusUpdate)
-    assert messages[0].status == MarketStatus.PRE_OPEN
+    assert len(messages) == 4
+    assert isinstance(messages[0], BettingInstrument)
+    assert isinstance(messages[2], InstrumentStatus)
+    assert messages[2].status == MarketStatus.PRE_OPEN
+    assert isinstance(messages[3], InstrumentStatus)
+    assert messages[3].status == MarketStatus.PRE_OPEN
 
 
-def test_instrument_in_play_events(data_client):
-    parser = BetfairParser()
+def test_instrument_in_play_events(data_client, parser):
     events = [
         msg
         for update in BetfairDataProvider.market_updates()
         for msg in parser.parse(update)
-        if isinstance(msg, InstrumentStatusUpdate)
+        if isinstance(msg, InstrumentStatus)
     ]
     assert len(events) == 14
     result = [ev.status for ev in events]
@@ -337,23 +338,43 @@ def test_instrument_in_play_events(data_client):
     assert result == expected
 
 
-def test_instrument_closing_events(data_client):
+def test_instrument_update(data_client, cache, parser):
+    # Arrange
+    [instrument] = cache.instruments()
+    assert instrument.info == {}
+
+    # Act
     updates = BetfairDataProvider.market_updates()
-    parser = BetfairParser()
+    for upd in updates[:1]:
+        data_client._on_market_update(mcm=upd)
+    new_instrument = cache.instruments()
+
+    # Assert
+    result = new_instrument[2].info
+    assert len(result) == 41
+
+
+def test_instrument_closing_events(data_client, parser):
+    updates = BetfairDataProvider.market_updates()
     messages = parser.parse(updates[-1])
-    assert len(messages) == 4
-    assert isinstance(messages[0], InstrumentStatusUpdate)
-    assert messages[0].status == MarketStatus.CLOSED
-    assert isinstance(messages[2], InstrumentClose)
-    assert messages[2].close_price == 1.0000
-    assert isinstance(messages[2], InstrumentClose)
-    assert messages[2].close_type == InstrumentCloseType.CONTRACT_EXPIRED
-    assert isinstance(messages[1], InstrumentStatusUpdate)
-    assert messages[1].status == MarketStatus.CLOSED
-    assert isinstance(messages[3], InstrumentClose)
-    assert messages[3].close_price == 0.0
-    assert isinstance(messages[3], InstrumentClose)
-    assert messages[3].close_type == InstrumentCloseType.CONTRACT_EXPIRED
+    assert len(messages) == 7
+    ins1, ins2, venue_status, status1, status2, close1, close2 = messages
+
+    # Instrument1
+    assert isinstance(ins1, BettingInstrument)
+    assert isinstance(status1, InstrumentStatus)
+    assert status1.status == MarketStatus.CLOSED
+    assert isinstance(close1, InstrumentClose)
+    assert close1.close_price == 1.0000
+    assert close1.close_type == InstrumentCloseType.CONTRACT_EXPIRED
+
+    # Instrument2
+    assert isinstance(ins2, BettingInstrument)
+    assert isinstance(close2, InstrumentClose)
+    assert isinstance(status2, InstrumentStatus)
+    assert status2.status == MarketStatus.CLOSED
+    assert close2.close_price == 0.0
+    assert close2.close_type == InstrumentCloseType.CONTRACT_EXPIRED
 
 
 def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
@@ -368,6 +389,10 @@ def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     ticker: BetfairTicker = mock_call_args[1]
     assert ticker.last_traded_price == 3.15
     assert ticker.traded_volume == 364.45
+    assert (
+        str(ticker)
+        == "BetfairTicker(instrument_id=1.176621195-42153-0.0.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
+    )
 
 
 def test_betfair_ticker_sp(data_client, mock_data_engine_process):
@@ -376,6 +401,7 @@ def test_betfair_ticker_sp(data_client, mock_data_engine_process):
 
     # Act
     for line in lines:
+        line = line.replace(b'"con":true', b'"con":false')
         data_client.on_market_update(line)
 
     # Assert
@@ -396,6 +422,7 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
 
     # Act
     for line in lines[-100:]:
+        line = line.replace(b'"con":true', b'"con":false')
         data_client.on_market_update(line)
 
     # Assert
@@ -409,14 +436,15 @@ def test_betfair_starting_price(data_client, mock_data_engine_process):
     assert len(starting_prices) == 36
 
 
-def test_betfair_orderbook(data_client) -> None:
+def test_betfair_orderbook(data_client, parser) -> None:
     # Arrange
     books: dict[InstrumentId, OrderBook] = {}
-    parser = BetfairParser()
 
     # Act, Assert
     for update in BetfairDataProvider.market_updates():
         for message in parser.parse(update):
+            if isinstance(message, (BettingInstrument, VenueStatus)):
+                continue
             if message.instrument_id not in books:
                 books[message.instrument_id] = create_betfair_order_book(
                     instrument_id=message.instrument_id,
@@ -428,7 +456,7 @@ def test_betfair_orderbook(data_client) -> None:
                 book.apply_delta(message)
             elif isinstance(
                 message,
-                (Ticker, TradeTick, InstrumentStatusUpdate, InstrumentClose),
+                (Ticker, TradeTick, InstrumentStatus, InstrumentClose),
             ):
                 pass
             else:
@@ -443,39 +471,30 @@ def test_bsp_deltas_apply(data_client, instrument):
         book_type=BookType.L2_MBP,
         asks=[(0.0010000, 55.81)],
     )
-    deltas = BSPOrderBookDeltas.from_dict(
-        {
-            "type": "BSPOrderBookDeltas",
-            "instrument_id": instrument.id.value,
-            "deltas": msgspec.json.encode(
-                [
-                    {
-                        "type": "OrderBookDelta",
-                        "instrument_id": instrument.id.value,
-                        "book_type": "L2_MBP",
-                        "action": "UPDATE",
-                        "order": {
-                            "price": "0.990099",
-                            "size": "2.0",
-                            "side": "BUY",
-                            "order_id": 1,
-                        },
-                        "flags": 0,
-                        "sequence": 0,
-                        "ts_event": 1667288437852999936,
-                        "ts_init": 1667288437852999936,
-                    },
-                ],
-            ),
-            "update_id": 0,
-            "ts_event": 1667288437852999936,
-            "ts_init": 1667288437852999936,
-        },
+
+    bsp_delta = BSPOrderBookDelta(
+        instrument_id=instrument.id,
+        action=BookAction.UPDATE,
+        order=BookOrder(
+            price=Price.from_str("0.990099"),
+            size=Quantity.from_str("2.0"),
+            side=OrderSide.BUY,
+            order_id=1,
+        ),
+        flags=0,
+        sequence=0,
+        ts_event=1667288437852999936,
+        ts_init=1667288437852999936,
     )
 
     # Act
-    book.apply(deltas)
+    book.apply(bsp_delta)
 
     # Assert
     assert book.best_ask_price() == betfair_float_to_price(0.001)
     assert book.best_bid_price() == betfair_float_to_price(0.990099)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_instruments(data_client, instrument):
+    await data_client._subscribe_instrument(instrument.id)

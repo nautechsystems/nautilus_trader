@@ -165,7 +165,7 @@ cdef class RiskEngine(Component):
             limit=order_modify_rate_limit,
             interval=order_modify_rate_interval,
             output_send=self._send_to_execution,
-            output_drop=None,  # Buffer modify commands
+            output_drop=self._deny_modify_order,
             clock=clock,
             logger=logger,
         )
@@ -482,19 +482,19 @@ cdef class RiskEngine(Component):
         cdef Order order = self._cache.order(command.client_order_id)
         if order is None:
             self._log.error(
-                f"ModifyOrder DENIED: Order with {repr(command.client_order_id)} not found.",
+                f"ModifyOrder DENIED: Order with {command.client_order_id!r} not found.",
             )
             return  # Denied
         elif order.is_closed_c():
             self._reject_modify_order(
                 order=order,
-                reason=f"Order with {repr(command.client_order_id)} already closed",
+                reason=f"Order with {command.client_order_id!r} already closed",
             )
             return  # Denied
         elif order.is_pending_cancel_c():
             self._reject_modify_order(
                 order=order,
-                reason=f"Order with {repr(command.client_order_id)} already pending cancel",
+                reason=f"Order with {command.client_order_id!r} already pending cancel",
             )
             return  # Denied
 
@@ -601,6 +601,7 @@ cdef class RiskEngine(Component):
         cdef QuoteTick last_quote = None
         cdef TradeTick last_trade = None
         cdef Price last_px = None
+        cdef Money free
 
         # Determine max notional
         cdef Money max_notional = None
@@ -618,12 +619,14 @@ cdef class RiskEngine(Component):
         if account.is_margin_account:
             return True  # TODO: Determine risk controls for margin
 
+        free = account.balance_free(instrument.quote_currency)
+
         cdef:
             Order order
             Money notional
-            Money free = None
             Money cum_notional_buy = None
             Money cum_notional_sell = None
+            Money order_balance_impact = None
             double xrate
         for order in orders:
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT:
@@ -668,7 +671,7 @@ cdef class RiskEngine(Component):
                 notional = Money(order.quantity.as_f64_c() * xrate, instrument.base_currency)
                 max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
             else:
-                notional = instrument.notional_value(order.quantity, last_px)
+                notional = instrument.notional_value(order.quantity, last_px, use_quote_for_inverse=True)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
@@ -677,20 +680,44 @@ cdef class RiskEngine(Component):
                 )
                 return False  # Denied
 
-            free = account.balance_free(notional.currency)
-
-            if free is not None and notional._mem.raw > free._mem.raw:
+            # Check MIN notional instrument limit
+            if (
+                instrument.min_notional is not None
+                and instrument.min_notional.currency == notional.currency
+                and notional._mem.raw < instrument.min_notional._mem.raw
+            ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT {instrument.min_notional.to_str()} @ {notional.to_str()}",
+                )
+                return False  # Denied
+
+            # Check MAX notional instrument limit
+            if (
+                instrument.max_notional is not None
+                and instrument.max_notional.currency == notional.currency
+                and notional._mem.raw > instrument.max_notional._mem.raw
+            ):
+                self._deny_order(
+                    order=order,
+                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT {instrument.max_notional.to_str()} @ {notional.to_str()}",
+                )
+                return False  # Denied
+
+            order_balance_impact = account.balance_impact(instrument, order.quantity, last_px, order.side)
+
+            if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
+                self._deny_order(
+                    order=order,
+                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {order_balance_impact.to_str()}",
                 )
                 return False  # Denied
 
             if order.is_buy_c():
                 if cum_notional_buy is None:
-                    cum_notional_buy = notional
+                    cum_notional_buy = Money(-order_balance_impact, order_balance_impact.currency)
                 else:
-                    cum_notional_buy._mem.raw += notional._mem.raw
+                    cum_notional_buy._mem.raw += -order_balance_impact._mem.raw
                 if free is not None and cum_notional_buy._mem.raw >= free._mem.raw:
                     self._deny_order(
                         order=order,
@@ -699,9 +726,9 @@ cdef class RiskEngine(Component):
                     return False  # Denied
             elif order.is_sell_c():
                 if cum_notional_sell is None:
-                    cum_notional_sell = notional
+                    cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
                 else:
-                    cum_notional_sell._mem.raw += notional._mem.raw
+                    cum_notional_sell._mem.raw += order_balance_impact._mem.raw
                 if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
                     self._deny_order(
                         order=order,
@@ -754,6 +781,14 @@ cdef class RiskEngine(Component):
             self._deny_order(command.order, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
         elif isinstance(command, SubmitOrderList):
             self._deny_order_list(command.order_list, reason="Exceeded MAX_ORDER_SUBMIT_RATE")
+
+    # Needs to be `cpdef` due being called from throttler
+    cpdef void _deny_modify_order(self, ModifyOrder command):
+        cdef Order order = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"Order with {command.client_order_id!r} not found.")
+            return
+        self._reject_modify_order(order, reason="Exceeded MAX_ORDER_MODIFY_RATE")
 
     cpdef void _deny_order(self, Order order, str reason):
         self._log.error(f"SubmitOrder DENIED: {reason}.")

@@ -69,11 +69,11 @@ from nautilus_trader.model.data.bar cimport BarType
 from nautilus_trader.model.data.base cimport DataType
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport BarAggregation
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
@@ -131,7 +131,6 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
         self._catalog: Optional[ParquetDataCatalog] = None
-        self._use_rust: bool = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -229,7 +228,7 @@ cdef class DataEngine(Component):
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
-    def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
+    def register_catalog(self, catalog: ParquetDataCatalog) -> None:
         """
         Register the given data catalog with the engine.
 
@@ -242,7 +241,6 @@ cdef class DataEngine(Component):
         Condition.not_none(catalog, "catalog")
 
         self._catalog = catalog
-        self._use_rust = use_rust
 
     cpdef void register_client(self, DataClient client):
         """
@@ -456,7 +454,7 @@ cdef class DataEngine(Component):
             subscriptions += client.subscribed_bars()
         return subscriptions + list(self._bar_aggregators.keys())
 
-    cpdef list subscribed_instrument_status_updates(self):
+    cpdef list subscribed_instrument_status(self):
         """
         Return the status update instruments subscribed to.
 
@@ -468,7 +466,7 @@ cdef class DataEngine(Component):
         cdef list subscriptions = []
         cdef MarketDataClient client
         for client in [c for c in self._clients.values() if isinstance(c, MarketDataClient)]:
-            subscriptions += client.subscribed_instrument_status_updates()
+            subscriptions += client.subscribed_instrument_status()
         return subscriptions
 
     cpdef list subscribed_instrument_close(self):
@@ -685,14 +683,15 @@ cdef class DataEngine(Component):
             self._handle_subscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
+                command.data_type.metadata.get("await_partial"),
             )
-        elif command.data_type.type == VenueStatusUpdate:
-            self._handle_subscribe_venue_status_updates(
+        elif command.data_type.type == VenueStatus:
+            self._handle_subscribe_venue_status(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
-        elif command.data_type.type == InstrumentStatusUpdate:
-            self._handle_subscribe_instrument_status_updates(
+        elif command.data_type.type == InstrumentStatus:
+            self._handle_subscribe_instrument_status(
                 client,
                 command.data_type.metadata.get("instrument_id"),
             )
@@ -981,6 +980,7 @@ cdef class DataEngine(Component):
         self,
         MarketDataClient client,
         BarType bar_type,
+        bint await_partial,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
@@ -988,7 +988,7 @@ cdef class DataEngine(Component):
         if bar_type.is_internally_aggregated():
             # Internal aggregation
             if bar_type not in self._bar_aggregators:
-                self._start_bar_aggregator(client, bar_type)
+                self._start_bar_aggregator(client, bar_type, await_partial)
         else:
             # External aggregation
             if bar_type.instrument_id.is_synthetic():
@@ -1018,7 +1018,7 @@ cdef class DataEngine(Component):
             )
             return
 
-    cpdef void _handle_subscribe_venue_status_updates(
+    cpdef void _handle_subscribe_venue_status(
         self,
         MarketDataClient client,
         Venue venue,
@@ -1026,10 +1026,10 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(venue, "venue")
 
-        if venue not in client.subscribed_venue_status_updates():
-            client.subscribe_venue_status_updates(venue)
+        if venue not in client.subscribed_venue_status():
+            client.subscribe_venue_status(venue)
 
-    cpdef void _handle_subscribe_instrument_status_updates(
+    cpdef void _handle_subscribe_instrument_status(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -1039,12 +1039,12 @@ cdef class DataEngine(Component):
 
         if instrument_id.is_synthetic():
             self._log.error(
-                "Cannot subscribe for synthetic instrument `InstrumentStatusUpdate` data.",
+                "Cannot subscribe for synthetic instrument `InstrumentStatus` data.",
             )
             return
 
-        if instrument_id not in client.subscribed_instrument_status_updates():
-            client.subscribe_instrument_status_updates(instrument_id)
+        if instrument_id not in client.subscribed_instrument_status():
+            client.subscribe_instrument_status(instrument_id)
 
     cpdef void _handle_subscribe_instrument_close(
         self,
@@ -1302,25 +1302,18 @@ cdef class DataEngine(Component):
             if instrument_id is None:
                 data = self._catalog.instruments(as_nautilus=True)
             else:
-                data = self._catalog.instruments(
-                    instrument_ids=[str(instrument_id)],
-                    as_nautilus=True,
-                )
+                data = self._catalog.instruments(instrument_ids=[str(instrument_id)])
         elif request.data_type.type == QuoteTick:
             data = self._catalog.quote_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=self._use_rust,
             )
         elif request.data_type.type == TradeTick:
             data = self._catalog.trade_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=self._use_rust,
             )
         elif request.data_type.type == Bar:
             bar_type = request.data_type.metadata.get("bar_type")
@@ -1332,16 +1325,12 @@ cdef class DataEngine(Component):
                 bar_type=str(bar_type),
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=False,  # Until implemented
             )
         elif request.data_type.type == InstrumentClose:
             data = self._catalog.instrument_closes(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=False,  # Until implemented
             )
         else:
             data = self._catalog.generic_data(
@@ -1349,7 +1338,6 @@ cdef class DataEngine(Component):
                 metadata=request.data_type.metadata,
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
             )
 
         # Validation data is not from the future
@@ -1389,10 +1377,10 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, VenueStatusUpdate):
-            self._handle_venue_status_update(data)
-        elif isinstance(data, InstrumentStatusUpdate):
-            self._handle_instrument_status_update(data)
+        elif isinstance(data, VenueStatus):
+            self._handle_venue_status(data)
+        elif isinstance(data, InstrumentStatus):
+            self._handle_instrument_status(data)
         elif isinstance(data, InstrumentClose):
             self._handle_close_price(data)
         elif isinstance(data, GenericData):
@@ -1507,10 +1495,10 @@ cdef class DataEngine(Component):
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
 
-    cpdef void _handle_venue_status_update(self, VenueStatusUpdate data):
+    cpdef void _handle_venue_status(self, VenueStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
 
-    cpdef void _handle_instrument_status_update(self, InstrumentStatusUpdate data):
+    cpdef void _handle_instrument_status(self, InstrumentStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)
 
     cpdef void _handle_close_price(self, InstrumentClose data):
@@ -1554,10 +1542,12 @@ cdef class DataEngine(Component):
     cpdef void _handle_bars(self, list bars, Bar partial):
         self._cache.add_bars(bars)
 
-        cdef TimeBarAggregator aggregator
+        cdef BarAggregator aggregator
         if partial is not None and partial.bar_type.is_internally_aggregated():
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.bar_type)
+            aggregator.set_await_partial(False)
+
             if aggregator:
                 self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}.")
                 aggregator.set_partial(partial)
@@ -1613,7 +1603,12 @@ cdef class DataEngine(Component):
                 f"no order book found, {snap_event}.",
             )
 
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type):
+    cpdef void _start_bar_aggregator(
+        self,
+        MarketDataClient client,
+        BarType bar_type,
+        bint await_partial,
+    ):
         cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1659,6 +1654,9 @@ cdef class DataEngine(Component):
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "  # pragma: no cover (design-time error)
                 f"not supported in open-source"  # pragma: no cover (design-time error)
             )
+
+        # Set if awaiting initial partial bar
+        aggregator.set_await_partial(await_partial)
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator

@@ -16,13 +16,14 @@ WORKDIR $PYSETUP_PATH
 FROM base as builder
 
 # Install build deps
-RUN apt-get update && apt-get install -y curl clang git libssl-dev make pkg-config
+RUN apt-get update && \
+    apt-get install -y curl clang git libssl-dev make pkg-config && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-# Install Rust stable
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
-
-# Install poetry
-RUN curl -sSL https://install.python-poetry.org | python3 -
+# Install Rust stable and poetry
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
+    curl -sSL https://install.python-poetry.org | python3 -
 
 # Install package requirements (split step and with --no-root to enable caching)
 COPY poetry.lock pyproject.toml build.py ./
@@ -36,10 +37,11 @@ COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
 RUN poetry install --only main --all-extras
 RUN poetry build -f wheel
-RUN python -m pip install ./dist/*whl --force
+RUN python -m pip install ./dist/*whl --force --no-deps
 RUN find /usr/local/lib/python3.11/site-packages -name "*.pyc" -exec rm -f {} \;
 
 # Final application image
 FROM base as application
+
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY examples ./examples

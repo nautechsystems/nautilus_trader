@@ -20,6 +20,7 @@ methods. It also provides methods for managing orders and trade execution:
 - `submit_order_list(...)`
 - `modify_order(...)`
 - `cancel_order(...)`
+- `cancel_orders(...)`
 - `cancel_all_orders(...)`
 - `close_position(...)`
 - `close_all_positions(...)`
@@ -36,57 +37,35 @@ The general execution flow looks like the following (each arrow indicates moveme
 The `OrderEmulator` and `ExecAlgorithm`(s) components are optional in the flow, depending on
 individual order parameters (as explained below).
 
-## Submitting orders
-
-An `OrderFactory` is provided on the base class for every `Strategy` as a convenience, reducing
-the amount of boilerplate required to create different `Order` objects (although these objects
-can still be initialized directly with the `Order.__init__` constructor if the trader prefers).
-
-The component an order flows to when submitted for execution depends on the following:
-
-- If an `emulation_trigger` is specified, the order will first be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified, the order will first be sent to the relevant `ExecAlgorithm` (assuming it exists and has been registered correctly)
-- Otherwise, the order is sent to the `RiskEngine`
-
-The following examples show method implementations for a `Strategy`.
-
-This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
-```python
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        order: LimitOrder = self.order_factory.limit(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(5000.00),
-            emulation_trigger=TriggerType.LAST_TRADE,
-        )
-
-        self.submit_order(order)
 ```
+                  ┌───────────────────┐
+                  │                   │
+                  │                   │
+                  │                   │
+          ┌───────►   OrderEmulator   ├────────────┐
+          │       │                   │            │
+          │       │                   │            │
+          │       │                   │            │
+┌─────────┴──┐    └─────▲──────┬──────┘            │
+│            │          │      │           ┌───────▼────────┐   ┌─────────────────────┐   ┌─────────────────────┐
+│            │          │      │           │                │   │                     │   │                     │
+│            ├──────────┼──────┼───────────►                ├───►                     ├───►                     │
+│  Strategy  │          │      │           │                │   │                     │   │                     │
+│            │          │      │           │   RiskEngine   │   │   ExecutionEngine   │   │   ExecutionClient   │
+│            ◄──────────┼──────┼───────────┤                ◄───┤                     ◄───┤                     │
+│            │          │      │           │                │   │                     │   │                     │
+│            │          │      │           │                │   │                     │   │                     │
+└─────────┬──┘    ┌─────┴──────▼──────┐    └───────▲────────┘   └─────────────────────┘   └─────────────────────┘
+          │       │                   │            │
+          │       │                   │            │
+          │       │                   │            │
+          └───────►   ExecAlgorithm   ├────────────┘
+                  │                   │
+                  │                   │
+                  │                   │
+                  └───────────────────┘
 
-```{note}
-It's possible to specify both order emulation, and an execution algorithm.
-```
-
-This example submits a `MARKET` BUY order to a TWAP execution algorithm:
-```python
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        order: MarketOrder = self.order_factory.market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
-            time_in_force=TimeInForce.FOK,
-            exec_algorithm_id=ExecAlgorithmId("TWAP"),  
-            exec_algorithm_params={"horizon_secs": 20, "interval_secs": 2.5},
-        )
-
-        self.submit_order(order)
+- This diagram illustrates message flow (commands and events) across the Nautilus execution components.
 ```
 
 ## Execution algorithms
@@ -242,7 +221,7 @@ or confusion with the "parent" and "child" contingency orders terminology (an ex
 The `Cache` provides several methods to aid in managing (keeping track of) the activity of
 an execution algorithm:
 
-```python
+```cython
 
 cpdef list orders_for_exec_algorithm(
     self,

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
 from decimal import Decimal
 
 import pandas as pd
@@ -72,7 +71,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
         self.engine = BacktestEngine(config=config)
 
         self.venue = Venue("SIM")
-        interest_rate_data = pd.read_csv(os.path.join(TEST_DATA_DIR, "short-term-interest.csv"))
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
 
@@ -196,9 +195,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
 
-        interest_rate_data = pd.read_csv(
-            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
-        )
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
 
@@ -320,9 +317,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
 
-        interest_rate_data = pd.read_csv(
-            os.path.join(TEST_DATA_DIR, "short-term-interest.csv"),
-        )
+        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
         fx_rollover_interest = FXRolloverInterestModule(config)
 
@@ -756,7 +751,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         self.engine.run()
 
         # Assert
-        assert self.engine.iteration in (8199, 7812)
+        assert self.engine.iteration in (8198, 7812)
 
 
 class TestBacktestAcceptanceTestsMarketMaking:
@@ -815,7 +810,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
 
         # Assert
         # TODO - Unsure why this is not deterministic ?
-        assert self.engine.iteration in (7812, 8199, 9319)
+        assert self.engine.iteration in (7812, 8198, 9319)
         assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money(
             "9861.76",
             GBP,

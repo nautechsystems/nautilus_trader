@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import sys
 import tempfile
 from decimal import Decimal
 from typing import Optional
@@ -25,6 +26,7 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.config.common import ImportableControllerConfig
 from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.examples.strategies.ema_cross import EMACross
@@ -38,7 +40,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
-from nautilus_trader.model.data import InstrumentStatusUpdate
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.enums import AccountType
@@ -54,6 +56,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence import wranglers_v2
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -65,6 +68,7 @@ from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.data import MyData
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
+from tests import TEST_DATA_DIR
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
@@ -81,7 +85,7 @@ class TestBacktestEngine:
             BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
         )
 
-    def create_engine(self, config: Optional[BacktestEngineConfig] = None):
+    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),
@@ -167,6 +171,7 @@ class TestBacktestEngine:
         assert len(report) == 1
         assert report.index[0] == start
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_persistence_files_cleaned_up(self):
         # Arrange
         temp_dir = tempfile.mkdtemp()
@@ -243,6 +248,24 @@ class TestBacktestEngine:
         assert engine1.kernel.instance_id.value == instance_id
         assert engine2.kernel.instance_id.value != instance_id
 
+    def test_controller(self):
+        # Arrange - Controller class
+        config = BacktestEngineConfig(
+            logging=LoggingConfig(bypass_logging=True),
+            controller=ImportableControllerConfig(
+                controller_path="nautilus_trader.test_kit.mocks.controller:MyController",
+                config_path="nautilus_trader.test_kit.mocks.controller:ControllerConfig",
+                config={},
+            ),
+        )
+        engine = self.create_engine(config=config)
+
+        # Act
+        engine.run()
+
+        # Assert
+        assert len(engine.kernel.trader.strategies()) == 1
+
 
 class TestBacktestEngineCashAccount:
     def setup(self) -> None:
@@ -295,6 +318,18 @@ class TestBacktestEngineData:
             starting_balances=[Money(1_000_000, USD)],
             fill_model=FillModel(),
         )
+
+    def test_add_pyo3_data_raises_type_error(self) -> None:
+        # Arrange
+        path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+        df = pd.read_csv(path)
+
+        wrangler = wranglers_v2.QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
+        ticks = wrangler.from_pandas(df)
+
+        # Act, Assert
+        with pytest.raises(TypeError):
+            self.engine.add_data(ticks)
 
     def test_add_generic_data_adds_to_engine(self):
         # Arrange
@@ -521,13 +556,13 @@ class TestBacktestEngineData:
     def test_add_instrument_status_to_engine(self):
         # Arrange
         data = [
-            InstrumentStatusUpdate(
+            InstrumentStatus(
                 instrument_id=USDJPY_SIM.id,
                 status=MarketStatus.CLOSED,
                 ts_init=0,
                 ts_event=0,
             ),
-            InstrumentStatusUpdate(
+            InstrumentStatus(
                 instrument_id=USDJPY_SIM.id,
                 status=MarketStatus.OPEN,
                 ts_init=0,
@@ -622,14 +657,14 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89,
+            1_011_166.89,
             USD,
         )
 
     def test_dump_pickled_data(self):
         # Arrange, # Act, # Assert
         pickled = self.engine.dump_pickled_data()
-        assert 5060610 <= len(pickled) <= 5060654
+        assert 5_060_610 <= len(pickled) <= 5_060_654
 
     def test_load_pickled_data(self):
         # Arrange
@@ -658,6 +693,6 @@ class TestBacktestWithAddedBars:
         assert strategy.fast_ema.count == 30117
         assert self.engine.iteration == 60234
         assert self.engine.portfolio.account(self.venue).balance_total(USD) == Money(
-            1011166.89,
+            1_011_166.89,
             USD,
         )

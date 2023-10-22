@@ -13,13 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.stdint cimport uint8_t
-from libc.stdint cimport uint64_t
+from typing import Optional
 
 import msgspec
 
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
+from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
+from libc.stdint cimport int64_t
+from libc.stdint cimport uint8_t
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.model cimport book_order_debug_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_eq
 from nautilus_trader.core.rust.model cimport book_order_exposure
@@ -30,6 +39,7 @@ from nautilus_trader.core.rust.model cimport orderbook_delta_eq
 from nautilus_trader.core.rust.model cimport orderbook_delta_hash
 from nautilus_trader.core.rust.model cimport orderbook_delta_new
 from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.model.data.base cimport capsule_destructor
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport book_action_from_str
@@ -111,6 +121,26 @@ cdef class BookOrder:
         return cstr_to_pystr(book_order_debug_to_cstr(&self._mem))
 
     @staticmethod
+    cdef BookOrder from_raw_c(
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+    ):
+        cdef BookOrder order = BookOrder.__new__(BookOrder)
+        order._mem = book_order_from_raw(
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+        )
+        return order
+
+    @staticmethod
     cdef BookOrder from_mem_c(BookOrder_t mem):
         cdef BookOrder order = BookOrder.__new__(BookOrder)
         order._mem = mem
@@ -187,6 +217,47 @@ cdef class BookOrder:
         return book_order_signed_size(&self._mem)
 
     @staticmethod
+    def from_raw(
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+    ) -> BookOrder:
+        """
+        Return an book order from the given raw values.
+
+        Parameters
+        ----------
+        side : OrderSide {``BUY``, ``SELL``}
+            The order side.
+        price_raw : int64_t
+            The order raw price (as a scaled fixed precision integer).
+        price_prec : uint8_t
+            The order price precision.
+        size_raw : uint64_t
+            The order raw size (as a scaled fixed precision integer).
+        size_prec : uint8_t
+            The order size precision.
+        order_id : uint64_t
+            The order ID.
+
+        Returns
+        -------
+        BookOrder
+
+        """
+        return BookOrder.from_raw_c(
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+        )
+
+    @staticmethod
     cdef BookOrder from_dict_c(dict values):
         Condition.not_none(values, "values")
         return BookOrder(
@@ -239,7 +310,7 @@ cdef class BookOrder:
 
 cdef class OrderBookDelta(Data):
     """
-    Represents a single difference on an `OrderBook`.
+    Represents a single update/difference on an `OrderBook`.
 
     Parameters
     ----------
@@ -248,7 +319,7 @@ cdef class OrderBookDelta(Data):
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
     order : BookOrder
-        The order to apply.
+        The book order for the delta.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -256,7 +327,8 @@ cdef class OrderBookDelta(Data):
     flags : uint8_t, default 0 (no flags)
         A combination of packet end with matching engine status.
     sequence : uint64_t, default 0
-        The unique sequence number for the update. If default 0 then will increment the `sequence`.
+        The unique sequence number for the update.
+        If default 0 then will increment the `sequence`.
     """
 
     def __init__(
@@ -415,7 +487,7 @@ cdef class OrderBookDelta(Data):
         return <BookAction>self._mem.action == BookAction.CLEAR
 
     @property
-    def order(self) -> BookOrder:
+    def order(self) -> Optional[BookOrder]:
         """
         Return the deltas book order for the action.
 
@@ -424,7 +496,10 @@ cdef class OrderBookDelta(Data):
         BookOrder
 
         """
-        return BookOrder.from_mem_c(self._mem.order)
+        order = self._mem.order
+        if order is None:
+            return None
+        return BookOrder.from_mem_c(order)
 
     @property
     def flags(self) -> uint8_t:
@@ -473,6 +548,41 @@ cdef class OrderBookDelta(Data):
 
         """
         return self._mem.ts_init
+
+    @staticmethod
+    cdef OrderBookDelta from_raw_c(
+        InstrumentId instrument_id,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ):
+        cdef BookOrder_t order_mem = book_order_from_raw(
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+        )
+        cdef OrderBookDelta delta = OrderBookDelta.__new__(OrderBookDelta)
+        delta._mem = orderbook_delta_new(
+            instrument_id._mem,
+            action,
+            order_mem,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        )
+        return delta
 
     @staticmethod
     cdef OrderBookDelta from_mem_c(OrderBookDelta_t mem):
@@ -529,6 +639,113 @@ cdef class OrderBookDelta(Data):
             ts_event=ts_event,
             ts_init=ts_init,
             sequence=sequence,
+        )
+
+    # SAFETY: Do NOT deallocate the capsule here
+    # It is supposed to be deallocated by the creator
+    @staticmethod
+    cdef inline list capsule_to_list_c(object capsule):
+        cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
+        cdef OrderBookDelta_t* ptr = <OrderBookDelta_t*>data.ptr
+        cdef list deltas = []
+
+        cdef uint64_t i
+        for i in range(0, data.len):
+            deltas.append(OrderBookDelta.from_mem_c(ptr[i]))
+
+        return deltas
+
+    @staticmethod
+    cdef inline list_to_capsule_c(list items):
+        # Create a C struct buffer
+        cdef uint64_t len_ = len(items)
+        cdef OrderBookDelta_t * data = <OrderBookDelta_t *> PyMem_Malloc(len_ * sizeof(OrderBookDelta_t))
+        cdef uint64_t i
+        for i in range(len_):
+            data[i] = (<OrderBookDelta> items[i])._mem
+        if not data:
+            raise MemoryError()
+
+        # Create CVec
+        cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
+        cvec.ptr = data
+        cvec.len = len_
+        cvec.cap = len_
+
+        # Create PyCapsule
+        return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
+
+    @staticmethod
+    def list_from_capsule(capsule) -> list[QuoteTick]:
+        return OrderBookDelta.capsule_to_list_c(capsule)
+
+    @staticmethod
+    def capsule_from_list(list items):
+        return OrderBookDelta.list_to_capsule_c(items)
+
+    @staticmethod
+    def from_raw(
+        InstrumentId instrument_id,
+        BookAction action,
+        OrderSide side,
+        int64_t price_raw,
+        uint8_t price_prec,
+        uint64_t size_raw,
+        uint8_t size_prec,
+        uint64_t order_id,
+        uint8_t flags,
+        uint64_t sequence,
+        uint64_t ts_event,
+        uint64_t ts_init,
+    ) -> OrderBookDelta:
+        """
+        Return an order book delta from the given raw values.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The trade instrument ID.
+        action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
+            The order book delta action.
+        side : OrderSide {``BUY``, ``SELL``}
+            The order side.
+        price_raw : int64_t
+            The order raw price (as a scaled fixed precision integer).
+        price_prec : uint8_t
+            The order price precision.
+        size_raw : uint64_t
+            The order raw size (as a scaled fixed precision integer).
+        size_prec : uint8_t
+            The order size precision.
+        order_id : uint64_t
+            The order ID.
+        flags : uint8_t
+            A combination of packet end with matching engine status.
+        sequence : uint64_t
+            The unique sequence number for the update.
+        ts_event : uint64_t
+            The UNIX timestamp (nanoseconds) when the tick event occurred.
+        ts_init : uint64_t
+            The UNIX timestamp (nanoseconds) when the data object was initialized.
+
+        Returns
+        -------
+        OrderBookDelta
+
+        """
+        return OrderBookDelta.from_raw_c(
+            instrument_id,
+            action,
+            side,
+            price_raw,
+            price_prec,
+            size_raw,
+            size_prec,
+            order_id,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
         )
 
     @staticmethod
@@ -683,7 +900,7 @@ cdef class OrderBookDeltas(Data):
     cdef dict to_dict_c(OrderBookDeltas obj):
         Condition.not_none(obj, "obj")
         return {
-            "type": "OrderBookDeltas",
+            "type": obj.__class__.__name__,
             "instrument_id": obj.instrument_id.to_str(),
             "deltas": msgspec.json.encode([OrderBookDelta.to_dict_c(d) for d in obj.deltas]),
         }

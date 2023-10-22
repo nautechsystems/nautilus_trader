@@ -250,16 +250,16 @@ cdef class MarketDataClient(DataClient):
         )
 
         # Subscriptions
-        self._subscriptions_order_book_delta = set()          # type: set[InstrumentId]
-        self._subscriptions_order_book_snapshot = set()       # type: set[InstrumentId]
-        self._subscriptions_ticker = set()                    # type: set[InstrumentId]
-        self._subscriptions_quote_tick = set()                # type: set[InstrumentId]
-        self._subscriptions_trade_tick = set()                # type: set[InstrumentId]
-        self._subscriptions_bar = set()                       # type: set[BarType]
-        self._subscriptions_venue_status_update = set()       # type: set[Venue]
-        self._subscriptions_instrument_status_update = set()  # type: set[InstrumentId]
-        self._subscriptions_instrument_close = set()          # type: set[InstrumentId]
-        self._subscriptions_instrument = set()                # type: set[InstrumentId]
+        self._subscriptions_order_book_delta = set()     # type: set[InstrumentId]
+        self._subscriptions_order_book_snapshot = set()  # type: set[InstrumentId]
+        self._subscriptions_ticker = set()               # type: set[InstrumentId]
+        self._subscriptions_quote_tick = set()           # type: set[InstrumentId]
+        self._subscriptions_trade_tick = set()           # type: set[InstrumentId]
+        self._subscriptions_bar = set()                  # type: set[BarType]
+        self._subscriptions_venue_status = set()         # type: set[Venue]
+        self._subscriptions_instrument_status = set()    # type: set[InstrumentId]
+        self._subscriptions_instrument_close = set()     # type: set[InstrumentId]
+        self._subscriptions_instrument = set()           # type: set[InstrumentId]
 
         # Tasks
         self._update_instruments_task = None
@@ -354,7 +354,7 @@ cdef class MarketDataClient(DataClient):
         """
         return sorted(list(self._subscriptions_bar))
 
-    cpdef list subscribed_venue_status_updates(self):
+    cpdef list subscribed_venue_status(self):
         """
         Return the status update instruments subscribed to.
 
@@ -363,9 +363,9 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscriptions_venue_status_update))
+        return sorted(list(self._subscriptions_venue_status))
 
-    cpdef list subscribed_instrument_status_updates(self):
+    cpdef list subscribed_instrument_status(self):
         """
         Return the status update instruments subscribed to.
 
@@ -374,7 +374,7 @@ cdef class MarketDataClient(DataClient):
         list[InstrumentId]
 
         """
-        return sorted(list(self._subscriptions_instrument_status_update))
+        return sorted(list(self._subscriptions_instrument_status))
 
     cpdef list subscribed_instrument_close(self):
         """
@@ -433,7 +433,7 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
             The order book type.
         depth : int, optional, default None
             The maximum depth for the subscription.
@@ -455,7 +455,7 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to subscribe to.
-        book_type : BookType {``L1_TBBO``, ``L2_MBP``, ``L3_MBO``}
+        book_type : BookType {``L1_MBP``, ``L2_MBP``, ``L3_MBO``}
             The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
@@ -517,9 +517,9 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_venue_status_updates(self, Venue venue):
+    cpdef void subscribe_venue_status(self, Venue venue):
         """
-        Subscribe to `InstrumentStatusUpdate` data for the venue.
+        Subscribe to `InstrumentStatus` data for the venue.
 
         Parameters
         ----------
@@ -528,14 +528,14 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `VenueStatusUpdate` data for {venue}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `subscribe_venue_status_updates` method for this client.",  # pragma: no cover
+            f"Cannot subscribe to `VenueStatus` data for {venue}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_venue_status` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_status_updates(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id):
         """
-        Subscribe to `InstrumentStatusUpdates` data for the given instrument ID.
+        Subscribe to `InstrumentStatus` data for the given instrument ID.
 
         Parameters
         ----------
@@ -544,8 +544,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot subscribe to `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `subscribe_instrument_status_updates` method for this client.",  # pragma: no cover
+            f"Cannot subscribe to `InstrumentStatus` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `subscribe_instrument_status` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -719,9 +719,9 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_venue_status_updates(self, Venue venue):
+    cpdef void unsubscribe_venue_status(self, Venue venue):
         """
-        Unsubscribe from `InstrumentStatusUpdate` data for the given venue.
+        Unsubscribe from `InstrumentStatus` data for the given venue.
 
         Parameters
         ----------
@@ -730,14 +730,14 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `VenueStatusUpdates` data for {venue}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `unsubscribe_venue_status_updates` method for this client.",  # pragma: no cover
+            f"Cannot unsubscribe from `VenueStatus` data for {venue}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_venue_status` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_status_updates(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id):
         """
-        Unsubscribe from `InstrumentStatusUpdate` data for the given instrument ID.
+        Unsubscribe from `InstrumentStatus` data for the given instrument ID.
 
         Parameters
         ----------
@@ -746,8 +746,8 @@ cdef class MarketDataClient(DataClient):
 
         """
         self._log.error(  # pragma: no cover
-            f"Cannot unsubscribe from `InstrumentStatusUpdates` data for {instrument_id}: not implemented. "  # pragma: no cover
-            f"You can implement by overriding the `unsubscribe_instrument_status_updates` method for this client.",  # pragma: no cover
+            f"Cannot unsubscribe from `InstrumentStatus` data for {instrument_id}: not implemented. "  # pragma: no cover
+            f"You can implement by overriding the `unsubscribe_instrument_status` method for this client.",  # pragma: no cover
         )
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -807,15 +807,15 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_bar.add(bar_type)
 
-    cpdef void _add_subscription_venue_status_updates(self, Venue venue):
+    cpdef void _add_subscription_venue_status(self, Venue venue):
         Condition.not_none(venue, "venue")
 
-        self._subscriptions_venue_status_update.add(venue)
+        self._subscriptions_venue_status.add(venue)
 
-    cpdef void _add_subscription_instrument_status_updates(self, InstrumentId instrument_id):
+    cpdef void _add_subscription_instrument_status(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_instrument_status_update.add(instrument_id)
+        self._subscriptions_instrument_status.add(instrument_id)
 
     cpdef void _add_subscription_instrument_close(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
@@ -862,15 +862,15 @@ cdef class MarketDataClient(DataClient):
 
         self._subscriptions_bar.discard(bar_type)
 
-    cpdef void _remove_subscription_venue_status_updates(self, Venue venue):
+    cpdef void _remove_subscription_venue_status(self, Venue venue):
         Condition.not_none(venue, "venue")
 
-        self._subscriptions_venue_status_update.discard(venue)
+        self._subscriptions_venue_status.discard(venue)
 
-    cpdef void _remove_subscription_instrument_status_updates(self, InstrumentId instrument_id):
+    cpdef void _remove_subscription_instrument_status(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")
 
-        self._subscriptions_instrument_status_update.discard(instrument_id)
+        self._subscriptions_instrument_status.discard(instrument_id)
 
     cpdef void _remove_subscription_instrument_close(self, InstrumentId instrument_id):
         Condition.not_none(instrument_id, "instrument_id")

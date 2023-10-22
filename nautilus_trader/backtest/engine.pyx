@@ -29,7 +29,9 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
+from nautilus_trader.model.data import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.system.kernel import NautilusKernel
+from nautilus_trader.trading.trader import Trader
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -69,10 +71,10 @@ from nautilus_trader.model.data.bar cimport Bar
 from nautilus_trader.model.data.base cimport GenericData
 from nautilus_trader.model.data.book cimport OrderBookDelta
 from nautilus_trader.model.data.book cimport OrderBookDeltas
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport BookType
@@ -87,7 +89,6 @@ from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 from nautilus_trader.trading.strategy cimport Strategy
-from nautilus_trader.trading.trader cimport Trader
 
 
 cdef class BacktestEngine:
@@ -354,7 +355,7 @@ cdef class BacktestEngine:
         modules: Optional[list[SimulationModule]] = None,
         fill_model: Optional[FillModel] = None,
         latency_model: Optional[LatencyModel] = None,
-        book_type: BookType = BookType.L1_TBBO,
+        book_type: BookType = BookType.L1_MBP,
         routing: bool = False,
         frozen_account: bool = False,
         bar_execution: bool = True,
@@ -390,7 +391,7 @@ cdef class BacktestEngine:
             The fill model for the exchange.
         latency_model : LatencyModel, optional
             The latency model for the exchange.
-        book_type : BookType, default ``BookType.L1_TBBO``
+        book_type : BookType, default ``BookType.L1_MBP``
             The default order book type for fill modelling.
         routing : bool, default False
             If multi-venue routing should be enabled for the execution client.
@@ -545,7 +546,13 @@ cdef class BacktestEngine:
 
         self._log.info(f"Added {instrument.id} Instrument.")
 
-    def add_data(self, list data, ClientId client_id = None) -> None:
+    def add_data(
+        self,
+        list data,
+        ClientId client_id = None,
+        bint validate = True,
+        bint sort = True,
+    ) -> None:
         """
         Add the given data to the backtest engine.
 
@@ -555,6 +562,12 @@ cdef class BacktestEngine:
             The data to add.
         client_id : ClientId, optional
             The data client ID to associate with generic data.
+        validate : bool, default True
+            If `data` should be validated
+            (recommended when adding data directly to the engine).
+        sort : bool, default True
+            If `data` should be sorted by `ts_init` with the rest of the stream after adding
+            (recommended when adding data directly to the engine).
 
         Raises
         ------
@@ -566,54 +579,69 @@ cdef class BacktestEngine:
             If `instrument_id` for the data is not found in the cache.
         ValueError
             If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
+        TypeError
+            If `data` is a type provided by Rust pyo3 (cannot add directly to engine yet).
 
         Warnings
         --------
         Assumes all data elements are of the same type. Adding lists of varying
         data types could result in incorrect backtest logic.
 
+        Caution if adding data without `sort` being True, as this could lead to running backtests
+        on a stream which does not have monotonically increasing timestamps.
+
         """
         Condition.not_empty(data, "data")
         Condition.list_type(data, Data, "data")
 
-        first = data[0]
+        if isinstance(data[0], NAUTILUS_PYO3_DATA_TYPES):
+            raise TypeError(
+                f"Cannot add data of type `{type(data[0]).__name__}` from pyo3 directly to engine. "
+                "This will supported in a future release.",
+            )
 
-        cdef str data_prepend_str = ""
-        if hasattr(first, "instrument_id"):
-            Condition.true(
-                first.instrument_id in self.kernel.cache.instrument_ids(),
-                f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
-                "Add the instrument through `add_instrument()` prior to adding related data.",
-            )
-            # Check client has been registered
-            self._add_market_data_client_if_not_exists(first.instrument_id.venue)
-            data_prepend_str = f"{first.instrument_id} "
-        elif isinstance(first, Bar):
-            Condition.true(
-                first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
-                f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
-                "Add the instrument through `add_instrument()` prior to adding related data.",
-            )
-            Condition.equal(
-                first.bar_type.aggregation_source,
-                AggregationSource.EXTERNAL,
-                "bar_type.aggregation_source",
-                "required source",
-            )
-            data_prepend_str = f"{first.bar_type} "
-        else:
-            Condition.not_none(client_id, "client_id")
-            # Check client has been registered
-            self._add_data_client_if_not_exists(client_id)
-            if isinstance(first, GenericData):
-                data_prepend_str = f"{type(data[0].data).__name__} "
+        cdef str data_added_str = "data"
+
+        if validate:
+            first = data[0]
+
+            if hasattr(first, "instrument_id"):
+                Condition.true(
+                    first.instrument_id in self.kernel.cache.instrument_ids(),
+                    f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
+                    "Add the instrument through `add_instrument()` prior to adding related data.",
+                )
+                # Check client has been registered
+                self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+                data_added_str = f"{first.instrument_id} {type(first).__name__}"
+            elif isinstance(first, Bar):
+                Condition.true(
+                    first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
+                    f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
+                    "Add the instrument through `add_instrument()` prior to adding related data.",
+                )
+                Condition.equal(
+                    first.bar_type.aggregation_source,
+                    AggregationSource.EXTERNAL,
+                    "bar_type.aggregation_source",
+                    "required source",
+                )
+                data_added_str = f"{first.bar_type} {type(first).__name__}"
+            else:
+                Condition.not_none(client_id, "client_id")
+                # Check client has been registered
+                self._add_data_client_if_not_exists(client_id)
+                if isinstance(first, GenericData):
+                    data_added_str = f"{type(first.data).__name__} "
 
         # Add data
-        self._data = sorted(self._data + data, key=lambda x: x.ts_init)
+        self._data.extend(data)
+
+        if sort:
+            self._data = sorted(self._data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {data_prepend_str}"
-            f"{type(first).__name__} element{'' if len(data) == 1 else 's'}.",
+            f"Added {len(data):,} {data_added_str} element{'' if len(data) == 1 else 's'}.",
         )
 
     def dump_pickled_data(self) -> bytes:
@@ -1026,6 +1054,7 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
+        cdef SimulatedExchange venue
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1038,19 +1067,26 @@ cdef class BacktestEngine:
 
                 # Process data through venue
                 if isinstance(data, OrderBookDelta):
-                    self._venues[data.instrument_id.venue].process_order_book_delta(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
-                    self._venues[data.instrument_id.venue].process_order_book_deltas(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_order_book_deltas(data)
                 elif isinstance(data, QuoteTick):
-                    self._venues[data.instrument_id.venue].process_quote_tick(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_quote_tick(data)
                 elif isinstance(data, TradeTick):
-                    self._venues[data.instrument_id.venue].process_trade_tick(data)
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_trade_tick(data)
                 elif isinstance(data, Bar):
-                    self._venues[data.bar_type.instrument_id.venue].process_bar(data)
-                elif isinstance(data, VenueStatusUpdate):
-                    self._venues[data.venue].process_venue_status(data)
-                elif isinstance(data, InstrumentStatusUpdate):
-                    self._venues[data.instrument_id.venue].process_instrument_status(data)
+                    venue = self._venues[data.bar_type.instrument_id.venue]
+                    venue.process_bar(data)
+                elif isinstance(data, VenueStatus):
+                    venue = self._venues[data.venue]
+                    venue.process_venue_status(data)
+                elif isinstance(data, InstrumentStatus):
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_instrument_status(data)
 
                 self._data_engine.process(data)
 

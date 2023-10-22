@@ -14,20 +14,28 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::{c_char, CStr},
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
 use nautilus_core::correctness::check_valid_string;
-use pyo3::prelude::*;
 use ustr::Ustr;
 
+/// Represents a valid trade match ID (assigned by a trading venue).
+///
+/// Can correspond to the `TradeID <1003> field` of the FIX protocol.
+///
+/// The unique ID assigned to the trade entity once it is received or matched by
+/// the exchange or central counterparty.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct TradeId {
+    /// The trade match ID value.
     pub value: Ustr,
 }
 
@@ -65,27 +73,6 @@ impl From<&str> for TradeId {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
-    assert!(!ptr.is_null(), "`ptr` was NULL");
-    TradeId::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
-    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

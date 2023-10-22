@@ -30,6 +30,7 @@ from nautilus_trader.adapters.binance.futures.http.account import BinanceFutures
 from nautilus_trader.adapters.binance.futures.http.market import BinanceFuturesMarketHttpAPI
 from nautilus_trader.adapters.binance.futures.http.wallet import BinanceFuturesWalletHttpAPI
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesFeeRates
+from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.market import BinanceFuturesSymbolInfo
 from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFuturesCommissionRate
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
@@ -108,16 +109,16 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         # The next step is to enable users to pass their own fee rates map via the config.
         # In the future, we aim to represent this fee model with greater accuracy for backtesting.
         self._fee_rates = {
-            0: BinanceFuturesFeeRates(feeTier=0, maker="0.0200", taker="0.0180"),
-            1: BinanceFuturesFeeRates(feeTier=1, maker="0.0160", taker="0.0144"),
-            2: BinanceFuturesFeeRates(feeTier=2, maker="0.0140", taker="0.0126"),
-            3: BinanceFuturesFeeRates(feeTier=3, maker="0.0120", taker="0.0108"),
-            4: BinanceFuturesFeeRates(feeTier=4, maker="0.0100", taker="0.0090"),
-            5: BinanceFuturesFeeRates(feeTier=5, maker="0.0080", taker="0.0072"),
-            6: BinanceFuturesFeeRates(feeTier=6, maker="0.0060", taker="0.0054"),
-            7: BinanceFuturesFeeRates(feeTier=7, maker="0.0040", taker="0.0036"),
-            8: BinanceFuturesFeeRates(feeTier=8, maker="0.0020", taker="0.0018"),
-            9: BinanceFuturesFeeRates(feeTier=9, maker="0.0000", taker="0.0000"),
+            0: BinanceFuturesFeeRates(feeTier=0, maker="0.000200", taker="0.000400"),
+            1: BinanceFuturesFeeRates(feeTier=1, maker="0.000160", taker="0.000400"),
+            2: BinanceFuturesFeeRates(feeTier=2, maker="0.000140", taker="0.000350"),
+            3: BinanceFuturesFeeRates(feeTier=3, maker="0.000120", taker="0.000320"),
+            4: BinanceFuturesFeeRates(feeTier=4, maker="0.000100", taker="0.000300"),
+            5: BinanceFuturesFeeRates(feeTier=5, maker="0.000080", taker="0.000270"),
+            6: BinanceFuturesFeeRates(feeTier=6, maker="0.000060", taker="0.000250"),
+            7: BinanceFuturesFeeRates(feeTier=7, maker="0.000040", taker="0.000220"),
+            8: BinanceFuturesFeeRates(feeTier=8, maker="0.000020", taker="0.000200"),
+            9: BinanceFuturesFeeRates(feeTier=9, maker="0.000000", taker="0.000170"),
         }
 
     async def load_all_async(self, filters: Optional[dict] = None) -> None:
@@ -171,17 +172,23 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         account_info = await self._http_account.query_futures_account_info(recv_window=str(5000))
         fee_rates = self._fee_rates[account_info.feeTier]
 
+        position_risk_resp = await self._http_account.query_futures_position_risk()
+        position_risk = {risk.symbol: risk for risk in position_risk_resp}
         for symbol in symbols:
             fee = BinanceFuturesCommissionRate(
                 symbol=symbol,
                 makerCommissionRate=fee_rates.maker,
                 takerCommissionRate=fee_rates.taker,
             )
-
+            # fetch position risk
+            if symbol not in position_risk:
+                self._log.error(f"Position risk not found for {symbol}.")
+                continue
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
                 fee=fee,
                 ts_event=millis_to_nanos(exchange_info.serverTime),
+                position_risk=position_risk[symbol],
             )
 
     async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
@@ -217,6 +224,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self,
         symbol_info: BinanceFuturesSymbolInfo,
         ts_event: int,
+        position_risk: Optional[BinanceFuturesPositionRisk] = None,
         fee: Optional[BinanceFuturesCommissionRate] = None,
     ) -> None:
         contract_type_str = symbol_info.contractType
@@ -265,6 +273,11 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             min_notional = None
             if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
                 min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+            max_notional = (
+                Money(position_risk.maxNotionalValue, currency=quote_currency)
+                if position_risk
+                else None
+            )
             max_price = Price(float(price_filter.maxPrice), precision=price_precision)
             min_price = Price(float(price_filter.minPrice), precision=price_precision)
 
@@ -298,7 +311,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     size_increment=size_increment,
                     max_quantity=max_quantity,
                     min_quantity=min_quantity,
-                    max_notional=None,
+                    max_notional=max_notional,
                     min_notional=min_notional,
                     max_price=max_price,
                     min_price=min_price,

@@ -13,9 +13,14 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
 
+from cpython.mem cimport PyMem_Free
+from cpython.mem cimport PyMem_Malloc
+from cpython.pycapsule cimport PyCapsule_Destructor
+from cpython.pycapsule cimport PyCapsule_GetPointer
+from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
@@ -23,7 +28,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
-from nautilus_trader.core.rust.model cimport instrument_id_new_from_cstr
+from nautilus_trader.core.rust.model cimport instrument_id_from_cstr
 from nautilus_trader.core.rust.model cimport quote_tick_eq
 from nautilus_trader.core.rust.model cimport quote_tick_hash
 from nautilus_trader.core.rust.model cimport quote_tick_new
@@ -37,6 +42,8 @@ from nautilus_trader.core.rust.model cimport trade_tick_to_cstr
 from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
+from nautilus_trader.core.string cimport ustr_to_pystr
+from nautilus_trader.model.data.base cimport capsule_destructor
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport aggressor_side_from_str
@@ -300,10 +307,10 @@ cdef class QuoteTick(Data):
         quote_tick._mem = mem
         return quote_tick
 
-    # Safety: Do NOT deallocate the capsule here
+    # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
-    cdef inline list capsule_to_quote_tick_list(object capsule):
+    cdef inline list capsule_to_list_c(object capsule):
         cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
         cdef QuoteTick_t* ptr = <QuoteTick_t*>data.ptr
         cdef list ticks = []
@@ -315,9 +322,8 @@ cdef class QuoteTick(Data):
         return ticks
 
     @staticmethod
-    cdef inline quote_tick_list_to_capsule(list items):
-
-        # create a C struct buffer
+    cdef inline list_to_capsule_c(list items):
+        # Create a C struct buffer
         cdef uint64_t len_ = len(items)
         cdef QuoteTick_t * data = <QuoteTick_t *> PyMem_Malloc(len_ * sizeof(QuoteTick_t))
         cdef uint64_t i
@@ -326,22 +332,22 @@ cdef class QuoteTick(Data):
         if not data:
             raise MemoryError()
 
-        # create CVec
+        # Create CVec
         cdef CVec * cvec = <CVec *> PyMem_Malloc(1 * sizeof(CVec))
         cvec.ptr = data
         cvec.len = len_
         cvec.cap = len_
 
-        # create PyCapsule
+        # Create PyCapsule
         return PyCapsule_New(cvec, NULL, <PyCapsule_Destructor>capsule_destructor)
 
     @staticmethod
     def list_from_capsule(capsule) -> list[QuoteTick]:
-        return QuoteTick.capsule_to_quote_tick_list(capsule)
+        return QuoteTick.capsule_to_list_c(capsule)
 
     @staticmethod
-    def capsule_from_list(items):
-        return QuoteTick.quote_tick_list_to_capsule(items)
+    def capsule_from_list(list items):
+        return QuoteTick.list_to_capsule_c(items)
 
     @staticmethod
     def from_raw(
@@ -750,10 +756,10 @@ cdef class TradeTick(Data):
         trade_tick._mem = mem
         return trade_tick
 
-    # Safety: Do NOT deallocate the capsule here
+    # SAFETY: Do NOT deallocate the capsule here
     # It is supposed to be deallocated by the creator
     @staticmethod
-    cdef inline list capsule_to_trade_tick_list(object capsule):
+    cdef inline list capsule_to_list_c(capsule):
         cdef CVec* data = <CVec *>PyCapsule_GetPointer(capsule, NULL)
         cdef TradeTick_t* ptr = <TradeTick_t *>data.ptr
         cdef list ticks = []
@@ -765,7 +771,7 @@ cdef class TradeTick(Data):
         return ticks
 
     @staticmethod
-    cdef inline trade_tick_list_to_capsule(list items):
+    cdef inline list_to_capsule_c(list items):
 
         # Create a C struct buffer
         cdef uint64_t len_ = len(items)
@@ -787,11 +793,11 @@ cdef class TradeTick(Data):
 
     @staticmethod
     def list_from_capsule(capsule) -> list[TradeTick]:
-        return TradeTick.capsule_to_trade_tick_list(capsule)
+        return TradeTick.capsule_to_list_c(capsule)
 
     @staticmethod
     def capsule_from_list(items):
-        return TradeTick.trade_tick_list_to_capsule(items)
+        return TradeTick.list_to_capsule_c(items)
 
     @staticmethod
     cdef TradeTick from_dict_c(dict values):

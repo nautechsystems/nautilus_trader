@@ -17,7 +17,7 @@
 
 use std::{ffi::c_char, str::FromStr};
 
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyType, PyTypeInfo};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
@@ -49,7 +49,10 @@ pub trait FromU8 {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AccountType {
     /// An account with unleveraged cash assets only.
     #[pyo3(name = "CASH")]
@@ -81,7 +84,10 @@ pub enum AccountType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AggregationSource {
     /// The data is externally aggregated (outside the Nautilus system boundary).
     #[pyo3(name = "EXTERNAL")]
@@ -110,7 +116,10 @@ pub enum AggregationSource {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AggressorSide {
     /// There was no specific aggressor for the trade.
     NoAggressor = 0, // Will be replaced by `Option`
@@ -152,7 +161,10 @@ impl FromU8 for AggressorSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 #[allow(non_camel_case_types)]
 pub enum AssetClass {
     /// Foreign exchange (FOREX) assets.
@@ -202,7 +214,10 @@ pub enum AssetClass {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum AssetType {
     /// A spot market asset type. The current market price of an asset that is bought or sold for immediate delivery and payment.
     #[pyo3(name = "SPOT")]
@@ -246,7 +261,10 @@ pub enum AssetType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum BarAggregation {
     /// Based on a number of ticks.
     #[pyo3(name = "TICK")]
@@ -317,7 +335,10 @@ pub enum BarAggregation {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum BookAction {
     /// An order is added to the book.
     #[pyo3(name = "ADD")]
@@ -365,10 +386,13 @@ impl FromU8 for BookAction {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(non_camel_case_types)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum BookType {
     /// Top-of-book best bid/offer, one level per side.
-    L1_TBBO = 1,
+    L1_MBP = 1,
     /// Market by price, one order per level (aggregated).
     L2_MBP = 2,
     /// Market by order, multiple orders per level (full granularity).
@@ -378,7 +402,7 @@ pub enum BookType {
 impl FromU8 for BookType {
     fn from_u8(value: u8) -> Option<Self> {
         match value {
-            1 => Some(BookType::L1_TBBO),
+            1 => Some(BookType::L1_MBP),
             2 => Some(BookType::L2_MBP),
             3 => Some(BookType::L3_MBO),
             _ => None,
@@ -407,7 +431,10 @@ impl FromU8 for BookType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum ContingencyType {
     /// Not a contingent order.
     NoContingency = 0, // Will be replaced by `Option`
@@ -441,7 +468,10 @@ pub enum ContingencyType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum CurrencyType {
     /// A type of cryptocurrency or crypto token.
     #[pyo3(name = "CRYPTO")]
@@ -449,6 +479,9 @@ pub enum CurrencyType {
     /// A type of currency issued by governments which is not backed by a commodity.
     #[pyo3(name = "FIAT")]
     Fiat = 2,
+    /// A type of currency that is based on the value of an underlying commodity.
+    #[pyo3(name = "COMMODITY_BACKED")]
+    CommodityBacked = 3,
 }
 
 /// The type of event for an instrument close.
@@ -470,7 +503,10 @@ pub enum CurrencyType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum InstrumentCloseType {
     /// When the market session ended.
     #[pyo3(name = "END_OF_SESSION")]
@@ -499,8 +535,11 @@ pub enum InstrumentCloseType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 #[allow(clippy::enum_variant_names)]
-#[pyclass]
 pub enum LiquiditySide {
     /// No specific liqudity side.
     NoLiquiditySide = 0, // Will be replaced by `Option`
@@ -531,23 +570,67 @@ pub enum LiquiditySide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum MarketStatus {
-    /// The market is closed.
-    #[pyo3(name = "CLOSED")]
-    Closed = 1,
-    /// The market is in the pre-open session.
+    /// The market session is in the pre-open.
     #[pyo3(name = "PRE_OPEN")]
-    PreOpen = 2,
-    /// The market is open for the normal session.
+    PreOpen = 1,
+    /// The market session is open.
     #[pyo3(name = "OPEN")]
-    Open = 3,
+    Open = 2,
     /// The market session is paused.
     #[pyo3(name = "PAUSE")]
-    Pause = 4,
-    /// The market is in the pre-close session.
+    Pause = 3,
+    /// The market session is halted.
+    #[pyo3(name = "HALT")]
+    Halt = 4,
+    /// The market session has reopened after a pause or halt.
+    #[pyo3(name = "REOPEN")]
+    Reopen = 5,
+    /// The market session is in the pre-close.
     #[pyo3(name = "PRE_CLOSE")]
-    PreClose = 5,
+    PreClose = 6,
+    /// The market session is closed.
+    #[pyo3(name = "CLOSED")]
+    Closed = 7,
+}
+
+/// The reason for a venue or market halt.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum HaltReason {
+    /// The venue or market session is not halted.
+    #[pyo3(name = "NOT_HALTED")]
+    NotHalted = 1,
+    /// Trading halt is imposed for purely regulatory reasons with/without volatility halt.
+    #[pyo3(name = "GENERAL")]
+    General = 2,
+    /// Trading halt is imposed by the venue to protect against extreme volatility.
+    #[pyo3(name = "VOLATILITY")]
+    Volatility = 3,
 }
 
 /// The order management system (OMS) type for a trading venue or trading strategy.
@@ -569,7 +652,10 @@ pub enum MarketStatus {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OmsType {
     /// There is no specific type of order management specified (will defer to the venue).
     Unspecified = 0, // Will be replaced by `Option`
@@ -602,7 +688,10 @@ pub enum OmsType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OptionKind {
     /// A Call option gives the holder the right, but not the obligation, to buy an underlying asset at a specified strike price within a specified period of time.
     #[pyo3(name = "CALL")]
@@ -632,7 +721,10 @@ pub enum OptionKind {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OrderSide {
     /// No order side is specified (only valid in the context of a filter for actions involving orders).
     NoOrderSide = 0, // Will be replaced by `Option`
@@ -694,7 +786,10 @@ impl FromU8 for OrderSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OrderStatus {
     /// The order is initialized (instantiated) within the Nautilus system.
     #[pyo3(name = "INITIALIZED")]
@@ -759,7 +854,10 @@ pub enum OrderStatus {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum OrderType {
     /// A market order to buy or sell at the best available price in the current market.
     #[pyo3(name = "MARKET")]
@@ -810,7 +908,10 @@ pub enum OrderType {
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[allow(clippy::enum_variant_names)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum PositionSide {
     /// No position side is specified (only valid in the context of a filter for actions involving positions).
     NoPositionSide = 0, // Will be replaced by `Option`
@@ -844,7 +945,10 @@ pub enum PositionSide {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum PriceType {
     /// A quoted order price where a buyer is willing to buy a quantity of an instrument.
     #[pyo3(name = "BID")]
@@ -879,7 +983,10 @@ pub enum PriceType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TimeInForce {
     /// Good Till Canceled (GTC) - the order remains active until canceled.
     #[pyo3(name = "GTD")]
@@ -923,7 +1030,10 @@ pub enum TimeInForce {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TradingState {
     /// Normal trading operations.
     #[pyo3(name = "ACTIVE")]
@@ -955,7 +1065,10 @@ pub enum TradingState {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TrailingOffsetType {
     /// No trailing offset type is specified (invalid for trailing type orders).
     NoTrailingOffset = 0, // Will be replaced by `Option`
@@ -992,7 +1105,10 @@ pub enum TrailingOffsetType {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
 pub enum TriggerType {
     /// No trigger type is specified (invalid for orders with a trigger).
     NoTrigger = 0, // Will be replaced by `Option`
@@ -1087,8 +1203,8 @@ pub extern "C" fn account_type_to_cstr(value: AccountType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn account_type_from_cstr(ptr: *const c_char) -> AccountType {
-    let value = cstr_to_string(ptr);
-    AccountType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    AccountType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `AccountType` enum string value, was '{value}'"))
 }
 
@@ -1105,8 +1221,8 @@ pub extern "C" fn aggregation_source_to_cstr(value: AggregationSource) -> *const
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn aggregation_source_from_cstr(ptr: *const c_char) -> AggregationSource {
-    let value = cstr_to_string(ptr);
-    AggregationSource::from_str(&value)
+    let value = cstr_to_str(ptr);
+    AggregationSource::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `AggregationSource` enum string value, was '{value}'"))
 }
 
@@ -1123,8 +1239,8 @@ pub extern "C" fn aggressor_side_to_cstr(value: AggressorSide) -> *const c_char 
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn aggressor_side_from_cstr(ptr: *const c_char) -> AggressorSide {
-    let value = cstr_to_string(ptr);
-    AggressorSide::from_str(&value)
+    let value = cstr_to_str(ptr);
+    AggressorSide::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `AggressorSide` enum string value, was '{value}'"))
 }
 
@@ -1141,8 +1257,8 @@ pub extern "C" fn asset_class_to_cstr(value: AssetClass) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn asset_class_from_cstr(ptr: *const c_char) -> AssetClass {
-    let value = cstr_to_string(ptr);
-    AssetClass::from_str(&value)
+    let value = cstr_to_str(ptr);
+    AssetClass::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `AssetClass` enum string value, was '{value}'"))
 }
 
@@ -1159,8 +1275,8 @@ pub extern "C" fn asset_type_to_cstr(value: AssetType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn asset_type_from_cstr(ptr: *const c_char) -> AssetType {
-    let value = cstr_to_string(ptr);
-    AssetType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    AssetType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `AssetType` enum string value, was '{value}'"))
 }
 
@@ -1177,8 +1293,8 @@ pub extern "C" fn bar_aggregation_to_cstr(value: BarAggregation) -> *const c_cha
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn bar_aggregation_from_cstr(ptr: *const c_char) -> BarAggregation {
-    let value = cstr_to_string(ptr);
-    BarAggregation::from_str(&value)
+    let value = cstr_to_str(ptr);
+    BarAggregation::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `BarAggregation` enum string value, was '{value}'"))
 }
 
@@ -1195,8 +1311,8 @@ pub extern "C" fn book_action_to_cstr(value: BookAction) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn book_action_from_cstr(ptr: *const c_char) -> BookAction {
-    let value = cstr_to_string(ptr);
-    BookAction::from_str(&value)
+    let value = cstr_to_str(ptr);
+    BookAction::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `BookAction` enum string value, was '{value}'"))
 }
 
@@ -1213,8 +1329,8 @@ pub extern "C" fn book_type_to_cstr(value: BookType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn book_type_from_cstr(ptr: *const c_char) -> BookType {
-    let value = cstr_to_string(ptr);
-    BookType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    BookType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `BookType` enum string value, was '{value}'"))
 }
 
@@ -1231,8 +1347,8 @@ pub extern "C" fn contingency_type_to_cstr(value: ContingencyType) -> *const c_c
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn contingency_type_from_cstr(ptr: *const c_char) -> ContingencyType {
-    let value = cstr_to_string(ptr);
-    ContingencyType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    ContingencyType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `ContingencyType` enum string value, was '{value}'"))
 }
 
@@ -1249,8 +1365,8 @@ pub extern "C" fn currency_type_to_cstr(value: CurrencyType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> CurrencyType {
-    let value = cstr_to_string(ptr);
-    CurrencyType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    CurrencyType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `CurrencyType` enum string value, was '{value}'"))
 }
 
@@ -1263,8 +1379,8 @@ pub unsafe extern "C" fn currency_type_from_cstr(ptr: *const c_char) -> Currency
 pub unsafe extern "C" fn instrument_close_type_from_cstr(
     ptr: *const c_char,
 ) -> InstrumentCloseType {
-    let value = cstr_to_string(ptr);
-    InstrumentCloseType::from_str(&value).unwrap_or_else(|_| {
+    let value = cstr_to_str(ptr);
+    InstrumentCloseType::from_str(value).unwrap_or_else(|_| {
         panic!("invalid `InstrumentCloseType` enum string value, was '{value}'")
     })
 }
@@ -1288,8 +1404,8 @@ pub extern "C" fn liquidity_side_to_cstr(value: LiquiditySide) -> *const c_char 
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn liquidity_side_from_cstr(ptr: *const c_char) -> LiquiditySide {
-    let value = cstr_to_string(ptr);
-    LiquiditySide::from_str(&value)
+    let value = cstr_to_str(ptr);
+    LiquiditySide::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `LiquiditySide` enum string value, was '{value}'"))
 }
 
@@ -1306,9 +1422,27 @@ pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketStatus {
-    let value = cstr_to_string(ptr);
-    MarketStatus::from_str(&value)
+    let value = cstr_to_str(ptr);
+    MarketStatus::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `MarketStatus` enum string value, was '{value}'"))
+}
+
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub extern "C" fn halt_reason_to_cstr(value: HaltReason) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+/// - Assumes `ptr` is a valid C string pointer.
+#[cfg(feature = "ffi")]
+#[no_mangle]
+pub unsafe extern "C" fn halt_reason_from_cstr(ptr: *const c_char) -> HaltReason {
+    let value = cstr_to_str(ptr);
+    HaltReason::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `HaltReason` enum string value, was '{value}'"))
 }
 
 #[cfg(feature = "ffi")]
@@ -1324,8 +1458,8 @@ pub extern "C" fn oms_type_to_cstr(value: OmsType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn oms_type_from_cstr(ptr: *const c_char) -> OmsType {
-    let value = cstr_to_string(ptr);
-    OmsType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    OmsType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `OmsType` enum string value, was '{value}'"))
 }
 
@@ -1342,8 +1476,8 @@ pub extern "C" fn option_kind_to_cstr(value: OptionKind) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn option_kind_from_cstr(ptr: *const c_char) -> OptionKind {
-    let value = cstr_to_string(ptr);
-    OptionKind::from_str(&value)
+    let value = cstr_to_str(ptr);
+    OptionKind::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `OptionKind` enum string value, was '{value}'"))
 }
 
@@ -1360,8 +1494,8 @@ pub extern "C" fn order_side_to_cstr(value: OrderSide) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn order_side_from_cstr(ptr: *const c_char) -> OrderSide {
-    let value = cstr_to_string(ptr);
-    OrderSide::from_str(&value)
+    let value = cstr_to_str(ptr);
+    OrderSide::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `OrderSide` enum string value, was '{value}'"))
 }
 
@@ -1378,8 +1512,8 @@ pub extern "C" fn order_status_to_cstr(value: OrderStatus) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn order_status_from_cstr(ptr: *const c_char) -> OrderStatus {
-    let value = cstr_to_string(ptr);
-    OrderStatus::from_str(&value)
+    let value = cstr_to_str(ptr);
+    OrderStatus::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `OrderStatus` enum string value, was '{value}'"))
 }
 
@@ -1396,8 +1530,8 @@ pub extern "C" fn order_type_to_cstr(value: OrderType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn order_type_from_cstr(ptr: *const c_char) -> OrderType {
-    let value = cstr_to_string(ptr);
-    OrderType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    OrderType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `OrderType` enum string value, was '{value}'"))
 }
 
@@ -1414,8 +1548,8 @@ pub extern "C" fn position_side_to_cstr(value: PositionSide) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn position_side_from_cstr(ptr: *const c_char) -> PositionSide {
-    let value = cstr_to_string(ptr);
-    PositionSide::from_str(&value)
+    let value = cstr_to_str(ptr);
+    PositionSide::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `PositionSide` enum string value, was '{value}'"))
 }
 
@@ -1432,8 +1566,8 @@ pub extern "C" fn price_type_to_cstr(value: PriceType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn price_type_from_cstr(ptr: *const c_char) -> PriceType {
-    let value = cstr_to_string(ptr);
-    PriceType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    PriceType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `PriceType` enum string value, was '{value}'"))
 }
 
@@ -1450,8 +1584,8 @@ pub extern "C" fn time_in_force_to_cstr(value: TimeInForce) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn time_in_force_from_cstr(ptr: *const c_char) -> TimeInForce {
-    let value = cstr_to_string(ptr);
-    TimeInForce::from_str(&value)
+    let value = cstr_to_str(ptr);
+    TimeInForce::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `TimeInForce` enum string value, was '{value}'"))
 }
 
@@ -1468,8 +1602,8 @@ pub extern "C" fn trading_state_to_cstr(value: TradingState) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trading_state_from_cstr(ptr: *const c_char) -> TradingState {
-    let value = cstr_to_string(ptr);
-    TradingState::from_str(&value)
+    let value = cstr_to_str(ptr);
+    TradingState::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `TradingState` enum string value, was '{value}'"))
 }
 
@@ -1486,8 +1620,8 @@ pub extern "C" fn trailing_offset_type_to_cstr(value: TrailingOffsetType) -> *co
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trailing_offset_type_from_cstr(ptr: *const c_char) -> TrailingOffsetType {
-    let value = cstr_to_string(ptr);
-    TrailingOffsetType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    TrailingOffsetType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `TrailingOffsetType` enum string value, was '{value}'"))
 }
 
@@ -1504,8 +1638,8 @@ pub extern "C" fn trigger_type_to_cstr(value: TriggerType) -> *const c_char {
 #[cfg(feature = "ffi")]
 #[no_mangle]
 pub unsafe extern "C" fn trigger_type_from_cstr(ptr: *const c_char) -> TriggerType {
-    let value = cstr_to_string(ptr);
-    TriggerType::from_str(&value)
+    let value = cstr_to_str(ptr);
+    TriggerType::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `TriggerType` enum string value, was '{value}'"))
 }
 

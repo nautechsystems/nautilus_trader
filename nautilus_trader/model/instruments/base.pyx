@@ -71,9 +71,9 @@ cdef class Instrument(Data):
     margin_maint : Decimal
         The maintenance (position) margin in percentage of position value.
     maker_fee : Decimal
-        The fee rate for liquidity makers as a percentage of order value.
+        The fee rate for liquidity makers as a percentage of order value (where 1.0 is 100%).
     taker_fee : Decimal
-        The fee rate for liquidity takers as a percentage of order value.
+        The fee rate for liquidity takers as a percentage of order value (where 1.0 is 100%).
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t

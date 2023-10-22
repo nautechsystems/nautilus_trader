@@ -19,12 +19,10 @@ cdef extern from "../includes/core.h":
         # Used when deallocating the memory
         uintptr_t cap;
 
+    # Represents a pseudo-random UUID (universally unique identifier)
+    # version 4 based on a 128-bit label as specified in RFC 4122.
     cdef struct UUID4_t:
         uint8_t value[37];
-
-    void cvec_drop(CVec cvec);
-
-    CVec cvec_new();
 
     # Converts seconds to nanoseconds (ns).
     uint64_t secs_to_nanos(double secs);
@@ -47,6 +45,25 @@ cdef extern from "../includes/core.h":
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
 
+    # Returns the current seconds since the UNIX epoch.
+    double unix_timestamp();
+
+    # Returns the current milliseconds since the UNIX epoch.
+    uint64_t unix_timestamp_ms();
+
+    # Returns the current microseconds since the UNIX epoch.
+    uint64_t unix_timestamp_us();
+
+    # Returns the current nanoseconds since the UNIX epoch.
+    uint64_t unix_timestamp_ns();
+
+    void cvec_drop(CVec cvec);
+
+    CVec cvec_new();
+
+    # Converts a UNIX nanoseconds timestamp to an ISO 8601 formatted C string pointer.
+    const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
+
     # Return the decimal precision inferred from the given C string.
     #
     # # Safety
@@ -68,18 +85,6 @@ cdef extern from "../includes/core.h":
     #
     # - If `ptr` is null.
     void cstr_drop(const char *ptr);
-
-    # Returns the current seconds since the UNIX epoch.
-    double unix_timestamp();
-
-    # Returns the current milliseconds since the UNIX epoch.
-    uint64_t unix_timestamp_ms();
-
-    # Returns the current microseconds since the UNIX epoch.
-    uint64_t unix_timestamp_us();
-
-    # Returns the current nanoseconds since the UNIX epoch.
-    uint64_t unix_timestamp_ns();
 
     UUID4_t uuid4_new();
 

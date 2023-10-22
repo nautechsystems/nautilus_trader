@@ -26,12 +26,12 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data.status cimport InstrumentClose
+from nautilus_trader.model.data.status cimport InstrumentStatus
+from nautilus_trader.model.data.status cimport VenueStatus
 from nautilus_trader.model.data.tick cimport QuoteTick
 from nautilus_trader.model.data.tick cimport TradeTick
 from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.data.venue cimport InstrumentClose
-from nautilus_trader.model.data.venue cimport InstrumentStatusUpdate
-from nautilus_trader.model.data.venue cimport VenueStatusUpdate
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -104,8 +104,8 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Ticker.__name__: Ticker.to_dict_c,
     QuoteTick.__name__: QuoteTick.to_dict_c,
     Bar.__name__: Bar.to_dict_c,
-    InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.to_dict_c,
-    VenueStatusUpdate.__name__: VenueStatusUpdate.to_dict_c,
+    InstrumentStatus.__name__: InstrumentStatus.to_dict_c,
+    VenueStatus.__name__: VenueStatus.to_dict_c,
     InstrumentClose.__name__: InstrumentClose.to_dict_c,
     BinanceBar.__name__: BinanceBar.to_dict,
     BinanceTicker.__name__: BinanceTicker.to_dict,
@@ -153,8 +153,8 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
     Bar.__name__: Bar.from_dict_c,
-    InstrumentStatusUpdate.__name__: InstrumentStatusUpdate.from_dict_c,
-    VenueStatusUpdate.__name__: VenueStatusUpdate.from_dict_c,
+    InstrumentStatus.__name__: InstrumentStatus.from_dict_c,
+    VenueStatus.__name__: VenueStatus.from_dict_c,
     InstrumentClose.__name__: InstrumentClose.from_dict_c,
     BinanceBar.__name__: BinanceBar.from_dict,
     BinanceTicker.__name__: BinanceTicker.from_dict,
