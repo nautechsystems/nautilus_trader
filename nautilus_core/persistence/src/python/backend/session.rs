@@ -19,10 +19,18 @@ use nautilus_model::data::{
 };
 use pyo3::{prelude::*, types::PyCapsule};
 
-use crate::{
-    arrow::NautilusDataType,
-    backend::session::{DataBackendSession, DataQueryResult},
-};
+use crate::backend::session::{DataBackendSession, DataQueryResult};
+
+#[repr(C)]
+#[pyclass]
+#[derive(Debug, Clone, Copy)]
+pub enum NautilusDataType {
+    // Custom = 0,  # First slot reserved for custom data
+    OrderBookDelta = 1,
+    QuoteTick = 2,
+    TradeTick = 3,
+    Bar = 4,
+}
 
 #[pymethods]
 impl DataBackendSession {
