@@ -35,6 +35,7 @@ from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -191,13 +192,27 @@ class ParquetDataCatalog(BaseDataCatalog):
     # -- WRITING ----------------------------------------------------------------------------------
 
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
-        assert len(data) > 0
-        assert all(type(obj) is data_cls for obj in data)  # same type
-        table = self.serializer.serialize_batch(data, data_cls=data_cls)
-        assert table is not None
-        if isinstance(table, pa.RecordBatch):
-            table = pa.Table.from_batches([table])
-        return table
+        PyCondition.not_empty(data, "data")
+        PyCondition.list_type(data, data_cls, "data")
+        sorted_data = sorted(data, key=lambda x: x.ts_init)
+
+        # Check data is strictly non-decreasing prior to write
+        for original, sorted_version in zip(data, sorted_data):
+            if original.ts_init != sorted_version.ts_init:
+                raise ValueError(
+                    "Data should be sorted in ascending order or remain constant based on `ts_init`: "
+                    f"found {original.ts_init} followed by {sorted_version.ts_init}. "
+                    "Consider sorting your data with something like "
+                    "`data.sort(key=lambda x: x.ts_init)` prior to writing to the catalog.",
+                )
+
+        table_or_batch = self.serializer.serialize_batch(data, data_cls=data_cls)
+        assert table_or_batch is not None
+
+        if isinstance(table_or_batch, pa.RecordBatch):
+            return pa.Table.from_batches([table_or_batch])
+        else:
+            return table_or_batch
 
     def _make_path(self, data_cls: type[Data], instrument_id: str | None = None) -> str:
         if instrument_id is not None:
@@ -248,6 +263,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
 
     def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
+        """
+        Write the given `data` to the catalog.
+
+        Parameters
+        ----------
+        data : list[Data | Event]
+            The data to write.
+        kwargs : Any
+            The key-word arguments.
+
+        """
+
         def key(obj: Any) -> tuple[str, str | None]:
             name = type(obj).__name__
             if isinstance(obj, Instrument):
