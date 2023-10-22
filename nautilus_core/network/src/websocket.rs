@@ -21,6 +21,7 @@ use futures_util::{
 };
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes, PyObject, Python};
+use hyper::header::HeaderName;
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
     connect_async,
@@ -54,6 +55,7 @@ struct WebSocketClientInner {
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
     url: String,
+    headers:Vec<(String,String)>,
     handler: PyObject,
     heartbeat: Option<u64>,
 }
@@ -62,10 +64,11 @@ impl WebSocketClientInner {
     /// Create an inner websocket client.
     pub async fn connect_url(
         url: &str,
+        headers:Vec<(String,String)>,
         handler: PyObject,
         heartbeat: Option<u64>,
     ) -> Result<Self, Error> {
-        let (writer, reader) = Self::connect_with_server(url).await?;
+        let (writer, reader) = Self::connect_with_server(url,headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
         let handler_clone = handler.clone();
 
@@ -79,6 +82,7 @@ impl WebSocketClientInner {
             heartbeat_task,
             writer,
             url: url.to_string(),
+            headers,
             handler: handler_clone,
             heartbeat,
         })
@@ -86,8 +90,13 @@ impl WebSocketClientInner {
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
     #[inline]
-    pub async fn connect_with_server(url: &str) -> Result<(MessageWriter, MessageReader), Error> {
-        connect_async(url).await.map(|resp| resp.0.split())
+    pub async fn connect_with_server(url: &str,headers:Vec<(String,String)>) -> Result<(MessageWriter, MessageReader), Error> {
+       let mut request = url.into_client_request().unwrap();
+        for (key,value) in headers
+        {
+         request.headers_mut().insert((HeaderName::from_bytes((key).as_bytes())).unwrap(),(value).parse().unwrap());
+        }
+        connect_async(request).await.map(|resp| resp.0.split())
     }
 
     /// Optionally spawn a hearbeat task to periodically ping the server.
@@ -188,7 +197,7 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        let (new_writer, reader) = Self::connect_with_server(&self.url).await?;
+        let (new_writer, reader) = Self::connect_with_server(&self.url,self.headers.clone().await?;
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
@@ -243,13 +252,15 @@ impl WebSocketClient {
     /// the client. Also assumes ownership of writer from inner client
     pub async fn connect(
         url: &str,
+        headers:Option<Vec<(String,String)>>,
         handler: PyObject,
         heartbeat: Option<u64>,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> Result<Self, Error> {
-        let inner = WebSocketClientInner::connect_url(url, handler, heartbeat).await?;
+         let headers = match headers{Some(h)=>h,None=>Vec::new()};
+        let inner = WebSocketClientInner::connect_url(url,headers.clone(), handler, heartbeat).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(Mutex::new(false));
         let controller_task = Self::spawn_controller_task(
@@ -581,14 +592,14 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let client = WebSocketClient::connect(
+       let client = WebSocketClient::connect(
             &format!("ws://127.0.0.1:{}", server.port),
+            None,
             handler.clone(),
             None,
             None,
             None,
-            None,
-        )
+            None,)
         .await
         .unwrap();
 
