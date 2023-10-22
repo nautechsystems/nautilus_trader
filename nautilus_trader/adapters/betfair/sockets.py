@@ -22,8 +22,8 @@ import msgspec
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.core.nautilus_pyo3.network import SocketClient
-from nautilus_trader.core.nautilus_pyo3.network import SocketConfig
+from nautilus_trader.core.nautilus_pyo3 import SocketClient
+from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 
 
 HOST = "stream-api.betfair.com"
@@ -123,6 +123,8 @@ class BetfairStreamClient:
 
     async def send(self, message: bytes):
         self._log.debug(f"[SEND] {message.decode()}")
+        if self._client is None:
+            raise RuntimeError("Cannot send message: no client.")
         await self._client.send(message)
         self._log.debug("[SENT]")
 

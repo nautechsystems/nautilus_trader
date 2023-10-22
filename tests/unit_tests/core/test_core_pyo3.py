@@ -15,7 +15,7 @@
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.core import convert_to_snake_case
+from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 
 
 @pytest.mark.parametrize(

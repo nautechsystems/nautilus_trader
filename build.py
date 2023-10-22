@@ -104,7 +104,7 @@ def _build_rust_libs() -> None:
         )
     except subprocess.CalledProcessError as e:
         raise RuntimeError(
-            f"Error running cargo: {e.stderr.decode()}",
+            f"Error running cargo: {e}",
         ) from e
 
 
@@ -297,7 +297,7 @@ def _strip_unneeded_symbols() -> None:
                 capture_output=True,
             )
     except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"Error when stripping symbols.\n{e.stderr.decode()}") from e
+        raise RuntimeError(f"Error when stripping symbols.\n{e}") from e
 
 
 def build() -> None:

@@ -19,13 +19,6 @@ from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
 
-cpdef uint64_t secs_to_nanos(double seconds)
-cpdef uint64_t secs_to_millis(double secs)
-cpdef uint64_t millis_to_nanos(double millis)
-cpdef uint64_t micros_to_nanos(double micros)
-cpdef double nanos_to_secs(uint64_t nanos)
-cpdef uint64_t nanos_to_millis(uint64_t nanos)
-cpdef uint64_t nanos_to_micros(uint64_t nanos)
 cpdef unix_nanos_to_dt(uint64_t nanos)
 cpdef dt_to_unix_nanos(dt: pd.Timestamp)
 cpdef maybe_unix_nanos_to_dt(nanos)

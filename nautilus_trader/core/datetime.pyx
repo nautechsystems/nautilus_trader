@@ -22,143 +22,26 @@ Functions include awareness/tz checks and conversions, as well as ISO 8601 conve
 import pandas as pd
 import pytz
 
+# Re-exports
+from nautilus_trader.core.nautilus_pyo3 import micros_to_nanos as micros_to_nanos
+from nautilus_trader.core.nautilus_pyo3 import millis_to_nanos as millis_to_nanos
+from nautilus_trader.core.nautilus_pyo3 import nanos_to_micros as nanos_to_micros
+from nautilus_trader.core.nautilus_pyo3 import nanos_to_millis as nanos_to_millis
+from nautilus_trader.core.nautilus_pyo3 import nanos_to_secs as nanos_to_secs
+from nautilus_trader.core.nautilus_pyo3 import secs_to_millis as secs_to_millis
+from nautilus_trader.core.nautilus_pyo3 import secs_to_nanos as secs_to_nanos
+
 cimport cpython.datetime
 from cpython.datetime cimport datetime_tzinfo
 from cpython.unicode cimport PyUnicode_Contains
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.core cimport micros_to_nanos as rust_micros_to_nanos
-from nautilus_trader.core.rust.core cimport millis_to_nanos as rust_millis_to_nanos
-from nautilus_trader.core.rust.core cimport nanos_to_micros as rust_nanos_to_micros
-from nautilus_trader.core.rust.core cimport nanos_to_millis as rust_nanos_to_millis
-from nautilus_trader.core.rust.core cimport nanos_to_secs as rust_nanos_to_secs
-from nautilus_trader.core.rust.core cimport secs_to_millis as rust_secs_to_millis
-from nautilus_trader.core.rust.core cimport secs_to_nanos as rust_secs_to_nanos
 
 
 # UNIX epoch is the UTC time at 00:00:00 on 1/1/1970
 # https://en.wikipedia.org/wiki/Unix_time
 cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz=pytz.utc)
-
-
-cpdef uint64_t secs_to_nanos(double secs):
-    """
-    Return round nanoseconds (ns) converted from the given seconds.
-
-    Parameters
-    ----------
-    secs : double
-        The seconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return rust_secs_to_nanos(secs)
-
-
-cpdef uint64_t secs_to_millis(double secs):
-    """
-    Return round milliseconds (ms) converted from the given seconds.
-
-    Parameters
-    ----------
-    secs : double
-        The seconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return rust_secs_to_millis(secs)
-
-
-cpdef uint64_t millis_to_nanos(double millis):
-    """
-    Return round nanoseconds (ns) converted from the given milliseconds (ms).
-
-    Parameters
-    ----------
-    millis : double
-        The milliseconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return rust_millis_to_nanos(millis)
-
-
-cpdef uint64_t micros_to_nanos(double micros):
-    """
-    Return round nanoseconds (ns) converted from the given microseconds (μs).
-
-    Parameters
-    ----------
-    micros : double
-        The microseconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return rust_micros_to_nanos(micros)
-
-
-cpdef double nanos_to_secs(uint64_t nanos):
-    """
-    Return seconds converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : uint64_t
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    double
-
-    """
-    return rust_nanos_to_secs(nanos)
-
-
-cpdef uint64_t nanos_to_millis(uint64_t nanos):
-    """
-    Return round milliseconds (ms) converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : uint64_t
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return rust_nanos_to_millis(nanos)
-
-
-cpdef uint64_t nanos_to_micros(uint64_t nanos):
-    """
-    Return round microseconds (μs) converted from the given nanoseconds (ns).
-
-    Parameters
-    ----------
-    nanos : uint64_t
-        The nanoseconds to convert.
-
-    Returns
-    -------
-    uint64_t
-
-    """
-    return rust_nanos_to_micros(nanos)
 
 
 cpdef unix_nanos_to_dt(uint64_t nanos):

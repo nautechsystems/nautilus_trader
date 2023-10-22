@@ -19,11 +19,11 @@ from typing import Any
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import Currency
+from nautilus_trader.core.nautilus_pyo3 import Currency
 
 # from nautilus_trader.model.objects import AccountBalance
 # from nautilus_trader.model.objects import MarginBalance
-from nautilus_trader.core.nautilus_pyo3.model import Money
+from nautilus_trader.core.nautilus_pyo3 import Money
 
 
 AUD = Currency.from_str("AUD")
@@ -168,7 +168,7 @@ class TestMoney:
     )
     def test_from_raw_given_valid_values_returns_expected_result(
         self,
-        value: str,
+        value: int,
         currency: Currency,
         expected: Money,
     ) -> None:
