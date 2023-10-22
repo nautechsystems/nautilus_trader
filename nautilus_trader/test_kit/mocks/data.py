@@ -63,7 +63,7 @@ def data_catalog_setup(
     return catalog
 
 
-def aud_usd_data_loader(catalog: ParquetDataCatalog):
+def aud_usd_data_loader(catalog: ParquetDataCatalog) -> None:
     from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
     venue = Venue("SIM")
