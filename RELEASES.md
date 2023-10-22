@@ -1,6 +1,9 @@
 # NautilusTrader 1.179.0 Beta
 
-Released on TBD (UTC).
+Released on 22nd October 2023 (UTC).
+
+A major feature of this release is the `ParquetDataCatalog` version 2, which represents months of
+collective effort thanks to contributions from Brad @limx0, @twitu, @ghill2 and @davidsblom.
 
 This will be the final release with support for Python 3.9.
 
