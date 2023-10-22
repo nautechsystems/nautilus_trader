@@ -17,12 +17,12 @@ import pickle
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import AccountId
-from nautilus_trader.core.nautilus_pyo3.model import ExecAlgorithmId
-from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
-from nautilus_trader.core.nautilus_pyo3.model import Symbol
-from nautilus_trader.core.nautilus_pyo3.model import TraderId
-from nautilus_trader.core.nautilus_pyo3.model import Venue
+from nautilus_trader.core.nautilus_pyo3 import AccountId
+from nautilus_trader.core.nautilus_pyo3 import ExecAlgorithmId
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Symbol
+from nautilus_trader.core.nautilus_pyo3 import TraderId
+from nautilus_trader.core.nautilus_pyo3 import Venue
 
 
 def test_trader_identifier() -> None:

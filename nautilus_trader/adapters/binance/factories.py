@@ -32,7 +32,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core.nautilus_pyo3.network import Quota
+from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus

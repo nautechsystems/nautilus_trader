@@ -16,8 +16,8 @@
 import asyncio
 import time
 
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 CONCURRENCY = 256

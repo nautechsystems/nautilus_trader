@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
+from nautilus_trader.core.nautilus_pyo3 import Quantity
 
 
 class TestQuantity:

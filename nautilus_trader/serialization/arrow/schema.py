@@ -21,10 +21,10 @@ import pyarrow as pa
 from nautilus_trader.adapters.binance.common.types import BinanceBar
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
-from nautilus_trader.core.nautilus_pyo3.model import Bar as RustBar
-from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
-from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
+from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus

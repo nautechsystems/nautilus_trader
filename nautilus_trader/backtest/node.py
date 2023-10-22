@@ -28,7 +28,7 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data.base import capsule_to_list

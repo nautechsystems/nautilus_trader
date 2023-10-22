@@ -28,10 +28,10 @@ from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
-from nautilus_trader.core.nautilus_pyo3.network import Quota
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
 class BinanceHttpClient:

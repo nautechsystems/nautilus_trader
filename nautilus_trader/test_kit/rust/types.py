@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3.model import Currency
+from nautilus_trader.core.nautilus_pyo3 import Currency
 
 
 class TestTypesProviderPyo3:

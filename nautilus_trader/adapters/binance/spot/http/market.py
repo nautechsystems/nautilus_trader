@@ -27,7 +27,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotAvgPrice
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):

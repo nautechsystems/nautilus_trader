@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3.model import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
 

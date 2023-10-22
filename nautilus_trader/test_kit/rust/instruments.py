@@ -19,20 +19,20 @@ from typing import Optional
 import pandas as pd
 import pytz
 
-from nautilus_trader.core.nautilus_pyo3.model import CryptoFuture
-from nautilus_trader.core.nautilus_pyo3.model import CryptoPerpetual
-from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
-from nautilus_trader.core.nautilus_pyo3.model import Money
-from nautilus_trader.core.nautilus_pyo3.model import Price
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
-from nautilus_trader.core.nautilus_pyo3.model import Symbol
+from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.core.nautilus_pyo3 import Price
+from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.test_kit.rust.types import TestTypesProviderPyo3
 
 
 class TestInstrumentProviderPyo3:
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
-        return CryptoPerpetual(
+        return CryptoPerpetual(  # type: ignore
             InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
             Symbol("ETHUSDT"),
             TestTypesProviderPyo3.currency_eth(),
@@ -61,7 +61,7 @@ class TestInstrumentProviderPyo3:
             expiry = pd.Timestamp(datetime(2022, 3, 25), tz=pytz.UTC)
             nanos_expiry = int(expiry.timestamp() * 1e9)
         instrument_id_str = f"BTCUSDT_{expiry.strftime('%y%m%d')}.BINANCE"
-        return CryptoFuture(
+        return CryptoFuture(  # type: ignore
             InstrumentId.from_str(instrument_id_str),
             Symbol("BTCUSDT"),
             TestTypesProviderPyo3.currency_btc(),

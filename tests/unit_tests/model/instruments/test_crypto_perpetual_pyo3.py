@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-from nautilus_trader.core.nautilus_pyo3.model import CryptoPerpetual
+from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
 

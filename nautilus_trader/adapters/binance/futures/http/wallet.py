@@ -24,7 +24,7 @@ from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFutur
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):

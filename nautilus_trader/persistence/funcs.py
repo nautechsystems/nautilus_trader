@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from nautilus_trader.core.inspect import is_nautilus_class
-from nautilus_trader.core.nautilus_pyo3.core import convert_to_snake_case
+from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
