@@ -40,17 +40,6 @@ const KEY_INSTRUMENT_ID: &str = "instrument_id";
 const KEY_PRICE_PRECISION: &str = "price_precision";
 const KEY_SIZE_PRECISION: &str = "size_precision";
 
-#[repr(C)]
-#[pyclass]
-#[derive(Debug, Clone, Copy)]
-pub enum NautilusDataType {
-    // Custom = 0,  # First slot reserved for custom data
-    OrderBookDelta = 1,
-    QuoteTick = 2,
-    TradeTick = 3,
-    Bar = 4,
-}
-
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
     #[error("Arrow error: {0}")]

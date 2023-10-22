@@ -19,8 +19,8 @@ use nautilus_model::data::{
     trade::TradeTick, Data,
 };
 use nautilus_persistence::{
-    arrow::NautilusDataType,
     backend::session::{DataBackendSession, QueryResult},
+    python::backend::session::NautilusDataType,
 };
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
