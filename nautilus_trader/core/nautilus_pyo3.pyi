@@ -652,9 +652,7 @@ class WebSocketClient:
     @classmethod
     def connect(
         cls,
-        url: str,
-        handler: Callable[..., Any],
-        heartbeat: int | None = None,
+        config: WebSocketConfig,
         post_connection: Callable[..., None] | None = None,
         post_reconnection: Callable[..., None] | None = None,
         post_disconnection: Callable[..., None] | None = None,
