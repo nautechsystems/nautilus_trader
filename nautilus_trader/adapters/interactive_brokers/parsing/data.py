@@ -20,6 +20,7 @@ from decimal import Decimal
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
@@ -44,12 +45,18 @@ IB_TICK_TYPE = {
     4: "MidPoint",
 }
 
-what_to_show = {
-    PriceType.ASK: "ASK",
-    PriceType.BID: "BID",
-    PriceType.LAST: "TRADES",
-    PriceType.MID: "MIDPOINT",
-}
+
+def what_to_show(bar_type: BarType) -> str:
+    mapping = {
+        PriceType.ASK: "ASK",
+        PriceType.BID: "BID",
+        PriceType.LAST: "TRADES",
+        PriceType.MID: "MIDPOINT",
+    }
+    if str(bar_type.instrument_id.venue) == "PAXOS" and bar_type.spec.price_type == PriceType.LAST:
+        return "AGGTRADES"
+    else:
+        return mapping[bar_type.spec.price_type]
 
 
 def generate_trade_id(ts_event: int, price: float, size: Decimal) -> TradeId:
