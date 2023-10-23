@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 
 import msgspec
 from betfair_parser.spec.streaming import MCM
@@ -170,8 +169,8 @@ class BetfairDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        depth: int | None = None,
+        kwargs: dict | None = None,
     ):
         PyCondition.not_none(instrument_id, "instrument_id")
 
@@ -256,7 +255,7 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
-            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDelta)):
+            if isinstance(data, BetfairStartingPrice | BSPOrderBookDelta):
                 # Not a regular data type
                 generic_data = GenericData(
                     DataType(data.__class__, {"instrument_id": data.instrument_id}),

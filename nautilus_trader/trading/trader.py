@@ -21,10 +21,9 @@ A running instance could be either a test/backtest or live implementation - the
 
 """
 
-from __future__ import annotations
-
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 

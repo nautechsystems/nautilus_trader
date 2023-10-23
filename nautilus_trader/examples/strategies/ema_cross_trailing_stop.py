@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -141,7 +140,7 @@ class EMACrossTrailingStop(Strategy):
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
         self.atr = AverageTrueRange(config.atr_period)
 
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.instrument: Instrument | None = None  # Initialized in on_start
         self.tick_size = None  # Initialized in on_start
 
         # Users order management variables
@@ -370,7 +369,7 @@ class EMACrossTrailingStop(Strategy):
         if isinstance(event, OrderFilled):
             if self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
                 self.trailing_stop = None
-        elif isinstance(event, (PositionOpened, PositionChanged)):
+        elif isinstance(event, PositionOpened | PositionChanged):
             if self.entry and event.opening_order_id == self.entry.client_order_id:
                 if event.entry == OrderSide.BUY:
                     self.position_id = event.position_id

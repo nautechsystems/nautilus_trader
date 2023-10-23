@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable
+from collections.abc import Callable
 
 import pandas as pd
 

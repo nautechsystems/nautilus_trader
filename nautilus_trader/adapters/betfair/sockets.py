@@ -15,7 +15,7 @@
 
 import asyncio
 import itertools
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import msgspec
 
@@ -45,10 +45,10 @@ class BetfairStreamClient:
         http_client: BetfairHttpClient,
         logger_adapter: LoggerAdapter,
         message_handler: Callable[[bytes], None],
-        host: Optional[str] = HOST,
-        port: Optional[int] = None,
-        crlf: Optional[bytes] = None,
-        encoding: Optional[str] = None,
+        host: str | None = HOST,
+        port: int | None = None,
+        crlf: bytes | None = None,
+        encoding: str | None = None,
     ) -> None:
         self._http_client = http_client
         self._log = logger_adapter
@@ -58,7 +58,7 @@ class BetfairStreamClient:
         self.crlf = crlf or CRLF
         self.use_ssl = USE_SSL
         self.encoding = encoding or ENCODING
-        self._client: Optional[SocketClient] = None
+        self._client: SocketClient | None = None
         self.unique_id = next(UNIQUE_ID)
         self.is_connected: bool = False
         self.disconnecting: bool = False
@@ -148,8 +148,8 @@ class BetfairOrderStreamClient(BetfairStreamClient):
         logger: Logger,
         message_handler,
         partition_matched_by_strategy_ref: bool = True,
-        include_overall_position: Optional[str] = None,
-        customer_strategy_refs: Optional[str] = None,
+        include_overall_position: str | None = None,
+        customer_strategy_refs: str | None = None,
         **kwargs,
     ):
         super().__init__(
@@ -202,19 +202,19 @@ class BetfairMarketStreamClient(BetfairStreamClient):
     # TODO - Add support for initial_clk/clk reconnection
     async def send_subscription_message(
         self,
-        market_ids: Optional[list] = None,
-        betting_types: Optional[list] = None,
-        event_type_ids: Optional[list] = None,
-        event_ids: Optional[list] = None,
-        turn_in_play_enabled: Optional[bool] = None,
-        market_types: Optional[list] = None,
-        venues: Optional[list] = None,
-        country_codes: Optional[list] = None,
-        race_types: Optional[list] = None,
-        initial_clk: Optional[str] = None,
-        clk: Optional[str] = None,
-        conflate_ms: Optional[int] = None,
-        heartbeat_ms: Optional[int] = None,
+        market_ids: list | None = None,
+        betting_types: list | None = None,
+        event_type_ids: list | None = None,
+        event_ids: list | None = None,
+        turn_in_play_enabled: bool | None = None,
+        market_types: list | None = None,
+        venues: list | None = None,
+        country_codes: list | None = None,
+        race_types: list | None = None,
+        initial_clk: str | None = None,
+        clk: str | None = None,
+        conflate_ms: int | None = None,
+        heartbeat_ms: int | None = None,
         segmentation_enabled: bool = True,
         subscribe_book_updates=True,
         subscribe_trade_updates=True,

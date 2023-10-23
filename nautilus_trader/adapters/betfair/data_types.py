@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from enum import Enum
-from typing import Optional
 
 import pyarrow as pa
 
@@ -132,10 +131,10 @@ class BetfairTicker(Ticker):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        last_traded_price: Optional[float] = None,
-        traded_volume: Optional[float] = None,
-        starting_price_near: Optional[float] = None,
-        starting_price_far: Optional[float] = None,
+        last_traded_price: float | None = None,
+        traded_volume: float | None = None,
+        starting_price_near: float | None = None,
+        starting_price_far: float | None = None,
     ):
         super().__init__(instrument_id=instrument_id, ts_event=ts_event, ts_init=ts_init)
         self.last_traded_price = last_traded_price
@@ -205,7 +204,7 @@ class BetfairStartingPrice(Data):
         instrument_id: InstrumentId,
         ts_event: int,
         ts_init: int,
-        bsp: Optional[float] = None,
+        bsp: float | None = None,
     ):
         super().__init__()
         self._ts_event = ts_event

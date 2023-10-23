@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
@@ -38,11 +37,11 @@ class BetfairDataClientConfig(LiveDataClientConfig, kw_only=True, frozen=True):
     """
 
     account_currency: str
-    username: Optional[str] = None
-    password: Optional[str] = None
-    app_key: Optional[str] = None
-    cert_dir: Optional[str] = None
-    instrument_config: Optional[BetfairInstrumentProviderConfig] = None
+    username: str | None = None
+    password: str | None = None
+    app_key: str | None = None
+    cert_dir: str | None = None
+    instrument_config: BetfairInstrumentProviderConfig | None = None
 
 
 class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
@@ -63,8 +62,8 @@ class BetfairExecClientConfig(LiveExecClientConfig, kw_only=True, frozen=True):
     """
 
     account_currency: str
-    username: Optional[str] = None
-    password: Optional[str] = None
-    app_key: Optional[str] = None
-    cert_dir: Optional[str] = None
-    instrument_config: Optional[BetfairInstrumentProviderConfig] = None
+    username: str | None = None
+    password: str | None = None
+    app_key: str | None = None
+    cert_dir: str | None = None
+    instrument_config: BetfairInstrumentProviderConfig | None = None

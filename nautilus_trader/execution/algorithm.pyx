@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
+from typing import Optional
 
 from nautilus_trader.config import ExecAlgorithmConfig
 from nautilus_trader.config import ImportableExecAlgorithmConfig

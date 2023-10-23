@@ -17,7 +17,6 @@ import math
 from datetime import timedelta
 from decimal import ROUND_DOWN
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.timer import TimeEvent
@@ -47,7 +46,7 @@ class TWAPExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
 
     """
 
-    exec_algorithm_id: Optional[str] = "TWAP"
+    exec_algorithm_id: str | None = "TWAP"
 
 
 class TWAPExecAlgorithm(ExecAlgorithm):
@@ -72,7 +71,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
     """
 
-    def __init__(self, config: Optional[TWAPExecAlgorithmConfig] = None) -> None:
+    def __init__(self, config: TWAPExecAlgorithmConfig | None = None) -> None:
         if config is None:
             config = TWAPExecAlgorithmConfig()
         super().__init__(config)

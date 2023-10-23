@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -62,8 +61,8 @@ class BinanceExchangeFilter(msgspec.Struct):
     """
 
     filterType: BinanceExchangeFilterType
-    maxNumOrders: Optional[int] = None
-    maxNumAlgoOrders: Optional[int] = None
+    maxNumOrders: int | None = None
+    maxNumAlgoOrders: int | None = None
 
 
 class BinanceRateLimit(msgspec.Struct):
@@ -75,7 +74,7 @@ class BinanceRateLimit(msgspec.Struct):
     interval: BinanceRateLimitInterval
     intervalNum: int
     limit: int
-    count: Optional[int] = None  # SPOT/MARGIN rateLimit/order response only
+    count: int | None = None  # SPOT/MARGIN rateLimit/order response only
 
 
 class BinanceSymbolFilter(msgspec.Struct):
@@ -84,36 +83,36 @@ class BinanceSymbolFilter(msgspec.Struct):
     """
 
     filterType: BinanceSymbolFilterType
-    minPrice: Optional[str] = None
-    maxPrice: Optional[str] = None
-    tickSize: Optional[str] = None
-    multiplierUp: Optional[str] = None
-    multiplierDown: Optional[str] = None
-    multiplierDecimal: Optional[str] = None
-    avgPriceMins: Optional[int] = None
-    minQty: Optional[str] = None
-    maxQty: Optional[str] = None
-    stepSize: Optional[str] = None
-    limit: Optional[int] = None
-    maxNumOrders: Optional[int] = None
+    minPrice: str | None = None
+    maxPrice: str | None = None
+    tickSize: str | None = None
+    multiplierUp: str | None = None
+    multiplierDown: str | None = None
+    multiplierDecimal: str | None = None
+    avgPriceMins: int | None = None
+    minQty: str | None = None
+    maxQty: str | None = None
+    stepSize: str | None = None
+    limit: int | None = None
+    maxNumOrders: int | None = None
 
-    notional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
-    minNotional: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
-    maxNumAlgoOrders: Optional[int] = None  # SPOT/MARGIN & USD-M FUTURES only
+    notional: str | None = None  # SPOT/MARGIN & USD-M FUTURES only
+    minNotional: str | None = None  # SPOT/MARGIN & USD-M FUTURES only
+    maxNumAlgoOrders: int | None = None  # SPOT/MARGIN & USD-M FUTURES only
 
-    bidMultiplierUp: Optional[str] = None  # SPOT/MARGIN only
-    bidMultiplierDown: Optional[str] = None  # SPOT/MARGIN only
-    askMultiplierUp: Optional[str] = None  # SPOT/MARGIN only
-    askMultiplierDown: Optional[str] = None  # SPOT/MARGIN only
-    applyMinToMarket: Optional[bool] = None  # SPOT/MARGIN only
-    maxNotional: Optional[str] = None  # SPOT/MARGIN only
-    applyMaxToMarket: Optional[bool] = None  # SPOT/MARGIN only
-    maxNumIcebergOrders: Optional[int] = None  # SPOT/MARGIN only
-    maxPosition: Optional[str] = None  # SPOT/MARGIN only
-    minTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
-    maxTrailingAboveDelta: Optional[int] = None  # SPOT/MARGIN only
-    minTrailingBelowDelta: Optional[int] = None  # SPOT/MARGIN only
-    maxTrailingBelowDelta: Optional[int] = None  # SPOT/MARGIN only
+    bidMultiplierUp: str | None = None  # SPOT/MARGIN only
+    bidMultiplierDown: str | None = None  # SPOT/MARGIN only
+    askMultiplierUp: str | None = None  # SPOT/MARGIN only
+    askMultiplierDown: str | None = None  # SPOT/MARGIN only
+    applyMinToMarket: bool | None = None  # SPOT/MARGIN only
+    maxNotional: str | None = None  # SPOT/MARGIN only
+    applyMaxToMarket: bool | None = None  # SPOT/MARGIN only
+    maxNumIcebergOrders: int | None = None  # SPOT/MARGIN only
+    maxPosition: str | None = None  # SPOT/MARGIN only
+    minTrailingAboveDelta: int | None = None  # SPOT/MARGIN only
+    maxTrailingAboveDelta: int | None = None  # SPOT/MARGIN only
+    minTrailingBelowDelta: int | None = None  # SPOT/MARGIN only
+    maxTrailingBelowDelta: int | None = None  # SPOT/MARGIN only
 
 
 class BinanceDepth(msgspec.Struct, frozen=True):
@@ -128,11 +127,11 @@ class BinanceDepth(msgspec.Struct, frozen=True):
     bids: list[tuple[str, str]]
     asks: list[tuple[str, str]]
 
-    symbol: Optional[str] = None  # COIN-M FUTURES only
-    pair: Optional[str] = None  # COIN-M FUTURES only
+    symbol: str | None = None  # COIN-M FUTURES only
+    pair: str | None = None  # COIN-M FUTURES only
 
-    E: Optional[int] = None  # FUTURES only, Message output time
-    T: Optional[int] = None  # FUTURES only, Transaction time
+    E: int | None = None  # FUTURES only, Message output time
+    T: int | None = None  # FUTURES only, Transaction time
 
     def parse_to_order_book_snapshot(
         self,
@@ -174,7 +173,7 @@ class BinanceTrade(msgspec.Struct, frozen=True):
     quoteQty: str
     time: int
     isBuyerMaker: bool
-    isBestMatch: Optional[bool] = None  # SPOT/MARGIN only
+    isBestMatch: bool | None = None  # SPOT/MARGIN only
 
     def parse_to_trade_tick(
         self,
@@ -207,7 +206,7 @@ class BinanceAggTrade(msgspec.Struct, frozen=True):
     l: int  # Last tradeId
     T: int  # Timestamp
     m: bool  # Was the buyer the maker?
-    M: Optional[bool] = None  # SPOT/MARGIN only, was the trade the best price match?
+    M: bool | None = None  # SPOT/MARGIN only, was the trade the best price match?
 
     def parse_to_trade_tick(
         self,
@@ -275,33 +274,33 @@ class BinanceTicker24hr(msgspec.Struct, frozen=True):
     Schema of single Binance 24hr ticker (FULL/MINI).
     """
 
-    symbol: Optional[str]
-    lastPrice: Optional[str]
-    openPrice: Optional[str]
-    highPrice: Optional[str]
-    lowPrice: Optional[str]
-    volume: Optional[str]
-    openTime: Optional[int]
-    closeTime: Optional[int]
-    firstId: Optional[int]
-    lastId: Optional[int]
-    count: Optional[int]
+    symbol: str | None
+    lastPrice: str | None
+    openPrice: str | None
+    highPrice: str | None
+    lowPrice: str | None
+    volume: str | None
+    openTime: int | None
+    closeTime: int | None
+    firstId: int | None
+    lastId: int | None
+    count: int | None
 
-    priceChange: Optional[str] = None  # FULL response only (SPOT/MARGIN)
-    priceChangePercent: Optional[str] = None  # FULL response only (SPOT/MARGIN)
-    weightedAvgPrice: Optional[str] = None  # FULL response only (SPOT/MARGIN)
-    lastQty: Optional[str] = None  # FULL response only (SPOT/MARGIN)
+    priceChange: str | None = None  # FULL response only (SPOT/MARGIN)
+    priceChangePercent: str | None = None  # FULL response only (SPOT/MARGIN)
+    weightedAvgPrice: str | None = None  # FULL response only (SPOT/MARGIN)
+    lastQty: str | None = None  # FULL response only (SPOT/MARGIN)
 
-    prevClosePrice: Optional[str] = None  # SPOT/MARGIN only
-    bidPrice: Optional[str] = None  # SPOT/MARGIN only
-    bidQty: Optional[str] = None  # SPOT/MARGIN only
-    askPrice: Optional[str] = None  # SPOT/MARGIN only
-    askQty: Optional[str] = None  # SPOT/MARGIN only
+    prevClosePrice: str | None = None  # SPOT/MARGIN only
+    bidPrice: str | None = None  # SPOT/MARGIN only
+    bidQty: str | None = None  # SPOT/MARGIN only
+    askPrice: str | None = None  # SPOT/MARGIN only
+    askQty: str | None = None  # SPOT/MARGIN only
 
-    pair: Optional[str] = None  # COIN-M FUTURES only
-    baseVolume: Optional[str] = None  # COIN-M FUTURES only
+    pair: str | None = None  # COIN-M FUTURES only
+    baseVolume: str | None = None  # COIN-M FUTURES only
 
-    quoteVolume: Optional[str] = None  # SPOT/MARGIN & USD-M FUTURES only
+    quoteVolume: str | None = None  # SPOT/MARGIN & USD-M FUTURES only
 
 
 class BinanceTickerPrice(msgspec.Struct, frozen=True):
@@ -309,10 +308,10 @@ class BinanceTickerPrice(msgspec.Struct, frozen=True):
     Schema of single Binance Price Ticker.
     """
 
-    symbol: Optional[str]
-    price: Optional[str]
-    time: Optional[int] = None  # FUTURES only
-    ps: Optional[str] = None  # COIN-M FUTURES only, pair
+    symbol: str | None
+    price: str | None
+    time: int | None = None  # FUTURES only
+    ps: str | None = None  # COIN-M FUTURES only, pair
 
 
 class BinanceTickerBook(msgspec.Struct, frozen=True):
@@ -320,13 +319,13 @@ class BinanceTickerBook(msgspec.Struct, frozen=True):
     Schema of a single Binance Order Book Ticker.
     """
 
-    symbol: Optional[str]
-    bidPrice: Optional[str]
-    bidQty: Optional[str]
-    askPrice: Optional[str]
-    askQty: Optional[str]
-    pair: Optional[str] = None  # USD-M FUTURES only
-    time: Optional[int] = None  # FUTURES only, transaction time
+    symbol: str | None
+    bidPrice: str | None
+    bidQty: str | None
+    askPrice: str | None
+    askQty: str | None
+    pair: str | None = None  # USD-M FUTURES only
+    time: int | None = None  # FUTURES only, transaction time
 
 
 ################################################################################
@@ -339,8 +338,8 @@ class BinanceDataMsgWrapper(msgspec.Struct):
     Provides a wrapper for data WebSocket messages from `Binance`.
     """
 
-    stream: Optional[str] = None
-    id: Optional[int] = None
+    stream: str | None = None
+    id: int | None = None
 
 
 class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
@@ -394,9 +393,9 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
     b: list[BinanceOrderBookDelta]  # Bids to be updated
     a: list[BinanceOrderBookDelta]  # Asks to be updated
 
-    T: Optional[int] = None  # FUTURES only, transaction time
-    pu: Optional[int] = None  # FUTURES only, previous final update ID
-    ps: Optional[str] = None  # COIN-M FUTURES only, pair
+    T: int | None = None  # FUTURES only, transaction time
+    pu: int | None = None  # FUTURES only, previous final update ID
+    ps: str | None = None  # COIN-M FUTURES only, pair
 
     def parse_to_order_book_deltas(
         self,
@@ -578,13 +577,13 @@ class BinanceTickerData(msgspec.Struct, kw_only=True, frozen=True):
     p: str  # Price change
     P: str  # Price change percent
     w: str  # Weighted average price
-    x: Optional[str] = None  # First trade(F)-1 price (first trade before the 24hr rolling window)
+    x: str | None = None  # First trade(F)-1 price (first trade before the 24hr rolling window)
     c: str  # Last price
     Q: str  # Last quantity
-    b: Optional[str] = None  # Best bid price
-    B: Optional[str] = None  # Best bid quantity
-    a: Optional[str] = None  # Best ask price
-    A: Optional[str] = None  # Best ask quantity
+    b: str | None = None  # Best bid price
+    B: str | None = None  # Best bid quantity
+    a: str | None = None  # Best ask price
+    A: str | None = None  # Best ask quantity
     o: str  # Open price
     h: str  # High price
     l: str  # Low price

@@ -29,7 +29,8 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-from typing import Callable, Optional
+from typing import Callable
+from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig

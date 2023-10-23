@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 
@@ -43,7 +41,7 @@ byte_sizes.update({k[:-1]: v for k, v in byte_sizes.items() if k and "i" in k})
 
 
 def parse_bytes(s: float | str) -> int:
-    if isinstance(s, (int, float)):
+    if isinstance(s, int | float):
         return int(s)
     s = s.replace(" ", "")
     if not any(char.isdigit() for char in s):

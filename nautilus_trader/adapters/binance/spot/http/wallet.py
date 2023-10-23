@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -71,8 +70,8 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        symbol: Optional[BinanceSymbol] = None
-        recvWindow: Optional[str] = None
+        symbol: BinanceSymbol | None = None
+        recvWindow: str | None = None
 
     async def get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = HttpMethod.GET
@@ -119,8 +118,8 @@ class BinanceSpotWalletHttpAPI:
 
     async def query_spot_trade_fees(
         self,
-        symbol: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        symbol: str | None = None,
+        recv_window: str | None = None,
     ) -> list[BinanceSpotTradeFee]:
         fees = await self._endpoint_spot_trade_fee.get(
             parameters=self._endpoint_spot_trade_fee.GetParameters(

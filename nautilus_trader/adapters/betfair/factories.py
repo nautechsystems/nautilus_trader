@@ -16,7 +16,6 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Optional
 
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.config import BetfairDataClientConfig
@@ -42,9 +41,9 @@ INSTRUMENT_PROVIDER = None
 @lru_cache(1)
 def get_cached_betfair_client(
     logger: Logger,
-    username: Optional[str] = None,
-    password: Optional[str] = None,
-    app_key: Optional[str] = None,
+    username: str | None = None,
+    password: str | None = None,
+    app_key: str | None = None,
 ) -> BetfairHttpClient:
     """
     Cache and return a Betfair HTTP client with the given credentials.

@@ -17,7 +17,6 @@ import bz2
 import gzip
 import pathlib
 from asyncio import Future
-from typing import Optional, Union
 from unittest.mock import MagicMock
 
 import msgspec
@@ -88,7 +87,7 @@ class BetfairTestStubs:
     @staticmethod
     def instrument_provider(
         betfair_client,
-        config: Optional[BetfairInstrumentProviderConfig] = None,
+        config: BetfairInstrumentProviderConfig | None = None,
     ) -> BetfairInstrumentProvider:
         return BetfairInstrumentProvider(
             client=betfair_client,
@@ -196,7 +195,7 @@ class BetfairTestStubs:
     def streaming_config(
         catalog_path: str,
         catalog_fs_protocol: str = "memory",
-        flush_interval_ms: Optional[int] = None,
+        flush_interval_ms: int | None = None,
     ) -> StreamingConfig:
         return StreamingConfig(
             catalog_path=catalog_path,
@@ -212,7 +211,7 @@ class BetfairTestStubs:
         persist=True,
         add_strategy=True,
         bypass_risk=False,
-        flush_interval_ms: Optional[int] = None,
+        flush_interval_ms: int | None = None,
         bypass_logging: bool = True,
         log_level: str = "WARNING",
         venue_name: str = "BETFAIR",
@@ -400,7 +399,7 @@ class BetfairResponses:
         return raw
 
     @staticmethod
-    def betting_list_market_catalogue(filter_: Optional[MarketFilter] = None):
+    def betting_list_market_catalogue(filter_: MarketFilter | None = None):
         result = BetfairResponses.load("betting_list_market_catalogue.json")
         if filter_:
             result = [r for r in result if r["marketId"] in filter_.market_ids]
@@ -427,7 +426,7 @@ class BetfairStreaming:
         return stream_decode(raw)
 
     @staticmethod
-    def load(filename, iterate: bool = False) -> Union[bytes, list[bytes]]:
+    def load(filename, iterate: bool = False) -> bytes | list[bytes]:
         raw = (RESOURCES_PATH / "streaming" / filename).read_bytes()
         message = BetfairStreaming.decode(raw=raw, iterate=iterate)
         if iterate:
@@ -571,8 +570,8 @@ class BetfairStreaming:
         avp=0,
         order_id: int = 248485109136,
         client_order_id: str = "",
-        mb: Optional[list[MatchedOrder]] = None,
-        ml: Optional[list[MatchedOrder]] = None,
+        mb: list[MatchedOrder] | None = None,
+        ml: list[MatchedOrder] | None = None,
     ) -> OCM:
         assert side in ("B", "L"), "`side` should be 'B' or 'L'"
         assert isinstance(order_id, int)
@@ -623,7 +622,7 @@ class BetfairDataProvider:
     def betting_instrument(
         market_id: str = "1.179082386",
         selection_id: str = "50214",
-        handicap: Optional[str] = None,
+        handicap: str | None = None,
     ) -> BettingInstrument:
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
@@ -782,7 +781,7 @@ class BetfairDataProvider:
 def betting_instrument(
     market_id: str = "1.179082386",
     selection_id: str = "50214",
-    selection_handicap: Optional[str] = None,
+    selection_handicap: str | None = None,
 ) -> BettingInstrument:
     return BettingInstrument(
         venue_name=BETFAIR_VENUE.value,

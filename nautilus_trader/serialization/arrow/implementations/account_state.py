@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 import pandas as pd
@@ -26,7 +25,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 def serialize(state: AccountState) -> RecordBatch:
-    result: dict[tuple[Currency, Optional[InstrumentId]], dict] = {}
+    result: dict[tuple[Currency, InstrumentId | None], dict] = {}
 
     base = state.to_dict(state)
     del base["balances"]

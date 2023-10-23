@@ -1,6 +1,5 @@
 # ruff: noqa: UP007 PYI021 PYI044 PYI053
 # fmt: off
-from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Awaitable

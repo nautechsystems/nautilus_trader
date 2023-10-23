@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import json
 from datetime import datetime
 from os import PathLike

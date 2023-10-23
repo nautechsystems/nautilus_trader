@@ -18,7 +18,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11"]
     defaults:
       run:
         shell: bash
@@ -245,7 +245,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-20.04, ubuntu-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11"]
     defaults:
       run:
         shell: bash

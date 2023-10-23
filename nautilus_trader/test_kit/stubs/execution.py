@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.accounting.accounts.betting import BettingAccount
 from nautilus_trader.accounting.accounts.cash import CashAccount
@@ -46,19 +45,19 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 class TestExecStubs:
     @staticmethod
-    def cash_account(account_id: Optional[AccountId] = None) -> CashAccount:
+    def cash_account(account_id: AccountId | None = None) -> CashAccount:
         return AccountFactory.create(
             TestEventStubs.cash_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
 
     @staticmethod
-    def margin_account(account_id: Optional[AccountId] = None) -> MarginAccount:
+    def margin_account(account_id: AccountId | None = None) -> MarginAccount:
         return AccountFactory.create(
             TestEventStubs.margin_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
 
     @staticmethod
-    def betting_account(account_id: Optional[AccountId] = None) -> BettingAccount:
+    def betting_account(account_id: AccountId | None = None) -> BettingAccount:
         return AccountFactory.create(
             TestEventStubs.betting_account_state(account_id=account_id or TestIdStubs.account_id()),
         )
@@ -70,9 +69,9 @@ class TestExecStubs:
         price=None,
         quantity=None,
         time_in_force=None,
-        trader_id: Optional[TradeId] = None,
-        strategy_id: Optional[StrategyId] = None,
-        client_order_id: Optional[ClientOrderId] = None,
+        trader_id: TradeId | None = None,
+        strategy_id: StrategyId | None = None,
+        client_order_id: ClientOrderId | None = None,
         expire_time=None,
         tags=None,
     ) -> LimitOrder:
@@ -105,11 +104,11 @@ class TestExecStubs:
         price=None,
         quantity=None,
         time_in_force=None,
-        trader_id: Optional[TradeId] = None,
-        strategy_id: Optional[StrategyId] = None,
-        order_list_id: Optional[OrderListId] = None,
-        entry_client_order_id: Optional[ClientOrderId] = None,
-        sl_client_order_id: Optional[ClientOrderId] = None,
+        trader_id: TradeId | None = None,
+        strategy_id: StrategyId | None = None,
+        order_list_id: OrderListId | None = None,
+        entry_client_order_id: ClientOrderId | None = None,
+        sl_client_order_id: ClientOrderId | None = None,
         sl_trigger_price=None,
         expire_time=None,
         tags=None,
@@ -158,9 +157,9 @@ class TestExecStubs:
         instrument_id=None,
         order_side=None,
         quantity=None,
-        trader_id: Optional[TradeId] = None,
-        strategy_id: Optional[StrategyId] = None,
-        client_order_id: Optional[ClientOrderId] = None,
+        trader_id: TradeId | None = None,
+        strategy_id: StrategyId | None = None,
+        client_order_id: ClientOrderId | None = None,
         time_in_force=None,
     ) -> MarketOrder:
         return MarketOrder(
@@ -183,7 +182,7 @@ class TestExecStubs:
 
     @staticmethod
     def make_submitted_order(
-        order: Optional[Order] = None,
+        order: Order | None = None,
         instrument_id=None,
         **order_kwargs,
     ) -> Order:
@@ -195,10 +194,10 @@ class TestExecStubs:
 
     @staticmethod
     def make_accepted_order(
-        order: Optional[Order] = None,
-        instrument_id: Optional[InstrumentId] = None,
-        account_id: Optional[AccountId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
+        order: Order | None = None,
+        instrument_id: InstrumentId | None = None,
+        account_id: AccountId | None = None,
+        venue_order_id: VenueOrderId | None = None,
         **order_kwargs,
     ) -> Order:
         order = order or TestExecStubs.limit_order(instrument_id=instrument_id, **order_kwargs)

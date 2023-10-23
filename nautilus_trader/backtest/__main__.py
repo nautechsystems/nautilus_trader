@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import click
 import fsspec
@@ -27,8 +26,8 @@ from nautilus_trader.config import BacktestRunConfig
 @click.option("--raw", help="A raw string configs list")
 @click.option("--fsspec-url", help="A fsspec url to read a list of configs from")
 def main(
-    raw: Optional[str] = None,
-    fsspec_url: Optional[str] = None,
+    raw: str | None = None,
+    fsspec_url: str | None = None,
 ):
     assert raw is not None or fsspec_url is not None, "Must pass one of `raw` or `fsspec_url`"
     if fsspec_url and raw is None:

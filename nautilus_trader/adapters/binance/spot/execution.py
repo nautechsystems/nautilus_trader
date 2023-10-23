@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 
 import msgspec
 
@@ -161,14 +160,14 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> list[PositionStatusReport]:
         # Never cash positions
         return []
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> set[str]:
         # Never cash positions
         return set()

@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -60,7 +60,7 @@ class BarDataDownloader(AsyncActor):
         for bar_type in config.bar_types:
             self.bar_types.append(BarType.from_str(bar_type))
 
-        self.handler: Optional[Callable] = config.handler
+        self.handler: Callable | None = config.handler
         self.freq: str = config.freq
 
     async def _on_start(self):

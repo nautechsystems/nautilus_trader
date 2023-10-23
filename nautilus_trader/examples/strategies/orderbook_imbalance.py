@@ -15,7 +15,6 @@
 
 import datetime
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import OrderBookDeltas
@@ -103,8 +102,8 @@ class OrderBookImbalance(Strategy):
         self.trigger_min_size = config.trigger_min_size
         self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
         self.min_seconds_between_triggers = config.min_seconds_between_triggers
-        self._last_trigger_timestamp: Optional[datetime.datetime] = None
-        self.instrument: Optional[Instrument] = None
+        self._last_trigger_timestamp: datetime.datetime | None = None
+        self.instrument: Instrument | None = None
         if self.config.use_quote_ticks:
             assert self.config.book_type == "L1_MBP"
         self.book_type: BookType = book_type_from_str(self.config.book_type)
@@ -169,8 +168,8 @@ class OrderBookImbalance(Strategy):
         # Uncomment for debugging
         # self.log.info("\n" + book.pprint())
 
-        bid_size: Optional[Quantity] = book.best_bid_size()
-        ask_size: Optional[Quantity] = book.best_ask_size()
+        bid_size: Quantity | None = book.best_bid_size()
+        ask_size: Quantity | None = book.best_ask_size()
         if (bid_size is None or bid_size <= 0) or (ask_size is None or ask_size <= 0):
             self.log.warning("No market yet.")
             return
