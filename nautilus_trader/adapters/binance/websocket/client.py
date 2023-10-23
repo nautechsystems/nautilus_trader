@@ -24,6 +24,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
 class BinanceWebSocketClient:
@@ -120,10 +121,16 @@ class BinanceWebSocketClient:
 
         self._log.debug(f"Connecting to {ws_url}...")
         self._is_connecting = True
-        self._inner = await WebSocketClient.connect(
+
+        config = WebSocketConfig(
             url=ws_url,
             handler=self._handler,
             heartbeat=60,
+            headers=[],
+        )
+
+        self._inner = await WebSocketClient.connect(
+            config=config,
             post_reconnection=self.reconnect,
         )
         self._is_connecting = False
