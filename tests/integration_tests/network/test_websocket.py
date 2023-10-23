@@ -20,6 +20,7 @@ import pytest
 from aiohttp.test_utils import TestServer
 
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
@@ -31,11 +32,8 @@ def _server_url(server: TestServer) -> str:
 async def test_connect_and_disconnect(websocket_server):
     # Arrange
     store = []
-
-    client = await WebSocketClient.connect(
-        url=_server_url(websocket_server),
-        handler=store.append,
-    )
+    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
+    client = await WebSocketClient.connect(config)
 
     # Act, Assert
     await eventually(lambda: client.is_alive)
@@ -47,10 +45,8 @@ async def test_connect_and_disconnect(websocket_server):
 async def test_client_send_recv(websocket_server):
     # Arrange
     store = []
-    client = await WebSocketClient.connect(
-        url=_server_url(websocket_server),
-        handler=store.append,
-    )
+    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
+    client = await WebSocketClient.connect(config)
     await eventually(lambda: client.is_alive)
 
     # Act
@@ -69,10 +65,8 @@ async def test_client_send_recv(websocket_server):
 async def test_client_send_recv_json(websocket_server):
     # Arrange
     store = []
-    client = await WebSocketClient.connect(
-        url=_server_url(websocket_server),
-        handler=store.append,
-    )
+    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
+    client = await WebSocketClient.connect(config)
     await eventually(lambda: client.is_alive)
 
     # Act
@@ -92,10 +86,8 @@ async def test_client_send_recv_json(websocket_server):
 async def test_reconnect_after_close(websocket_server):
     # Arrange
     store = []
-    client = await WebSocketClient.connect(
-        url=_server_url(websocket_server),
-        handler=store.append,
-    )
+    config = WebSocketConfig(_server_url(websocket_server), store.append, [])
+    client = await WebSocketClient.connect(config)
     await eventually(lambda: client.is_alive)
 
     # Act
