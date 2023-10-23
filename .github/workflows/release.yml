@@ -318,9 +318,9 @@ jobs:
       - name: Set release output
         id: vars
         run: |
-          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $ GITHUB_ENV
+          echo "ASSET_PATH=$(find ./dist -mindepth 1 -print -quit)" >> $GITHUB_ENV
           cd dist
-          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $ GITHUB_ENV
+          echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
 
       - name: Upload release asset
         id: upload-release-asset-unix
