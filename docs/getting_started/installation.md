@@ -12,10 +12,14 @@ NautilusTrader is tested and supported for Python 3.9-3.11 on the following 64-b
 We recommend running the platform with the latest supported stable version of Python, and in a virtual environment to isolate the dependencies.
 ```
 
-## From PyPI
-To install the latest binary wheel (or sdist package) from PyPI using Pythons _pip_ package manager:
+## From PyPI & Poetry
+To install the latest binary wheel (or sdist package) from PyPI using Python's _pip_ package manager:
     
     pip install -U nautilus_trader
+
+Using _poetry_:
+
+    poetry add nautilus_trader
 
 ## Extras
 
@@ -29,6 +33,10 @@ Install optional dependencies as 'extras' for specific integrations:
 To install with specific extras using _pip_:
 
     pip install -U "nautilus_trader[docker,ib,redis]"
+
+Using _poetry_:
+
+    poetry add "nautilus_trader[docker,ib,redis]"
 
 ## From Source
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 

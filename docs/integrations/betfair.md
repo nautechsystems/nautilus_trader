@@ -16,6 +16,8 @@ data and execution clients. To achieve this, add a `BETFAIR` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.config import TradingNodeConfig
+
 config = TradingNodeConfig(
     ...,  # Omitted 
     data_clients={
@@ -41,6 +43,10 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.live.node import TradingNode
+
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
