@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import pandas as pd
 
@@ -161,8 +160,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        depth: int | None = None,
+        kwargs: dict | None = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -170,8 +169,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        depth: int | None = None,
+        kwargs: dict | None = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -242,8 +241,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -252,8 +251,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
 
@@ -262,7 +261,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         bar_type: BarType,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover

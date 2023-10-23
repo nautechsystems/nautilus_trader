@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -148,8 +147,8 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     l: str  # Order Last Filled Quantity
     z: str  # Order Filled Accumulated Quantity
     L: str  # Last Filled Price
-    n: Optional[str] = None  # Commission, will not push if no commission
-    N: Optional[str] = None  # Commission Asset, will not push if no commission
+    n: str | None = None  # Commission, will not push if no commission
+    N: str | None = None  # Commission Asset, will not push if no commission
     T: int  # Order Trade Time
     t: int  # Trade ID
     I: int  # Ignore

@@ -16,7 +16,6 @@
 import math
 from collections import defaultdict
 from datetime import datetime
-from typing import Optional, Union
 
 import pandas as pd
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
@@ -63,15 +62,15 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 
 
-PARSE_TYPES = Union[
-    InstrumentStatus,
-    InstrumentClose,
-    OrderBookDeltas,
-    TradeTick,
-    BetfairTicker,
-    BSPOrderBookDelta,
-    BetfairStartingPrice,
-]
+PARSE_TYPES = (
+    InstrumentStatus
+    | InstrumentClose
+    | OrderBookDeltas
+    | TradeTick
+    | BetfairTicker
+    | BSPOrderBookDelta
+    | BetfairStartingPrice
+)
 
 
 def market_change_to_updates(  # noqa: C901
@@ -79,8 +78,8 @@ def market_change_to_updates(  # noqa: C901
     traded_volumes: dict[InstrumentId, dict[float, float]],
     ts_event: int,
     ts_init: int,
-) -> list[PARSE_TYPES]:
-    updates: list[PARSE_TYPES] = []
+) -> list[PARSE_TYPES]:  # type: ignore
+    updates: list[PARSE_TYPES] = []  # type: ignore
 
     # Handle instrument status and close updates first
     if mc.market_definition is not None:
@@ -233,7 +232,7 @@ def runner_to_instrument_close(
     market_id: str,
     ts_event: int,
     ts_init: int,
-) -> Optional[InstrumentClose]:
+) -> InstrumentClose | None:
     instrument_id: InstrumentId = betfair_instrument_id(
         market_id=market_id,
         selection_id=str(runner.id),
@@ -281,7 +280,7 @@ def runner_to_betfair_starting_price(
     market_id: str,
     ts_event: int,
     ts_init: int,
-) -> Optional[BetfairStartingPrice]:
+) -> BetfairStartingPrice | None:
     if runner.bsp is not None:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
@@ -406,7 +405,7 @@ def runner_change_to_order_book_deltas(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[OrderBookDeltas]:
+) -> OrderBookDeltas | None:
     """
     Convert a RunnerChange to a list of OrderBookDeltas.
     """
@@ -488,7 +487,7 @@ def runner_change_to_bsp_order_book_deltas(
     instrument_id: InstrumentId,
     ts_event: int,
     ts_init: int,
-) -> Optional[list[BSPOrderBookDelta]]:
+) -> list[BSPOrderBookDelta] | None:
     if not (rc.spb or rc.spl):
         return None
     bsp_instrument_id = make_bsp_instrument_id(instrument_id)
@@ -540,7 +539,7 @@ async def generate_trades_list(
     self,
     venue_order_id: VenueOrderId,
     symbol: Symbol,
-    since: Optional[datetime] = None,
+    since: datetime | None = None,
 ) -> list[TradeReport]:
     filled: list[ClearedOrderSummary] = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],

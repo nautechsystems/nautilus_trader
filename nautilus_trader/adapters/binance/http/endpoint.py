@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import msgspec
 
@@ -69,7 +69,7 @@ class BinanceHttpEndpoint:
         self,
         method_type: HttpMethod,
         parameters: Any,
-        ratelimiter_keys: Optional[list[str]] = None,
+        ratelimiter_keys: list[str] | None = None,
     ) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(parameters))
         if self.methods_desc[method_type] is None:

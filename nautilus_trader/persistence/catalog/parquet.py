@@ -19,11 +19,12 @@ import os
 import pathlib
 import platform
 from collections import defaultdict
+from collections.abc import Callable
 from collections.abc import Generator
 from itertools import groupby
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, NamedTuple, Union
+from typing import Any, NamedTuple
 
 import fsspec
 import pandas as pd
@@ -59,7 +60,7 @@ from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
-TimestampLike = Union[int, str, float]
+TimestampLike = int | str | float
 
 
 class FeatherFile(NamedTuple):

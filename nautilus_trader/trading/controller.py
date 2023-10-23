@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.core.correctness import PyCondition

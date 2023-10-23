@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -143,7 +142,7 @@ class EMACrossStopEntry(Strategy):
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
         self.atr = AverageTrueRange(config.atr_period)
 
-        self.instrument: Optional[Instrument] = None  # Initialized in `on_start()`
+        self.instrument: Instrument | None = None  # Initialized in `on_start()`
         self.tick_size = None  # Initialized in `on_start()`
 
         # Users order management variables

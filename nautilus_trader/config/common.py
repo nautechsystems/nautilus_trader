@@ -15,7 +15,7 @@
 
 import importlib
 import importlib.util
-from typing import Any, Optional
+from typing import Any
 
 import fsspec
 import msgspec
@@ -138,7 +138,7 @@ class CacheConfig(NautilusConfig, frozen=True):
     bar_capacity: PositiveInt = 10_000
     snapshot_orders: bool = False
     snapshot_positions: bool = False
-    snapshot_positions_interval: Optional[PositiveFloat] = None
+    snapshot_positions_interval: PositiveFloat | None = None
 
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
@@ -169,9 +169,9 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
 
     type: str = "in-memory"
     host: str = "localhost"
-    port: Optional[int] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
     ssl: bool = False
     flush_on_start: bool = False
     timestamps_as_iso8601: bool = False
@@ -208,9 +208,9 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         return hash((self.load_all, self.load_ids, self.filters))
 
     load_all: bool = False
-    load_ids: Optional[frozenset[str]] = None
-    filters: Optional[dict[str, Any]] = None
-    filter_callable: Optional[str] = None
+    load_ids: frozenset[str] | None = None
+    filters: dict[str, Any] | None = None
+    filter_callable: str | None = None
     log_warnings: bool = True
 
 
@@ -319,11 +319,11 @@ class StreamingConfig(NautilusConfig, frozen=True):
     """
 
     catalog_path: str
-    fs_protocol: Optional[str] = None
-    fs_storage_options: Optional[dict] = None
-    flush_interval_ms: Optional[int] = None
+    fs_protocol: str | None = None
+    fs_storage_options: dict | None = None
+    flush_interval_ms: int | None = None
     replace_existing: bool = False
-    include_types: Optional[list[str]] = None
+    include_types: list[str] | None = None
 
     @property
     def fs(self):
@@ -353,8 +353,8 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
     """
 
     path: str
-    fs_protocol: Optional[str] = None
-    fs_storage_options: Optional[dict] = None
+    fs_protocol: str | None = None
+    fs_storage_options: dict | None = None
 
 
 class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
@@ -369,7 +369,7 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
 
     """
 
-    component_id: Optional[str] = None
+    component_id: str | None = None
 
 
 class ImportableActorConfig(NautilusConfig, frozen=True):
@@ -446,10 +446,10 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
 
     """
 
-    strategy_id: Optional[str] = None
-    order_id_tag: Optional[str] = None
-    oms_type: Optional[str] = None
-    external_order_claims: Optional[list[str]] = None
+    strategy_id: str | None = None
+    order_id_tag: str | None = None
+    oms_type: str | None = None
+    external_order_claims: list[str] | None = None
     manage_gtd_expiry: bool = False
 
 
@@ -565,7 +565,7 @@ class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
 
     """
 
-    exec_algorithm_id: Optional[str] = None
+    exec_algorithm_id: str | None = None
 
 
 class ImportableExecAlgorithmConfig(NautilusConfig, frozen=True):
@@ -643,9 +643,9 @@ class TracingConfig(NautilusConfig, frozen=True):
 
     """
 
-    stdout_level: Optional[str] = None
-    stderr_level: Optional[str] = None
-    file_level: Optional[tuple[str, str, str]] = None
+    stdout_level: str | None = None
+    stderr_level: str | None = None
+    file_level: tuple[str, str, str] | None = None
 
 
 class LoggingConfig(NautilusConfig, frozen=True):
@@ -678,11 +678,11 @@ class LoggingConfig(NautilusConfig, frozen=True):
     """
 
     log_level: str = "INFO"
-    log_level_file: Optional[str] = None
-    log_directory: Optional[str] = None
-    log_file_name: Optional[str] = None
-    log_file_format: Optional[str] = None
-    log_component_levels: Optional[dict[str, str]] = None
+    log_level_file: str | None = None
+    log_directory: str | None = None
+    log_file_name: str | None = None
+    log_file_format: str | None = None
+    log_component_levels: dict[str, str] | None = None
     bypass_logging: bool = False
 
 
@@ -741,24 +741,24 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
 
     environment: Environment
     trader_id: str
-    instance_id: Optional[str] = None
-    cache: Optional[CacheConfig] = None
-    cache_database: Optional[CacheDatabaseConfig] = None
-    data_engine: Optional[DataEngineConfig] = None
-    risk_engine: Optional[RiskEngineConfig] = None
-    exec_engine: Optional[ExecEngineConfig] = None
-    emulator: Optional[OrderEmulatorConfig] = None
-    streaming: Optional[StreamingConfig] = None
-    catalog: Optional[DataCatalogConfig] = None
+    instance_id: str | None = None
+    cache: CacheConfig | None = None
+    cache_database: CacheDatabaseConfig | None = None
+    data_engine: DataEngineConfig | None = None
+    risk_engine: RiskEngineConfig | None = None
+    exec_engine: ExecEngineConfig | None = None
+    emulator: OrderEmulatorConfig | None = None
+    streaming: StreamingConfig | None = None
+    catalog: DataCatalogConfig | None = None
     actors: list[ImportableActorConfig] = []
     strategies: list[ImportableStrategyConfig] = []
     exec_algorithms: list[ImportableExecAlgorithmConfig] = []
-    controller: Optional[ImportableControllerConfig] = None
+    controller: ImportableControllerConfig | None = None
     load_state: bool = False
     save_state: bool = False
     loop_debug: bool = False
-    logging: Optional[LoggingConfig] = None
-    tracing: Optional[TracingConfig] = None
+    logging: LoggingConfig | None = None
+    tracing: TracingConfig | None = None
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0
@@ -786,7 +786,7 @@ class ImportableConfig(NautilusConfig, frozen=True):
 
     path: str
     config: dict = {}
-    factory: Optional[ImportableFactoryConfig] = None
+    factory: ImportableFactoryConfig | None = None
 
     @staticmethod
     def is_importable(data: dict):

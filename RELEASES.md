@@ -1,3 +1,17 @@
+# NautilusTrader 1.180.0 Beta
+
+Released on TBC (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+- Dropped support for Python 3.9
+
+### Fixes
+None
+
+---
 # NautilusTrader 1.179.0 Beta
 
 Released on 22nd October 2023 (UTC).

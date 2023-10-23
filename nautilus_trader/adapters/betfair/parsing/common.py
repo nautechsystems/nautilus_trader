@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from functools import lru_cache
-from typing import Optional
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
@@ -30,7 +29,7 @@ def hash_market_trade(timestamp: int, price: float, volume: float):
 def betfair_instrument_id(
     market_id: str,
     selection_id: str,
-    selection_handicap: Optional[str],
+    selection_handicap: str | None,
 ) -> InstrumentId:
     """
     Create an instrument ID from betfair fields.

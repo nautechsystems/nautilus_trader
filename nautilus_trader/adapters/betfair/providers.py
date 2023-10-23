@@ -15,7 +15,6 @@
 
 import time
 from collections.abc import Iterable
-from typing import Optional, Union
 
 import msgspec.json
 import pandas as pd
@@ -42,12 +41,12 @@ from nautilus_trader.model.instruments import BettingInstrument
 
 
 class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
-    event_type_ids: Optional[list[str]] = None
-    event_ids: Optional[list[str]] = None
-    market_ids: Optional[list[str]] = None
-    country_codes: Optional[list[str]] = None
-    market_types: Optional[list[str]] = None
-    event_type_names: Optional[list[str]] = None
+    event_type_ids: list[str] | None = None
+    event_ids: list[str] | None = None
+    market_ids: list[str] | None = None
+    country_codes: list[str] | None = None
+    market_types: list[str] | None = None
+    event_type_names: list[str] | None = None
 
 
 class BetfairInstrumentProvider(InstrumentProvider):
@@ -67,7 +66,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: Optional[BetfairHttpClient],
+        client: BetfairHttpClient | None,
         logger: Logger,
         config: BetfairInstrumentProviderConfig,
     ):
@@ -84,18 +83,18 @@ class BetfairInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         raise NotImplementedError
 
     async def load_async(
         self,
         instrument_id: InstrumentId,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ):
         raise NotImplementedError
 
-    async def load_all_async(self, filters: Optional[dict] = None):
+    async def load_all_async(self, filters: dict | None = None):
         currency = await self.get_account_currency()
         filters = filters or {}
 
@@ -207,7 +206,7 @@ def market_definition_to_instruments(
 
 
 def make_instruments(
-    market: Union[MarketCatalogue, MarketDefinition],
+    market: MarketCatalogue | MarketDefinition,
     currency: str,
 ) -> list[BettingInstrument]:
     if isinstance(market, MarketCatalogue):
@@ -241,12 +240,12 @@ def check_market_filter_keys(keys: Iterable[str]) -> None:
 
 async def load_markets(
     client: BetfairHttpClient,
-    event_type_ids: Optional[list[str]] = None,
-    event_ids: Optional[list[str]] = None,
-    market_ids: Optional[list[str]] = None,
-    event_country_codes: Optional[list[str]] = None,
-    market_market_types: Optional[list[str]] = None,
-    event_type_names: Optional[list[str]] = None,
+    event_type_ids: list[str] | None = None,
+    event_ids: list[str] | None = None,
+    market_ids: list[str] | None = None,
+    event_country_codes: list[str] | None = None,
+    market_market_types: list[str] | None = None,
+    event_type_names: list[str] | None = None,
 ) -> list[FlattenedMarket]:
     market_filter = {
         "event_type_id": event_type_ids,

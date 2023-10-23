@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-from typing import Optional
 
 import pandas as pd
 import pytz
@@ -56,7 +55,7 @@ class TestInstrumentProviderPyo3:
         )
 
     @staticmethod
-    def btcusdt_future_binance(expiry: Optional[pd.Timestamp] = None) -> CryptoFuture:
+    def btcusdt_future_binance(expiry: pd.Timestamp | None = None) -> CryptoFuture:
         if expiry is None:
             expiry = pd.Timestamp(datetime(2022, 3, 25), tz=pytz.UTC)
             nanos_expiry = int(expiry.timestamp() * 1e9)

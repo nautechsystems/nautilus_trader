@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -55,8 +54,8 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     availableBalance: str  # available balance
     maxWithdrawAmount: str  # maximum amount for transfer out
     # whether the asset can be used as margin in Multi - Assets mode
-    marginAvailable: Optional[bool] = None
-    updateTime: Optional[int] = None  # last update time
+    marginAvailable: bool | None = None
+    updateTime: int | None = None  # last update time
 
     def parse_to_account_balance(self) -> AccountBalance:
         currency = Currency.from_str(self.asset)
@@ -87,22 +86,20 @@ class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
     canDeposit: bool  # if can transfer in asset
     canWithdraw: bool  # if can transfer out asset
     updateTime: int
-    totalInitialMargin: Optional[
-        str
-    ] = None  # total initial margin required with current mark price (useless with isolated positions), only for USDT asset
-    totalMaintMargin: Optional[str] = None  # total maintenance margin required, only for USDT asset
-    totalWalletBalance: Optional[str] = None  # total wallet balance, only for USDT asset
-    totalUnrealizedProfit: Optional[str] = None  # total unrealized profit, only for USDT asset
-    totalMarginBalance: Optional[str] = None  # total margin balance, only for USDT asset
+    totalInitialMargin: str | None = None  # total initial margin required with current mark price (useless with isolated positions), only for USDT
+    totalMaintMargin: str | None = None  # total maintenance margin required, only for USDT asset
+    totalWalletBalance: str | None = None  # total wallet balance, only for USDT asset
+    totalUnrealizedProfit: str | None = None  # total unrealized profit, only for USDT asset
+    totalMarginBalance: str | None = None  # total margin balance, only for USDT asset
     # initial margin required for positions with current mark price, only for USDT asset
-    totalPositionInitialMargin: Optional[str] = None
+    totalPositionInitialMargin: str | None = None
     # initial margin required for open orders with current mark price, only for USDT asset
-    totalOpenOrderInitialMargin: Optional[str] = None
-    totalCrossWalletBalance: Optional[str] = None  # crossed wallet balance, only for USDT asset
+    totalOpenOrderInitialMargin: str | None = None
+    totalCrossWalletBalance: str | None = None  # crossed wallet balance, only for USDT asset
     # unrealized profit of crossed positions, only for USDT asset
-    totalCrossUnPnl: Optional[str] = None
-    availableBalance: Optional[str] = None  # available balance, only for USDT asset
-    maxWithdrawAmount: Optional[str] = None  # maximum amount for transfer out, only for USDT asset
+    totalCrossUnPnl: str | None = None
+    availableBalance: str | None = None  # available balance, only for USDT asset
+    maxWithdrawAmount: str | None = None  # maximum amount for transfer out, only for USDT asset
     assets: list[BinanceFuturesBalanceInfo]
 
     def parse_to_account_balances(self) -> list[AccountBalance]:
@@ -124,7 +121,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
     leverage: str
     liquidationPrice: str
     markPrice: str
-    maxNotionalValue: Optional[str] = None
+    maxNotionalValue: str | None = None
     positionAmt: str
     symbol: str
     unRealizedProfit: str

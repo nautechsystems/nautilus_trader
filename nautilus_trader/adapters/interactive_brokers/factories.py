@@ -16,7 +16,6 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Optional
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
@@ -51,7 +50,7 @@ def get_cached_ib_client(
     clock: LiveClock,
     logger: Logger,
     host: str = "127.0.0.1",
-    port: Optional[int] = None,
+    port: int | None = None,
     client_id: int = 1,
     gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig(),
 ) -> InteractiveBrokersClient:

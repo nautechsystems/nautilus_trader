@@ -443,7 +443,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
     # Act, Assert
     for update in BetfairDataProvider.market_updates():
         for message in parser.parse(update):
-            if isinstance(message, (BettingInstrument, VenueStatus)):
+            if isinstance(message, BettingInstrument | VenueStatus):
                 continue
             if message.instrument_id not in books:
                 books[message.instrument_id] = create_betfair_order_book(
@@ -456,7 +456,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
                 book.apply_delta(message)
             elif isinstance(
                 message,
-                (Ticker, TradeTick, InstrumentStatus, InstrumentClose),
+                Ticker | TradeTick | InstrumentStatus | InstrumentClose,
             ):
                 pass
             else:

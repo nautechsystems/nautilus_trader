@@ -15,7 +15,6 @@
 
 from datetime import datetime
 from functools import lru_cache
-from typing import Optional
 
 import pandas as pd
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -307,7 +306,7 @@ async def generate_trades_list(
     self,
     venue_order_id: VenueOrderId,
     symbol: Symbol,
-    since: Optional[datetime] = None,
+    since: datetime | None = None,
 ) -> list[TradeReport]:
     filled = self.client().betting.list_cleared_orders(
         bet_ids=[venue_order_id],
@@ -338,13 +337,13 @@ async def generate_trades_list(
 
 
 @lru_cache(None)
-def parse_handicap(x) -> Optional[str]:
+def parse_handicap(x) -> str | None:
     """
     Ensure consistent parsing of the various handicap sources we get.
     """
     if x in (None, ""):
         return "0.0"
-    if isinstance(x, (int, str)):
+    if isinstance(x, int | str):
         return str(float(x))
     elif isinstance(x, float):
         return str(x)

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -41,7 +41,7 @@ class SortinoRatio(PortfolioStatistic):
     def name(self) -> str:
         return f"Sortino Ratio ({self.period} days)"
 
-    def calculate_from_returns(self, returns: pd.Series) -> Optional[Any]:
+    def calculate_from_returns(self, returns: pd.Series) -> Any | None:
         # Preconditions
         if not self._check_valid_returns(returns):
             return np.nan

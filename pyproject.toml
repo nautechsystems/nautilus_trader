@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.179.0"
+version = "1.180.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -50,7 +50,7 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
+python = ">=3.10,<3.12"
 cython = "==3.0.4"  # Build dependency (pinned for stability)
 numpy = "^1.26.1"  # Build dependency
 toml = "^0.10.2"  # Build dependency
@@ -64,7 +64,7 @@ psutil = "^5.9.6"
 pyarrow = ">=12.0.1"  # Minimum version set one major version behind the latest for compatibility
 pytz = "^2023.3.0"
 tqdm = "^4.66.1"
-uvloop = {version = "^0.18.0", markers = "sys_platform != 'win32'"}
+uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.3", optional = true}
 redis = {version = "^5.0.1", optional = true}
 docker = {version = "^6.1.3", optional = true}
@@ -118,13 +118,12 @@ sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 
 [tool.isort]
-py_version = "39"
+py_version = "310"
 skip_glob = ["**/core/rust/*"]
 combine_as_imports = true
 line_length = 100
 ensure_newline_before_comments = true
 force_single_line = true
-single_line_exclusions = ["typing"]
 include_trailing_comma = true
 multi_line_output = 3
 lines_after_imports = 2
@@ -132,7 +131,7 @@ use_parentheses = true
 filter_files = true
 
 [tool.black]
-target_version = ["py39", "py310", "py311"]
+target_version = ["py310", "py311"]
 line_length = 100
 
 [tool.docformatter]
@@ -144,7 +143,7 @@ recursive = true
 in-place = true
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 150  # Reduce to 100
 select = [
     "C4",
@@ -254,7 +253,7 @@ lines-after-imports = 2
 max-complexity = 10
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true

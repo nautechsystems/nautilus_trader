@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 from collections.abc import Generator
 from os import PathLike
 from typing import BinaryIO
@@ -48,7 +46,7 @@ class BetfairParser:
         self.traded_volumes: dict[InstrumentId, dict[float, float]] = {}
 
     def parse(self, mcm: MCM, ts_init: int | None = None) -> list[PARSE_TYPES]:
-        if isinstance(mcm, (Status, Connection, OCM)):
+        if isinstance(mcm, Status | Connection | OCM):
             return []
         if mcm.is_heartbeat:
             return []

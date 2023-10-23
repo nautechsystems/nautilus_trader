@@ -15,7 +15,7 @@
 
 import asyncio
 from decimal import Decimal
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import pandas as pd
 
@@ -154,34 +154,34 @@ class SandboxExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ) -> Optional[OrderStatusReport]:
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None:
         return None
 
     async def generate_order_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         return []
 
     async def generate_trade_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[TradeReport]:
         return []
 
     async def generate_position_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         return []
 
