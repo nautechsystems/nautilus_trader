@@ -26,13 +26,18 @@ An incorrectly specified instrument may truncate data or otherwise produce surpr
 Generic test instruments can be instantiated through the `TestInstrumentProvider`:
 
 ```python
+from nautilus_trader.test_kit.providers import TestInstrumentProvider
+
 audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 ```
 
 Exchange specific instruments can be discovered from live exchange data using an adapters `InstrumentProvider`:
 
 ```python
-provider = BinanceInstrumentProvider(
+from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.model.identifiers import InstrumentId
+
+provider = BinanceSpotInstrumentProvider(
     client=binance_http_client,
     logger=live_logger,
 )
@@ -45,6 +50,8 @@ instrument = provider.find(btcusdt)
 Or flexibly defined by the user through an `Instrument` constructor, or one of its more specific subclasses:
 
 ```python
+from nautilus_trader.model.instruments import Instrument
+
 instrument = Instrument(...)  # <-- provide all necessary parameters
 ```
 See the full instrument [API Reference](../api_reference/model/instruments.md).

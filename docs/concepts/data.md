@@ -130,6 +130,10 @@ The data catalog can be initialized from a `NAUTILUS_PATH` environment variable,
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
 
 ```python
+import os
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
+
 CATALOG_PATH = os.getcwd() + "/catalog"
 
 # Create a new catalog instance
@@ -159,6 +163,9 @@ Rust Arrow schema implementations and available for the follow data types (enhan
 ### Reading data
 Any stored data can then we read back into memory:
 ```python
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+import pandas as pd
+
 start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz=pytz.utc))
 end =  dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz=pytz.utc))
 
@@ -170,6 +177,9 @@ When running backtests in streaming mode with a `BacktestNode`, the data catalog
 
 The following example shows how to achieve this by initializing a `BacktestDataConfig` configuration object:
 ```python
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.model.data import OrderBookDelta
+
 data_config = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=OrderBookDelta,

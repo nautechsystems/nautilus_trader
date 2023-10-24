@@ -159,6 +159,8 @@ Received orders will arrive via the following `on_order(...)` method. These rece
 know as "primary" (original) orders when being handled by an execution algorithm.
 
 ```python
+from nautilus_trader.model.orders.base import Order
+
 def on_order(self, order: Order) -> None:  # noqa (too complex)
     """
     Actions to be performed when running and receives an order.

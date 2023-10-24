@@ -75,3 +75,4 @@ To install a binary wheel from GitHub, first navigate to the [latest release](ht
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
     pip install <file-name>.whl
+    
