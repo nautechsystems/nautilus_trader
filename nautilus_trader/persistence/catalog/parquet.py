@@ -254,11 +254,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: pa.Table,
         path: str,
         fs: fsspec.AbstractFileSystem,
+        basename_template: str = "part-{i}",
     ) -> None:
+        name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
         pq.write_table(
             table,
-            where=f"{path}/part-0.parquet",
+            where=f"{path}/{name}.parquet",
             filesystem=fs,
             row_group_size=self.max_rows_per_group,
         )
