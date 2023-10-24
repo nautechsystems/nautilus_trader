@@ -16,7 +16,6 @@
 use std::fmt::Display;
 
 use anyhow::Result;
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -37,8 +36,8 @@ pub struct EfficiencyRatio {
     pub price_type: PriceType,
     pub value: f64,
     pub inputs: Vec<f64>,
+    pub is_initialized: bool,
     _deltas: Vec<f64>,
-    is_initialized: bool,
 }
 
 impl Display for EfficiencyRatio {
@@ -108,53 +107,6 @@ impl EfficiencyRatio {
         } else {
             net_diff / sum_deltas
         };
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl EfficiencyRatio {
-    #[new]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
-        Self::new(period, price_type).map_err(to_pyvalue_err)
-    }
-
-    #[getter]
-    #[pyo3(name = "name")]
-    fn py_name(&self) -> String {
-        self.name()
-    }
-
-    #[getter]
-    #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
-        self.period
-    }
-
-    #[getter]
-    #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
-        self.value
-    }
-
-    #[getter]
-    #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
-        self.is_initialized
-    }
-
-    #[pyo3(name = "has_inputs")]
-    fn py_has_inputs(&self) -> bool {
-        self.has_inputs()
-    }
-
-    #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64) {
-        self.update_raw(value);
-    }
-
-    fn __repr__(&self) -> String {
-        format!("EfficiencyRatio({})", self.period)
     }
 }
 
