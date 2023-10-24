@@ -15,7 +15,7 @@
 
 import inspect
 import timeit
-from typing import Callable
+from collections.abc import Callable
 
 import pytest
 

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.core.message import Event
 from nautilus_trader.model.data import OrderBookDeltas
@@ -59,9 +58,9 @@ class MarketMaker(Strategy):
         self.trade_size = trade_size
         self.max_size = max_size
 
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
-        self._book: Optional[OrderBook] = None
-        self._mid: Optional[Decimal] = None
+        self.instrument: Instrument | None = None  # Initialized in on_start
+        self._book: OrderBook | None = None
+        self._mid: Decimal | None = None
         self._adj = Decimal(0)
 
     def on_start(self) -> None:
@@ -98,7 +97,7 @@ class MarketMaker(Strategy):
                 self.sell(price=val * Decimal(0.99))
 
     def on_event(self, event: Event) -> None:
-        if isinstance(event, (PositionOpened, PositionChanged)):
+        if isinstance(event, PositionOpened | PositionChanged):
             signed_qty = event.quantity.as_decimal()
             if event.side == PositionSide.SHORT:
                 signed_qty = -signed_qty

@@ -13,17 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import asyncio
 import concurrent.futures
 import platform
 import signal
 import socket
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from typing import Callable
 
 import msgspec
 

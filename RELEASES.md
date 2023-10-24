@@ -1,6 +1,23 @@
+# NautilusTrader 1.180.0 Beta
+
+Released on TBC (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+- Dropped support for Python 3.9
+
+### Fixes
+None
+
+---
 # NautilusTrader 1.179.0 Beta
 
-Released on TBD (UTC).
+Released on 22nd October 2023 (UTC).
+
+A major feature of this release is the `ParquetDataCatalog` version 2, which represents months of
+collective effort thanks to contributions from Brad @limx0, @twitu, @ghill2 and @davidsblom.
 
 This will be the final release with support for Python 3.9.
 
@@ -11,10 +28,12 @@ This will be the final release with support for Python 3.9.
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
 - Added Binance Futures support for GTD orders
+- Added Binance internal bar aggregation inference from aggregated trade ticks or 1-MINUTE bars (depending on lookback window)
 - Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
 - Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
+- Added `ReportProvider.generate_fills_report(...)` which provides a row per individual fill event, thanks @r3k4mn14r
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
 - Implemented Binance `WebSocketClient` live subscribe and unsubscribe
 - Implemented `BinanceCommonDataClient` retries for `update_instruments`
@@ -40,10 +59,12 @@ This will be the final release with support for Python 3.9.
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
 - Fixed open position snapshots race condition (added `open_only` flag)
 - Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
+- Fixed `BinanceWebSocketClient` reconnect behavior (reconnect handler was not being called due event loop issue from Rust)
 - Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed Binance Futures fee rates for backtesting
 - Fixed `Timer` missing condition check for non-positive intervals
 - Fixed `Condition` checks involving integers, was previously defaulting to 32-bit and overflowing
+- Fixed `ReportProvider.generate_order_fills_report(...)` which was missing partial fills for orders not in a final `FILLED` status, thanks @r3k4mn14r
 
 ---
 

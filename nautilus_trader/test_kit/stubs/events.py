@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.common.enums import ComponentState
@@ -85,7 +84,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def cash_account_state(account_id: Optional[AccountId] = None) -> AccountState:
+    def cash_account_state(account_id: AccountId | None = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.CASH,
@@ -106,7 +105,7 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def margin_account_state(account_id: Optional[AccountId] = None) -> AccountState:
+    def margin_account_state(account_id: AccountId | None = None) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.MARGIN,
@@ -136,7 +135,7 @@ class TestEventStubs:
     def betting_account_state(
         balance: float = 1_000,
         currency: Currency = GBP,
-        account_id: Optional[AccountId] = None,
+        account_id: AccountId | None = None,
     ) -> AccountState:
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
@@ -160,7 +159,7 @@ class TestEventStubs:
     @staticmethod
     def order_released(
         order: Order,
-        released_price: Optional[Price] = None,
+        released_price: Price | None = None,
     ) -> OrderReleased:
         return OrderReleased(
             trader_id=order.trader_id,
@@ -175,7 +174,7 @@ class TestEventStubs:
     @staticmethod
     def order_submitted(
         order: Order,
-        account_id: Optional[AccountId] = None,
+        account_id: AccountId | None = None,
     ) -> OrderSubmitted:
         return OrderSubmitted(
             trader_id=order.trader_id,
@@ -191,8 +190,8 @@ class TestEventStubs:
     @staticmethod
     def order_accepted(
         order: Order,
-        account_id: Optional[AccountId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
+        account_id: AccountId | None = None,
+        venue_order_id: VenueOrderId | None = None,
     ) -> OrderAccepted:
         return OrderAccepted(
             trader_id=order.trader_id,
@@ -209,7 +208,7 @@ class TestEventStubs:
     @staticmethod
     def order_rejected(
         order: Order,
-        account_id: Optional[AccountId] = None,
+        account_id: AccountId | None = None,
     ) -> OrderRejected:
         return OrderRejected(
             trader_id=order.trader_id,
@@ -240,9 +239,9 @@ class TestEventStubs:
     @staticmethod
     def order_updated(
         order: Order,
-        quantity: Optional[Quantity] = None,
-        price: Optional[Price] = None,
-        trigger_price: Optional[Price] = None,
+        quantity: Quantity | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
     ) -> OrderUpdated:
         return OrderUpdated(
             trader_id=order.trader_id,
@@ -277,16 +276,16 @@ class TestEventStubs:
     def order_filled(
         order: Order,
         instrument: Instrument,
-        strategy_id: Optional[StrategyId] = None,
-        account_id: Optional[AccountId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        trade_id: Optional[TradeId] = None,
-        position_id: Optional[PositionId] = None,
-        last_qty: Optional[Quantity] = None,
-        last_px: Optional[Price] = None,
+        strategy_id: StrategyId | None = None,
+        account_id: AccountId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        trade_id: TradeId | None = None,
+        position_id: PositionId | None = None,
+        last_qty: Quantity | None = None,
+        last_px: Price | None = None,
         liquidity_side: LiquiditySide = LiquiditySide.TAKER,
         ts_filled_ns: int = 0,
-        account: Optional[Account] = None,
+        account: Account | None = None,
     ) -> OrderFilled:
         if strategy_id is None:
             strategy_id = order.strategy_id

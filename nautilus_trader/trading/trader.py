@@ -21,10 +21,9 @@ A running instance could be either a test/backtest or live implementation - the
 
 """
 
-from __future__ import annotations
-
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
@@ -519,7 +518,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If an actor with the given `actor_id` is not found.
 
         """
@@ -546,7 +545,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If a strategy with the given `strategy_id` is not found.
 
         """
@@ -573,7 +572,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If an actor with the given `actor_id` is not found.
 
         """
@@ -600,7 +599,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If a strategy with the given `strategy_id` is not found.
 
         """
@@ -629,7 +628,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If an actor with the given `actor_id` is not found.
 
         """
@@ -657,7 +656,7 @@ class Trader(Component):
 
         Raises
         ------
-        ValueError:
+        ValueError
             If a strategy with the given `strategy_id` is not found.
 
         """

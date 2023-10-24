@@ -15,7 +15,8 @@
 
 import pickle
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Optional
+from typing import Union
 
 import pandas as pd
 

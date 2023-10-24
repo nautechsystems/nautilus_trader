@@ -20,8 +20,8 @@ import tempfile
 import pytest
 
 from nautilus_trader import PACKAGE_ROOT
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness

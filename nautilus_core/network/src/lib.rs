@@ -23,7 +23,7 @@ use http::{HttpClient, HttpMethod, HttpResponse};
 use pyo3::prelude::*;
 use ratelimiter::quota::Quota;
 use socket::{SocketClient, SocketConfig};
-use websocket::WebSocketClient;
+use websocket::{WebSocketClient, WebSocketConfig};
 
 /// Loaded as nautilus_pyo3.network
 #[pymodule]
@@ -33,6 +33,7 @@ pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Quota>()?;
     m.add_class::<HttpResponse>()?;
     m.add_class::<WebSocketClient>()?;
+    m.add_class::<WebSocketConfig>()?;
     m.add_class::<SocketClient>()?;
     m.add_class::<SocketConfig>()?;
     Ok(())

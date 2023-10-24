@@ -18,17 +18,17 @@ from datetime import timedelta
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import AggregationSource
-from nautilus_trader.core.nautilus_pyo3.model import Bar
-from nautilus_trader.core.nautilus_pyo3.model import BarAggregation
-from nautilus_trader.core.nautilus_pyo3.model import BarSpecification
-from nautilus_trader.core.nautilus_pyo3.model import BarType
-from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
-from nautilus_trader.core.nautilus_pyo3.model import Price
-from nautilus_trader.core.nautilus_pyo3.model import PriceType
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
-from nautilus_trader.core.nautilus_pyo3.model import Symbol
-from nautilus_trader.core.nautilus_pyo3.model import Venue
+from nautilus_trader.core.nautilus_pyo3 import AggregationSource
+from nautilus_trader.core.nautilus_pyo3 import Bar
+from nautilus_trader.core.nautilus_pyo3 import BarAggregation
+from nautilus_trader.core.nautilus_pyo3 import BarSpecification
+from nautilus_trader.core.nautilus_pyo3 import BarType
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Price
+from nautilus_trader.core.nautilus_pyo3 import PriceType
+from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import Symbol
+from nautilus_trader.core.nautilus_pyo3 import Venue
 
 
 pytestmark = pytest.mark.skip(reason="WIP")

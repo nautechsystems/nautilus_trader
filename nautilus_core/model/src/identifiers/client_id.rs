@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a system client ID.
@@ -64,26 +63,6 @@ impl From<&str> for ClientId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn client_id_new(ptr: *const c_char) -> ClientId {
-    ClientId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn client_id_hash(id: &ClientId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -93,12 +72,12 @@ pub mod stubs {
     use crate::identifiers::client_id::ClientId;
 
     #[fixture]
-    pub fn client_binance() -> ClientId {
+    pub fn client_id_binance() -> ClientId {
         ClientId::from("BINANCE")
     }
 
     #[fixture]
-    pub fn client_dydx() -> ClientId {
+    pub fn client_id_dydx() -> ClientId {
         ClientId::from("COINBASE")
     }
 }
@@ -108,32 +87,13 @@ pub mod stubs {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::ffi::CStr;
-
     use rstest::rstest;
 
     use super::{stubs::*, *};
 
     #[rstest]
-    fn test_string_reprs(client_binance: ClientId) {
-        assert_eq!(client_binance.to_string(), "BINANCE");
-        assert_eq!(format!("{client_binance}"), "BINANCE");
-    }
-
-    #[rstest]
-    fn test_client_id_to_cstr_c() {
-        let id = ClientId::from("BINANCE");
-        let c_string = id.value.as_char_ptr();
-        let rust_string = unsafe { CStr::from_ptr(c_string) }.to_str().unwrap();
-        assert_eq!(rust_string, "BINANCE");
-    }
-
-    #[rstest]
-    fn test_client_id_hash_c() {
-        let id1 = client_binance();
-        let id2 = client_binance();
-        let id3 = client_dydx();
-        assert_eq!(client_id_hash(&id1), client_id_hash(&id2));
-        assert_ne!(client_id_hash(&id1), client_id_hash(&id3));
+    fn test_string_reprs(client_id_binance: ClientId) {
+        assert_eq!(client_id_binance.to_string(), "BINANCE");
+        assert_eq!(format!("{client_id_binance}"), "BINANCE");
     }
 }

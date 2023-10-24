@@ -62,6 +62,7 @@ cdef class BarAggregator:
     cdef LoggerAdapter _log
     cdef BarBuilder _builder
     cdef object _handler
+    cdef bint _await_partial
 
     cdef readonly BarType bar_type
     """The aggregators bar type.\n\n:returns: `BarType`"""

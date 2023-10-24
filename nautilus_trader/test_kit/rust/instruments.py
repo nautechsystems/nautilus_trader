@@ -13,19 +13,25 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3.model import CryptoPerpetual
-from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
-from nautilus_trader.core.nautilus_pyo3.model import Money
-from nautilus_trader.core.nautilus_pyo3.model import Price
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
-from nautilus_trader.core.nautilus_pyo3.model import Symbol
+from datetime import datetime
+
+import pandas as pd
+import pytz
+
+from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.core.nautilus_pyo3 import Price
+from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.test_kit.rust.types import TestTypesProviderPyo3
 
 
 class TestInstrumentProviderPyo3:
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
-        return CryptoPerpetual(
+        return CryptoPerpetual(  # type: ignore
             InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
             Symbol("ETHUSDT"),
             TestTypesProviderPyo3.currency_eth(),
@@ -46,4 +52,34 @@ class TestInstrumentProviderPyo3:
             Money(10.0, TestTypesProviderPyo3.currency_usdt()),
             Price.from_str("15000.0"),
             Price.from_str("1.0"),
+        )
+
+    @staticmethod
+    def btcusdt_future_binance(expiry: pd.Timestamp | None = None) -> CryptoFuture:
+        if expiry is None:
+            expiry = pd.Timestamp(datetime(2022, 3, 25), tz=pytz.UTC)
+            nanos_expiry = int(expiry.timestamp() * 1e9)
+        instrument_id_str = f"BTCUSDT_{expiry.strftime('%y%m%d')}.BINANCE"
+        return CryptoFuture(  # type: ignore
+            InstrumentId.from_str(instrument_id_str),
+            Symbol("BTCUSDT"),
+            TestTypesProviderPyo3.currency_btc(),
+            TestTypesProviderPyo3.currency_usdt(),
+            TestTypesProviderPyo3.currency_usdt(),
+            nanos_expiry,
+            2,
+            6,
+            Price.from_str("0.01"),
+            Quantity.from_str("0.000001"),
+            0.0,
+            0.0,
+            0.001,
+            0.001,
+            None,
+            Quantity.from_str("9000"),
+            Quantity.from_str("0.00001"),
+            None,
+            Money(10.0, TestTypesProviderPyo3.currency_usdt()),
+            Price.from_str("1000000.0"),
+            Price.from_str("0.01"),
         )

@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Annotated, Any, Callable, NamedTuple, Optional, Union
+from typing import Annotated, Any, NamedTuple
 
 import msgspec
 
@@ -46,7 +47,7 @@ class Request(msgspec.Struct, frozen=True):
     """
 
     req_id: Annotated[int, msgspec.Meta(gt=0)]
-    name: Union[str, tuple]
+    name: str | tuple
     handle: Callable
     cancel: Callable
     future: asyncio.Future
@@ -62,7 +63,7 @@ class Subscription(msgspec.Struct, frozen=True):
     """
 
     req_id: Annotated[int, msgspec.Meta(gt=0)]
-    name: Union[str, tuple]
+    name: str | tuple
     handle: Callable
     cancel: Callable
     last: Any
@@ -77,7 +78,7 @@ class Base:
     """
 
     def __init__(self):
-        self._req_id_to_name: dict[int, Union[str, tuple]] = {}  # type: ignore
+        self._req_id_to_name: dict[int, str | tuple] = {}  # type: ignore
         self._req_id_to_handle: dict[int, Callable] = {}  # type: ignore
         self._req_id_to_cancel: dict[int, Callable] = {}  # type: ignore
 
@@ -102,8 +103,8 @@ class Base:
 
     def remove(
         self,
-        req_id: Optional[int] = None,
-        name: Optional[Union[InstrumentId, BarType, str]] = None,
+        req_id: int | None = None,
+        name: InstrumentId | (BarType | str) | None = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)
@@ -118,8 +119,8 @@ class Base:
 
     def get(
         self,
-        req_id: Optional[int] = None,
-        name: Optional[Union[str, tuple]] = None,
+        req_id: int | None = None,
+        name: str | tuple | None = None,
     ):
         raise NotImplementedError("method must be implemented in the subclass")
 
@@ -136,7 +137,7 @@ class Subscriptions(Base):
     def add(
         self,
         req_id: int,
-        name: Union[str, tuple],
+        name: str | tuple,
         handle: Callable,
         cancel: Callable = lambda: None,
     ):
@@ -149,8 +150,8 @@ class Subscriptions(Base):
 
     def get(
         self,
-        req_id: Optional[int] = None,
-        name: Optional[Union[str, tuple]] = None,
+        req_id: int | None = None,
+        name: str | tuple | None = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)
@@ -184,7 +185,7 @@ class Requests(Base):
     def add(
         self,
         req_id: int,
-        name: Union[str, tuple],
+        name: str | tuple,
         handle: Callable,
         cancel: Callable = lambda: None,
     ):
@@ -198,8 +199,8 @@ class Requests(Base):
 
     def get(
         self,
-        req_id: Optional[int] = None,
-        name: Optional[Union[str, tuple]] = None,
+        req_id: int | None = None,
+        name: str | tuple | None = None,
     ):
         if not req_id:
             req_id = self._name_to_req_id(name)

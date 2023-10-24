@@ -15,7 +15,6 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -175,7 +174,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
         # Check Binance for all active positions
@@ -197,7 +196,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> set[str]:
         # Check Binance for all active positions
         active_symbols: set[str] = set()
@@ -261,6 +260,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         # TODO(cs): Uncomment for development
         # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
+        if not wrapper.stream:
+            # Control message response
+            return
         try:
             self._futures_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:

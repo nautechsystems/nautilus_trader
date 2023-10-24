@@ -14,7 +14,7 @@ members = [
 
 [workspace.package]
 rust-version = "1.73.0"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -34,11 +34,11 @@ rust_decimal_macros = "1.32.0"
 serde = { version = "1.0.189", features = ["derive"] }
 serde_json = "1.0.107"
 strum = { version = "0.25.0", features = ["derive"] }
-thiserror = "1.0.49"
-tracing = "0.1.37"
+thiserror = "1.0.50"
+tracing = "0.1.40"
 tokio = { version = "1.33.0", features = ["full"] }
 ustr = { git = "https://github.com/anderslanglands/ustr", features = ["serde"] }
-uuid = { version = "1.4.1", features = ["v4"] }
+uuid = { version = "1.5.0", features = ["v4"] }
 
 # dev-dependencies
 criterion = "0.5.1"

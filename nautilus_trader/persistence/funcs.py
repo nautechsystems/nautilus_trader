@@ -13,11 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
-import re
-
 from nautilus_trader.core.inspect import is_nautilus_class
+from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
@@ -44,7 +41,7 @@ byte_sizes.update({k[:-1]: v for k, v in byte_sizes.items() if k and "i" in k})
 
 
 def parse_bytes(s: float | str) -> int:
-    if isinstance(s, (int, float)):
+    if isinstance(s, int | float):
         return int(s)
     s = s.replace(" ", "")
     if not any(char.isdigit() for char in s):
@@ -83,19 +80,12 @@ def clean_windows_key(s: str) -> str:
     return s
 
 
-def camel_to_snake_case(s: str) -> str:
-    """
-    Convert the given string from camel to snake case.
-    """
-    return re.sub(r"((?<=[a-z0-9])[A-Z]|(?!^)[A-Z](?=[a-z]))", r"_\1", s).lower()
-
-
 def class_to_filename(cls: type) -> str:
     """
     Convert the given class to a filename.
     """
     filename_mappings = {"OrderBookDeltas": "OrderBookDelta"}
-    name = f"{camel_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
+    name = f"{convert_to_snake_case(filename_mappings.get(cls.__name__, cls.__name__))}"
     if not is_nautilus_class(cls):
         name = f"{GENERIC_DATA_PREFIX}{name}"
     return name

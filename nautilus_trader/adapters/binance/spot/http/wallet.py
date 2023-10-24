@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -24,7 +23,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.wallet import BinanceSpotTradeFee
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
@@ -71,8 +70,8 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        symbol: Optional[BinanceSymbol] = None
-        recvWindow: Optional[str] = None
+        symbol: BinanceSymbol | None = None
+        recvWindow: str | None = None
 
     async def get(self, parameters: GetParameters) -> list[BinanceSpotTradeFee]:
         method_type = HttpMethod.GET
@@ -119,8 +118,8 @@ class BinanceSpotWalletHttpAPI:
 
     async def query_spot_trade_fees(
         self,
-        symbol: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        symbol: str | None = None,
+        recv_window: str | None = None,
     ) -> list[BinanceSpotTradeFee]:
         fees = await self._endpoint_spot_trade_fee.get(
             parameters=self._endpoint_spot_trade_fee.GetParameters(

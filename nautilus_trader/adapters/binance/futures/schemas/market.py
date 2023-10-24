@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -61,7 +60,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
     contractType: str  # Can be '' empty string
     deliveryDate: int
     onboardDate: int
-    status: Optional[BinanceFuturesContractStatus] = None
+    status: BinanceFuturesContractStatus | None = None
     maintMarginPercent: str
     requiredMarginPercent: str
     baseAsset: str
@@ -73,7 +72,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
     quotePrecision: int
     underlyingType: str
     underlyingSubType: list[str]
-    settlePlan: Optional[int] = None
+    settlePlan: int | None = None
     triggerProtect: str
     liquidationFee: str
     marketTakeBound: str
@@ -109,7 +108,7 @@ class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True, frozen=True):
     serverTime: int
     rateLimits: list[BinanceRateLimit]
     exchangeFilters: list[BinanceExchangeFilter]
-    assets: Optional[list[BinanceFuturesAsset]] = None
+    assets: list[BinanceFuturesAsset] | None = None
     symbols: list[BinanceFuturesSymbolInfo]
 
 

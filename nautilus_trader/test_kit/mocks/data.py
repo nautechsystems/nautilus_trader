@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from pathlib import Path
-from typing import Optional, Union
 
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -39,7 +38,7 @@ class NewsEventData(NewsEvent):
 
 def data_catalog_setup(
     protocol: str,
-    path: Optional[Union[str, Path]] = None,
+    path: str | Path | None = None,
 ) -> ParquetDataCatalog:
     if protocol not in ("memory", "file"):
         raise ValueError("`protocol` should only be one of `memory` or `file` for testing")
@@ -63,7 +62,7 @@ def data_catalog_setup(
     return catalog
 
 
-def aud_usd_data_loader(catalog: ParquetDataCatalog):
+def aud_usd_data_loader(catalog: ParquetDataCatalog) -> None:
     from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
     venue = Venue("SIM")
@@ -80,5 +79,6 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog):
 
     wrangler = QuoteTickDataWrangler(instrument)
     ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx-audusd-ticks.csv"))
+    ticks.sort(key=lambda x: x.ts_init)  # CAUTION: data was not originally sorted
     catalog.write_data([instrument])
     catalog.write_data(ticks)

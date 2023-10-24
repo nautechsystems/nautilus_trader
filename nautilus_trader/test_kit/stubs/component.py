@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -67,7 +66,7 @@ class TestComponentStubs:
         )
 
     @staticmethod
-    def cache(logger: Optional[Logger] = None) -> Cache:
+    def cache(logger: Logger | None = None) -> Cache:
         return Cache(
             database=None,
             logger=logger or TestComponentStubs.logger(),
@@ -145,15 +144,15 @@ class TestComponentStubs:
 
     @staticmethod
     def backtest_engine(
-        config: Optional[BacktestEngineConfig] = None,
-        instrument: Optional[Instrument] = None,
-        ticks: Optional[list[Data]] = None,
-        venue: Optional[Venue] = None,
-        oms_type: Optional[OmsType] = None,
-        account_type: Optional[AccountType] = None,
-        base_currency: Optional[Currency] = None,
-        starting_balances: Optional[list[Money]] = None,
-        fill_model: Optional[FillModel] = None,
+        config: BacktestEngineConfig | None = None,
+        instrument: Instrument | None = None,
+        ticks: list[Data] | None = None,
+        venue: Venue | None = None,
+        oms_type: OmsType | None = None,
+        account_type: AccountType | None = None,
+        base_currency: Currency | None = None,
+        starting_balances: list[Money] | None = None,
+        fill_model: FillModel | None = None,
     ) -> BacktestEngine:
         engine = BacktestEngine(config=config)
         engine.add_venue(

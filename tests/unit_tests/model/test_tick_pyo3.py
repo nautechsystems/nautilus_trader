@@ -17,16 +17,16 @@ import pickle
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import AggressorSide
-from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
-from nautilus_trader.core.nautilus_pyo3.model import Price
-from nautilus_trader.core.nautilus_pyo3.model import PriceType
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
-from nautilus_trader.core.nautilus_pyo3.model import QuoteTick
-from nautilus_trader.core.nautilus_pyo3.model import Symbol
-from nautilus_trader.core.nautilus_pyo3.model import TradeId
-from nautilus_trader.core.nautilus_pyo3.model import TradeTick
-from nautilus_trader.core.nautilus_pyo3.model import Venue
+from nautilus_trader.core.nautilus_pyo3 import AggressorSide
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import Price
+from nautilus_trader.core.nautilus_pyo3 import PriceType
+from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick
+from nautilus_trader.core.nautilus_pyo3 import Symbol
+from nautilus_trader.core.nautilus_pyo3 import TradeId
+from nautilus_trader.core.nautilus_pyo3 import TradeTick
+from nautilus_trader.core.nautilus_pyo3 import Venue
 
 
 AUDUSD_SIM_ID = InstrumentId.from_str("AUD/USD.SIM")

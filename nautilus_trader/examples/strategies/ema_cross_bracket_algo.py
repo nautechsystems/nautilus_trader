@@ -15,7 +15,7 @@
 
 from datetime import timedelta
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
@@ -99,12 +99,12 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
     slow_ema_period: int = 20
     bracket_distance_atr: float = 3.0
     emulation_trigger: str = "NO_TRIGGER"
-    entry_exec_algorithm_id: Optional[str] = None
-    entry_exec_algorithm_params: Optional[dict[str, Any]] = None
-    sl_exec_algorithm_id: Optional[str] = None
-    sl_exec_algorithm_params: Optional[dict[str, Any]] = None
-    tp_exec_algorithm_id: Optional[str] = None
-    tp_exec_algorithm_params: Optional[dict[str, Any]] = None
+    entry_exec_algorithm_id: str | None = None
+    entry_exec_algorithm_params: dict[str, Any] | None = None
+    sl_exec_algorithm_id: str | None = None
+    sl_exec_algorithm_params: dict[str, Any] | None = None
+    tp_exec_algorithm_id: str | None = None
+    tp_exec_algorithm_params: dict[str, Any] | None = None
     close_positions_on_stop: bool = True
 
 
@@ -171,7 +171,7 @@ class EMACrossBracketAlgo(Strategy):
         self.tp_exec_algorithm_params = config.tp_exec_algorithm_params
 
         self.close_positions_on_stop = config.close_positions_on_stop
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.instrument: Instrument | None = None  # Initialized in on_start
 
     def on_start(self) -> None:
         """

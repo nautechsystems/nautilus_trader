@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -91,7 +90,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     """
 
     reconciliation: bool = True
-    reconciliation_lookback_mins: Optional[NonNegativeInt] = None
+    reconciliation_lookback_mins: NonNegativeInt | None = None
     filter_unclaimed_external_orders: bool = False
     filter_position_reports: bool = False
     inflight_check_interval_ms: NonNegativeInt = 2_000
@@ -114,7 +113,7 @@ class RoutingConfig(NautilusConfig, frozen=True):
     """
 
     default: bool = False
-    venues: Optional[frozenset[str]] = None
+    venues: frozenset[str] | None = None
 
 
 class LiveDataClientConfig(NautilusConfig, frozen=True):
@@ -190,4 +189,4 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
-    heartbeat_interval: Optional[PositiveFloat] = None
+    heartbeat_interval: PositiveFloat | None = None

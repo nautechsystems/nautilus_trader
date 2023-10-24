@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -24,7 +23,7 @@ from nautilus_trader.adapters.binance.futures.schemas.wallet import BinanceFutur
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
@@ -73,7 +72,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
 
         timestamp: str
         symbol: BinanceSymbol
-        recvWindow: Optional[str] = None
+        recvWindow: str | None = None
 
     async def get(self, parameters: GetParameters) -> BinanceFuturesCommissionRate:
         method_type = HttpMethod.GET
@@ -125,7 +124,7 @@ class BinanceFuturesWalletHttpAPI:
     async def query_futures_commission_rate(
         self,
         symbol: str,
-        recv_window: Optional[str] = None,
+        recv_window: str | None = None,
     ) -> BinanceFuturesCommissionRate:
         """
         Get Futures commission rates for a given symbol.

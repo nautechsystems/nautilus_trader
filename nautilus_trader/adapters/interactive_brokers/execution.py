@@ -16,7 +16,7 @@
 import asyncio
 import json
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 from ibapi.commission_report import CommissionReport
@@ -210,9 +210,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ) -> Optional[OrderStatusReport]:
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None:
         """
         Generate an `OrderStatusReport` for the given order identifier parameter(s). If
         the order is not found, or an error occurs, then logs and returns ``None``.
@@ -324,9 +324,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         """
@@ -400,10 +400,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def generate_trade_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[TradeReport]:
         """
         Generate a list of `TradeReport`s with optional query filters. The returned list
@@ -431,9 +431,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         """
         Generate a list of `PositionStatusReport`s with optional query filters. The
@@ -490,7 +490,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if value := getattr(order, key, None):
                 setattr(ib_order, field, fn(value))
 
-        if isinstance(order, (TrailingStopLimitOrder, TrailingStopMarketOrder)):
+        if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
             ib_order.auxPrice = float(order.trailing_offset)
             if order.trigger_price:
                 ib_order.trailStopPrice = order.trigger_price.as_double()
@@ -498,7 +498,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         elif (
             isinstance(
                 order,
-                (MarketIfTouchedOrder, LimitIfTouchedOrder, StopLimitOrder, StopMarketOrder),
+                MarketIfTouchedOrder | LimitIfTouchedOrder | StopLimitOrder | StopMarketOrder,
             )
         ) and order.trigger_price:
             ib_order.auxPrice = order.trigger_price.as_double()
@@ -690,7 +690,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self,
         status: OrderStatus,
         order: Order,
-        order_id: Optional[int] = None,
+        order_id: int | None = None,
         reason: str = "",
     ):
         if status == OrderStatus.SUBMITTED:

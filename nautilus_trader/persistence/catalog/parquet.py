@@ -19,11 +19,12 @@ import os
 import pathlib
 import platform
 from collections import defaultdict
+from collections.abc import Callable
 from collections.abc import Generator
 from itertools import groupby
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, NamedTuple, Union
+from typing import Any, NamedTuple
 
 import fsspec
 import pandas as pd
@@ -35,12 +36,13 @@ from fsspec.implementations.memory import MemoryFileSystem
 from fsspec.utils import infer_storage_options
 from pyarrow import ArrowInvalid
 
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import GenericData
@@ -58,7 +60,7 @@ from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
 
 
-TimestampLike = Union[int, str, float]
+TimestampLike = int | str | float
 
 
 class FeatherFile(NamedTuple):
@@ -86,6 +88,16 @@ class ParquetDataCatalog(BaseDataCatalog):
         meaning the catalog operates on the local filesystem.
     fs_storage_options : dict, optional
         The fs storage options.
+    min_rows_per_group : int, default 0
+        The minimum number of rows per group. When the value is greater than 0,
+        the dataset writer will batch incoming data and only write the row
+        groups to the disk when sufficient rows have accumulated.
+    max_rows_per_group : int, default 5000
+        The maximum number of rows per group. If the value is greater than 0,
+        then the dataset writer may split up large incoming batches into
+        multiple row groups.  If this value is set, then min_rows_per_group
+        should also be set. Otherwise it could end up with very small row
+        groups.
     show_query_paths : bool, default False
         If globed query paths should be printed to stdout.
 
@@ -107,6 +119,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs_protocol: str | None = _DEFAULT_FS_PROTOCOL,
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
+        min_rows_per_group: int = 0,
+        max_rows_per_group: int = 5000,
         show_query_paths: bool = False,
     ) -> None:
         self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
@@ -117,6 +131,8 @@ class ParquetDataCatalog(BaseDataCatalog):
         )
         self.serializer = ArrowSerializer()
         self.dataset_kwargs = dataset_kwargs or {}
+        self.min_rows_per_group = min_rows_per_group
+        self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
 
         final_path = str(make_path_posix(str(path)))
@@ -177,13 +193,27 @@ class ParquetDataCatalog(BaseDataCatalog):
     # -- WRITING ----------------------------------------------------------------------------------
 
     def _objects_to_table(self, data: list[Data], data_cls: type) -> pa.Table:
-        assert len(data) > 0
-        assert all(type(obj) is data_cls for obj in data)  # same type
-        table = self.serializer.serialize_batch(data, data_cls=data_cls)
-        assert table is not None
-        if isinstance(table, pa.RecordBatch):
-            table = pa.Table.from_batches([table])
-        return table
+        PyCondition.not_empty(data, "data")
+        PyCondition.list_type(data, data_cls, "data")
+        sorted_data = sorted(data, key=lambda x: x.ts_init)
+
+        # Check data is strictly non-decreasing prior to write
+        for original, sorted_version in zip(data, sorted_data):
+            if original.ts_init != sorted_version.ts_init:
+                raise ValueError(
+                    "Data should be monotonically increasing (or non-decreasing) based on `ts_init`: "
+                    f"found {original.ts_init} followed by {sorted_version.ts_init}. "
+                    "Consider sorting your data with something like "
+                    "`data.sort(key=lambda x: x.ts_init)` prior to writing to the catalog.",
+                )
+
+        table_or_batch = self.serializer.serialize_batch(data, data_cls=data_cls)
+        assert table_or_batch is not None
+
+        if isinstance(table_or_batch, pa.RecordBatch):
+            return pa.Table.from_batches([table_or_batch])
+        else:
+            return table_or_batch
 
     def _make_path(self, data_cls: type[Data], instrument_id: str | None = None) -> str:
         if instrument_id is not None:
@@ -213,6 +243,8 @@ class ParquetDataCatalog(BaseDataCatalog):
                 base_dir=path,
                 format="parquet",
                 filesystem=self.fs,
+                min_rows_per_group=self.min_rows_per_group,
+                max_rows_per_group=self.max_rows_per_group,
                 **self.dataset_kwargs,
                 **kwargs,
             )
@@ -226,9 +258,43 @@ class ParquetDataCatalog(BaseDataCatalog):
     ) -> None:
         name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
-        pq.write_table(table, where=f"{path}/{name}.parquet", filesystem=fs)
+        pq.write_table(
+            table,
+            where=f"{path}/{name}.parquet",
+            filesystem=fs,
+            row_group_size=self.max_rows_per_group,
+        )
 
     def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
+        """
+        Write the given `data` to the catalog.
+
+        The function categorizes the data based on their class name and, when applicable, their
+        associated instrument ID. It then delegates the actual writing process to the
+        `write_chunk` method.
+
+        Parameters
+        ----------
+        data : list[Data | Event]
+            The data or event objects to be written to the catalog.
+        kwargs : Any
+            Additional keyword arguments to be passed to the `write_chunk` method.
+
+        Notes
+        -----
+         - All data of the same type is expected to be monotonically increasing, or non-decreasing
+         - The data is sorted and grouped based on its class name and instrument ID (if applicable) before writing
+         - Instrument-specific data should have either an `instrument_id` attribute or be an instance of `Instrument`
+         - The `Bar` class is treated as a special case, being grouped based on its `bar_type` attribute
+         - The input data list must be non-empty, and all data items must be of the appropriate class type
+
+        Raises
+        ------
+        ValueError
+            If data of the same type is not monotonically increasing (or non-decreasing) based on `ts_init`.
+
+        """
+
         def key(obj: Any) -> tuple[str, str | None]:
             name = type(obj).__name__
             if isinstance(obj, Instrument):
@@ -288,7 +354,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             ]
         return data
 
-    def backend_session(  # noqa (too complex)
+    def backend_session(
         self,
         data_cls: type,
         instrument_ids: list[str] | None = None,
@@ -300,49 +366,35 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> DataBackendSession:
         assert self.fs_protocol == "file", "Only file:// protocol is supported for Rust queries"
-        name = data_cls.__name__
-        file_prefix = class_to_filename(data_cls)
-        data_type = getattr(NautilusDataType, {"OrderBookDeltas": "OrderBookDelta"}.get(name, name))
+        data_type: NautilusDataType = ParquetDataCatalog._nautilus_data_cls_to_data_type(data_cls)
 
         if session is None:
             session = DataBackendSession()
         if session is None:
             raise ValueError("`session` was `None` when a value was expected")
 
-        # TODO: Extract this into a function
-        if data_cls in (OrderBookDelta, OrderBookDeltas):
-            data_type = NautilusDataType.OrderBookDelta
-        elif data_cls == QuoteTick:
-            data_type = NautilusDataType.QuoteTick
-        elif data_cls == TradeTick:
-            data_type = NautilusDataType.TradeTick
-        elif data_cls == Bar:
-            data_type = NautilusDataType.Bar
-        else:
-            raise RuntimeError("unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
-
-        # TODO (bm) - fix this glob, query once on catalog creation?
+        file_prefix = class_to_filename(data_cls)
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
         dirs = self.fs.glob(glob_path)
         if self.show_query_paths:
             print(dirs)
 
-        for idx, fn in enumerate(dirs):
-            assert self.fs.exists(fn)
-            if instrument_ids and not any(urisafe_instrument_id(x) in fn for x in instrument_ids):
+        for idx, path in enumerate(dirs):
+            assert self.fs.exists(path)
+            if instrument_ids and not any(urisafe_instrument_id(x) in path for x in instrument_ids):
                 continue
-            if bar_types and not any(urisafe_instrument_id(x) in fn for x in bar_types):
+            if bar_types and not any(urisafe_instrument_id(x) in path for x in bar_types):
                 continue
             table = f"{file_prefix}_{idx}"
             query = self._build_query(
                 table,
-                # instrument_ids=None, # Filtering by filename for now.
+                # instrument_ids=None, # Filtering by filename for now
                 start=start,
                 end=end,
                 where=where,
             )
 
-            session.add_file(data_type, table, fn, query)
+            session.add_file(data_type, table, str(path), query)
 
         return session
 
@@ -460,6 +512,19 @@ class ParquetDataCatalog(BaseDataCatalog):
             query += f" WHERE {' AND '.join(conditions)}"
 
         return query
+
+    @staticmethod
+    def _nautilus_data_cls_to_data_type(data_cls: type) -> NautilusDataType:
+        if data_cls in (OrderBookDelta, OrderBookDeltas):
+            return NautilusDataType.OrderBookDelta
+        elif data_cls == QuoteTick:
+            return NautilusDataType.QuoteTick
+        elif data_cls == TradeTick:
+            return NautilusDataType.TradeTick
+        elif data_cls == Bar:
+            return NautilusDataType.Bar
+        else:
+            raise RuntimeError("unsupported `data_cls` for Rust parquet, was {data_cls.__name__}")
 
     @staticmethod
     def _handle_table_nautilus(

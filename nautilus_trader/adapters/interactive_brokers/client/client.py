@@ -15,10 +15,10 @@
 
 import asyncio
 import functools
+from collections.abc import Callable
 from collections.abc import Coroutine
 from decimal import Decimal
 from inspect import iscoroutinefunction
-from typing import Callable, Optional, Union
 
 # fmt: off
 import pandas as pd
@@ -132,16 +132,16 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._incoming_msg_queue: asyncio.Queue = asyncio.Queue()
 
         # Tasks
-        self._watch_dog_task: Optional[asyncio.Task] = None
-        self._incoming_msg_reader_task: Optional[asyncio.Task] = None
-        self._incoming_msg_queue_task: Optional[asyncio.Task] = None
+        self._watch_dog_task: asyncio.Task | None = None
+        self._incoming_msg_reader_task: asyncio.Task | None = None
+        self._incoming_msg_queue_task: asyncio.Task | None = None
 
         # Event Flags
         self.is_ready: asyncio.Event = asyncio.Event()  # Client is fully functional
         self.is_ib_ready: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
 
         # Hot caches
-        self._bar_type_to_last_bar: dict[str, Union[BarData, None]] = {}
+        self._bar_type_to_last_bar: dict[str, BarData | None] = {}
         self.registered_nautilus_clients: set = set()
         self._event_subscriptions: dict[str, Callable] = {}
         self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
@@ -149,7 +149,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         # Temporary caches
         self._exec_id_details: dict[
             str,
-            dict[str, Union[Execution, CommissionReport, str]],
+            dict[str, Execution | (CommissionReport | str)],
         ] = {}
 
         # Reset
@@ -210,9 +210,9 @@ class InteractiveBrokersClient(Component, EWrapper):
     def create_task(
         self,
         coro: Coroutine,
-        log_msg: Optional[str] = None,
-        actions: Optional[Callable] = None,
-        success: Optional[str] = None,
+        log_msg: str | None = None,
+        actions: Callable | None = None,
+        success: str | None = None,
     ) -> asyncio.Task:
         """
         Run the given coroutine with error handling and optional callback actions when
@@ -251,8 +251,8 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     def _on_task_completed(
         self,
-        actions: Optional[Callable],
-        success: Optional[str],
+        actions: Callable | None,
+        success: str | None,
         task: asyncio.Task,
     ) -> None:
         if task.exception():
@@ -1226,8 +1226,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         bar_type_str: str,
         bar: BarData,
         handle_revised_bars: bool,
-        historical: Optional[bool] = False,
-    ) -> Optional[Bar]:
+        historical: bool | None = False,
+    ) -> Bar | None:
         previous_bar = self._bar_type_to_last_bar.get(bar_type_str)
         previous_ts = 0 if not previous_bar else int(previous_bar.date)
         current_ts = int(bar.date)

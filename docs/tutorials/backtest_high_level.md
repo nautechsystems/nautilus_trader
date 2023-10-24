@@ -1,13 +1,16 @@
 # Backtest (high-level API)
 
-This tutorial runs through the following: 
+**This tutorial walks through how to use a `BacktestNode` to backtest a simple EMA cross strategy
+on a simulated FX ECN venue using historical quote tick data.**
+
+The following points will be covered:
 - How to load raw data (external to Nautilus) into the data catalog
 - How to setup configuration objects for a `BacktestNode`
 - How to run backtests with a  `BacktestNode`
 
 ## Imports
 
-We'll start with all of our imports for the remainder of this guide:
+We'll start with all of our imports for the remainder of this tutorial:
 
 ```python
 import datetime
@@ -89,8 +92,10 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 ```
 
 ```python
-# Write instrument and ticks to catalog (this currently takes a minute - investigating)
+# Write instrument to the catalog
 catalog.write_data([EURUSD])
+
+# Write ticks to catalog
 catalog.write_data(ticks)
 ```
 
@@ -117,6 +122,8 @@ See the [Data catalog](../concepts/data) guide for more details.
 Nautilus uses a `BacktestRunConfig` object, which allows configuring a backtest in one place. It is a `Partialable` object (which means it can be configured in stages); the benefits of which are reduced boilerplate code when creating multiple backtest runs (for example when doing some sort of grid search over parameters).
 
 ### Adding data and venues
+
+We can now use configuration objects to build up our final run configuration:
 
 ```python
 instrument = catalog.instruments(as_nautilus=True)[0]
@@ -165,6 +172,7 @@ config = BacktestRunConfig(
 
 ## Run the backtest!
 
+Now we can simply run the backtest node, which will simulate trading across the entire data stream:
 ```python
 node = BacktestNode(configs=[config])
 

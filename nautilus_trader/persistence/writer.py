@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import datetime
 from io import TextIOWrapper
 from typing import Any, BinaryIO
@@ -175,7 +173,7 @@ class StreamingFeatherWriter:
                     b"size_precision": str(instrument.size_precision).encode(),
                 },
             )
-        elif isinstance(obj, (QuoteTick, TradeTick)):
+        elif isinstance(obj, QuoteTick | TradeTick):
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),

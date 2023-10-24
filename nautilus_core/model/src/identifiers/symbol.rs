@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a valid ticker symbol ID for a tradable financial market instrument.
@@ -69,26 +68,6 @@ impl From<&str> for Symbol {
     fn from(input: &str) -> Self {
         Self::new(input).unwrap()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
-    Symbol::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
-    id.value.precomputed_hash()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

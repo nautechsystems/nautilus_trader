@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import msgspec
 
@@ -21,7 +21,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceSecurityType
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbols
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 def enc_hook(obj: Any) -> Any:
@@ -69,7 +69,7 @@ class BinanceHttpEndpoint:
         self,
         method_type: HttpMethod,
         parameters: Any,
-        ratelimiter_keys: Optional[list[str]] = None,
+        ratelimiter_keys: list[str] | None = None,
     ) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(parameters))
         if self.methods_desc[method_type] is None:

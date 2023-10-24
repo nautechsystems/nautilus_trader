@@ -21,7 +21,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror;
@@ -256,6 +256,8 @@ impl Bar {
     /// Create a new [`Bar`] extracted from the given [`PyAny`].
     #[cfg(feature = "python")]
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        use nautilus_core::python::to_pyvalue_err;
+
         let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
         let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
         let bar_type = BarType::from_str(bar_type_str)

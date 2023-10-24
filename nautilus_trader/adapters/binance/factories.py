@@ -16,7 +16,6 @@
 import asyncio
 import os
 from functools import lru_cache
-from typing import Optional, Union
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -32,7 +31,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core.nautilus_pyo3.network import Quota
+from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
@@ -46,9 +45,9 @@ def get_cached_binance_http_client(
     clock: LiveClock,
     logger: Logger,
     account_type: BinanceAccountType,
-    key: Optional[str] = None,
-    secret: Optional[str] = None,
-    base_url: Optional[str] = None,
+    key: str | None = None,
+    secret: str | None = None,
+    base_url: str | None = None,
     is_testnet: bool = False,
     is_us: bool = False,
 ) -> BinanceHttpClient:
@@ -217,7 +216,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-    ) -> Union[BinanceSpotDataClient, BinanceFuturesDataClient]:
+    ) -> BinanceSpotDataClient | BinanceFuturesDataClient:
         """
         Create a new Binance data client.
 
@@ -266,7 +265,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
             is_us=config.us,
         )
 
-        provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
+        provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
         if config.account_type.is_spot_or_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(
@@ -330,7 +329,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-    ) -> Union[BinanceSpotExecutionClient, BinanceFuturesExecutionClient]:
+    ) -> BinanceSpotExecutionClient | BinanceFuturesExecutionClient:
         """
         Create a new Binance execution client.
 
@@ -379,7 +378,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
             is_us=config.us,
         )
 
-        provider: Union[BinanceSpotInstrumentProvider, BinanceFuturesInstrumentProvider]
+        provider: BinanceSpotInstrumentProvider | BinanceFuturesInstrumentProvider
         if config.account_type.is_spot or config.account_type.is_margin:
             # Get instrument provider singleton
             provider = get_cached_binance_spot_instrument_provider(

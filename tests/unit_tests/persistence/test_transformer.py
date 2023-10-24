@@ -19,7 +19,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick

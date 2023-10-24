@@ -17,7 +17,7 @@ import pathlib
 import random
 from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import fsspec
 import numpy as np
@@ -254,7 +254,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_future_binance(expiry: Optional[date] = None) -> CryptoFuture:
+    def btcusdt_future_binance(expiry: date | None = None) -> CryptoFuture:
         """
         Return the Binance Futures BTCUSDT instrument for backtesting.
 
@@ -375,7 +375,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Optional[Venue] = None) -> CurrencyPair:
+    def default_fx_ccy(symbol: str, venue: Venue | None = None) -> CurrencyPair:
         """
         Return a default FX currency pair instrument from the given symbol and venue.
 
@@ -512,7 +512,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def betting_instrument(venue: Optional[str] = None) -> BettingInstrument:
+    def betting_instrument(venue: str | None = None) -> BettingInstrument:
         return BettingInstrument(
             venue_name=venue or "BETFAIR",
             betting_type="ODDS",
@@ -550,13 +550,13 @@ class TestDataProvider:
     """
 
     def __init__(self, branch: str = "develop") -> None:
-        self.fs: Optional[fsspec.AbstractFileSystem] = None
-        self.root: Optional[str] = None
+        self.fs: fsspec.AbstractFileSystem | None = None
+        self.root: str | None = None
         self._determine_filesystem()
         self.branch = branch
 
     @staticmethod
-    def _test_data_directory() -> Optional[str]:
+    def _test_data_directory() -> str | None:
         # Determine if the test data directory exists (i.e. this is a checkout of the source code).
         source_root = pathlib.Path(__file__).parent.parent
         assert source_root.stem == "nautilus_trader"

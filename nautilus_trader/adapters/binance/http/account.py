@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -30,7 +29,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceOrderHttp(BinanceHttpEndpoint):
@@ -71,7 +70,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
-        testing_endpoint: Optional[bool] = False,
+        testing_endpoint: bool | None = False,
     ):
         methods = {
             HttpMethod.GET: BinanceSecurityType.USER_DATA,
@@ -117,9 +116,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         timestamp: str
-        orderId: Optional[int] = None
-        origClientOrderId: Optional[str] = None
-        recvWindow: Optional[str] = None
+        orderId: int | None = None
+        origClientOrderId: str | None = None
+        recvWindow: str | None = None
 
     class PostParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -215,25 +214,25 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         timestamp: str
         side: BinanceOrderSide
         type: BinanceOrderType
-        timeInForce: Optional[BinanceTimeInForce] = None
-        quantity: Optional[str] = None
-        quoteOrderQty: Optional[str] = None
-        price: Optional[str] = None
-        newClientOrderId: Optional[str] = None
-        strategyId: Optional[int] = None
-        strategyType: Optional[int] = None
-        stopPrice: Optional[str] = None
-        trailingDelta: Optional[str] = None
-        icebergQty: Optional[str] = None
-        reduceOnly: Optional[str] = None
-        closePosition: Optional[str] = None
-        activationPrice: Optional[str] = None
-        callbackRate: Optional[str] = None
-        workingType: Optional[str] = None
-        priceProtect: Optional[str] = None
-        newOrderRespType: Optional[BinanceNewOrderRespType] = None
-        goodTillDate: Optional[int] = None
-        recvWindow: Optional[str] = None
+        timeInForce: BinanceTimeInForce | None = None
+        quantity: str | None = None
+        quoteOrderQty: str | None = None
+        price: str | None = None
+        newClientOrderId: str | None = None
+        strategyId: int | None = None
+        strategyType: int | None = None
+        stopPrice: str | None = None
+        trailingDelta: str | None = None
+        icebergQty: str | None = None
+        reduceOnly: str | None = None
+        closePosition: str | None = None
+        activationPrice: str | None = None
+        callbackRate: str | None = None
+        workingType: str | None = None
+        priceProtect: str | None = None
+        newOrderRespType: BinanceNewOrderRespType | None = None
+        goodTillDate: int | None = None
+        recvWindow: str | None = None
 
     class PutParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -266,9 +265,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         quantity: str
         price: str
         timestamp: str
-        orderId: Optional[int] = None
-        origClientOrderId: Optional[str] = None
-        recvWindow: Optional[str] = None
+        orderId: int | None = None
+        origClientOrderId: str | None = None
+        recvWindow: str | None = None
 
     async def get(self, parameters: GetDeleteParameters) -> BinanceOrder:
         method_type = HttpMethod.GET
@@ -350,11 +349,11 @@ class BinanceAllOrdersHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         timestamp: str
-        orderId: Optional[int] = None
-        startTime: Optional[int] = None
-        endTime: Optional[int] = None
-        limit: Optional[int] = None
-        recvWindow: Optional[str] = None
+        orderId: int | None = None
+        startTime: int | None = None
+        endTime: int | None = None
+        limit: int | None = None
+        recvWindow: str | None = None
 
     async def get(self, parameters: GetParameters) -> list[BinanceOrder]:
         method_type = HttpMethod.GET
@@ -387,7 +386,7 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
         self,
         client: BinanceHttpClient,
         base_endpoint: str,
-        methods: Optional[dict[HttpMethod, BinanceSecurityType]] = None,
+        methods: dict[HttpMethod, BinanceSecurityType] | None = None,
     ):
         if methods is None:
             methods = {
@@ -417,8 +416,8 @@ class BinanceOpenOrdersHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        symbol: Optional[BinanceSymbol] = None
-        recvWindow: Optional[str] = None
+        symbol: BinanceSymbol | None = None
+        recvWindow: str | None = None
 
     async def get(self, parameters: GetParameters) -> list[BinanceOrder]:
         method_type = HttpMethod.GET
@@ -486,12 +485,12 @@ class BinanceUserTradesHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol
         timestamp: str
-        orderId: Optional[int] = None
-        startTime: Optional[int] = None
-        endTime: Optional[int] = None
-        fromId: Optional[int] = None
-        limit: Optional[int] = None
-        recvWindow: Optional[str] = None
+        orderId: int | None = None
+        startTime: int | None = None
+        endTime: int | None = None
+        fromId: int | None = None
+        limit: int | None = None
+        recvWindow: str | None = None
 
     async def _get(self, parameters: GetParameters) -> list[BinanceUserTrade]:
         method_type = HttpMethod.GET
@@ -555,9 +554,9 @@ class BinanceAccountHttpAPI:
     async def query_order(
         self,
         symbol: str,
-        order_id: Optional[int] = None,
-        orig_client_order_id: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        order_id: int | None = None,
+        orig_client_order_id: str | None = None,
+        recv_window: str | None = None,
     ) -> BinanceOrder:
         """
         Check an order status.
@@ -580,7 +579,7 @@ class BinanceAccountHttpAPI:
     async def cancel_all_open_orders(
         self,
         symbol: str,
-        recv_window: Optional[str] = None,
+        recv_window: str | None = None,
     ) -> bool:
         # Implement in child class
         raise NotImplementedError
@@ -588,9 +587,9 @@ class BinanceAccountHttpAPI:
     async def cancel_order(
         self,
         symbol: str,
-        order_id: Optional[int] = None,
-        orig_client_order_id: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        order_id: int | None = None,
+        orig_client_order_id: str | None = None,
+        recv_window: str | None = None,
     ) -> BinanceOrder:
         """
         Cancel an active order.
@@ -615,25 +614,25 @@ class BinanceAccountHttpAPI:
         symbol: str,
         side: BinanceOrderSide,
         order_type: BinanceOrderType,
-        time_in_force: Optional[BinanceTimeInForce] = None,
-        quantity: Optional[str] = None,
-        quote_order_qty: Optional[str] = None,
-        price: Optional[str] = None,
-        new_client_order_id: Optional[str] = None,
-        strategy_id: Optional[int] = None,
-        strategy_type: Optional[int] = None,
-        stop_price: Optional[str] = None,
-        trailing_delta: Optional[str] = None,
-        iceberg_qty: Optional[str] = None,
-        reduce_only: Optional[str] = None,
-        close_position: Optional[str] = None,
-        activation_price: Optional[str] = None,
-        callback_rate: Optional[str] = None,
-        working_type: Optional[str] = None,
-        price_protect: Optional[str] = None,
-        good_till_date: Optional[int] = None,
-        new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
-        recv_window: Optional[str] = None,
+        time_in_force: BinanceTimeInForce | None = None,
+        quantity: str | None = None,
+        quote_order_qty: str | None = None,
+        price: str | None = None,
+        new_client_order_id: str | None = None,
+        strategy_id: int | None = None,
+        strategy_type: int | None = None,
+        stop_price: str | None = None,
+        trailing_delta: str | None = None,
+        iceberg_qty: str | None = None,
+        reduce_only: str | None = None,
+        close_position: str | None = None,
+        activation_price: str | None = None,
+        callback_rate: str | None = None,
+        working_type: str | None = None,
+        price_protect: str | None = None,
+        good_till_date: int | None = None,
+        new_order_resp_type: BinanceNewOrderRespType | None = None,
+        recv_window: str | None = None,
     ) -> BinanceOrder:
         """
         Send in a new order to Binance.
@@ -673,9 +672,9 @@ class BinanceAccountHttpAPI:
         side: BinanceOrderSide,
         quantity: str,
         price: str,
-        order_id: Optional[int] = None,
-        orig_client_order_id: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        order_id: int | None = None,
+        orig_client_order_id: str | None = None,
+        recv_window: str | None = None,
     ) -> BinanceOrder:
         """
         Modify a LIMIT order with Binance.
@@ -697,11 +696,11 @@ class BinanceAccountHttpAPI:
     async def query_all_orders(
         self,
         symbol: str,
-        order_id: Optional[int] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        limit: Optional[int] = None,
-        recv_window: Optional[str] = None,
+        order_id: int | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int | None = None,
+        recv_window: str | None = None,
     ) -> list[BinanceOrder]:
         """
         Query all orders, active or filled.
@@ -720,8 +719,8 @@ class BinanceAccountHttpAPI:
 
     async def query_open_orders(
         self,
-        symbol: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        symbol: str | None = None,
+        recv_window: str | None = None,
     ) -> list[BinanceOrder]:
         """
         Query open orders.
@@ -737,12 +736,12 @@ class BinanceAccountHttpAPI:
     async def query_user_trades(
         self,
         symbol: str,
-        order_id: Optional[int] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        from_id: Optional[int] = None,
-        limit: Optional[int] = None,
-        recv_window: Optional[str] = None,
+        order_id: int | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        from_id: int | None = None,
+        limit: int | None = None,
+        recv_window: str | None = None,
     ) -> list[BinanceUserTrade]:
         """
         Query user's trade history for a symbol, with provided filters.

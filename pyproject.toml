@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.179.0"
+version = "1.180.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -30,6 +30,9 @@ include = [
     # Include the py.typed file for type checking support
     { path = "nautilus_trader/py.typed", format = "sdist" },
     { path = "nautilus_trader/py.typed", format = "wheel" },
+    # Include Python interface files for type checking support
+    { path = "nautilus_trader/**/*.pyi", format = "sdist" },
+    { path = "nautilus_trader/**/*.pyi", format = "wheel" },
 ]
 
 [build-system]
@@ -37,7 +40,7 @@ requires = [
     "setuptools",
     "poetry-core>=1.7.0",
     "numpy>=1.26.1",
-    "Cython==3.0.3",
+    "Cython==3.0.4",
     "toml>=0.10.2",
 ]
 build-backend = "poetry.core.masonry.api"
@@ -47,8 +50,8 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.9,<3.12"
-cython = "==3.0.3"  # Build dependency (pinned for stability)
+python = ">=3.10,<3.12"
+cython = "==3.0.4"  # Build dependency (pinned for stability)
 numpy = "^1.26.1"  # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
@@ -61,7 +64,7 @@ psutil = "^5.9.6"
 pyarrow = ">=12.0.1"  # Minimum version set one major version behind the latest for compatibility
 pytz = "^2023.3.0"
 tqdm = "^4.66.1"
-uvloop = {version = "^0.18.0", markers = "sys_platform != 'win32'"}
+uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
 hiredis = {version = "^2.2.3", optional = true}
 redis = {version = "^5.0.1", optional = true}
 docker = {version = "^6.1.3", optional = true}
@@ -78,11 +81,11 @@ redis = ["hiredis", "redis"]
 optional = true
 
 [tool.poetry.group.dev.dependencies]
-black = "^23.9.1"
+black = "^23.10.0"
 docformatter = "^1.7.5"
-mypy = "^1.6.0"
+mypy = "^1.6.1"
 pre-commit = "^3.5.0"
-ruff = "^0.0.292"
+ruff = "^0.1.1"
 types-pytz = "^2023.3"
 types-redis = "^4.6"
 types-requests = "^2.31"
@@ -98,7 +101,7 @@ pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "^0.21.1"
 pytest-benchmark = "^4.0.0"
 pytest-cov = "^4.1.0"
-pytest-mock = "^3.11.1"
+pytest-mock = "^3.12.0"
 pytest-xdist = { version = "^3.3.1", extras = ["psutil"] }
 
 [tool.poetry.group.docs]
@@ -115,13 +118,12 @@ sphinx-material = "^0.0.35"
 sphinx_togglebutton = "^0.3.0"
 
 [tool.isort]
-py_version = "39"
+py_version = "310"
 skip_glob = ["**/core/rust/*"]
 combine_as_imports = true
 line_length = 100
 ensure_newline_before_comments = true
 force_single_line = true
-single_line_exclusions = ["typing"]
 include_trailing_comma = true
 multi_line_output = 3
 lines_after_imports = 2
@@ -129,7 +131,7 @@ use_parentheses = true
 filter_files = true
 
 [tool.black]
-target_version = ["py39", "py310", "py311"]
+target_version = ["py310", "py311"]
 line_length = 100
 
 [tool.docformatter]
@@ -141,7 +143,7 @@ recursive = true
 in-place = true
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 150  # Reduce to 100
 select = [
     "C4",
@@ -251,7 +253,7 @@ lines-after-imports = 2
 max-complexity = 10
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true

@@ -15,16 +15,16 @@
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.core import UUID4
-from nautilus_trader.core.nautilus_pyo3.model import AccountId
-from nautilus_trader.core.nautilus_pyo3.model import ClientOrderId
-from nautilus_trader.core.nautilus_pyo3.model import InstrumentId
-from nautilus_trader.core.nautilus_pyo3.model import MarketOrder
-from nautilus_trader.core.nautilus_pyo3.model import OrderSide
-from nautilus_trader.core.nautilus_pyo3.model import PositionSide
-from nautilus_trader.core.nautilus_pyo3.model import Quantity
-from nautilus_trader.core.nautilus_pyo3.model import StrategyId
-from nautilus_trader.core.nautilus_pyo3.model import TraderId
+from nautilus_trader.core.nautilus_pyo3 import UUID4
+from nautilus_trader.core.nautilus_pyo3 import AccountId
+from nautilus_trader.core.nautilus_pyo3 import ClientOrderId
+from nautilus_trader.core.nautilus_pyo3 import InstrumentId
+from nautilus_trader.core.nautilus_pyo3 import MarketOrder
+from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import PositionSide
+from nautilus_trader.core.nautilus_pyo3 import Quantity
+from nautilus_trader.core.nautilus_pyo3 import StrategyId
+from nautilus_trader.core.nautilus_pyo3 import TraderId
 
 
 AUDUSD_SIM = InstrumentId.from_str("AUD/USD.SIM")
