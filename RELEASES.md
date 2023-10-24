@@ -3,13 +3,14 @@
 Released on TBC (UTC).
 
 ### Enhancements
-None
+- Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
 
 ### Breaking Changes
 - Dropped support for Python 3.9
 
 ### Fixes
-None
+- Fixed `ParquetDataCatalog` file writing template, thanks @limx0
+- Interactive Brokers adapter various fixes, thanks @rsmb7z
 
 ---
 # NautilusTrader 1.179.0 Beta
