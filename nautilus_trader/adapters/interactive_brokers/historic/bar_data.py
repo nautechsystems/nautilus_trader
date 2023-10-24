@@ -39,6 +39,7 @@ class BarDataDownloaderConfig(ActorConfig):
     bar_types: list[str]
     handler: Callable
     freq: str = "1W"
+    request_timeout: int = 30
 
 
 class BarDataDownloader(AsyncActor):
@@ -67,7 +68,7 @@ class BarDataDownloader(AsyncActor):
         instrument_ids = {bar_type.instrument_id for bar_type in self.bar_types}
         for instrument_id in instrument_ids:
             request_id = self.request_instrument(instrument_id)
-            await self.await_request(request_id)
+            await self.await_request(request_id, timeout=self.config.request_timeout)
 
         request_dates = list(pd.date_range(self.start_time, self.end_time, freq=self.freq))
 
@@ -78,7 +79,7 @@ class BarDataDownloader(AsyncActor):
                     start=request_date,
                     end=request_date + pd.Timedelta(self.freq),
                 )
-                await self.await_request(request_id)
+                await self.await_request(request_id, timeout=self.config.request_timeout)
 
         self.stop()
 
