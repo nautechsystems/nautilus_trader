@@ -68,6 +68,9 @@ The input value should be a dictionary of component ID strings to log level stri
 Below is an example of a trading node logging configuration that includes some of the options mentioned above:
 
 ```python
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import TradingNodeConfig
+
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(
