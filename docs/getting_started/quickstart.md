@@ -47,6 +47,7 @@ If everything worked correctly, you should be able to see a single EUR/USD instr
 ```python
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
+
 # You can also use `ParquetDataCatalog.from_env()` which will use the `NAUTILUS_PATH` environment variable 
 # catalog = ParquetDataCatalog.from_env()
 catalog = ParquetDataCatalog("./catalog")
@@ -191,6 +192,7 @@ FX trading is typically done on margin with Non-Deliverable Forward, Swap or CFD
 ```python
 from nautilus_trader.config import BacktestVenueConfig
 
+
 venue = BacktestVenueConfig(
     name="SIM",
     oms_type="NETTING",
@@ -221,6 +223,7 @@ adding the `QuoteTick`(s) for our EUR/USD instrument:
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.model.data import QuoteTick
 
+
 data = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=QuoteTick,
@@ -242,6 +245,7 @@ user packages. In this instance, our `MACDStrategy` is defined in the current mo
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
+
 
 engine = BacktestEngineConfig(
     strategies=[
@@ -301,6 +305,7 @@ The engine(s) can provide additional reports and information.
 ```python
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.model.identifiers import Venue
+
 
 engine: BacktestEngine = node.get_engine(config.id)
 

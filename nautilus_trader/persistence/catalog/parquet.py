@@ -228,6 +228,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data: list[Data],
         data_cls: type[Data],
         instrument_id: str | None = None,
+        basename_template: str = "part-{i}",
         **kwargs: Any,
     ) -> None:
         table = self._objects_to_table(data, data_cls=data_cls)
@@ -235,12 +236,18 @@ class ParquetDataCatalog(BaseDataCatalog):
         kw = dict(**self.dataset_kwargs, **kwargs)
 
         if "partitioning" not in kw:
-            self._fast_write(table=table, path=path, fs=self.fs)
+            self._fast_write(
+                table=table,
+                path=path,
+                fs=self.fs,
+                basename_template=basename_template,
+            )
         else:
             # Write parquet file
             pds.write_dataset(
                 data=table,
                 base_dir=path,
+                basename_template=basename_template,
                 format="parquet",
                 filesystem=self.fs,
                 min_rows_per_group=self.min_rows_per_group,
@@ -254,7 +261,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         table: pa.Table,
         path: str,
         fs: fsspec.AbstractFileSystem,
-        basename_template: str = "part-{i}",
+        basename_template: str,
     ) -> None:
         name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
@@ -265,7 +272,12 @@ class ParquetDataCatalog(BaseDataCatalog):
             row_group_size=self.max_rows_per_group,
         )
 
-    def write_data(self, data: list[Data | Event], **kwargs: Any) -> None:
+    def write_data(
+        self,
+        data: list[Data | Event],
+        basename_template: str = "part-{i}",
+        **kwargs: Any,
+    ) -> None:
         """
         Write the given `data` to the catalog.
 
@@ -277,8 +289,20 @@ class ParquetDataCatalog(BaseDataCatalog):
         ----------
         data : list[Data | Event]
             The data or event objects to be written to the catalog.
+        basename_template : str, default 'part-{i}'
+            A template string used to generate basenames of written data files.
+            The token '{i}' will be replaced with an automatically incremented
+            integer as files are partitioned.
+            If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
         kwargs : Any
             Additional keyword arguments to be passed to the `write_chunk` method.
+
+        Warnings
+        --------
+        Any existing data which already exists under a filename will be overwritten.
+        If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
+        be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
+        generates unique filenames for different data sets.
 
         Notes
         -----
@@ -311,6 +335,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 data=list(single_type),
                 data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
+                basename_template=basename_template,
                 **kwargs,
             )
 
