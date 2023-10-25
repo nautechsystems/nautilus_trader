@@ -13,13 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod average;
-pub mod indicator;
-pub mod momentum;
-pub mod ratio;
-
-#[cfg(test)]
-mod stubs;
-
-#[cfg(feature = "python")]
-pub mod python;
+pub mod rsi;

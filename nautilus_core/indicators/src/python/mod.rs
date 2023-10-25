@@ -13,13 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use pyo3::{prelude::*, pymodule};
+
 pub mod average;
-pub mod indicator;
 pub mod momentum;
 pub mod ratio;
 
-#[cfg(test)]
-mod stubs;
-
-#[cfg(feature = "python")]
-pub mod python;
+#[pymodule]
+pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // average
+    m.add_class::<crate::average::ema::ExponentialMovingAverage>()?;
+    m.add_class::<crate::average::sma::SimpleMovingAverage>()?;
+    m.add_class::<crate::average::ama::AdaptiveMovingAverage>()?;
+    m.add_class::<crate::average::dema::DoubleExponentialMovingAverage>()?;
+    // ratio
+    m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
+    // momentum
+    m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
+    Ok(())
+}
