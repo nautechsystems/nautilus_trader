@@ -10,9 +10,13 @@ Released on TBC (UTC).
 
 ### Fixes
 - Fixed `ParquetDataCatalog` file writing template, thanks @limx0
+- Fixed `Binance` all orders requests which would omit order reports when using a `start` param
+- Fixed managed GTD orders past expiry cancellation on restart (orders were not being canceled)
+- Fixed managed GTD orders cancel timer on order cancel (timers were not being canceled)
 - Interactive Brokers adapter various fixes, thanks @rsmb7z
 
 ---
+
 # NautilusTrader 1.179.0 Beta
 
 Released on 22nd October 2023 (UTC).
