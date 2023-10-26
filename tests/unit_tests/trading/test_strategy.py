@@ -32,6 +32,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -854,6 +855,41 @@ class TestStrategy:
             "GTD-EXPIRY:O-19700101-0000-000-None-1",
             "GTD-EXPIRY:O-19700101-0000-000-None-2",
         ]
+
+    def test_start_when_manage_gtd_and_order_past_expiration_then_cancels(self):
+        # Arrange
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("100.00"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+        )
+
+        strategy.submit_order(order1)
+        self.exchange.process(0)
+
+        strategy.clock.cancel_timers()  # <-- Simulate restart
+        self.clock.set_time(dt_to_unix_nanos(order1.expire_time + pd.Timedelta(minutes=1)))
+
+        # Act
+        strategy.start()
+
+        # Assert
+        assert strategy.clock.timer_count == 0
+        assert order1.is_pending_cancel
 
     def test_submit_order_when_duplicate_id_then_denies(self):
         # Arrange
