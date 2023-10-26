@@ -441,18 +441,23 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # Get all orders for those active symbols
             binance_orders: list[BinanceOrder] = []
             for symbol in active_symbols:
-                response = await self._http_account.query_all_orders(
-                    symbol=symbol,
-                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
-                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
-                )
+                # Here we don't pass a `start_time` or `end_time` as order reports appear to go
+                # randomly missing when these are specified. We filter on the Nautilus side below.
+                response = await self._http_account.query_all_orders(symbol=symbol)
                 binance_orders.extend(response)
         except BinanceError as e:
             self._log.exception(f"Cannot generate OrderStatusReport: {e.message}", e)
             return []
 
+        start_ms = secs_to_millis(start.timestamp()) if start is not None else None
+        end_ms = secs_to_millis(end.timestamp()) if end is not None else None
+
         reports: list[OrderStatusReport] = []
         for order in binance_orders:
+            if start_ms is not None and order.time < start_ms:
+                continue  # Filter start on the Nautilus side
+            if end_ms is not None and order.time > end_ms:
+                continue  # Filter end on the Nautilus side
             if order.origQty and Decimal(order.origQty) == 0:
                 continue  # Cannot parse zero quantity order (filter for Binance)
             report = order.parse_to_order_status_report(
