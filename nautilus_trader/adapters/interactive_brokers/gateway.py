@@ -18,7 +18,7 @@ import os
 import warnings
 from enum import IntEnum
 from time import sleep
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 
 try:
@@ -53,13 +53,13 @@ class InteractiveBrokersGateway:
         self,
         username: str,
         password: str,
-        host: Optional[str] = "localhost",
-        port: Optional[int] = None,
-        trading_mode: Optional[str] = "paper",
+        host: str | None = "localhost",
+        port: int | None = None,
+        trading_mode: str | None = "paper",
         start: bool = False,
         read_only_api: bool = True,
         timeout: int = 90,
-        logger: Optional[logging.Logger] = None,
+        logger: logging.Logger | None = None,
     ):
         username = username if username is not None else os.environ["TWS_USERNAME"]
         password = password if password is not None else os.environ["TWS_PASSWORD"]
@@ -116,7 +116,7 @@ class InteractiveBrokersGateway:
             return False
         return any(b"Forking :::" in line for line in logs.split(b"\n"))
 
-    def start(self, wait: Optional[int] = 90):
+    def start(self, wait: int | None = 90):
         """
         Start the gateway.
 

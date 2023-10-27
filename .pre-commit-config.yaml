@@ -67,7 +67,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/psf/black
-    rev: 23.10.0
+    rev: 23.10.1
     hooks:
       - id: black
         types_or: [python, pyi]
@@ -76,7 +76,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.1.1
+    rev: v0.1.2
     hooks:
       - id: ruff
         args: ["--fix"]

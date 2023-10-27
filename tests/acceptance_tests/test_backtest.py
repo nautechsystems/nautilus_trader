@@ -727,7 +727,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
+                if isinstance(d, OrderBookDelta | OrderBookDeltas)
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
@@ -785,7 +785,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
+                if isinstance(d, OrderBookDelta | OrderBookDeltas)
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)

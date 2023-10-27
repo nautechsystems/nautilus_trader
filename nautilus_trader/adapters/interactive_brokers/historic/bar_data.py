@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -39,6 +39,7 @@ class BarDataDownloaderConfig(ActorConfig):
     bar_types: list[str]
     handler: Callable
     freq: str = "1W"
+    request_timeout: int = 30
 
 
 class BarDataDownloader(AsyncActor):
@@ -60,14 +61,14 @@ class BarDataDownloader(AsyncActor):
         for bar_type in config.bar_types:
             self.bar_types.append(BarType.from_str(bar_type))
 
-        self.handler: Optional[Callable] = config.handler
+        self.handler: Callable | None = config.handler
         self.freq: str = config.freq
 
     async def _on_start(self):
         instrument_ids = {bar_type.instrument_id for bar_type in self.bar_types}
         for instrument_id in instrument_ids:
             request_id = self.request_instrument(instrument_id)
-            await self.await_request(request_id)
+            await self.await_request(request_id, timeout=self.config.request_timeout)
 
         request_dates = list(pd.date_range(self.start_time, self.end_time, freq=self.freq))
 
@@ -78,7 +79,7 @@ class BarDataDownloader(AsyncActor):
                     start=request_date,
                     end=request_date + pd.Timedelta(self.freq),
                 )
-                await self.await_request(request_id)
+                await self.await_request(request_id, timeout=self.config.request_timeout)
 
         self.stop()
 

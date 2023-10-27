@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -68,8 +67,8 @@ class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
     Provides a wrapper for execution WebSocket messages from `Binance`.
     """
 
-    data: Optional[BinanceFuturesUserMsgData] = None
-    stream: Optional[str] = None
+    data: BinanceFuturesUserMsgData | None = None
+    stream: str | None = None
 
 
 class MarginCallPosition(msgspec.Struct, frozen=True):
@@ -198,15 +197,15 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     q: str  # Original Quantity
     p: str  # Original Price
     ap: str  # Average Price
-    sp: Optional[str] = None  # Stop Price. Ignore with TRAILING_STOP_MARKET order
+    sp: str | None = None  # Stop Price. Ignore with TRAILING_STOP_MARKET order
     x: BinanceExecutionType
     X: BinanceOrderStatus
     i: int  # Order ID
     l: str  # Order Last Filled Quantity
     z: str  # Order Filled Accumulated Quantity
     L: str  # Last Filled Price
-    N: Optional[str] = None  # Commission Asset, will not push if no commission
-    n: Optional[str] = None  # Commission, will not push if no commission
+    N: str | None = None  # Commission Asset, will not push if no commission
+    n: str | None = None  # Commission, will not push if no commission
     T: int  # Order Trade Time
     t: int  # Trade ID
     b: str  # Bids Notional
@@ -216,9 +215,9 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     wt: BinanceFuturesWorkingType
     ot: BinanceOrderType
     ps: BinanceFuturesPositionSide
-    cp: Optional[bool] = None  # If Close-All, pushed with conditional order
-    AP: Optional[str] = None  # Activation Price, only pushed with TRAILING_STOP_MARKET order
-    cr: Optional[str] = None  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
+    cp: bool | None = None  # If Close-All, pushed with conditional order
+    AP: str | None = None  # Activation Price, only pushed with TRAILING_STOP_MARKET order
+    cr: str | None = None  # Callback Rate, only pushed with TRAILING_STOP_MARKET order
     pP: bool  # ignore
     si: int  # ignore
     ss: int  # ignore
@@ -305,15 +304,15 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
 
             # Determine commission
-            commission_asset: Optional[str] = self.N
-            commission_amount: Optional[str] = self.n
+            commission_asset: str | None = self.N
+            commission_amount: str | None = self.n
             if commission_asset is not None:
                 commission = Money.from_str(f"{commission_amount} {commission_asset}")
             else:
                 # Commission in margin collateral currency
                 commission = Money(0, instrument.quote_currency)
 
-            venue_position_id: Optional[PositionId] = None
+            venue_position_id: PositionId | None = None
             if exec_client.use_position_ids:
                 venue_position_id = PositionId(f"{instrument_id}-{self.ps.value}")
 

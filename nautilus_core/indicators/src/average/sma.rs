@@ -16,7 +16,6 @@
 use std::fmt::Display;
 
 use anyhow::Result;
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -34,7 +33,7 @@ pub struct SimpleMovingAverage {
     pub value: f64,
     pub count: usize,
     pub inputs: Vec<f64>,
-    is_initialized: bool,
+    pub is_initialized: bool,
 }
 
 impl Display for SimpleMovingAverage {
@@ -85,7 +84,7 @@ impl SimpleMovingAverage {
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             count: 0,
-            inputs: Vec::new(),
+            inputs: Vec::with_capacity(period),
             is_initialized: false,
         })
     }
@@ -112,59 +111,6 @@ impl MovingAverage for SimpleMovingAverage {
         if !self.is_initialized && self.count >= self.period {
             self.is_initialized = true;
         }
-    }
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl SimpleMovingAverage {
-    #[new]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
-        Self::new(period, price_type).map_err(to_pyvalue_err)
-    }
-
-    #[getter]
-    #[pyo3(name = "name")]
-    fn py_name(&self) -> String {
-        self.name()
-    }
-
-    #[getter]
-    #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
-        self.period
-    }
-
-    #[getter]
-    #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
-        self.count
-    }
-
-    #[getter]
-    #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
-        self.value
-    }
-
-    #[getter]
-    #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
-        self.is_initialized
-    }
-
-    #[pyo3(name = "has_inputs")]
-    fn py_has_inputs(&self) -> bool {
-        self.has_inputs()
-    }
-
-    #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64) {
-        self.update_raw(value);
-    }
-
-    fn __repr__(&self) -> String {
-        format!("SimpleMovingAverage({})", self.period)
     }
 }
 

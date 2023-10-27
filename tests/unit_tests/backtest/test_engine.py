@@ -16,7 +16,6 @@
 import sys
 import tempfile
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 import pytest
@@ -85,7 +84,7 @@ class TestBacktestEngine:
             BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
         )
 
-    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
+    def create_engine(self, config: BacktestEngineConfig | None = None) -> BacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),
@@ -275,7 +274,7 @@ class TestBacktestEngineCashAccount:
             BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
         )
 
-    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
+    def create_engine(self, config: BacktestEngineConfig | None = None) -> BacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),

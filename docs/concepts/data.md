@@ -130,6 +130,10 @@ The data catalog can be initialized from a `NAUTILUS_PATH` environment variable,
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
 
 ```python
+import os
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
+
 CATALOG_PATH = os.getcwd() + "/catalog"
 
 # Create a new catalog instance
@@ -145,9 +149,25 @@ The following example shows the above list of Binance `OrderBookDelta` objects b
 catalog.write_data(deltas)
 ```
 
+### Basename template
+Nautilus makes no assumptions about how data may be partitioned between files for a particular
+data type and instrument ID.
+
+The `basename_template` keyword argument is an additional optional naming component for the output files. 
+The template should include placeholders that will be filled in with actual values at runtime. 
+These values can be automatically derived from the data or provided as additional keyword arguments.
+
+For example, using a basename template like `"{date}"` for AUD/USD.SIM quote tick data, 
+and assuming `"date"` is a provided or derivable field, could result in a filename like 
+`"2023-01-01.parquet"` under the `"quote_tick/audusd.sim/"` catalog directory.
+If not provided, a default naming scheme will be applied. This parameter should be specified as a
+keyword argument, like `write_data(data, basename_template="{date}")`.
+
 ```{warning}
-Existing data for the same data type, `instrument_id`, and date will be overwritten without prior warning.
-Ensure you have appropriate backups or safeguards in place before performing this action.
+Any existing data which already exists under a filename will be overwritten.
+If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
+be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
+generates unique filenames for different data sets.
 ```
 
 Rust Arrow schema implementations and available for the follow data types (enhanced performance):
@@ -159,6 +179,10 @@ Rust Arrow schema implementations and available for the follow data types (enhan
 ### Reading data
 Any stored data can then we read back into memory:
 ```python
+from nautilus_trader.core.datetime import dt_to_unix_nanos
+import pandas as pd
+
+
 start = dt_to_unix_nanos(pd.Timestamp("2020-01-03", tz=pytz.utc))
 end =  dt_to_unix_nanos(pd.Timestamp("2020-01-04", tz=pytz.utc))
 
@@ -170,6 +194,10 @@ When running backtests in streaming mode with a `BacktestNode`, the data catalog
 
 The following example shows how to achieve this by initializing a `BacktestDataConfig` configuration object:
 ```python
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.model.data import OrderBookDelta
+
+
 data_config = BacktestDataConfig(
     catalog_path=str(catalog.path),
     data_cls=OrderBookDelta,

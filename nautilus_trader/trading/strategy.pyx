@@ -353,8 +353,12 @@ cdef class Strategy(Actor):
 
         if self.manage_gtd_expiry:
             for order in open_orders:
-                if order.time_in_force == TimeInForce.GTD and not self._has_gtd_expiry_timer(order.client_order_id):
-                    self._set_gtd_expiry(order)
+                if order.time_in_force == TimeInForce.GTD:
+                    if self._clock.timestamp_ns() >= order.expire_time_ns:
+                        self.cancel_order(order)
+                        continue
+                    if not self._has_gtd_expiry_timer(order.client_order_id):
+                        self._set_gtd_expiry(order)
 
         self.on_start()
 
@@ -1001,6 +1005,11 @@ cdef class Strategy(Actor):
             self._send_algo_command(command, order.exec_algorithm_id)
         else:
             self._send_exec_command(command)
+
+        # Cancel any GTD expiry timer
+        if self.manage_gtd_expiry:
+            if order.time_in_force == TimeInForce.GTD and self._has_gtd_expiry_timer(order.client_order_id):
+                self.cancel_gtd_expiry(order)
 
     cpdef void cancel_orders(self, list orders, ClientId client_id = None):
         """

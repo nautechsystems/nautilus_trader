@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 from nautilus_trader.model.enums import OrderSide
@@ -34,7 +34,7 @@ class LongRatio(PortfolioStatistic):
     def __init__(self, precision: int = 2):
         self.precision = precision
 
-    def calculate_from_positions(self, positions: list[Position]) -> Optional[Any]:
+    def calculate_from_positions(self, positions: list[Position]) -> Any | None:
         # Preconditions
         if not positions:
             return None

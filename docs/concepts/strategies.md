@@ -32,6 +32,8 @@ Since a trading strategy is a class which inherits from `Strategy`, you must def
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
 
 ```python
+from nautilus_trader.trading.strategy import Strategy
+
 class MyStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__()  # <-- the super class must be called to initialize the strategy
@@ -75,6 +77,18 @@ These handlers deal with market data updates.
 You can use these handlers to define actions upon receiving new market data.
 
 ```python
+from nautilus_trader.core.data import Data
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.orderbook import OrderBook
+
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
 def on_order_book(self, order_book: OrderBook) -> None:
 def on_ticker(self, ticker: Ticker) -> None:
@@ -99,6 +113,24 @@ Handlers in this category are triggered by events related to orders.
 3. `on_event(...)`
 
 ```python
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderEmulated
+from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
+
 def on_order_initialized(self, event: OrderInitialized) -> None:
 def on_order_denied(self, event: OrderDenied) -> None:
 def on_order_emulated(self, event: OrderEmulated) -> None:
@@ -128,6 +160,11 @@ Handlers in this category are triggered by events related to positions.
 3. `on_event(...)`
 
 ```python
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionEvent
+from nautilus_trader.model.events import PositionOpened
+
 def on_position_opened(self, event: PositionOpened) -> None:
 def on_position_changed(self, event: PositionChanged) -> None:
 def on_position_closed(self, event: PositionClosed) -> None:
@@ -140,6 +177,8 @@ This handler will eventually receive all event messages which arrive at the stra
 which no other specific handler exists.
 
 ```python
+from nautilus_trader.core.message import Event
+
 def on_event(self, event: Event) -> None:
 ```
 
@@ -189,6 +228,8 @@ While there are multiple ways to obtain current timestamps, here are two commonl
 
 **UTC Timestamp:** This method returns a timezone-aware (UTC) timestamp:
 ```python
+import pandas as pd
+
 now: pd.Timestamp = self.clock.utc_now()
 ```
 
@@ -259,6 +300,14 @@ The following shows a general outline of available methods.
 #### Account and positional information
 
 ```python
+import decimal
+
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.identifiers import InstrumentId
+
 def account(self, venue: Venue) -> Account
 
 def balances_locked(self, venue: Venue) -> dict[Currency, Money]
@@ -316,6 +365,10 @@ The following examples show method implementations for a `Strategy`.
 
 This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.orders import LimitOrder
+
     def buy(self) -> None:
         """
         Users simple buy method (example).
@@ -337,6 +390,10 @@ It's possible to specify both order emulation, and an execution algorithm.
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import ExecAlgorithmId
+
     def buy(self) -> None:
         """
         Users simple buy method (example).
@@ -444,4 +501,3 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 ```{tip}
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
 ```
-

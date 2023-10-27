@@ -14,7 +14,7 @@ members = [
 
 [workspace.package]
 rust-version = "1.73.0"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -31,7 +31,7 @@ rand = "0.8.5"
 rmp-serde = "1.1.2"
 rust_decimal = "1.32.0"
 rust_decimal_macros = "1.32.0"
-serde = { version = "1.0.189", features = ["derive"] }
+serde = { version = "1.0.190", features = ["derive"] }
 serde_json = "1.0.107"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.50"

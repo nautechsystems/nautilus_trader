@@ -20,14 +20,13 @@ It could also be possible to write clients for specialized data publishers.
 
 """
 
-from __future__ import annotations
-
 import asyncio
 import functools
 import traceback
 from asyncio import Task
+from collections.abc import Callable
 from collections.abc import Coroutine
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 

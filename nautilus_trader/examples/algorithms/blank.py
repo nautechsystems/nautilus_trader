@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.common.logging import LogColor
 from nautilus_trader.config.common import ExecAlgorithmConfig
@@ -33,7 +32,7 @@ class MyExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
 
     """
 
-    exec_algorithm_id: Optional[str] = None
+    exec_algorithm_id: str | None = None
 
 
 class MyExecAlgorithm(ExecAlgorithm):

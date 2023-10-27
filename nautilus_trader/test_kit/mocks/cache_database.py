@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
@@ -91,16 +90,16 @@ class MockCacheDatabase(CacheDatabase):
     def load_currency(self, code: str) -> Currency:
         return self.currencies.get(code)
 
-    def load_instrument(self, instrument_id: InstrumentId) -> Optional[Instrument]:
+    def load_instrument(self, instrument_id: InstrumentId) -> Instrument | None:
         return self.instruments.get(instrument_id)
 
-    def load_synthetic(self, instrument_id: InstrumentId) -> Optional[SyntheticInstrument]:
+    def load_synthetic(self, instrument_id: InstrumentId) -> SyntheticInstrument | None:
         return self.synthetics.get(instrument_id)
 
-    def load_account(self, account_id: AccountId) -> Optional[Account]:
+    def load_account(self, account_id: AccountId) -> Account | None:
         return self.accounts.get(account_id)
 
-    def load_order(self, client_order_id: ClientOrderId) -> Optional[Order]:
+    def load_order(self, client_order_id: ClientOrderId) -> Order | None:
         return self.orders.get(client_order_id)
 
     def load_index_order_position(self) -> dict[ClientOrderId, PositionId]:
@@ -109,7 +108,7 @@ class MockCacheDatabase(CacheDatabase):
     def load_index_order_client(self) -> dict[ClientOrderId, ClientId]:
         return self._index_order_client
 
-    def load_position(self, position_id: PositionId) -> Optional[Position]:
+    def load_position(self, position_id: PositionId) -> Position | None:
         return self.positions.get(position_id)
 
     def load_strategy(self, strategy_id: StrategyId) -> dict:
@@ -133,8 +132,8 @@ class MockCacheDatabase(CacheDatabase):
     def add_order(
         self,
         order: Order,
-        position_id: Optional[PositionId] = None,
-        client_id: Optional[ClientId] = None,
+        position_id: PositionId | None = None,
+        client_id: ClientId | None = None,
     ) -> None:
         self.orders[order.client_order_id] = order
         self._index_order_position[order.client_order_id] = position_id

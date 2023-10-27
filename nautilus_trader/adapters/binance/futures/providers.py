@@ -15,7 +15,6 @@
 
 from datetime import datetime as dt
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -74,7 +73,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         logger: Logger,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        config: Optional[InstrumentProviderConfig] = None,
+        config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
             venue=BINANCE_VENUE,
@@ -121,7 +120,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             9: BinanceFuturesFeeRates(feeTier=9, maker="0.000000", taker="0.000170"),
         }
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -146,7 +145,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -191,7 +190,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 position_risk=position_risk[symbol],
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 
@@ -224,8 +223,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self,
         symbol_info: BinanceFuturesSymbolInfo,
         ts_event: int,
-        position_risk: Optional[BinanceFuturesPositionRisk] = None,
-        fee: Optional[BinanceFuturesCommissionRate] = None,
+        position_risk: BinanceFuturesPositionRisk | None = None,
+        fee: BinanceFuturesCommissionRate | None = None,
     ) -> None:
         contract_type_str = symbol_info.contractType
 

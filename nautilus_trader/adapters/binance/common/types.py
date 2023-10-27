@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -275,11 +275,11 @@ class BinanceTicker(Ticker):
         count: int,
         ts_event: int,
         ts_init: int,
-        prev_close_price: Optional[Decimal] = None,
-        bid_price: Optional[Decimal] = None,
-        bid_qty: Optional[Decimal] = None,
-        ask_price: Optional[Decimal] = None,
-        ask_qty: Optional[Decimal] = None,
+        prev_close_price: Decimal | None = None,
+        bid_price: Decimal | None = None,
+        bid_qty: Decimal | None = None,
+        ask_price: Decimal | None = None,
+        ask_qty: Decimal | None = None,
     ):
         super().__init__(
             instrument_id=instrument_id,
@@ -351,11 +351,11 @@ class BinanceTicker(Ticker):
         BinanceTicker
 
         """
-        prev_close_str: Optional[str] = values.get("prev_close")
-        bid_price_str: Optional[str] = values.get("bid_price")
-        bid_qty_str: Optional[str] = values.get("bid_qty")
-        ask_price_str: Optional[str] = values.get("ask_price")
-        ask_qty_str: Optional[str] = values.get("ask_qty")
+        prev_close_str: str | None = values.get("prev_close")
+        bid_price_str: str | None = values.get("bid_price")
+        bid_qty_str: str | None = values.get("bid_qty")
+        ask_price_str: str | None = values.get("ask_price")
+        ask_qty_str: str | None = values.get("ask_qty")
         return BinanceTicker(
             instrument_id=InstrumentId.from_str(values["instrument_id"]),
             price_change=Decimal(values["price_change"]),

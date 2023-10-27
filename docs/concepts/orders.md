@@ -133,6 +133,12 @@ In the following example we create a _Market_ order on the Interactive Brokers [
 to BUY 100,000 AUD using USD:
 
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import MarketOrder
+
 order: MarketOrder = self.order_factory.market(
     instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
     order_side=OrderSide.BUY,
@@ -152,6 +158,13 @@ In the following example we create a _Limit_ order on the Binance Futures Crypto
 contracts at a limit price of 5000 USDT, as a market maker.
 
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitOrder
+
 order: LimitOrder = self.order_factory.limit(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     order_side=OrderSide.SELL,
@@ -176,6 +189,14 @@ In the following example we create a _Stop-Market_ order on the Binance Spot/Mar
 to SELL 1 BTC at a trigger price of 100,000 USDT, active until further notice:
 
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import StopMarketOrder
+
 order: StopMarketOrder = self.order_factory.stop_market(
     instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
     order_side=OrderSide.SELL,
@@ -198,6 +219,15 @@ In the following example we create a _Stop-Limit_ order on the Currenex FX ECN t
 once the market hits the trigger price of 1.30010 USD, active until midday 6th June, 2022 (UTC):
 
 ```python
+import pandas as pd
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import StopLimitOrder
+
 order: StopLimitOrder = self.order_factory.stop_limit(
     instrument_id=InstrumentId.from_str("GBP/USD.CURRENEX"),
     order_side=OrderSide.BUY,
@@ -223,6 +253,12 @@ In the following example we create a _Market-To-Limit_ order on the Interactive 
 to BUY 200,000 USD using JPY:
 
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import MarketToLimitOrder
+
 order: MarketToLimitOrder = self.order_factory.market_to_limit(
     instrument_id=InstrumentId.from_str("USD/JPY.IDEALPRO"),
     order_side=OrderSide.BUY,
@@ -246,6 +282,14 @@ In the following example we create a _Market-If-Touched_ order on the Binance Fu
 to SELL 10 ETHUSDT-PERP Perpetual Futures contracts at a trigger price of 10,000 USDT, active until further notice:
 
 ```python
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import MarketIfTouchedOrder
+
 order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     order_side=OrderSide.SELL,
@@ -270,6 +314,15 @@ Binance Futures exchange at a limit price of 30_100 USDT (once the market hits t
 active until midday 6th June, 2022 (UTC):
 
 ```python
+import pandas as pd
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import StopLimitOrder
+
 order: StopLimitOrder = self.order_factory.limit_if_touched(
     instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
     order_side=OrderSide.BUY,
@@ -296,6 +349,17 @@ In the following example we create a _Trailing-Stop-Market_ order on the Binance
 Perpetual Futures Contracts activating at a trigger price of 5000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
 
 ```python
+import pandas as pd
+from decimal import Decimal
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import TrailingStopMarketOrder
+
 order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
     order_side=OrderSide.SELL,
@@ -323,6 +387,17 @@ at a limit price of 0.72000 USD, activating at 0.71000 USD then trailing at a st
 away from the current ask price, active until further notice:
 
 ```python
+import pandas as pd
+from decimal import Decimal
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import TrailingStopLimitOrder
+
 order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
     instrument_id=InstrumentId.from_str("AUD/USD.CURRENEX"),
     order_side=OrderSide.BUY,

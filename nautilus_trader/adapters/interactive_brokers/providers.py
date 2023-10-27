@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import copy
-from typing import Optional, Union
 
 import pandas as pd
 from ibapi.contract import ContractDetails
@@ -83,13 +82,13 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_details: dict[str, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         await self.load_ids_async([])
 
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         # Parse and load InstrumentIds
         if self._load_ids_on_start:
@@ -194,7 +193,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         min_expiry: pd.Timestamp,
         max_expiry: pd.Timestamp,
         last_trading_date: str,
-        exchange: Optional[str] = None,
+        exchange: str | None = None,
     ) -> list[ContractDetails]:
         if last_trading_date:
             expirations = [last_trading_date]
@@ -236,8 +235,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
     async def load_async(
         self,
-        instrument_id: Union[InstrumentId, IBContract],
-        filters: Optional[dict] = None,
+        instrument_id: InstrumentId | IBContract,
+        filters: dict | None = None,
     ):
         """
         Search and load the instrument for the given IBContract. It is important that

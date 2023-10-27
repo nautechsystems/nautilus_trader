@@ -16,7 +16,6 @@
 import asyncio
 import decimal
 from decimal import Decimal
-from typing import Optional, Union
 
 import msgspec
 import pandas as pd
@@ -145,10 +144,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
-        self._update_instruments_task: Optional[asyncio.Task] = None
+        self._update_instruments_task: asyncio.Task | None = None
 
         self._connect_websockets_delay: float = 0.0  # Delay for bulk subscriptions to come in
-        self._connect_websockets_task: Optional[asyncio.Task] = None
+        self._connect_websockets_task: asyncio.Task | None = None
 
         # HTTP API
         self._http_client = client
@@ -170,7 +169,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._book_buffer: dict[
             InstrumentId,
-            list[Union[OrderBookDelta, OrderBookDeltas]],
+            list[OrderBookDelta | OrderBookDeltas],
         ] = {}
 
         self._log.info(f"Base URL HTTP {self._http_client.base_url}.", LogColor.BLUE)
@@ -279,8 +278,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        depth: int | None = None,
+        kwargs: dict | None = None,
     ) -> None:
         update_speed = None
         if kwargs is not None:
@@ -296,8 +295,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        depth: int | None = None,
+        kwargs: dict | None = None,
     ) -> None:
         update_speed = None
         if kwargs is not None:
@@ -313,8 +312,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        update_speed: Optional[int] = None,
-        depth: Optional[int] = None,
+        update_speed: int | None = None,
+        depth: int | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -346,7 +345,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         # Add delta stream buffer
         self._book_buffer[instrument_id] = []
 
-        snapshot: Optional[OrderBookDeltas] = None
+        snapshot: OrderBookDeltas | None = None
         if 0 < depth <= 20:
             if depth not in (5, 10, 20):
                 self._log.error(
@@ -473,7 +472,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
-        instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)
+        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}.")
             return
@@ -494,8 +493,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quote ticks: not published by Binance.",
@@ -506,8 +505,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -547,8 +546,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         bar_type: BarType,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
@@ -623,9 +622,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _aggregate_internal_from_minute_bars(
         self,
         bar_type: BarType,
-        start_time_ms: Optional[int],
-        end_time_ms: Optional[int],
-        limit: Optional[int],
+        start_time_ms: int | None,
+        end_time_ms: int | None,
+        limit: int | None,
     ) -> list[Bar]:
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
@@ -768,9 +767,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _aggregate_internal_from_agg_trade_ticks(
         self,
         bar_type: BarType,
-        start_time_ms: Optional[int],
-        end_time_ms: Optional[int],
-        limit: Optional[int],
+        start_time_ms: int | None,
+        end_time_ms: int | None,
+        limit: int | None,
     ) -> list[Bar]:
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
@@ -844,7 +843,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         nautilus_symbol: str = binance_symbol.parse_as_nautilus(
             self._binance_account_type,
         )
-        instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
+        instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
             self._instrument_ids[nautilus_symbol] = instrument_id
@@ -879,7 +878,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
         )
-        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+        book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
             instrument_id,
         )
         if book_buffer is not None:

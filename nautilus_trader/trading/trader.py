@@ -21,10 +21,9 @@ A running instance could be either a test/backtest or live implementation - the
 
 """
 
-from __future__ import annotations
-
 import asyncio
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
@@ -807,6 +806,17 @@ class Trader(Component):
 
         """
         return ReportProvider.generate_order_fills_report(self._cache.orders())
+
+    def generate_fills_report(self) -> pd.DataFrame:
+        """
+        Generate a fills report.
+
+        Returns
+        -------
+        pd.DataFrame
+
+        """
+        return ReportProvider.generate_fills_report(self._cache.orders())
 
     def generate_positions_report(self) -> pd.DataFrame:
         """

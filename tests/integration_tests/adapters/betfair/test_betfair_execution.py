@@ -15,7 +15,6 @@
 
 import asyncio
 from functools import partial
-from typing import Optional
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -205,7 +204,7 @@ def fill_order(
     exec_client,
     venue_order_id: VenueOrderId,
     quote_currency: Currency,
-    trade_id: Optional[str] = None,
+    trade_id: str | None = None,
 ):
     return partial(
         _fill_order,

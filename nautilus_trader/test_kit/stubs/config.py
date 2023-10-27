@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
@@ -58,7 +57,7 @@ class TestConfigStubs:
 
     @staticmethod
     def order_book_imbalance(
-        instrument_id: Optional[InstrumentId] = None,
+        instrument_id: InstrumentId | None = None,
     ) -> ImportableStrategyConfig:
         return ImportableStrategyConfig(
             strategy_path="nautilus_trader.examples.strategies.orderbook_imbalance:OrderBookImbalance",
@@ -102,8 +101,8 @@ class TestConfigStubs:
         bypass_risk: bool = False,
         allow_cash_position: bool = True,
         persist: bool = False,
-        catalog: Optional[ParquetDataCatalog] = None,
-        strategies: Optional[list[ImportableStrategyConfig]] = None,
+        catalog: ParquetDataCatalog | None = None,
+        strategies: list[ImportableStrategyConfig] | None = None,
     ) -> BacktestEngineConfig:
         if persist:
             assert catalog is not None, "If `persist=True`, must pass `catalog`"
@@ -129,7 +128,7 @@ class TestConfigStubs:
     def backtest_data_config(
         catalog: ParquetDataCatalog,
         data_cls: Data = QuoteTick,
-        instrument_id: Optional[str] = None,
+        instrument_id: str | None = None,
     ) -> BacktestDataConfig:
         return BacktestDataConfig(
             data_cls=data_cls.fully_qualified_name(),
@@ -141,10 +140,10 @@ class TestConfigStubs:
     @staticmethod
     def backtest_run_config(
         catalog: ParquetDataCatalog,
-        config: Optional[BacktestEngineConfig] = None,
-        instrument_ids: Optional[list[str]] = None,
+        config: BacktestEngineConfig | None = None,
+        instrument_ids: list[str] | None = None,
         data_types: tuple[Data, ...] = (QuoteTick,),
-        venues: Optional[list[BacktestVenueConfig]] = None,
+        venues: list[BacktestVenueConfig] | None = None,
     ) -> BacktestRunConfig:
         instrument_ids = instrument_ids or [TestIdStubs.betting_instrument_id().value]
         run_config = BacktestRunConfig(

@@ -16,10 +16,10 @@
 
 import asyncio
 import functools
+from collections.abc import Callable
 
 # fmt: off
 from collections.abc import Coroutine
-from typing import Callable, Optional
 
 import async_timeout
 
@@ -38,13 +38,13 @@ class AsyncActor(Actor):
     def __init__(self, config: ActorConfig):
         super().__init__(config)
 
-        self.environment: Optional[Environment] = Environment.BACKTEST
+        self.environment: Environment | None = Environment.BACKTEST
 
         # Hot Cache
         self._pending_async_requests: dict[UUID4, asyncio.Event] = {}
 
         # Initialized in on_start
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def on_start(self):
         if isinstance(self.clock, LiveClock):
@@ -78,9 +78,9 @@ class AsyncActor(Actor):
     def create_task(
         self,
         coro: Coroutine,
-        log_msg: Optional[str] = None,
-        actions: Optional[Callable] = None,
-        success: Optional[str] = None,
+        log_msg: str | None = None,
+        actions: Callable | None = None,
+        success: str | None = None,
     ) -> asyncio.Task:
         """
         Run the given coroutine with error handling and optional callback actions when
@@ -119,8 +119,8 @@ class AsyncActor(Actor):
 
     def _on_task_completed(
         self,
-        actions: Optional[Callable],
-        success: Optional[str],
+        actions: Callable | None,
+        success: str | None,
         task: asyncio.Task,
     ) -> None:
         if task.exception():

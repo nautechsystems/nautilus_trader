@@ -79,3 +79,4 @@ pub mod ama;
 pub mod dema;
 pub mod ema;
 pub mod sma;
+pub mod wma;

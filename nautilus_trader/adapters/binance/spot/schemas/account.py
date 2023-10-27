@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -89,5 +88,5 @@ class BinanceSpotOrderOco(msgspec.Struct, frozen=True):
     listClientOrderId: str
     transactionTime: int
     symbol: str
-    orders: Optional[list[BinanceOrder]] = None  # Included for ACK response type
-    orderReports: Optional[list[BinanceOrder]] = None  # Included for FULL & RESPONSE types
+    orders: list[BinanceOrder] | None = None  # Included for ACK response type
+    orderReports: list[BinanceOrder] | None = None  # Included for FULL & RESPONSE types

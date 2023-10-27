@@ -70,6 +70,8 @@ data and execution clients. To achieve this, add a `BINANCE` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.live.node import TradingNode
+
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
@@ -98,6 +100,10 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.live.node import TradingNode
+
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
@@ -197,6 +203,8 @@ configure the provider to not log the warnings, as per the client configuration
 example below:
 
 ```python
+from nautilus_trader.config import InstrumentProviderConfig
+
 instrument_provider=InstrumentProviderConfig(
     load_all=True,
     log_warnings=False,
@@ -218,6 +226,10 @@ You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating in
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import ClientId
+
 # In your `on_start` method
 self.subscribe_data(
     data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
@@ -230,6 +242,8 @@ objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom/generic data.
 
 ```python
+from nautilus_trader.core.data import Data
+
 def on_data(self, data: Data):
     # First check the type of data
     if isinstance(data, BinanceFuturesMarkPriceUpdate):
