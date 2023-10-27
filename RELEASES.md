@@ -14,6 +14,7 @@ Released on TBC (UTC).
 - Fixed `Binance` all orders requests which would omit order reports when using a `start` param
 - Fixed managed GTD orders past expiry cancellation on restart (orders were not being canceled)
 - Fixed managed GTD orders cancel timer on order cancel (timers were not being canceled)
+- Fixed `BacktestEngine` logging error with immediate stop (caused by certain timestamps being `None`)
 - Interactive Brokers adapter various fixes, thanks @rsmb7z
 
 ---
