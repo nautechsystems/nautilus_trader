@@ -25,6 +25,7 @@ from nautilus_trader.adapters.interactive_brokers.historic.tick_data import Tick
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 
 
@@ -35,11 +36,16 @@ from nautilus_trader.model.data import TradeTick
 df = pd.DataFrame()
 
 
-# Data Handler for BarDataDownloader
+# Data Handler for TickDataDownloader
 def do_something_with_ticks(ticks: list):
     global df
-    bars_dict = [TradeTick.to_dict(tick) for tick in ticks]
-    df = pd.concat([df, pd.DataFrame(bars_dict)])
+    ticks_dict = [
+        TradeTick.to_dict(tick)
+        if tick.__class__.__name__ == "TradeTick"
+        else QuoteTick.to_dict(tick)
+        for tick in ticks
+    ]
+    df = pd.concat([df, pd.DataFrame(ticks_dict)])
     df = df.sort_values(by="ts_init")
 
 
