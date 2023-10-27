@@ -14,7 +14,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Optional, Union
+from collections.abc import Callable
+from itertools import product
 
 import pandas as pd
 
@@ -64,7 +65,7 @@ class TickDataDownloader(AsyncActor):
         if not set(config.tick_types).issubset({"BID_ASK", "TRADES"}):
             raise ValueError("`tick_type` must be either 'BID_ASK' or 'TRADES'")
         self.tick_types: list[str] = config.tick_types
-        self.handler: Optional[Callable] = config.handler
+        self.handler: Callable | None = config.handler
         self.freq: str = config.freq
 
     async def _on_start(self):
@@ -74,27 +75,29 @@ class TickDataDownloader(AsyncActor):
 
         request_dates = list(pd.date_range(self.start_time, self.end_time, freq=self.freq))
 
-        for request_date in request_dates:
-            for instrument_id in self.instrument_ids:
-                for tick_type in self.tick_types:
-                    if tick_type == "TRADES":
-                        request_id = self.request_trade_ticks(
-                            instrument_id=instrument_id,
-                            start=request_date,
-                            end=request_date + pd.Timedelta(self.freq),
-                        )
-                    elif tick_type == "BID_ASK":
-                        request_id = self.request_quote_ticks(
-                            instrument_id=instrument_id,
-                            start=request_date,
-                            end=request_date + pd.Timedelta(self.freq),
-                        )
-                    else:
-                        raise ValueError(
-                            f"Tick type {tick_type} not supported or invalid.",
-                        )  # pragma: no cover
+        for request_date, instrument_id, tick_type in product(
+            request_dates,
+            self.instrument_ids,
+            self.tick_types,
+        ):
+            if tick_type == "TRADES":
+                request_id = self.request_trade_ticks(
+                    instrument_id=instrument_id,
+                    start=request_date,
+                    end=request_date + pd.Timedelta(self.freq),
+                )
+            elif tick_type == "BID_ASK":
+                request_id = self.request_quote_ticks(
+                    instrument_id=instrument_id,
+                    start=request_date,
+                    end=request_date + pd.Timedelta(self.freq),
+                )
+            else:
+                raise ValueError(
+                    f"Tick type {tick_type} not supported or invalid.",
+                )  # pragma: no cover
 
-                await self.await_request(request_id)
+        await self.await_request(request_id)
 
         self.stop()
 
@@ -115,8 +118,8 @@ class TickDataDownloader(AsyncActor):
         PyCondition.not_none(ticks, "bars")  # Can be empty
 
         length = len(ticks)
-        first: Union[QuoteTick, TradeTick] = ticks[0] if length > 0 else None
-        last: Union[QuoteTick, TradeTick] = ticks[length - 1] if length > 0 else None
+        first: QuoteTick | TradeTick = ticks[0] if length > 0 else None
+        last: QuoteTick | TradeTick = ticks[length - 1] if length > 0 else None
 
         if length > 0:
             self._log.info(f"Received <{type(first)}[{length}]> data.")
