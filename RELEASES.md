@@ -6,6 +6,7 @@ Released on TBC (UTC).
 - Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
 
 ### Breaking Changes
+- Transformed orders will now retain the original `ts_init` timestamp
 - Dropped support for Python 3.9
 
 ### Fixes
