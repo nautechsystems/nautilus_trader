@@ -85,7 +85,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         Exchange where security is traded. Will be SMART for Stocks.
     primaryExchange: str
         Exchange where security is registered. Applies to Stocks.
-    localSymbol: str
+    symbol: str
         Unique Symbol registered in Exchange.
     build_options_chain: bool (default: None)
         Search for full option chain
