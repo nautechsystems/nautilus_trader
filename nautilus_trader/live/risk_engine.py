@@ -15,6 +15,7 @@
 
 import asyncio
 from asyncio import Queue
+from typing import Final
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.clock import LiveClock
@@ -56,7 +57,7 @@ class LiveRiskEngine(RiskEngine):
 
     """
 
-    _sentinel = None
+    _sentinel: Final[None] = None
 
     def __init__(
         self,

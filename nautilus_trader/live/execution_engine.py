@@ -17,7 +17,7 @@ import asyncio
 import math
 from asyncio import Queue
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -93,7 +93,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     """
 
-    _sentinel = None
+    _sentinel: Final[None] = None
 
     def __init__(
         self,
