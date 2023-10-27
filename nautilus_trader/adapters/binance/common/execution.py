@@ -443,7 +443,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             for symbol in active_symbols:
                 # Here we don't pass a `start_time` or `end_time` as order reports appear to go
                 # randomly missing when these are specified. We filter on the Nautilus side below.
-                response = await self._http_account.query_all_orders(symbol=symbol)
+                # Explicitly setting limit to the max lookback of 1000, in the future we should
+                # add pagination.
+                response = await self._http_account.query_all_orders(symbol=symbol, limit=1_000)
                 binance_orders.extend(response)
         except BinanceError as e:
             self._log.exception(f"Cannot generate OrderStatusReport: {e.message}", e)
