@@ -2197,7 +2197,7 @@ class TestOrders:
         # Assert
         assert order.order_type == OrderType.LIMIT
         assert order.price == price
-        assert order.ts_init == 1
+        assert order.ts_init == 0  # Retains original order `ts_init`
 
     def test_limit_order_transformation_to_market_order(self) -> None:
         # Arrange
@@ -2213,4 +2213,4 @@ class TestOrders:
 
         # Assert
         assert order.order_type == OrderType.MARKET
-        assert order.ts_init == 1
+        assert order.ts_init == 0  # Retains original order `ts_init`
