@@ -363,7 +363,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         limit: int,
         start: Optional[pd.Timestamp] = None,
         end: Optional[pd.Timestamp] = None,
-    ):
+    ) -> list[Union[QuoteTick, TradeTick]]:
         if not start:
             limit = self._cache.tick_capacity
 
