@@ -81,9 +81,9 @@ cdef class OrderManager:
     Raises
     ------
     TypeError
-        If `submit_order_handler` is not of type `Callable`.
+        If `submit_order_handler` is not ``None`` and not of type `Callable`.
     TypeError
-        If `cancel_order_handler` is not of type `Callable`.
+        If `cancel_order_handler` is not ``None`` and not of type `Callable`.
     """
 
     def __init__(
