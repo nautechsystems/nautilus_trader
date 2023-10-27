@@ -112,7 +112,11 @@ class BacktestNode:
 
     def run(self) -> list[BacktestResult]:
         """
-        Execute a group of backtest run configs synchronously.
+        Run the backtest node which will synchronously execute the list of loaded
+        backtest run configs.
+
+        Any exceptions raised from a backtest will be printed to stdout and
+        the next backtest run will commence (if any).
 
         Returns
         -------
@@ -122,14 +126,19 @@ class BacktestNode:
         """
         results: list[BacktestResult] = []
         for config in self._configs:
-            result = self._run(
-                run_config_id=config.id,
-                engine_config=config.engine,
-                venue_configs=config.venues,
-                data_configs=config.data,
-                batch_size_bytes=config.batch_size_bytes,
-            )
-            results.append(result)
+            try:
+                result = self._run(
+                    run_config_id=config.id,
+                    engine_config=config.engine,
+                    venue_configs=config.venues,
+                    data_configs=config.data,
+                    batch_size_bytes=config.batch_size_bytes,
+                )
+                results.append(result)
+            except Exception as ex:
+                # Broad catch all prevents a single backtest run from halting
+                # the execution of the other backtests (such as a zero balance exception).
+                print(f"Error running {config}: {ex}")
 
         return results
 
