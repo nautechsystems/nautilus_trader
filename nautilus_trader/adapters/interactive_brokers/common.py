@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Literal
+from typing import Final, Literal
 
 from ibapi.common import UNSET_DECIMAL
 
@@ -22,7 +22,7 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.identifiers import Venue
 
 
-IB_VENUE = Venue("InteractiveBrokers")
+IB_VENUE: Final[Venue] = Venue("InteractiveBrokers")
 
 
 class ContractId(int):
