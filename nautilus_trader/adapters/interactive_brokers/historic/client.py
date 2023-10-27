@@ -2,10 +2,10 @@ import asyncio
 import datetime
 
 import pandas as pd
+from ibapi.common import MarketDataTypeEnum
 
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
-from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -21,6 +21,7 @@ class HistoricInteractiveBrokersClient:
         host: str = "127.0.0.1",
         port: int = 7497,
         client_id: int = 1,
+        market_data_type: MarketDataTypeEnum = MarketDataTypeEnum.REALTIME,
     ):
         loop = asyncio.get_event_loop()
         clock = LiveClock()
@@ -32,7 +33,8 @@ class HistoricInteractiveBrokersClient:
             logger,
         )
         cache = Cache(logger)
-        self.client = InteractiveBrokersClient(
+        self.market_data_type = market_data_type
+        self._client = InteractiveBrokersClient(
             loop=loop,
             msgbus=msgbus,
             cache=cache,
@@ -43,8 +45,13 @@ class HistoricInteractiveBrokersClient:
             client_id=client_id,
         )
 
-    async def connect(self):
-        await self.client._socket_connect()
+    async def _connect(self):
+        # Connect client
+        await self._client.is_running_async()
+        self._client.registered_nautilus_clients.add(1)
+
+        # Set Market Data Type
+        await self._client.set_market_data_type(self.market_data_type)
 
     async def request_trade_ticks(
         self,
@@ -59,12 +66,13 @@ class HistoricInteractiveBrokersClient:
                 timestamps=[d.time for d in data],
                 tz_name=tz_name,
             )
-            _ = await self.client.get_historical_ticks(
+            response = await self._client.get_historical_ticks(
                 contract=contract,
                 tick_type="TRADES",
                 end_date_time=start_time,
                 use_rth=True,
             )
+            print(response)
 
         return data
 
@@ -225,89 +233,6 @@ class HistoricInteractiveBrokersClient:
     #         formatDate=2,
     #     )
 
-    # def parse_response_datetime(
-    #         dt: datetime.datetime | pd.Timestamp,
-    #         tz_name: str,
-    # ) -> datetime.datetime:
-    #     if isinstance(dt, pd.Timestamp):
-    #         dt = dt.to_pydatetime()
-    #     if dt.tzinfo is None:
-    #         tz = pytz.timezone(tz_name)
-    #         dt = tz.localize(dt)
-    #     return dt
-    #
-    # def parse_historic_quote_ticks(
-    #         historic_ticks: list[HistoricalTickBidAsk],
-    #         instrument: Instrument,
-    # ) -> list[QuoteTick]:
-    #     trades = []
-    #     for tick in historic_ticks:
-    #         ts_init = dt_to_unix_nanos(tick.time)
-    #         quote_tick = QuoteTick(
-    #             instrument_id=instrument.id,
-    #             bid=Price(value=tick.priceBid, precision=instrument.price_precision),
-    #             bid_size=Quantity(value=tick.sizeBid, precision=instrument.size_precision),
-    #             ask=Price(value=tick.priceAsk, precision=instrument.price_precision),
-    #             ask_size=Quantity(value=tick.sizeAsk, precision=instrument.size_precision),
-    #             ts_init=ts_init,
-    #             ts_event=ts_init,
-    #         )
-    #         trades.append(quote_tick)
-    #
-    #     return trades
-    #
-    # def parse_historic_trade_ticks(
-    #         historic_ticks: list[HistoricalTickLast],
-    #         instrument: Instrument,
-    # ) -> list[TradeTick]:
-    #     trades = []
-    #     for tick in historic_ticks:
-    #         ts_init = dt_to_unix_nanos(tick.time)
-    #         trade_tick = TradeTick(
-    #             instrument_id=instrument.id,
-    #             price=Price(value=tick.price, precision=instrument.price_precision),
-    #             size=Quantity(value=tick.size, precision=instrument.size_precision),
-    #             aggressor_side=AggressorSide.NO_AGGRESSOR,
-    #             trade_id=generate_trade_id(
-    #                 ts_event=ts_init,
-    #                 price=tick.price,
-    #                 size=tick.size,
-    #             ),
-    #             ts_init=ts_init,
-    #             ts_event=ts_init,
-    #         )
-    #         trades.append(trade_tick)
-    #
-    #     return trades
-    #
-    # def parse_historic_bars(
-    #         historic_bars: list[BarData],
-    #         instrument: Instrument,
-    #         kind: str,
-    # ) -> list[Bar]:
-    #     bars = []
-    #     bar_type = BarType(
-    #         bar_spec=BarSpecification.from_str(kind.split("-", maxsplit=1)[1]),
-    #         instrument_id=instrument.id,
-    #         aggregation_source=AggregationSource.EXTERNAL,
-    #     )
-    #     precision = instrument.price_precision
-    #     for bar in historic_bars:
-    #         ts_init = dt_to_unix_nanos(bar.date)
-    #         trade_tick = Bar(
-    #             bar_type=bar_type,
-    #             open=Price(bar.open, precision),
-    #             high=Price(bar.high, precision),
-    #             low=Price(bar.low, precision),
-    #             close=Price(bar.close, precision),
-    #             volume=Quantity(bar.volume, instrument.size_precision),
-    #             ts_init=ts_init,
-    #             ts_event=ts_init,
-    #         )
-    #         bars.append(trade_tick)
-    #
-    #     return bars
-
 
 def _determine_next_timestamp(timestamps: list[pd.Timestamp], date: datetime.date, tz_name: str):
     """
@@ -326,10 +251,15 @@ def _determine_next_timestamp(timestamps: list[pd.Timestamp], date: datetime.dat
 
 
 async def main():
-    contract = IBContract(secType="STK", exchange="SM", localSymbol="AAPL", currency="USD")
-    _ = InteractiveBrokersGateway(start=True)
-    client = HistoricInteractiveBrokersClient(port=4002)
-    await client.connect()
+    contract = IBContract(
+        secType="STK",
+        symbol="AAPL",
+        exchange="SMART",
+        primaryExchange="NASDAQ",
+    )
+    client = HistoricInteractiveBrokersClient(client_id=5)
+    await client._connect()
+    await asyncio.sleep(2)
     await client.request_trade_ticks(
         contract=contract,
         date=datetime.date(2023, 10, 25),
