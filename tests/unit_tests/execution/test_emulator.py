@@ -235,8 +235,8 @@ class TestOrderEmulatorWithSingleOrders:
         # Arrange
         tick: QuoteTick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
             bid_size=10.0,
             ask_size=10.0,
         )
@@ -278,7 +278,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=TriggerType.INDEX_PRICE,
         )
 
@@ -335,14 +335,14 @@ class TestOrderEmulatorWithSingleOrders:
     )
     def test_submit_limit_order_with_emulation_trigger_default_and_bid_ask_subscribes_to_data(
         self,
-        emulation_trigger,
-    ):
+        emulation_trigger: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=emulation_trigger,
         )
 
@@ -363,7 +363,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -384,7 +384,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -408,7 +408,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -426,7 +426,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -434,7 +434,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2010),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_010),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -456,7 +456,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2000),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_000),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -464,7 +464,7 @@ class TestOrderEmulatorWithSingleOrders:
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(2010),
+            price=ETHUSDT_PERP_BINANCE.make_price(2_010),
             emulation_trigger=TriggerType.LAST_TRADE,
         )
 
@@ -483,15 +483,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_000)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_000)],
         ],
     )
     def test_submit_limit_order_last_then_triggered_releases_market_order(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -505,7 +505,7 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.trade_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            price=5000.0,
+            price=5_000.0,
         )
 
         # Act
@@ -525,15 +525,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_000)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_000)],
         ],
     )
     def test_submit_limit_order_bid_ask_then_triggered_releases_market_order(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -547,8 +547,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5000.0,
-            ask_price=5000.0,
+            bid_price=5_000.0,
+            ask_price=5_000.0,
         )
 
         # Act
@@ -569,21 +569,21 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_000)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_000)],
         ],
     )
     def test_submit_limit_if_touched_then_triggered_releases_limit_order(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.limit_if_touched(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
             order_side=order_side,
             quantity=Quantity.from_int(10),
-            price=ETHUSDT_PERP_BINANCE.make_price(5000),
+            price=ETHUSDT_PERP_BINANCE.make_price(5_000),
             trigger_price=trigger_price,
             emulation_trigger=TriggerType.DEFAULT,
         )
@@ -592,8 +592,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5000.0,
-            ask_price=5000.0,
+            bid_price=5_000.0,
+            ask_price=5_000.0,
         )
 
         # Act
@@ -614,15 +614,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5000)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5000)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_000)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_000)],
         ],
     )
     def test_submit_stop_limit_order_then_triggered_releases_limit_order(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.stop_limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -637,8 +637,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5000.0,
-            ask_price=5000.0,
+            bid_price=5_000.0,
+            ask_price=5_000.0,
         )
 
         # Act
@@ -659,15 +659,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5070)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5060)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_070)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_060)],
         ],
     )
     def test_submit_market_if_touched_order_then_triggered_releases_market_order(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.market_if_touched(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -682,8 +682,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         # Act
@@ -703,15 +703,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5060)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5070)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_060)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_070)],
         ],
     )
     def test_submit_stop_market_order_then_triggered_releases_market_order(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -726,8 +726,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         # Act
@@ -748,15 +748,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "expected_trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5075)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5055)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_075)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_055)],
         ],
     )
     def test_submit_trailing_stop_market_order_with_no_trigger_price_then_updates(
         self,
-        order_side,
-        expected_trigger_price,
-    ):
+        order_side: OrderSide,
+        expected_trigger_price: Price,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.trailing_stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -770,8 +770,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         self.data_engine.process(tick)
@@ -795,22 +795,22 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5075.0),
-                ETHUSDT_PERP_BINANCE.make_price(5070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_075.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_070.0),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5055.0),
-                ETHUSDT_PERP_BINANCE.make_price(5060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_055.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_060.0),
             ],
         ],
     )
     def test_submit_trailing_stop_market_order_with_trigger_price_then_updates(
         self,
-        order_side,
-        trigger_price,
-        expected_trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: Price,
+        expected_trigger_price: Price,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.trailing_stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -825,15 +825,15 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         self.data_engine.process(tick)
 
         tick = TestDataStubs.trade_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            price=5010.0,
+            price=5_010.0,
         )
 
         self.data_engine.process(tick)
@@ -843,8 +843,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5065.0,
-            ask_price=5065.0,
+            bid_price=5_065.0,
+            ask_price=5_065.0,
         )
         self.data_engine.process(tick)
 
@@ -861,15 +861,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "trigger_price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5075)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5055)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_075)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_055)],
         ],
     )
     def test_submit_trailing_stop_market_order_with_trigger_price_then_triggers(
         self,
-        order_side,
-        trigger_price,
-    ):
+        order_side: OrderSide,
+        trigger_price: Price,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.trailing_stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -884,8 +884,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
         self.data_engine.process(tick)
 
@@ -894,8 +894,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5055.0,
-            ask_price=5075.0,
+            bid_price=5_055.0,
+            ask_price=5_075.0,
         )
         self.data_engine.process(tick)
 
@@ -915,22 +915,22 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5070),
-                ETHUSDT_PERP_BINANCE.make_price(5075),
+                ETHUSDT_PERP_BINANCE.make_price(5_070),
+                ETHUSDT_PERP_BINANCE.make_price(5_075),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5060),
-                ETHUSDT_PERP_BINANCE.make_price(5055),
+                ETHUSDT_PERP_BINANCE.make_price(5_060),
+                ETHUSDT_PERP_BINANCE.make_price(5_055),
             ],
         ],
     )
     def test_submit_trailing_stop_limit_order_with_no_trigger_price_then_updates(
         self,
-        order_side,
-        price,
-        expected_trigger_price,
-    ):
+        order_side: OrderSide,
+        price: Price,
+        expected_trigger_price: Price,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -946,8 +946,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
         self.data_engine.process(tick)
 
@@ -969,25 +969,25 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5075.0),
-                ETHUSDT_PERP_BINANCE.make_price(5070.0),
-                ETHUSDT_PERP_BINANCE.make_price(5070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_075.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_070.0),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5055.0),
-                ETHUSDT_PERP_BINANCE.make_price(5060.0),
-                ETHUSDT_PERP_BINANCE.make_price(5060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_055.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_060.0),
             ],
         ],
     )
     def test_submit_trailing_stop_limit_order_with_trigger_price_then_updates(
         self,
-        order_side,
-        price,
-        trigger_price,
-        expected_trigger_price,
-    ):
+        order_side: OrderSide,
+        price: Price,
+        trigger_price: TriggerType,
+        expected_trigger_price: Price,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1004,8 +1004,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         self.data_engine.process(tick)
@@ -1015,8 +1015,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5065.0,
-            ask_price=5065.0,
+            bid_price=5_065.0,
+            ask_price=5_065.0,
         )
         self.data_engine.process(tick)
 
@@ -1033,15 +1033,15 @@ class TestOrderEmulatorWithSingleOrders:
     @pytest.mark.parametrize(
         ("order_side", "price"),
         [
-            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5070)],
-            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5060)],
+            [OrderSide.BUY, ETHUSDT_PERP_BINANCE.make_price(5_070)],
+            [OrderSide.SELL, ETHUSDT_PERP_BINANCE.make_price(5_060)],
         ],
     )
     def test_submit_trailing_stop_limit_order_with_trigger_price_then_triggers(
         self,
-        order_side,
-        price,
-    ):
+        order_side: OrderSide,
+        price: Price,
+    ) -> None:
         # Arrange
         order = self.strategy.order_factory.trailing_stop_limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1058,8 +1058,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         self.data_engine.process(tick)
@@ -1069,8 +1069,8 @@ class TestOrderEmulatorWithSingleOrders:
 
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5055.0,
-            ask_price=5075.0,
+            bid_price=5_055.0,
+            ask_price=5_075.0,
         )
 
         self.data_engine.process(tick)
@@ -1091,27 +1091,27 @@ class TestOrderEmulatorWithSingleOrders:
         [
             [
                 OrderSide.BUY,
-                ETHUSDT_PERP_BINANCE.make_price(5070.0),
-                ETHUSDT_PERP_BINANCE.make_price(5070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_070.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_070.0),
             ],
             [
                 OrderSide.SELL,
-                ETHUSDT_PERP_BINANCE.make_price(5060.0),
-                ETHUSDT_PERP_BINANCE.make_price(5060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_060.0),
+                ETHUSDT_PERP_BINANCE.make_price(5_060.0),
             ],
         ],
     )
     def test_submit_limit_if_touched_immediately_triggered_releases_limit_order(
         self,
-        order_side,
-        trigger_price,
-        price,
-    ):
+        order_side: OrderSide,
+        trigger_price: TriggerType,
+        price: Price,
+    ) -> None:
         # Arrange
         tick = TestDataStubs.quote_tick(
             instrument=ETHUSDT_PERP_BINANCE,
-            bid_price=5060.0,
-            ask_price=5070.0,
+            bid_price=5_060.0,
+            ask_price=5_070.0,
         )
 
         self.emulator.create_matching_core(
@@ -1153,8 +1153,8 @@ class TestOrderEmulatorWithSingleOrders:
     )
     def test_submit_limit_order_bid_ask_with_synthetic_instrument_trigger(
         self,
-        order_side,
-    ):
+        order_side: OrderSide,
+    ) -> None:
         # Arrange
         synthetic = TestInstrumentProvider.synthetic_instrument()
         self.cache.add_synthetic(synthetic)
