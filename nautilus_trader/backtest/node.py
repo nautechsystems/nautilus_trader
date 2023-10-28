@@ -25,6 +25,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.model.currency import Currency
@@ -151,6 +152,16 @@ class BacktestNode:
             for data_config in config.data:
                 if data_config.instrument_id is None:
                     continue  # No instrument associated with data
+
+                if data_config.start_time is not None and data_config.end_time is not None:
+                    start = dt_to_unix_nanos(data_config.start_time)
+                    end = dt_to_unix_nanos(data_config.end_time)
+
+                    if end < start:
+                        raise ValueError(
+                            f"Invalid data config: end_time ({data_config.end_time}) is before start_time ({data_config.start_time}).",
+                        )
+
                 instrument_id: InstrumentId = InstrumentId.from_str(data_config.instrument_id)
                 if instrument_id.venue not in venue_ids:
                     raise ValueError(
