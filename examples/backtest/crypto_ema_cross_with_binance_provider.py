@@ -84,7 +84,8 @@ if __name__ == "__main__":
 
     instrument_id = InstrumentId(symbol=Symbol("ETHUSDT-PERP"), venue=BINANCE)
     instrument = provider.find(instrument_id)
-    assert instrument, f"Unable to find instrument {instrument_id}"
+    if instrument is None:
+        raise RuntimeError(f"Unable to find instrument {instrument_id}")
 
     engine.add_venue(
         venue=BINANCE,

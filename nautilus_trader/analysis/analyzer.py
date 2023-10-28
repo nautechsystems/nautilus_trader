@@ -217,9 +217,8 @@ class PortfolioAnalyzer:
         if not self._realized_pnls:
             return None
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) > 1:
+                raise ValueError("`currency` was `None` for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
 
         return self._realized_pnls.get(currency)
@@ -257,14 +256,14 @@ class PortfolioAnalyzer:
         """
         if not self._account_balances:
             return 0.0
+
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) > 1:
+                raise ValueError("`currency` was `None` for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
-        assert (
-            unrealized_pnl is None or unrealized_pnl.currency == currency
-        ), f"unrealized PnL curreny is not {currency}"
+
+        if unrealized_pnl is not None and unrealized_pnl.currency != currency:
+            raise ValueError(f"unrealized PnL currency is not {currency}")
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -308,14 +307,14 @@ class PortfolioAnalyzer:
         """
         if not self._account_balances:
             return 0.0
+
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) != 1:
+                raise ValueError("currency was None for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
-        assert (
-            unrealized_pnl is None or unrealized_pnl.currency == currency
-        ), f"unrealized PnL curreny is not {currency}"
+
+        if unrealized_pnl is not None and unrealized_pnl.currency != currency:
+            raise ValueError(f"unrealized PnL currency is not {currency}")
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
