@@ -16,7 +16,7 @@ To contribute, follow these steps:
 6. The CI system will run the full test-suite over your code including all unit and integration tests, so include appropriate tests
   with the PR.
 
-7. [Codacy](https://www.codacy.com/) will perform an automated code review.
+7. [Deepsource](https://deepsource.io) will perform an automated code review.
   Fix any issues which cause a failed check, and add the commit to your PR.
 
 8. You will also be required to sign a standard Contributor License Agreement (CLA), which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
