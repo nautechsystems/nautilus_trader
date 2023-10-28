@@ -201,6 +201,7 @@ class TestStrategy:
             "order_id_tag": None,
             "strategy_id": None,
             "external_order_claims": None,
+            "manage_contingencies": False,
             "manage_gtd_expiry": False,
         }
 
@@ -210,6 +211,7 @@ class TestStrategy:
             order_id_tag="001",
             strategy_id="ALPHA-01",
             external_order_claims=["ETHUSDT-PERP.DYDX"],
+            manage_contingencies=True,
             manage_gtd_expiry=True,
         )
 
@@ -227,6 +229,7 @@ class TestStrategy:
             "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
+            "manage_contingencies": True,
             "manage_gtd_expiry": True,
         }
 

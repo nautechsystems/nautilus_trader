@@ -54,6 +54,7 @@ cdef class OrderManager:
     cdef dict _submit_order_commands
     cdef object _submit_order_handler
     cdef object _cancel_order_handler
+    cdef object _modify_order_handler
 
     cpdef dict get_submit_order_commands(self)
     cpdef void cache_submit_order_command(self, SubmitOrder command)
@@ -63,6 +64,7 @@ cdef class OrderManager:
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void cancel_order(self, Order order)
+    cpdef void modify_order_quantity(self, Order order, Quantity new_quantity)
     cpdef void create_new_submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
@@ -75,7 +77,6 @@ cdef class OrderManager:
     cpdef void handle_order_filled(self, OrderFilled filled)
     cpdef void handle_contingencies(self, Order order)
     cpdef void handle_contingencies_update(self, Order order)
-    cpdef void update_order_quantity(self, Order order, Quantity new_quantity)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
