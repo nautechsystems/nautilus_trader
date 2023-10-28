@@ -580,8 +580,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                         continue
 
     def check_cache_against_order_image(self, order_change_message: OCM) -> None:
-        for market in order_change_message.oc:
-            for selection in market.orc:
+        for market in order_change_message.oc or []:
+            for selection in market.orc or []:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
                     selection_id=str(selection.id),
@@ -589,7 +589,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}
-                for unmatched_order in selection.uo:
+                for unmatched_order in selection.uo or []:
                     # We can match on venue_order_id here
                     order = venue_orders.get(VenueOrderId(str(unmatched_order.id)))
                     if order is not None:
