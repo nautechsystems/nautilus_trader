@@ -17,6 +17,7 @@ The top-level package contains all sub-packages needed for NautilusTrader.
 """
 
 import os
+from importlib import resources
 
 import toml
 from importlib_metadata import version
@@ -40,7 +41,6 @@ def clean_version_string(version: str) -> str:
 
 
 def get_package_version_from_toml(
-    toml_file: str,
     package_name: str,
     strip_specifiers: bool = False,
 ) -> str:
@@ -48,8 +48,8 @@ def get_package_version_from_toml(
     Return the package version specified in the given `toml_file` for the given
     `package_name`.
     """
-    with open(toml_file) as file:
-        data = toml.load(file)
+    with resources.path("your_package_name", "pyproject.toml") as toml_path:
+        data = toml.load(toml_path)
         version = data["tool"]["poetry"]["dependencies"][package_name]["version"]
         if strip_specifiers:
             version = clean_version_string(version)
