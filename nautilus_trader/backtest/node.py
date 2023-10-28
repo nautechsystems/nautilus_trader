@@ -202,6 +202,7 @@ class BacktestNode:
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
                 support_gtd_orders=config.support_gtd_orders,
+                support_contingent_orders=config.support_contingent_orders,
                 use_position_ids=config.use_position_ids,
                 use_random_ids=config.use_random_ids,
                 use_reduce_only=config.use_reduce_only,

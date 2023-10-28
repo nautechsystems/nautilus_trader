@@ -71,6 +71,8 @@ cdef class OrderManager:
         The cache for the order manager.
     component_name : str
         The component name for the order manager.
+    active_local : str
+        If the manager if for active local orders.
     submit_order_handler : Callable[[SubmitOrder], None], optional
         The handler to call when submitting orders.
     cancel_order_handler : Callable[[Order], None], optional
@@ -86,6 +88,8 @@ cdef class OrderManager:
         If `submit_order_handler` is not ``None`` and not of type `Callable`.
     TypeError
         If `cancel_order_handler` is not ``None`` and not of type `Callable`.
+    TypeError
+        If `modify_order_handler` is not ``None`` and not of type `Callable`.
     """
 
     def __init__(
@@ -95,6 +99,7 @@ cdef class OrderManager:
         MessageBus msgbus,
         Cache cache not None,
         str component_name not None,
+        bint active_local,
         submit_order_handler: Optional[Callable[[SubmitOrder], None]] = None,
         cancel_order_handler: Optional[Callable[[Order], None]] = None,
         modify_order_handler: Optional[Callable[[Order, Quantity], None]] = None,
@@ -103,12 +108,14 @@ cdef class OrderManager:
         Condition.valid_string(component_name, "component_name")
         Condition.callable_or_none(submit_order_handler, "submit_order_handler")
         Condition.callable_or_none(cancel_order_handler, "cancel_order_handler")
+        Condition.callable_or_none(modify_order_handler, "modify_order_handler")
 
         self._clock = clock
         self._log = LoggerAdapter(component_name=component_name, logger=logger)
         self._msgbus = msgbus
         self._cache = cache
 
+        self.active_local = active_local
         self.debug = debug
         self._submit_order_handler = submit_order_handler
         self._cancel_order_handler = cancel_order_handler
@@ -259,9 +266,30 @@ cdef class OrderManager:
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void handle_position_event(self, PositionEvent event):
-        Condition.not_none(event, "event")
-        # TBC
+    cpdef void handle_event(self, Event event):
+        """
+        Handle the given `event`.
+
+        If a handler for the given event is not implemented then this will simply be a no-op.
+
+        Parameters
+        ----------
+        event : Event
+            The event to handle
+
+        """
+        if isinstance(event, OrderRejected):
+            self.handle_order_rejected(event)
+        elif isinstance(event, OrderCanceled):
+            self.handle_order_canceled(event)
+        elif isinstance(event, OrderExpired):
+            self.handle_order_expired(event)
+        elif isinstance(event, OrderUpdated):
+            self.handle_order_updated(event)
+        elif isinstance(event, OrderFilled):
+            self.handle_order_filled(event)
+        elif isinstance(event, PositionEvent):
+            self.handle_position_event(event)
 
     cpdef void handle_order_rejected(self, OrderRejected rejected):
         Condition.not_none(rejected, "rejected")
@@ -362,7 +390,7 @@ cdef class OrderManager:
                     self._log.info(f"Processing OTO child order {child_order}.", LogColor.MAGENTA)
                     self._log.info(f"{parent_filled_qty=}.", LogColor.MAGENTA)
 
-                if not child_order.is_active_local_c():
+                if self.active_local and not child_order.is_active_local_c():
                     continue
 
                 if child_order.position_id is None:
@@ -371,7 +399,7 @@ cdef class OrderManager:
                 if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
                     self.modify_order_quantity(child_order, parent_filled_qty)
 
-                if not child_order.is_active_local_c() or self._submit_order_handler is None:
+                if (self.active_local and not child_order.is_active_local_c()) or self._submit_order_handler is None:
                     return  # Order does not need to be released
 
                 if not child_order.client_order_id in self._submit_order_commands:
@@ -427,7 +455,7 @@ cdef class OrderManager:
                 raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
             if client_order_id == order.client_order_id:
                 continue  # Already being handled
-            if contingent_order.is_closed_c() or not contingent_order.is_active_local_c():
+            if contingent_order.is_closed_c() or (self.active_local and not contingent_order.is_active_local_c()):
                 self._submit_order_commands.pop(order.client_order_id, None)
                 continue  # Already completed
 
@@ -480,7 +508,7 @@ cdef class OrderManager:
             assert contingent_order
             if client_order_id == order.client_order_id:
                 continue  # Already being handled  # pragma: no cover
-            if contingent_order.is_closed_c() or contingent_order.emulation_trigger == TriggerType.NO_TRIGGER:
+            if contingent_order.is_closed_c() or (self.active_local and not contingent_order.is_active_local_c()):
                 continue  # Already completed  # pragma: no cover
 
             if order.contingency_type == ContingencyType.OTO:
@@ -489,6 +517,10 @@ cdef class OrderManager:
             elif order.contingency_type == ContingencyType.OUO:
                 if quantity._mem.raw != contingent_order.quantity._mem.raw:
                     self.modify_order_quantity(contingent_order, quantity)
+
+    cpdef void handle_position_event(self, PositionEvent event):
+        Condition.not_none(event, "event")
+        # TBC
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

@@ -151,7 +151,7 @@ cdef class Strategy(Actor):
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
-        self.manage_contingencies = config.manage_contingencies
+        self.manage_contingent_orders = config.manage_contingent_orders
         self.manage_gtd_expiry = config.manage_gtd_expiry
 
         # Public components
@@ -159,6 +159,9 @@ cdef class Strategy(Actor):
         self.cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
+
+        # Order management
+        self._manager = None       # Initialized when registered
 
         # Register warning events
         self.register_warning_event(OrderDenied)
@@ -277,8 +280,21 @@ cdef class Strategy(Actor):
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,
             strategy_id=self.id,
-            clock=self.clock,
-            cache=self.cache,
+            clock=clock,
+            cache=cache,
+        )
+
+        self._manager = OrderManager(
+            clock=clock,
+            logger=logger,
+            msgbus=msgbus,
+            cache=cache,
+            component_name=type(self).__name__,
+            active_local=False,
+            submit_order_handler=None,
+            cancel_order_handler=self.cancel_order,
+            modify_order_handler=self.modify_order,
+            debug=True,  # Set True for debugging
         )
 
         # Required subscriptions
@@ -367,12 +383,13 @@ cdef class Strategy(Actor):
         if self.order_factory:
             self.order_factory.reset()
 
-        self._pending_requests.clear()
-
         self._indicators.clear()
         self._indicators_for_quotes.clear()
         self._indicators_for_trades.clear()
         self._indicators_for_bars.clear()
+
+        if self._manager:
+            self._manager.reset()
 
         self.on_reset()
 
@@ -897,7 +914,6 @@ cdef class Strategy(Actor):
         Price price = None,
         Price trigger_price = None,
         ClientId client_id = None,
-        bint batch_more = False,
     ):
         """
         Modify the given order with optional parameters and routing instructions.
@@ -925,11 +941,6 @@ cdef class Strategy(Actor):
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
-        batch_more : bool, default False
-            Indicates if this command should be batched (grouped) with subsequent modify order
-            commands for the venue. When set to `True`, we expect more calls to `modify_order`
-            which will add to the current batch. Final processing of the batch occurs on a call
-            with `batch_more=False`. For proper behavior, maintain the correct call sequence.
 
         Raises
         ------
@@ -943,10 +954,6 @@ cdef class Strategy(Actor):
         If the order is already closed or at `PENDING_CANCEL` status
         then the command will not be generated, and a warning will be logged.
 
-        The `batch_more` flag is an advanced feature which may have unintended consequences if not
-        called in the correct sequence. If a series of `batch_more=True` calls are not followed by
-        a `batch_more=False`, then no command will be sent from the strategy.
-
         References
         ----------
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
@@ -954,10 +961,6 @@ cdef class Strategy(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-
-        if batch_more:
-            self._log.error("The `batch_more` feature is not currently implemented.")
-            return
 
         cdef ModifyOrder command = self._create_modify_order(
             order=order,
@@ -1523,6 +1526,12 @@ cdef class Strategy(Actor):
 
         if self._fsm.state != ComponentState.RUNNING:
             return
+
+        if self.manage_contingent_orders and self._manager is not None:
+            if isinstance(event, OrderEvent):
+                order = self.cache.order(event.client_order_id)
+                if order is not None and not order.is_active_local_c():
+                    self._manager.handle_event(event)
 
         try:
             # Send to specific event handler

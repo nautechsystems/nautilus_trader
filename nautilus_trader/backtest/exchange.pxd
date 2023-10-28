@@ -84,6 +84,8 @@ cdef class SimulatedExchange:
     """If stop orders are rejected on submission if in the market.\n\n:returns: `bool`"""
     cdef readonly bint support_gtd_orders
     """If orders with GTD time in force will be supported by the venue.\n\n:returns: `bool`"""
+    cdef readonly bint support_contingent_orders
+    """If contingent orders will be supported/respected by the venue.\n\n:returns: `bool`"""
     cdef readonly bint use_position_ids
     """If venue position IDs will be generated on order fills.\n\n:returns: `bool`"""
     cdef readonly bint use_random_ids

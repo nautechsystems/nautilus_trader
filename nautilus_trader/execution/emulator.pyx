@@ -125,6 +125,7 @@ cdef class OrderEmulator(Actor):
             msgbus=msgbus,
             cache=cache,
             component_name=type(self).__name__,
+            active_local=True,
             submit_order_handler=self._handle_submit_order,
             cancel_order_handler=self._cancel_order,
             modify_order_handler=self._update_order,
@@ -254,18 +255,7 @@ cdef class OrderEmulator(Actor):
             self._log.info(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
 
-        if isinstance(event, OrderRejected):
-            self._manager.handle_order_rejected(event)
-        elif isinstance(event, OrderCanceled):
-            self._manager.handle_order_canceled(event)
-        elif isinstance(event, OrderExpired):
-            self._manager.handle_order_expired(event)
-        elif isinstance(event, OrderUpdated):
-            self._manager.handle_order_updated(event)
-        elif isinstance(event, OrderFilled):
-            self._manager.handle_order_filled(event)
-        elif isinstance(event, PositionEvent):
-            self._manager.handle_position_event(event)
+        self._manager.handle_event(event)
 
         if not isinstance(event, OrderEvent):
             return

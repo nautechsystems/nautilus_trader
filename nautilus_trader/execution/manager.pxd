@@ -49,6 +49,7 @@ cdef class OrderManager:
     cdef MessageBus _msgbus
     cdef Cache _cache
 
+    cdef readonly bint active_local
     cdef readonly bint debug
 
     cdef dict _submit_order_commands
@@ -69,7 +70,7 @@ cdef class OrderManager:
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void handle_position_event(self, PositionEvent event)
+    cpdef void handle_event(self, Event event)
     cpdef void handle_order_rejected(self, OrderRejected rejected)
     cpdef void handle_order_canceled(self, OrderCanceled canceled)
     cpdef void handle_order_expired(self, OrderExpired expired)
@@ -77,6 +78,7 @@ cdef class OrderManager:
     cpdef void handle_order_filled(self, OrderFilled filled)
     cpdef void handle_contingencies(self, Order order)
     cpdef void handle_contingencies_update(self, Order order)
+    cpdef void handle_position_event(self, PositionEvent event)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
