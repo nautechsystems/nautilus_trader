@@ -151,6 +151,7 @@ cdef class Strategy(Actor):
         self.config = config
         self.oms_type = oms_type_from_str(str(config.oms_type).upper()) if config.oms_type else OmsType.UNSPECIFIED
         self.external_order_claims = self._parse_external_order_claims(config.external_order_claims)
+        self.manage_contingencies = config.manage_contingencies
         self.manage_gtd_expiry = config.manage_gtd_expiry
 
         # Public components

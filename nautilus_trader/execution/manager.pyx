@@ -75,6 +75,8 @@ cdef class OrderManager:
         The handler to call when submitting orders.
     cancel_order_handler : Callable[[Order], None], optional
         The handler to call when canceling orders.
+    modify_order_handler : Callable[[Order], None], optional
+        The handler to call when modifying orders.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -95,6 +97,7 @@ cdef class OrderManager:
         str component_name not None,
         submit_order_handler: Optional[Callable[[SubmitOrder], None]] = None,
         cancel_order_handler: Optional[Callable[[Order], None]] = None,
+        modify_order_handler: Optional[Callable[[Order, Quantity], None]] = None,
         bint debug = False,
     ):
         Condition.valid_string(component_name, "component_name")
@@ -107,8 +110,9 @@ cdef class OrderManager:
         self._cache = cache
 
         self.debug = debug
-        self._submit_order_handler: Callable[[SubmitOrder], None] = submit_order_handler
-        self._cancel_order_handler: Callable[[Order], None] = cancel_order_handler
+        self._submit_order_handler = submit_order_handler
+        self._cancel_order_handler = cancel_order_handler
+        self._modify_order_handler = modify_order_handler
 
         self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
 
@@ -181,8 +185,6 @@ cdef class OrderManager:
             self._log.warning("Cannot cancel order: already closed.")
             return
 
-        self._cache.update_order_pending_cancel_local(order)
-
         if self.debug:
             self._log.info(f"Cancelling order {order}.", LogColor.MAGENTA)
 
@@ -191,20 +193,21 @@ cdef class OrderManager:
         if self._cancel_order_handler is not None:
             self._cancel_order_handler(order)
 
-        # Generate event
-        cdef uint64_t ts_now = self._clock.timestamp_ns()
-        cdef OrderCanceled event = OrderCanceled(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=order.venue_order_id,  # Probably None
-            account_id=order.account_id,  # Probably None
-            event_id=UUID4(),
-            ts_event=ts_now,
-            ts_init=ts_now,
-        )
-        self.send_exec_event(event)
+    cpdef void modify_order_quantity(self, Order order, Quantity new_quantity):
+        """
+        Modify the given `order` with the manager.
+
+        Parameters
+        ----------
+        order : Order
+            The order to modify.
+
+        """
+        Condition.not_none(order, "order")
+        Condition.not_none(new_quantity, "new_quantity")
+
+        if self._modify_order_handler is not None:
+            self._modify_order_handler(order, new_quantity)
 
     cpdef void create_new_submit_order(
         self,
@@ -366,9 +369,9 @@ cdef class OrderManager:
                     child_order.position_id = position_id
 
                 if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
-                    self.update_order_quantity(child_order, parent_filled_qty)
+                    self.modify_order_quantity(child_order, parent_filled_qty)
 
-                if child_order.status_c() not in (OrderStatus.INITIALIZED, OrderStatus.EMULATED) or self._submit_order_handler is None:
+                if not child_order.is_active_local_c() or self._submit_order_handler is None:
                     return  # Order does not need to be released
 
                 if not child_order.client_order_id in self._submit_order_commands:
@@ -435,7 +438,7 @@ cdef class OrderManager:
                 if order.is_closed_c() and filled_qty._mem.raw == 0 and (order.exec_spawn_id is None or not is_spawn_active):
                     self.cancel_order(contingent_order)
                 elif filled_qty._mem.raw > 0 and filled_qty._mem.raw != contingent_order.quantity._mem.raw:
-                    self.update_order_quantity(contingent_order, filled_qty)
+                    self.modify_order_quantity(contingent_order, filled_qty)
             elif order.contingency_type == ContingencyType.OCO:
                 if self.debug:
                     self._log.info(f"Processing OCO contingent order {client_order_id}.", LogColor.MAGENTA)
@@ -449,7 +452,7 @@ cdef class OrderManager:
                 elif order.is_closed_c() and (order.exec_spawn_id is None or not is_spawn_active):
                     self.cancel_order(contingent_order)
                 elif leaves_qty._mem.raw != contingent_order.leaves_qty._mem.raw:
-                    self.update_order_quantity(contingent_order, leaves_qty)
+                    self.modify_order_quantity(contingent_order, leaves_qty)
 
     cpdef void handle_contingencies_update(self, Order order):
         Condition.not_none(order, "order")
@@ -482,38 +485,10 @@ cdef class OrderManager:
 
             if order.contingency_type == ContingencyType.OTO:
                 if quantity._mem.raw != contingent_order.quantity._mem.raw:
-                    self.update_order_quantity(contingent_order, quantity)
+                    self.modify_order_quantity(contingent_order, quantity)
             elif order.contingency_type == ContingencyType.OUO:
                 if quantity._mem.raw != contingent_order.quantity._mem.raw:
-                    self.update_order_quantity(contingent_order, quantity)
-
-    cpdef void update_order_quantity(self, Order order, Quantity new_quantity):
-        if self.debug:
-            self._log.info(
-                f"Update contingency order {order.client_order_id} quantity to {new_quantity}.",
-                LogColor.MAGENTA,
-            )
-
-        # Generate event
-        cdef uint64_t ts_now = self._clock.timestamp_ns()
-        cdef OrderUpdated event = OrderUpdated(
-            trader_id=order.trader_id,
-            strategy_id=order.strategy_id,
-            instrument_id=order.instrument_id,
-            client_order_id=order.client_order_id,
-            venue_order_id=None,  # Not yet assigned by any venue
-            account_id=order.account_id,  # Probably None
-            quantity=new_quantity,
-            price=None,
-            trigger_price=None,
-            event_id=UUID4(),
-            ts_event=ts_now,
-            ts_init=ts_now,
-        )
-        order.apply(event)
-        self._cache.update_order(order)
-
-        self.send_risk_event(event)
+                    self.modify_order_quantity(contingent_order, quantity)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 

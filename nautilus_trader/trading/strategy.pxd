@@ -78,8 +78,10 @@ cdef class Strategy(Actor):
     """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly list external_order_claims
     """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
+    cdef readonly bint manage_contingencies
+    """If contingency orders should be managed automatically by the strategy.\n\n:returns: `bool`"""
     cdef readonly bint manage_gtd_expiry
-    """If all order GTD time in force expirations should be managed by the strategy.\n\n:returns: `bool`"""
+    """If all order GTD time in force expirations should be managed automatically by the strategy.\n\n:returns: `bool`"""
 
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
