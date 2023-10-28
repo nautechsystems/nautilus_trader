@@ -541,12 +541,8 @@ mod tests {
             let value = request.headers().get(&self.key);
             assert!(value.is_some());
 
-            match request.headers().get(&self.key) {
-                Some(value) => {
-                    assert_eq!(value, self.value);
-                    ()
-                }
-                _ => (),
+            if let Some(value) = request.headers().get(&self.key) {
+                assert_eq!(value, self.value);
             }
 
             Ok(response)
