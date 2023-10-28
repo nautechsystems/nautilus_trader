@@ -19,8 +19,8 @@ do
     start_time=$(date +%s)
 
     # Run the backtest script
-    chmod +x examples/backtest/$script
-    yes | poetry run examples/backtest/$script
+    chmod +x "examples/backtest/$script"
+    yes | poetry run "examples/backtest/$script"
 
     # Get the exit status of the last example run
     exit_status=$?
