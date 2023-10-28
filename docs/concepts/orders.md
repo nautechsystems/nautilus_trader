@@ -98,7 +98,7 @@ of the stop price based on the offset from the 'market' (bid, ask or last price 
 - `TICKS` - The offset is based on a number of ticks
 - `PRICE_TIER` - The offset is based on an exchange specific price tier
 
-### Contingency Orders
+### Contingent Orders
 More advanced relationships can be specified between orders such as assigning child order(s) which will only
 trigger when the parent order is activated or filled, or linking orders together which will cancel or reduce in quantity
 contingent on each other. More documentation for these options can be found in the [advanced order guide](advanced/advanced_orders.md).
