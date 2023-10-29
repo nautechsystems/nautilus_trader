@@ -59,7 +59,7 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     # Arrange
     provider = TestDataProvider()
     wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+    ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
     # Act
     batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)

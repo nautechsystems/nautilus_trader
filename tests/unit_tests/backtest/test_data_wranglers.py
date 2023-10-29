@@ -174,7 +174,7 @@ class TestTradeTickDataWrangler:
 
     def test_tick_data(self):
         # Arrange, Act
-        ticks = TestDataProvider().read_csv_ticks("binance-ethusdt-trades.csv")[:100]
+        ticks = TestDataProvider().read_csv_ticks("binance/ethusdt-trades.csv")[:100]
 
         # Assert
         assert len(ticks) == 100
@@ -186,7 +186,7 @@ class TestTradeTickDataWrangler:
         provider = TestDataProvider()
 
         # Act
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:100])
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:100])
 
         # Assert
         assert len(ticks) == 100
@@ -205,7 +205,7 @@ class TestTradeTickDataWrangler:
 
         # Act
         ticks = wrangler.process(
-            provider.read_csv_ticks("binance-ethusdt-trades.csv")[:100],
+            provider.read_csv_ticks("binance/ethusdt-trades.csv")[:100],
             ts_init_delta=1_000_500,
         )
 

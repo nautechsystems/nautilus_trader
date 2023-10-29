@@ -97,7 +97,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 # Load raw data
-data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance-btcusdt-depth-snap.csv")
+data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance/binance/btcusdt-depth-snap.csv")
 df = BinanceOrderBookDeltaDataLoader.load(data_path)
 
 # Setup a wrangler

@@ -469,7 +469,7 @@ class TestTickBarAggregator:
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
         provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:10000])
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:10000])
 
         # Act
         for tick in ticks:
@@ -837,7 +837,7 @@ class TestVolumeBarAggregator:
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
         provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:10000])
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:10000])
 
         # Act
         for tick in ticks:
@@ -1081,7 +1081,7 @@ class TestTestValueBarAggregator:
 
         wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BITMEX)
         provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:1000])
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:1000])
 
         # Act
         for tick in ticks:
@@ -1245,7 +1245,7 @@ class TestTimeBarAggregator:
     )
     def test_aggregation_for_same_sec_and_minute_intervals(self, step, aggregation):
         # Arrange - prepare data
-        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
+        path = TEST_DATA_DIR / "binance/btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
@@ -1285,7 +1285,7 @@ class TestTimeBarAggregator:
 
     def test_do_not_build_with_no_updates(self):
         # Arrange
-        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
+        path = TEST_DATA_DIR / "binance/btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
@@ -1317,7 +1317,7 @@ class TestTimeBarAggregator:
 
     def test_timestamp_on_close_false_timestamps_ts_event_as_open(self):
         # Arrange
-        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
+        path = TEST_DATA_DIR / "binance/btcusdt-quotes.parquet"
         df_ticks = ParquetTickDataLoader.load(path)
 
         wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
