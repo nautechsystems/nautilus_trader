@@ -141,11 +141,11 @@ into a unified interface. The following integrations are currently supported:
 
 | Name                                                      | ID          | Type                    | Status                                                  | Docs                                                              |
 | :-------------------------------------------------------- | :---------- | :---------------------- | :------------------------------------------------------ | :---------------------------------------------------------------- |
-| [Betfair](https://betfair.com)                            | `BETFAIR`   | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-| [Binance](https://binance.com)                            | `BINANCE`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Binance US](https://binance.us)                          | `BINANCE`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`     | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
+| [Betfair](https://betfair.com)                            | `BETFAIR`   | Sports betting exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+| [Binance](https://binance.com)                            | `BINANCE`   | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Binance US](https://binance.us)                          | `BINANCE`   | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`   | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Bybit](https://www.bybit.com)                            | `BYBIT`     | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
 | [Databento](https://databento.com)                        | `DATABENTO` | Data provider           | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `IB`        | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
