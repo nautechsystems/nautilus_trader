@@ -663,7 +663,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Add data
         provider = TestDataProvider()
         wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
         self.engine.add_data(ticks)
 
     def teardown(self):

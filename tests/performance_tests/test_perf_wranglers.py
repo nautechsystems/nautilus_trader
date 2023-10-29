@@ -49,7 +49,7 @@ class TestDataWranglersPerformance(PerformanceHarness):
 
         def wrangler_process():
             # 69806 ticks in data
-            wrangler.process(data=provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+            wrangler.process(data=provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
         PerformanceBench.profile_function(
             target=wrangler_process,

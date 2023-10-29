@@ -51,7 +51,7 @@ if __name__ == "__main__":
 
         # Process data
         ticks = quote_tick_wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
-        ticks = trade_tick_wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        ticks = trade_tick_wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
         # Add data
         bid_bars = bid_wrangler.process(

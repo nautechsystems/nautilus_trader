@@ -68,7 +68,7 @@ class TestInstrument:
 
     def test_str_repr_returns_expected(self):
         # Arrange, Act, Assert
-        expected = provider.read("binance-btcusdt-instrument-repr.txt").decode()
+        expected = provider.read("binance/btcusdt-instrument-repr.txt").decode()
         assert str(BTCUSDT_BINANCE) + "\n" == expected
         assert repr(BTCUSDT_BINANCE) + "\n" == expected
 
