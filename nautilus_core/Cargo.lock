@@ -3791,7 +3791,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tungstenite"
 version = "0.20.1"
-source = "git+https://github.com/snapview/tungstenite-rs#3d9fd1e5cb8b78e930eead4604e7ba9debec618e"
+source = "git+https://github.com/snapview/tungstenite-rs#272d83c4309b68838a139b6288bb94d166ffd7b1"
 dependencies = [
  "byteorder",
  "bytes",
@@ -4155,18 +4155,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.7.18"
+version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ede7d7c7970ca2215b8c1ccf4d4f354c4733201dfaaba72d44ae5b37472e4901"
+checksum = "dd66a62464e3ffd4e37bd09950c2b9dd6c4f8767380fabba0d523f9a775bc85a"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.7.18"
+version = "0.7.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b27b1bb92570f989aac0ab7e9cbfbacdd65973f7ee920d9f0e71ebac878fd0b"
+checksum = "255c4596d41e6916ced49cfafea18727b24d67878fa180ddfd69b9df34fd1726"
 dependencies = [
  "proc-macro2",
  "quote",
