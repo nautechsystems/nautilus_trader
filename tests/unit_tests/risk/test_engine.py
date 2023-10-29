@@ -214,7 +214,7 @@ class TestRiskEngineWithCashAccount:
         self.risk_engine.set_trading_state(TradingState.HALTED)
 
         # Assert
-        assert type(handler[0]) == TradingStateChanged
+        assert type(handler[0]) is TradingStateChanged
         assert self.risk_engine.trading_state == TradingState.HALTED
 
     def test_max_order_submit_rate_when_no_risk_config_returns_100_per_second(self):
