@@ -17,7 +17,7 @@ from libc.stdint cimport int64_t
 
 
 cdef inline Exception make_exception(ex_default, ex_type, str msg):
-    if type(ex_type) == type(Exception):
+    if type(ex_type) is type(Exception):
         return ex_type(msg)
     else:
         return ex_default(msg)
