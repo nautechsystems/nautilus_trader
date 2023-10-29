@@ -63,7 +63,7 @@ class AsyncActor(Actor):
 
     def _finish_response(self, request_id: UUID4):
         super()._finish_response(request_id)
-        if request_id in self._pending_async_requests.keys():
+        if request_id in self._pending_async_requests:
             self._pending_async_requests[request_id].set()
 
     async def await_request(self, request_id: UUID4, timeout: int = 30):
