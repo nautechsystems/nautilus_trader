@@ -121,11 +121,11 @@ impl WebSocketClientInner {
         let mut request = url.into_client_request()?;
         let req_headers = request.headers_mut();
 
-        headers.into_iter().for_each(|(key, val)| {
+        for (key, val) in headers {
             let header_value = HeaderValue::from_str(&val).unwrap();
             let header_name = HeaderName::from_str(&key).unwrap();
             req_headers.insert(header_name, header_value);
-        });
+        }
 
         connect_async(request).await.map(|resp| resp.0.split())
     }

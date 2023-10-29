@@ -46,7 +46,7 @@ impl<T> EagerStream<T> {
                 .await;
         });
 
-        EagerStream { rx, task, runtime }
+        Self { rx, task, runtime }
     }
 }
 
@@ -85,7 +85,7 @@ where
             match iter.next() {
                 Some(mut batch) => match batch.next() {
                     Some(item) => {
-                        break Some(ElementBatchIter { item, batch, iter });
+                        break Some(Self { item, batch, iter });
                     }
                     None => continue,
                 },
@@ -276,7 +276,7 @@ mod tests {
             let mut vec: Vec<u64> = Arbitrary::arbitrary(g);
 
             // Sort the vector
-            vec.sort();
+            vec.sort_unstable();
 
             // Recreate nested Vec structure by splitting the flattened_sorted_vec into sorted chunks
             let mut nested_sorted_vec = Vec::new();
@@ -292,7 +292,7 @@ mod tests {
             }
 
             // Wrap the sorted nested vector in the SortedNestedVecU64 struct
-            SortedNestedVec(nested_sorted_vec)
+            Self(nested_sorted_vec)
         }
 
         // Optionally, implement the `shrink` method if you want to shrink the generated data on test failures
@@ -306,18 +306,17 @@ mod tests {
         let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
 
         let copy_data = all_data.clone();
-        copy_data.into_iter().for_each(|stream| {
-            let input = stream.0.into_iter().map(|batch| batch.into_iter());
+        for stream in copy_data.into_iter() {
+            let input = stream.0.into_iter().map(std::iter::IntoIterator::into_iter);
             kmerge.push_iter(input);
-        });
+        }
         let merged_data: Vec<u64> = kmerge.collect();
 
         let mut sorted_data: Vec<u64> = all_data
             .into_iter()
-            .map(|stream| stream.0.into_iter().flatten())
-            .flatten()
+            .flat_map(|stream| stream.0.into_iter().flatten())
             .collect();
-        sorted_data.sort();
+        sorted_data.sort_unstable();
 
         merged_data.len() == sorted_data.len() && merged_data.eq(&sorted_data)
     }

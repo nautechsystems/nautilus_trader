@@ -104,7 +104,7 @@ impl RelativeStrengthIndex {
     pub fn update_raw(&mut self, value: f64) {
         if !self._has_inputs {
             self._last_value = value;
-            self._has_inputs = true
+            self._has_inputs = true;
         }
         let gain = value - self._last_value;
         if gain > 0.0 {
@@ -153,40 +153,40 @@ mod tests {
 
     #[rstest]
     fn test_rsi_initialized(rsi_10: RelativeStrengthIndex) {
-        let display_str = format!("{}", rsi_10);
+        let display_str = format!("{rsi_10}");
         assert_eq!(display_str, "RelativeStrengthIndex(10,EXPONENTIAL)");
         assert_eq!(rsi_10.period, 10);
-        assert_eq!(rsi_10.is_initialized, false)
+        assert!(!rsi_10.is_initialized);
     }
 
     #[rstest]
     fn test_initialized_with_required_inputs_returns_true(mut rsi_10: RelativeStrengthIndex) {
         for i in 0..12 {
-            rsi_10.update_raw(i as f64);
+            rsi_10.update_raw(f64::from(i));
         }
-        assert_eq!(rsi_10.is_initialized, true)
+        assert!(rsi_10.is_initialized);
     }
 
     #[rstest]
     fn test_value_with_one_input_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         rsi_10.update_raw(1.0);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_value_all_higher_inputs_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         for i in 1..4 {
-            rsi_10.update_raw(i as f64);
+            rsi_10.update_raw(f64::from(i));
         }
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_value_with_all_lower_inputs_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         for i in (1..4).rev() {
-            rsi_10.update_raw(i as f64);
+            rsi_10.update_raw(f64::from(i));
         }
-        assert_eq!(rsi_10.value, 0.0)
+        assert_eq!(rsi_10.value, 0.0);
     }
 
     #[rstest]
@@ -198,7 +198,7 @@ mod tests {
         rsi_10.update_raw(7.0);
         rsi_10.update_raw(6.0);
 
-        assert_eq!(rsi_10.value, 0.6837363325825265)
+        assert_eq!(rsi_10.value, 0.683_736_332_582_526_5);
     }
 
     #[rstest]
@@ -212,7 +212,7 @@ mod tests {
         rsi_10.update_raw(6.0);
         rsi_10.update_raw(7.0);
 
-        assert_eq!(rsi_10.value, 0.7615344667662725);
+        assert_eq!(rsi_10.value, 0.761_534_466_766_272_5);
     }
 
     #[rstest]
@@ -220,28 +220,28 @@ mod tests {
         rsi_10.update_raw(1.0);
         rsi_10.update_raw(2.0);
         rsi_10.reset();
-        assert_eq!(rsi_10.is_initialized(), false);
-        assert_eq!(rsi_10.count, 0)
+        assert!(!rsi_10.is_initialized());
+        assert_eq!(rsi_10.count, 0);
     }
 
     #[rstest]
     fn test_handle_quote_tick(mut rsi_10: RelativeStrengthIndex, quote_tick: QuoteTick) {
         rsi_10.handle_quote_tick(&quote_tick);
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_handle_trade_tick(mut rsi_10: RelativeStrengthIndex, trade_tick: TradeTick) {
         rsi_10.handle_trade_tick(&trade_tick);
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_handle_bar(mut rsi_10: RelativeStrengthIndex, bar_ethusdt_binance_minute_bid: Bar) {
         rsi_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 }
