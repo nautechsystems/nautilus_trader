@@ -20,7 +20,7 @@ from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 crypto_perpetual_ethusdt_perp = TestInstrumentProviderPyo3.ethusdt_perp_binance()
 
 
-class TestCryptoPerpetual:
+class TestCryptoPerpetualPyo3:
     def test_equality(self):
         item_1 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
         item_2 = TestInstrumentProviderPyo3.ethusdt_perp_binance()

@@ -20,6 +20,7 @@ import pytz
 
 from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
+from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import Price
@@ -81,5 +82,27 @@ class TestInstrumentProviderPyo3:
             None,
             Money(10.0, TestTypesProviderPyo3.currency_usdt()),
             Price.from_str("1000000.0"),
+            Price.from_str("0.01"),
+        )
+
+    @staticmethod
+    def btcusdt_binance() -> CurrencyPair:
+        return CurrencyPair(  # type: ignore
+            InstrumentId.from_str("BTCUSDT.BINANCE"),
+            Symbol("BTCUSDT"),
+            TestTypesProviderPyo3.currency_btc(),
+            TestTypesProviderPyo3.currency_usdt(),
+            2,
+            6,
+            Price.from_str("0.01"),
+            Quantity.from_str("0.000001"),
+            0.0,
+            0.0,
+            0.001,
+            0.001,
+            None,
+            Quantity.from_str("9000"),
+            Quantity.from_str("0.00001"),
+            Price.from_str("1000000"),
             Price.from_str("0.01"),
         )

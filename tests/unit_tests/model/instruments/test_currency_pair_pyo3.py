@@ -13,33 +13,31 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
 
-crypto_future_btcusdt = TestInstrumentProviderPyo3.btcusdt_future_binance()
+btcusdt_binance = TestInstrumentProviderPyo3.btcusdt_binance()
 
 
-class TestCryptoFuturePyo3:
+class TestCurrencyPairPyo3:
     def test_equality(self):
-        item_1 = TestInstrumentProviderPyo3.btcusdt_future_binance()
-        item_2 = TestInstrumentProviderPyo3.btcusdt_future_binance()
+        item_1 = TestInstrumentProviderPyo3.btcusdt_binance()
+        item_2 = TestInstrumentProviderPyo3.btcusdt_binance()
         assert item_1 == item_2
 
     def test_hash(self):
-        assert hash(crypto_future_btcusdt) == hash(crypto_future_btcusdt)
+        assert hash(btcusdt_binance) == hash(btcusdt_binance)
 
     def test_to_dict(self):
-        result = crypto_future_btcusdt.to_dict()
-        assert CryptoFuture.from_dict(result) == crypto_future_btcusdt
-        assert result == {
-            "type": "CryptoPerpetual",
-            "id": "BTCUSDT_220325.BINANCE",
+        dict = btcusdt_binance.to_dict()
+        assert CurrencyPair.from_dict(dict) == btcusdt_binance
+        assert dict == {
+            "type": "CurrencyPair",
+            "id": "BTCUSDT.BINANCE",
             "raw_symbol": "BTCUSDT",
-            "underlying": "BTC",
+            "base_currency": "BTC",
             "quote_currency": "USDT",
-            "settlement_currency": "USDT",
-            "expiration": 1648166400000000000,
             "price_precision": 2,
             "size_precision": 6,
             "price_increment": "0.01",
@@ -49,10 +47,8 @@ class TestCryptoFuturePyo3:
             "maker_fee": 0.0,
             "taker_fee": 0.0,
             "lot_size": None,
-            "max_notional": None,
-            "max_price": "1000000.0",
             "max_quantity": "9000",
-            "min_notional": "10.00000000 USDT",
-            "min_price": "0.01",
             "min_quantity": "0.00001",
+            "min_price": "0.01",
+            "max_price": "1000000",
         }
