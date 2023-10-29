@@ -78,7 +78,7 @@ def aud_usd_data_loader(catalog: ParquetDataCatalog) -> None:
     instrument_provider.add(instrument)
 
     wrangler = QuoteTickDataWrangler(instrument)
-    ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx-audusd-ticks.csv"))
+    ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx/audusd-ticks.csv"))
     ticks.sort(key=lambda x: x.ts_init)  # CAUTION: data was not originally sorted
     catalog.write_data([instrument])
     catalog.write_data(ticks)

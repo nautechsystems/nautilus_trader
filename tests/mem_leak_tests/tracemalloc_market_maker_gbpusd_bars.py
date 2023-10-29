@@ -82,8 +82,8 @@ def run():
     # Add data
     wrangler = QuoteTickDataWrangler(GBPUSD_SIM)
     ticks = wrangler.process_bar_data(
-        bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
-        ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+        bid_data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv"),
+        ask_data=provider.read_csv_bars("fxcm/fbpusd-m1-ask-2012.csv"),
     )
     engine.add_data(ticks)
 

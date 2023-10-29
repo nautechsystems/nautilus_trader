@@ -943,8 +943,8 @@ class TestRedisCacheDatabaseIntegrity:
         wrangler = QuoteTickDataWrangler(self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
-            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_data(ticks)
