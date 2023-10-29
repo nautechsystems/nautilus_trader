@@ -100,8 +100,8 @@ if __name__ == "__main__":
     bar_type = f"{instrument_id.value}-1-MINUTE-BID-INTERNAL"
     wrangler = QuoteTickDataWrangler(instrument=instrument)
     ticks = wrangler.process_bar_data(
-        bid_data=TestDataProvider().read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv"),
-        ask_data=TestDataProvider().read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv"),
+        bid_data=TestDataProvider().read_csv_bars("btc-perp-20211231-20220201_1m.csv"),
+        ask_data=TestDataProvider().read_csv_bars("btc-perp-20211231-20220201_1m.csv"),
     )
 
     engine.add_data(ticks)
