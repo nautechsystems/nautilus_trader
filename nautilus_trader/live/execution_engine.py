@@ -622,7 +622,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         # Order must have been accepted from this point
-        if order.status == OrderStatus.INITIALIZED or order.status == OrderStatus.SUBMITTED:
+        if order.status in (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED):
             self._generate_order_accepted(order, report)
 
         # Update order quantity and price differences
@@ -781,10 +781,10 @@ class LiveExecutionEngine(ExecutionEngine):
     ) -> OrderFilled:
         # Infer liquidity side
         liquidity_side: LiquiditySide = LiquiditySide.NO_LIQUIDITY_SIDE
-        if (
-            order.order_type == OrderType.MARKET
-            or order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_MARKET
+        if order.order_type in (
+            OrderType.MARKET,
+            OrderType.STOP_MARKET,
+            OrderType.TRAILING_STOP_MARKET,
         ):
             liquidity_side = LiquiditySide.TAKER
         elif report.post_only:
