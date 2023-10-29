@@ -122,7 +122,7 @@ def parse_instrument(
     security_type = contract_details.contract.secType
     if security_type == "STK":
         return parse_equity_contract(details=contract_details)
-    elif security_type == "FUT" or security_type == "CONTFUT":
+    elif security_type in ("FUT", "CONTFUT"):
         return parse_futures_contract(details=contract_details)
     elif security_type == "OPT":
         return parse_options_contract(details=contract_details)
