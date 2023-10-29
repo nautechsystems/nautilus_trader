@@ -421,7 +421,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -487,7 +487,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -526,8 +526,8 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Build ticks from bar data
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
-            ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            bid_data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
+            ask_data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(ticks)
