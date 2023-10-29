@@ -34,6 +34,31 @@ is not available, then the system will not submit the order and an error will be
 a clear explanatory message.
 ```
 
+### Terminology
+
+- An order is **aggressive** if the type is `MARKET` or if its executing like a `MARKET` order (taking liquidity).
+- An order is **passive** if the type is not `MARKET` (providing liquidity).
+- An order is **active local** if it is still within the local system boundary in one of the following three (non-terminal) status:
+    - `INITIALIZED`
+    - `EMULATED`
+    - `RELEASED`
+- An order is **in-flight** when in one of the following status:
+    - `SUBMITTED`
+    - `PENDING_UPDATE`
+    - `PENDING_CANCEL`
+- An order is **open** when in one of the following (non-terminal) status:
+    - `ACCEPTED`
+    - `TRIGGERED`
+    - `PENDING_UPDATE`
+    - `PENDING_CANCEL`
+    - `PARTIALLY_FILLED`
+- An order is **closed** when in one of the following (terminal) status:
+    - `DENIED`
+    - `REJECTED`
+    - `CANCELED`
+    - `EXPIRED`
+    - `FILLED`
+
 ## Execution Instructions
 
 Certain exchanges allow a trader to specify conditions and restrictions on

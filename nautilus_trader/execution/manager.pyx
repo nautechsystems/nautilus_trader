@@ -271,7 +271,7 @@ cdef class OrderManager:
         Parameters
         ----------
         order : Order
-            The order the check.
+            The order to check.
 
         Returns
         -------
