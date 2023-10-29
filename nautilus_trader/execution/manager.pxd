@@ -67,6 +67,7 @@ cdef class OrderManager:
     cpdef void cancel_order(self, Order order)
     cpdef void modify_order_quantity(self, Order order, Quantity new_quantity)
     cpdef void create_new_submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
+    cpdef bint should_manage_order(self, Order order)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

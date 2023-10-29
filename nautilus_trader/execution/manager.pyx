@@ -264,6 +264,28 @@ cdef class OrderManager:
         else:
             self._submit_order_handler(submit)
 
+    cpdef bint should_manage_order(self, Order order):
+        """
+        Check if the given order should be managed.
+
+        Parameters
+        ----------
+        order : Order
+            The order the check.
+
+        Returns
+        -------
+        bool
+            True if the order should be managed, else False.
+
+        """
+        Condition.not_none(order, "order")
+
+        if self.active_local:
+            return order.is_active_local_c()
+        else:
+            return not order.is_active_local_c()
+
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
     cpdef void handle_event(self, Event event):
@@ -386,12 +408,12 @@ cdef class OrderManager:
                 if child_order is None:
                     raise RuntimeError(f"Cannot find OTO child order for {repr(client_order_id)}")  # pragma: no cover
 
+                if not self.should_manage_order(child_order):
+                    continue  # Not being managed
+
                 if self.debug:
                     self._log.info(f"Processing OTO child order {child_order}.", LogColor.MAGENTA)
                     self._log.info(f"{parent_filled_qty=}.", LogColor.MAGENTA)
-
-                if self.active_local and not child_order.is_active_local_c():
-                    continue
 
                 if child_order.position_id is None:
                     child_order.position_id = position_id
@@ -399,8 +421,8 @@ cdef class OrderManager:
                 if parent_filled_qty._mem.raw != child_order.leaves_qty._mem.raw:
                     self.modify_order_quantity(child_order, parent_filled_qty)
 
-                if (self.active_local and not child_order.is_active_local_c()) or self._submit_order_handler is None:
-                    return  # Order does not need to be released
+                if self._submit_order_handler is None:
+                    return  # No handler to submit
 
                 if not child_order.client_order_id in self._submit_order_commands:
                     self.create_new_submit_order(
@@ -418,8 +440,10 @@ cdef class OrderManager:
                 if self.debug:
                     self._log.info(f"Processing OCO contingent order {contingent_order}.", LogColor.MAGENTA)
 
+                if not self.should_manage_order(contingent_order):
+                    continue  # Not being managed
                 if contingent_order.is_closed_c():
-                    continue
+                    continue  # Already completed
                 if contingent_order.client_order_id != order.client_order_id:
                     self.cancel_order(contingent_order)
         elif order.contingency_type == ContingencyType.OUO:
@@ -453,9 +477,11 @@ cdef class OrderManager:
             contingent_order = self._cache.order(client_order_id)
             if contingent_order is None:
                 raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
+            if not self.should_manage_order(contingent_order):
+                continue  # Not being managed
             if client_order_id == order.client_order_id:
                 continue  # Already being handled
-            if contingent_order.is_closed_c() or (self.active_local and not contingent_order.is_active_local_c()):
+            if contingent_order.is_closed_c():
                 self._submit_order_commands.pop(order.client_order_id, None)
                 continue  # Already completed
 
@@ -505,10 +531,14 @@ cdef class OrderManager:
         cdef Order contingent_order
         for client_order_id in order.linked_order_ids:
             contingent_order = self._cache.order(client_order_id)
-            assert contingent_order
+            if contingent_order is None:
+                raise RuntimeError(f"Cannot find OCO contingent order for {repr(client_order_id)}")  # pragma: no cover
+
+            if not self.should_manage_order(contingent_order):
+                continue  # Not being managed
             if client_order_id == order.client_order_id:
                 continue  # Already being handled  # pragma: no cover
-            if contingent_order.is_closed_c() or (self.active_local and not contingent_order.is_active_local_c()):
+            if contingent_order.is_closed_c():
                 continue  # Already completed  # pragma: no cover
 
             if order.contingency_type == ContingencyType.OTO:

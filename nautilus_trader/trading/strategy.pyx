@@ -1528,10 +1528,7 @@ cdef class Strategy(Actor):
             return
 
         if self.manage_contingent_orders and self._manager is not None:
-            if isinstance(event, OrderEvent):
-                order = self.cache.order(event.client_order_id)
-                if order is not None and not order.is_active_local_c():
-                    self._manager.handle_event(event)
+            self._manager.handle_event(event)
 
         try:
             # Send to specific event handler
