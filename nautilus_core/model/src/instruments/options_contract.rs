@@ -17,11 +17,11 @@
 
 use std::hash::{Hash, Hasher};
 
+use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 
 use super::Instrument;
 use crate::{
@@ -209,28 +209,28 @@ impl Instrument for OptionsContract {
     }
 }
 
-
 ////////////////////////////////////////////////////////////////////////////////
 // Stubs
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-pub mod stubs{
+pub mod stubs {
     use std::str::FromStr;
+
     use chrono::{TimeZone, Utc};
+    use nautilus_core::time::UnixNanos;
     use rstest::fixture;
     use rust_decimal::Decimal;
-    use nautilus_core::time::UnixNanos;
-    use crate::enums::{AssetClass, OptionKind};
-    use crate::identifiers::instrument_id::InstrumentId;
-    use crate::identifiers::symbol::Symbol;
-    use crate::instruments::options_contract::OptionsContract;
-    use crate::types::currency::Currency;
-    use crate::types::price::Price;
-    use crate::types::quantity::Quantity;
+
+    use crate::{
+        enums::{AssetClass, OptionKind},
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+        instruments::options_contract::OptionsContract,
+        types::{currency::Currency, price::Price, quantity::Quantity},
+    };
 
     #[fixture]
-    pub fn options_contract_appl()-> OptionsContract{
-        let expiration = Utc.with_ymd_and_hms(2021,12,17,0,0,0).unwrap();
+    pub fn options_contract_appl() -> OptionsContract {
+        let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
         OptionsContract::new(
             InstrumentId::from("AAPL211217C00150000.OPRA"),
             Symbol::from("AAPL211217C00150000"),
@@ -251,23 +251,23 @@ pub mod stubs{
             None,
             None,
             None,
-
-        ).unwrap()
+        )
+        .unwrap()
     }
-
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod tests{
+mod tests {
     use rstest::rstest;
-    use crate::instruments::options_contract::OptionsContract;
+
     use super::stubs::*;
+    use crate::instruments::options_contract::OptionsContract;
 
     #[rstest]
-    fn test_equality(options_contract_appl: OptionsContract){
+    fn test_equality(options_contract_appl: OptionsContract) {
         let options_contract_appl2 = options_contract_appl.clone();
         assert_eq!(options_contract_appl, options_contract_appl2);
     }
