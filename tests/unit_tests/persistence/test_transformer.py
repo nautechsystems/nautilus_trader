@@ -37,7 +37,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
-    path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+    path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
 
     # Act

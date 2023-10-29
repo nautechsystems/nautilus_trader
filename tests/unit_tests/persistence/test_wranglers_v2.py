@@ -29,7 +29,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 def test_quote_tick_data_wrangler() -> None:
     # Arrange
-    path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+    path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
 
     # Act

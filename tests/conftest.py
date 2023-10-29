@@ -39,4 +39,4 @@ def fixture_audusd_quote_ticks(
     audusd_instrument: CurrencyPair,
 ) -> list[QuoteTick]:
     wrangler = QuoteTickDataWrangler(instrument=audusd_instrument)
-    return wrangler.process(data_provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+    return wrangler.process(data_provider.read_csv_ticks("truefx/audusd-ticks.csv"))

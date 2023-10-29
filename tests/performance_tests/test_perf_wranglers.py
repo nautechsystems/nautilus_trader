@@ -31,7 +31,7 @@ class TestDataWranglersPerformance(PerformanceHarness):
         def wrangler_process():
             # 1000 ticks in data
             wrangler.process(
-                data=provider.read_csv_ticks("truefx-usdjpy-ticks.csv"),
+                data=provider.read_csv_ticks("truefx/usdjpy-ticks.csv"),
                 default_volume=1_000_000,
             )
 
