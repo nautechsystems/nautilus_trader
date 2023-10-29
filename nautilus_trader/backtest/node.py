@@ -136,10 +136,10 @@ class BacktestNode:
                     batch_size_bytes=config.batch_size_bytes,
                 )
                 results.append(result)
-            except Exception as ex:
+            except Exception as e:
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
-                print(f"Error running {config}: {ex}")
+                print(f"Error running {config}: {e}")
 
         return results
 

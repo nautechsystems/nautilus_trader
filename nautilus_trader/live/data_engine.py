@@ -384,8 +384,8 @@ class LiveDataEngine(DataEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("DataCommand message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "DataCommand message queue stopped"
             if not self._cmd_queue.empty():
@@ -405,8 +405,8 @@ class LiveDataEngine(DataEngine):
                 self._handle_request(request)
         except asyncio.CancelledError:
             self._log.warning("DataRequest message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "DataRequest message queue stopped"
             if not self._req_queue.empty():
@@ -426,8 +426,8 @@ class LiveDataEngine(DataEngine):
                 self._handle_response(response)
         except asyncio.CancelledError:
             self._log.warning("DataResponse message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "DataResponse message queue stopped"
             if not self._res_queue.empty():
@@ -445,8 +445,8 @@ class LiveDataEngine(DataEngine):
                 self._handle_data(data)
         except asyncio.CancelledError:
             self._log.warning("Data message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "Data message queue stopped"
             if not self._data_queue.empty():
