@@ -49,7 +49,6 @@ fn main() {
     let mut data = String::new();
     src.read_to_string(&mut data)
         .expect("invalid UTF-8 in stream");
-    drop(src); // Close the file early
 
     // Run the replace operation in memory
     let new_data = data.replace("cdef enum", "cpdef enum");
