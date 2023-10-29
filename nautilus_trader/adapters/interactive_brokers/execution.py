@@ -773,13 +773,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             trigger_price = (
                 None if order.auxPrice == UNSET_DOUBLE else instrument.make_price(order.auxPrice)
             )
-            if (
+            venue_order_id_modified = bool(
                 nautilus_order.venue_order_id is None
-                or nautilus_order.venue_order_id != VenueOrderId(str(order.orderId))
-            ):
-                venue_order_id_modified = True
-            else:
-                venue_order_id_modified = False
+                or nautilus_order.venue_order_id != VenueOrderId(str(order.orderId)),
+            )
+
             if total_qty != nautilus_order.quantity or price or trigger_price:
                 self.generate_order_updated(
                     strategy_id=nautilus_order.strategy_id,
