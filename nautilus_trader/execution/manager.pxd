@@ -34,6 +34,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -84,7 +85,7 @@ cdef class OrderManager:
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cpdef void send_emulator_command(self, TradingCommand command)
-    cpdef void send_algo_command(self, TradingCommand command)
+    cpdef void send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id)
     cpdef void send_risk_command(self, TradingCommand command)
     cpdef void send_exec_command(self, TradingCommand command)
     cpdef void send_risk_event(self, OrderEvent event)

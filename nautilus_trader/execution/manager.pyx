@@ -77,8 +77,8 @@ cdef class OrderManager:
         The handler to call when submitting orders.
     cancel_order_handler : Callable[[Order], None], optional
         The handler to call when canceling orders.
-    modify_order_handler : Callable[[Order], None], optional
-        The handler to call when modifying orders.
+    modify_order_handler : Callable[[Order, Quantity], None], optional
+        The handler to call when modifying orders (limited to modifying quantity).
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -258,7 +258,7 @@ cdef class OrderManager:
             self.cache_submit_order_command(submit)
 
             if order.exec_algorithm_id is not None:
-                self.send_algo_command(submit)
+                self.send_algo_command(submit, order.exec_algorithm_id)
             else:
                 self.send_risk_command(submit)
         else:
@@ -561,12 +561,13 @@ cdef class OrderManager:
             self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
         self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
 
-    cpdef void send_algo_command(self, TradingCommand command):
+    cpdef void send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id):
         Condition.not_none(command, "command")
+        Condition.not_none(exec_algorithm_id, "exec_algorithm_id")
 
         if not self._log.is_bypassed:
             self._log.info(f"{CMD}{SENT} {command}.")  # pragma: no cover  (no logging in tests)
-        self._msgbus.send(endpoint=f"{command.exec_algorithm_id}.execute", msg=command)
+        self._msgbus.send(endpoint=f"{exec_algorithm_id}.execute", msg=command)
 
     cpdef void send_risk_command(self, TradingCommand command):
         Condition.not_none(command, "command")

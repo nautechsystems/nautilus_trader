@@ -174,10 +174,3 @@ cdef class Strategy(Actor):
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
     cdef void _deny_order(self, Order order, str reason)
     cdef void _deny_order_list(self, OrderList order_list, str reason)
-
-# -- EGRESS ---------------------------------------------------------------------------------------
-
-    cdef void _send_emulator_command(self, TradingCommand command)
-    cdef void _send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id)
-    cdef void _send_risk_command(self, TradingCommand command)
-    cdef void _send_exec_command(self, TradingCommand command)
