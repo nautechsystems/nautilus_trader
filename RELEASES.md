@@ -10,6 +10,7 @@ Released on TBC (UTC).
 ### Breaking Changes
 - Transformed orders will now retain the original `ts_init` timestamp
 - Removed unimplemented `batch_more` option for `Strategy.modify_order`
+- Removed `InstrumentProvider.venue` property (redundant as a provider may have many venues)
 - Dropped support for Python 3.9
 
 ### Fixes

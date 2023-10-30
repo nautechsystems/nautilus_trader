@@ -127,10 +127,7 @@ class TestLiveExecutionReconciliation:
             venue=SIM,
             account_type=AccountType.CASH,
             base_currency=USD,
-            instrument_provider=InstrumentProvider(
-                venue=SIM,
-                logger=self.logger,
-            ),
+            instrument_provider=InstrumentProvider(logger=self.logger),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

@@ -16,11 +16,9 @@
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
-BITMEX = Venue("BITMEX")
 AUDUSD = TestIdStubs.audusd_id()
 
 
@@ -29,7 +27,6 @@ class TestInstrumentProvider:
         # Fixture Setup
         clock = TestClock()
         self.provider = InstrumentProvider(
-            venue=BITMEX,
             logger=Logger(clock, bypass=True),
         )
 

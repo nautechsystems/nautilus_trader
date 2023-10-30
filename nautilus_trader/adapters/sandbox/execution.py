@@ -99,7 +99,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             oms_type=oms_type,
             account_type=account_type,
             base_currency=self._currency,
-            instrument_provider=InstrumentProvider(venue=sandbox_venue, logger=logger),
+            instrument_provider=InstrumentProvider(logger=logger),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
