@@ -20,6 +20,7 @@ Released on TBC (UTC).
 - Fixed managed GTD orders cancel timer on order cancel (timers were not being canceled)
 - Fixed `BacktestEngine` logging error with immediate stop (caused by certain timestamps being `None`)
 - Fixed `BacktestNode` exceptions during backtest runs preventing next sequential run, thanks for reporting @cavan-black
+- Fixed `BinanceSpotPersmission` value error by relaxing typing for `BinanceSpotSymbolInfo.permissions`
 - Interactive Brokers adapter various fixes, thanks @rsmb7z
 
 ---
