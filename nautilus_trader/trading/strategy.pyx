@@ -804,11 +804,11 @@ cdef class Strategy(Actor):
 
         # Route order
         if order.emulation_trigger != TriggerType.NO_TRIGGER:
-            self._send_emulator_command(command)
+            self._manager.send_emulator_command(command)
         elif order.exec_algorithm_id is not None:
-            self._send_algo_command(command, order.exec_algorithm_id)
+            self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
-            self._send_risk_command(command)
+            self._manager.send_risk_command(command)
 
     cpdef void submit_order_list(
         self,
@@ -901,11 +901,11 @@ cdef class Strategy(Actor):
 
         # Route order
         if command.has_emulated_order:
-            self._send_emulator_command(command)
+            self._manager.send_emulator_command(command)
         elif order_list.first.exec_algorithm_id is not None:
-            self._send_algo_command(command, order_list.first.exec_algorithm_id)
+            self._manager.send_algo_command(command, order_list.first.exec_algorithm_id)
         else:
-            self._send_risk_command(command)
+            self._manager.send_risk_command(command)
 
     cpdef void modify_order(
         self,
@@ -973,9 +973,9 @@ cdef class Strategy(Actor):
             return
 
         if order.is_emulated_c():
-            self._send_emulator_command(command)
+            self._manager.send_emulator_command(command)
         else:
-            self._send_risk_command(command)
+            self._manager.send_risk_command(command)
 
     cpdef void cancel_order(self, Order order, ClientId client_id = None):
         """
@@ -1004,11 +1004,11 @@ cdef class Strategy(Actor):
             return
 
         if order.is_emulated_c() or order.emulation_trigger != TriggerType.NO_TRIGGER:
-            self._send_emulator_command(command)
+            self._manager.send_emulator_command(command)
         elif order.exec_algorithm_id is not None and order.is_active_local_c():
-            self._send_algo_command(command, order.exec_algorithm_id)
+            self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
-            self._send_exec_command(command)
+            self._manager.send_exec_command(command)
 
         # Cancel any GTD expiry timer
         if self.manage_gtd_expiry:
@@ -1087,7 +1087,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_exec_command(command)
+        self._manager.send_exec_command(command)
 
     cpdef void cancel_all_orders(
         self,
@@ -1185,8 +1185,8 @@ cdef class Strategy(Actor):
                 if order.strategy_id == self.id and not order.is_closed_c():
                     self.cancel_order(order)
 
-        self._send_exec_command(command)
-        self._send_emulator_command(command)
+        self._manager.send_exec_command(command)
+        self._manager.send_emulator_command(command)
 
     cpdef void close_position(
         self,
@@ -1317,7 +1317,7 @@ cdef class Strategy(Actor):
             client_id=client_id,
         )
 
-        self._send_exec_command(command)
+        self._manager.send_exec_command(command)
 
     cdef ModifyOrder _create_modify_order(
         self,
@@ -1666,25 +1666,3 @@ cdef class Strategy(Actor):
         for order in order_list.orders:
             if not order.is_closed_c():
                 self._deny_order(order=order, reason=reason)
-
-# -- EGRESS ---------------------------------------------------------------------------------------
-
-    cdef void _send_emulator_command(self, TradingCommand command):
-        if not self.log.is_bypassed:
-            self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint="OrderEmulator.execute", msg=command)
-
-    cdef void _send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id):
-        if not self.log.is_bypassed:
-            self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint=f"{exec_algorithm_id}.execute", msg=command)
-
-    cdef void _send_risk_command(self, TradingCommand command):
-        if not self.log.is_bypassed:
-            self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint="RiskEngine.execute", msg=command)
-
-    cdef void _send_exec_command(self, TradingCommand command):
-        if not self.log.is_bypassed:
-            self.log.info(f"{CMD}{SENT} {command}.")
-        self._msgbus.send(endpoint="ExecEngine.execute", msg=command)

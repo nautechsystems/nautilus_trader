@@ -722,7 +722,7 @@ cdef class OrderEmulator(Actor):
         )
 
         if order.exec_algorithm_id is not None:
-            self._manager.send_algo_command(command)
+            self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
             self._manager.send_exec_command(command)
 
@@ -794,7 +794,7 @@ cdef class OrderEmulator(Actor):
         )
 
         if order.exec_algorithm_id is not None:
-            self._manager.send_algo_command(command)
+            self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
             self._manager.send_exec_command(command)
 
