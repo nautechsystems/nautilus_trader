@@ -20,38 +20,39 @@ from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 crypto_perpetual_ethusdt_perp = TestInstrumentProviderPyo3.ethusdt_perp_binance()
 
 
-class TestCryptoPerpetualPyo3:
-    def test_equality(self):
-        item_1 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
-        item_2 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
-        assert item_1 == item_2
+def test_equality():
+    item_1 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
+    item_2 = TestInstrumentProviderPyo3.ethusdt_perp_binance()
+    assert item_1 == item_2
 
-    def test_hash(self):
-        assert hash(crypto_perpetual_ethusdt_perp) == hash(crypto_perpetual_ethusdt_perp)
 
-    def test_to_dict(self):
-        dict = crypto_perpetual_ethusdt_perp.to_dict()
-        assert CryptoPerpetual.from_dict(dict) == crypto_perpetual_ethusdt_perp
-        assert dict == {
-            "type": "CryptoPerpetual",
-            "id": "ETHUSDT-PERP.BINANCE",
-            "raw_symbol": "ETHUSDT",
-            "base_currency": "ETH",
-            "quote_currency": "USDT",
-            "settlement_currency": "USDT",
-            "price_precision": 2,
-            "size_precision": 0,
-            "price_increment": "0.01",
-            "size_increment": "0.001",
-            "lot_size": None,
-            "max_quantity": "10000",
-            "min_quantity": "0.001",
-            "max_notional": None,
-            "min_notional": "10.00000000 USDT",
-            "max_price": "15000.0",
-            "min_price": "1.0",
-            "margin_maint": 0.0,
-            "margin_init": 0.0,
-            "maker_fee": 0.0,
-            "taker_fee": 0.0,
-        }
+def test_hash():
+    assert hash(crypto_perpetual_ethusdt_perp) == hash(crypto_perpetual_ethusdt_perp)
+
+
+def test_to_dict():
+    dict = crypto_perpetual_ethusdt_perp.to_dict()
+    assert CryptoPerpetual.from_dict(dict) == crypto_perpetual_ethusdt_perp
+    assert dict == {
+        "type": "CryptoPerpetual",
+        "id": "ETHUSDT-PERP.BINANCE",
+        "raw_symbol": "ETHUSDT",
+        "base_currency": "ETH",
+        "quote_currency": "USDT",
+        "settlement_currency": "USDT",
+        "price_precision": 2,
+        "size_precision": 0,
+        "price_increment": "0.01",
+        "size_increment": "0.001",
+        "lot_size": None,
+        "max_quantity": "10000",
+        "min_quantity": "0.001",
+        "max_notional": None,
+        "min_notional": "10.00000000 USDT",
+        "max_price": "15000.0",
+        "min_price": "1.0",
+        "margin_maint": 0.0,
+        "margin_init": 0.0,
+        "maker_fee": 0.0,
+        "taker_fee": 0.0,
+    }

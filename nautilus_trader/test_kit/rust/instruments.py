@@ -18,11 +18,14 @@ from datetime import datetime
 import pandas as pd
 import pytz
 
+from nautilus_trader.core.nautilus_pyo3 import AssetClass
 from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.core.nautilus_pyo3 import OptionKind
+from nautilus_trader.core.nautilus_pyo3 import OptionsContract
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
@@ -105,4 +108,27 @@ class TestInstrumentProviderPyo3:
             Quantity.from_str("0.00001"),
             Price.from_str("1000000"),
             Price.from_str("0.01"),
+        )
+
+    @staticmethod
+    def appl_option(expiry: pd.Timestamp | None = None) -> OptionsContract:
+        if expiry is None:
+            expiry = pd.Timestamp(datetime(2021, 12, 17), tz=pytz.UTC)
+            nanos_expiry = int(expiry.timestamp() * 1e9)
+        return OptionsContract(  # type: ignore
+            InstrumentId.from_str("AAPL211217C00150000.OPRA"),
+            Symbol("AAPL211217C00150000"),
+            AssetClass.EQUITY,
+            "AAPL",
+            OptionKind.CALL,
+            nanos_expiry,
+            Price.from_str("149.0"),
+            TestTypesProviderPyo3.currency_usdt(),
+            2,
+            Price.from_str("0.01"),
+            0.0,
+            0.0,
+            0.001,
+            0.001,
+            Quantity.from_str("1.0"),
         )

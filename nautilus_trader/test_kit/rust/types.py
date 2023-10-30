@@ -26,6 +26,10 @@ class TestTypesProviderPyo3:
         return Currency.from_str("USDT")
 
     @staticmethod
+    def currency_usd() -> Currency:
+        return Currency.from_str("USD")
+
+    @staticmethod
     def currency_aud() -> Currency:
         return Currency.from_str("AUD")
 
