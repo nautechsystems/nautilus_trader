@@ -22,6 +22,7 @@ from nautilus_trader.core.nautilus_pyo3 import AssetClass
 from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
+from nautilus_trader.core.nautilus_pyo3 import Equity
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OptionKind
@@ -131,4 +132,25 @@ class TestInstrumentProviderPyo3:
             0.001,
             0.001,
             Quantity.from_str("1.0"),
+        )
+
+    @staticmethod
+    def appl_equity() -> Equity:
+        return Equity(  # type: ignore
+            InstrumentId.from_str("AAPL.NASDAQ"),
+            Symbol("AAPL"),
+            "US0378331005",
+            TestTypesProviderPyo3.currency_usd(),
+            2,
+            Price.from_str("0.01"),
+            Quantity.from_str("1"),
+            0.0,
+            0.0,
+            0.001,
+            0.001,
+            Quantity.from_str("1.0"),
+            None,
+            None,
+            None,
+            None,
         )
