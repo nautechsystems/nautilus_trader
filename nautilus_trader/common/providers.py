@@ -21,7 +21,6 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -31,8 +30,6 @@ class InstrumentProvider:
 
     Parameters
     ----------
-    venue : Venue
-        The venue for the provider.
     logger : Logger
         The logger for the provider.
     config :InstrumentProviderConfig, optional
@@ -46,18 +43,15 @@ class InstrumentProvider:
 
     def __init__(
         self,
-        venue: Venue,
         logger: Logger,
         config: InstrumentProviderConfig | None = None,
     ) -> None:
-        PyCondition.not_none(venue, "venue")
         PyCondition.not_none(logger, "logger")
 
         if config is None:
             config = InstrumentProviderConfig()
         self._log = LoggerAdapter(type(self).__name__, logger)
 
-        self._venue = venue
         self._instruments: dict[InstrumentId, Instrument] = {}
         self._currencies: dict[str, Currency] = {}
 
@@ -69,18 +63,6 @@ class InstrumentProvider:
         # Async loading flags
         self._loaded = False
         self._loading = False
-
-    @property
-    def venue(self) -> Venue:
-        """
-        Return the providers venue.
-
-        Returns
-        -------
-        Venue
-
-        """
-        return self._venue
 
     @property
     def count(self) -> int:

@@ -151,10 +151,7 @@ class TestLiveExecutionEngine:
             logger=self.logger,
         )
 
-        self.instrument_provider = InstrumentProvider(
-            venue=SIM,
-            logger=self.logger,
-        )
+        self.instrument_provider = InstrumentProvider(logger=self.logger)
         self.instrument_provider.add(AUDUSD_SIM)
         self.instrument_provider.add(GBPUSD_SIM)
         self.cache.add_instrument(AUDUSD_SIM)

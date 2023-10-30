@@ -77,7 +77,6 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
-            venue=BINANCE_VENUE,
             logger=logger,
             config=config,
         )
@@ -141,7 +140,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+            PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
@@ -183,7 +182,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+        PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
