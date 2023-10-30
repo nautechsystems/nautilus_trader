@@ -16,12 +16,21 @@
 from os import PathLike
 from pathlib import Path
 
-import databento_dbn
+import databento
 import msgspec
+import pandas as pd
+import pytz
+from databento.common.symbology import InstrumentMap
 
 from nautilus_trader.adapters.databento.common import check_file_path
+from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.data import Data
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class DatabentoDataLoader:
@@ -81,36 +90,83 @@ class DatabentoDataLoader:
         -------
         list[Data]
 
+        Raises
+        ------
+        FileNotFoundError
+            If a non-existent file is specified.
+        ValueError
+            If an empty file is specified.
+
         """
-        path = Path(path)
-        check_file_path(path)
-
-        decoder = databento_dbn.DBNDecoder()
-
-        with path.open("rb") as f:
-            decoder.write(f.read())
-            records = decoder.decode()
-
-        if len(decoder.buffer()) > 0:
-            raise RuntimeError("DBN file is truncated or contains an incomplete record")
+        store = databento.from_dbn(path)
+        instrument_map = InstrumentMap()
+        instrument_map.insert_metadata(metadata=store.metadata)
 
         output: list[Data] = []
 
-        for record in records:
-            if isinstance(record, databento_dbn.Metadata | databento_dbn.SymbolMappingMsg):
-                continue  # Unsupported schema
-
-            data = self._parse_record(record)
+        for record in store:
+            data = self._parse_record(record, instrument_map)
             output.append(data)
 
         return output
 
-    def _parse_record(self, record: databento_dbn.Record) -> Data:
-        # instrument_id: InstrumentId = nautilus_instrument_id_from_databento(record.symbol)
-        # if isinstance(record, databento_dbn.MBOMsg):
-        #     return OrderBookDelta(
-        #         instrument_id=instrument_id,
-        #     )
-        # else:
-        #     raise ValueError(f"Schema {type(record).__name__} is currently unsupported by Nautilus")
-        return None  # WIP
+    def _parse_record(self, record: databento.DBNRecord, instrument_map: InstrumentMap) -> Data:
+        record_date = pd.Timestamp(record.ts_event, tz=pytz.utc).date()
+        raw_symbol = instrument_map.resolve(record.instrument_id, date=record_date)
+        if raw_symbol is None:
+            raise ValueError(
+                f"Cannot resolve instrument_id {record.instrument_id} on {record_date}",
+            )
+
+        publisher = self._publishers[record.publisher_id]
+        instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
+            raw_symbol=raw_symbol,
+            publisher=publisher,
+        )
+
+        if isinstance(record, databento.MBOMsg):
+            order = BookOrder.from_raw(
+                side=self._parse_order_side(record.side),
+                price_raw=record.price,
+                price_prec=2,  # TODO
+                size_raw=record.size,
+                size_prec=0,  # TODO
+                order_id=record.order_id,
+            )
+            return OrderBookDelta(
+                instrument_id=instrument_id,
+                book_action=self._parse_book_action(record.action),
+                order=order,
+                flags=record.flags,
+                sequence=record.sequence,
+                ts_event=record.ts_event,
+                ts_init=record.ts_recv,
+            )
+        else:
+            raise ValueError(f"Schema {type(record).__name__} is currently unsupported by Nautilus")
+
+    def _parse_order_side(self, value: str) -> OrderSide:
+        match value:
+            case "A":
+                return OrderSide.BUY
+            case "B":
+                return OrderSide.SELL
+            case _:
+                return OrderSide.NO_ORDER_SIDE
+
+    def _parse_book_action(self, value: str) -> BookAction:
+        match value:
+            case "A":
+                return BookAction.ADD
+            case "C":
+                return BookAction.DELETE
+            case "M":
+                return BookAction.UPDATE
+            case "R":
+                return BookAction.CLEAR
+            case "T":
+                return BookAction.UPDATE
+            case "F":
+                return BookAction.UPDATE
+            case _:
+                raise ValueError(f"Invalid `BookAction`, was {value}")
