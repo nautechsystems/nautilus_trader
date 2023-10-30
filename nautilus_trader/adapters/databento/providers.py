@@ -17,7 +17,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.model.identifiers import Venue
 
 
 class DatabentoInstrumentProvider(InstrumentProvider):
@@ -44,7 +43,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
-            venue=Venue(),
             logger=logger,
             config=config,
         )
