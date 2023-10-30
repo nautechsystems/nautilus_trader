@@ -17,6 +17,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -46,19 +47,18 @@ pub struct OptionsContract {
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
+    pub maker_fee: Decimal,
+    pub taker_fee: Decimal,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
 }
 
 impl OptionsContract {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -71,17 +71,17 @@ impl OptionsContract {
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             id,
             raw_symbol,
             asset_class,
@@ -101,7 +101,7 @@ impl OptionsContract {
             margin_maint,
             maker_fee,
             taker_fee,
-        }
+        })
     }
 }
 
@@ -206,5 +206,69 @@ impl Instrument for OptionsContract {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use std::str::FromStr;
+
+    use chrono::{TimeZone, Utc};
+    use nautilus_core::time::UnixNanos;
+    use rstest::fixture;
+    use rust_decimal::Decimal;
+
+    use crate::{
+        enums::{AssetClass, OptionKind},
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+        instruments::options_contract::OptionsContract,
+        types::{currency::Currency, price::Price, quantity::Quantity},
+    };
+
+    #[fixture]
+    pub fn options_contract_appl() -> OptionsContract {
+        let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
+        OptionsContract::new(
+            InstrumentId::from("AAPL211217C00150000.OPRA"),
+            Symbol::from("AAPL211217C00150000"),
+            AssetClass::Equity,
+            String::from("AAPL"),
+            OptionKind::Call,
+            expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+            Price::from("149.0"),
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Some(Quantity::from("1.0")),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::stubs::*;
+    use crate::instruments::options_contract::OptionsContract;
+
+    #[rstest]
+    fn test_equality(options_contract_appl: OptionsContract) {
+        let options_contract_appl2 = options_contract_appl.clone();
+        assert_eq!(options_contract_appl, options_contract_appl2);
     }
 }

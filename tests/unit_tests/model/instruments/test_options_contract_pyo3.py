@@ -13,43 +13,45 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
+from nautilus_trader.core.nautilus_pyo3 import OptionsContract
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
 
-btcusdt_binance = TestInstrumentProviderPyo3.btcusdt_binance()
+aapl_option = TestInstrumentProviderPyo3.appl_option()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.btcusdt_binance()
-    item_2 = TestInstrumentProviderPyo3.btcusdt_binance()
+    item_1 = TestInstrumentProviderPyo3.appl_option()
+    item_2 = TestInstrumentProviderPyo3.appl_option()
     assert item_1 == item_2
 
 
 def test_hash():
-    assert hash(btcusdt_binance) == hash(btcusdt_binance)
+    assert hash(aapl_option) == hash(aapl_option)
 
 
 def test_to_dict():
-    dict = btcusdt_binance.to_dict()
-    assert CurrencyPair.from_dict(dict) == btcusdt_binance
+    dict = aapl_option.to_dict()
+    assert OptionsContract.from_dict(dict) == aapl_option
     assert dict == {
-        "type": "CurrencyPair",
-        "id": "BTCUSDT.BINANCE",
-        "raw_symbol": "BTCUSDT",
-        "base_currency": "BTC",
-        "quote_currency": "USDT",
+        "type": "OptionsContract",
+        "id": "AAPL211217C00150000.OPRA",
+        "raw_symbol": "AAPL211217C00150000",
+        "asset_class": "EQUITY",
+        "underlying": "AAPL",
+        "option_kind": "CALL",
+        "expiration": 1639699200000000000,
+        "strike_price": "149.0",
+        "currency": "USDT",
         "price_precision": 2,
-        "size_precision": 6,
         "price_increment": "0.01",
-        "size_increment": "0.000001",
-        "margin_maint": 0.0,
         "margin_init": 0.0,
-        "maker_fee": 0.0,
-        "taker_fee": 0.0,
-        "lot_size": None,
-        "max_quantity": "9000",
-        "min_quantity": "0.00001",
-        "min_price": "0.01",
-        "max_price": "1000000",
+        "margin_maint": 0.0,
+        "maker_fee": 0.001,
+        "taker_fee": 0.001,
+        "lot_size": "1.0",
+        "max_quantity": None,
+        "min_quantity": None,
+        "max_price": None,
+        "min_price": None,
     }
