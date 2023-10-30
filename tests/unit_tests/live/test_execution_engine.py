@@ -376,8 +376,7 @@ class TestLiveExecutionEngine:
         self.exec_engine.kill()
 
         # Assert
-        assert self.exec_engine.cmd_qsize() == 0
-        assert self.exec_engine.evt_qsize() == 0
+        assert self.exec_engine.is_stopped
 
     @pytest.mark.asyncio()
     async def test_execute_command_places_command_on_queue(self):
