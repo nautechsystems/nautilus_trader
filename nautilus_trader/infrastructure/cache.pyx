@@ -184,6 +184,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
             username=config.username,
             password=config.password,
             ssl=config.ssl,
+            socket_timeout=10.0,
+            socket_keepalive=True,
+            retry_on_timeout=True,
+            health_check_interval=60,
+            retry=redis.retry.Retry(redis.backoff.ExponentialBackoff(), retries=12),
+            retry_on_error=[
+                redis.exceptions.BusyLoadingError,
+                redis.exceptions.TimeoutError,
+                redis.exceptions.ConnectionError,
+            ],
         )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
