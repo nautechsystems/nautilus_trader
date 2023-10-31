@@ -241,7 +241,7 @@ class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._cmd_queue.put_nowait(command)
+            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full at "
@@ -272,7 +272,7 @@ class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._req_queue.put_nowait(request)
+            self._loop.call_soon_threadsafe(self._req_queue.put_nowait, request)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_req_queue.put` as queue full at "
@@ -302,7 +302,7 @@ class LiveDataEngine(DataEngine):
         PyCondition.not_none(response, "response")
 
         try:
-            self._res_queue.put_nowait(response)
+            self._loop.call_soon_threadsafe(self._res_queue.put_nowait, response)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_res_queue.put` as queue full at "
@@ -333,7 +333,7 @@ class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._data_queue.put_nowait(data)
+            self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_data_queue.put` as queue full at "
@@ -345,10 +345,10 @@ class LiveDataEngine(DataEngine):
     # -- INTERNAL -------------------------------------------------------------------------------------
 
     def _enqueue_sentinels(self) -> None:
-        self._cmd_queue.put_nowait(self._sentinel)
-        self._req_queue.put_nowait(self._sentinel)
-        self._res_queue.put_nowait(self._sentinel)
-        self._data_queue.put_nowait(self._sentinel)
+        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._req_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._res_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._data_queue.put_nowait, self._sentinel)
         self._log.debug("Sentinel messages placed on queues.")
 
     def _on_start(self) -> None:

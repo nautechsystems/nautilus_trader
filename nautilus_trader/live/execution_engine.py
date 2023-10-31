@@ -271,7 +271,7 @@ class LiveExecutionEngine(ExecutionEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._cmd_queue.put_nowait(command)
+            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full "
@@ -301,7 +301,7 @@ class LiveExecutionEngine(ExecutionEngine):
         PyCondition.not_none(event, "event")
 
         try:
-            self._evt_queue.put_nowait(event)
+            self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, event)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_evt_queue.put` as queue full "
@@ -313,8 +313,8 @@ class LiveExecutionEngine(ExecutionEngine):
     # -- INTERNAL -------------------------------------------------------------------------------------
 
     def _enqueue_sentinel(self) -> None:
-        self._cmd_queue.put_nowait(self._sentinel)
-        self._evt_queue.put_nowait(self._sentinel)
+        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
         self._log.debug("Sentinel messages placed on queues.")
 
     def _on_start(self) -> None:

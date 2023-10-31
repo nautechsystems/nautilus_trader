@@ -20,7 +20,6 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceExchan
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderBookDelta
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
-from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import BookOrder
@@ -62,7 +61,7 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
     isSpotTradingAllowed: bool
     isMarginTradingAllowed: bool
     filters: list[BinanceSymbolFilter]
-    permissions: list[BinanceSpotPermissions]
+    permissions: list[str]
 
     def parse_to_base_asset(self):
         return Currency(
