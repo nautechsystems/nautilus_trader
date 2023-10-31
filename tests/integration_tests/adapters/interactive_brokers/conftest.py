@@ -78,7 +78,7 @@ def exec_client_config():
 
 
 @pytest.fixture()
-def client(data_client_config, loop, msgbus, cache, clock, logger):
+def interactive_brokers_client(data_client_config, loop, msgbus, cache, clock, logger):
     client = InteractiveBrokersClient(
         loop=loop,
         msgbus=msgbus,
@@ -94,9 +94,9 @@ def client(data_client_config, loop, msgbus, cache, clock, logger):
 
 
 @pytest.fixture()
-def instrument_provider(client, logger):
+def instrument_provider(interactive_brokers_client, logger):
     return InteractiveBrokersInstrumentProvider(
-        client=client,
+        client=interactive_brokers_client,
         config=InteractiveBrokersInstrumentProviderConfig(),
         logger=logger,
     )
