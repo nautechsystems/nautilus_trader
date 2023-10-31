@@ -23,6 +23,7 @@ from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
 from nautilus_trader.core.nautilus_pyo3 import Equity
+from nautilus_trader.core.nautilus_pyo3 import FuturesContract
 from nautilus_trader.core.nautilus_pyo3 import InstrumentId
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OptionKind
@@ -153,4 +154,26 @@ class TestInstrumentProviderPyo3:
             None,
             None,
             None,
+        )
+
+    @staticmethod
+    def futures_contract_es(expiry: pd.Timestamp | None = None) -> FuturesContract:
+        if expiry is None:
+            expiry = pd.Timestamp(datetime(2021, 12, 17), tz=pytz.UTC)
+            nanos_expiry = int(expiry.timestamp() * 1e9)
+        return FuturesContract(  # type: ignore
+            InstrumentId.from_str("ESZ21.CME"),
+            Symbol("ESZ21"),
+            AssetClass.INDEX,
+            "ES",
+            nanos_expiry,
+            TestTypesProviderPyo3.currency_usd(),
+            2,
+            Price.from_str("0.01"),
+            0.0,
+            0.0,
+            0.001,
+            0.001,
+            Quantity.from_str("1.0"),
+            Quantity.from_str("1.0"),
         )

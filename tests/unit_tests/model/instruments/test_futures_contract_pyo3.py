@@ -13,45 +13,44 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import OptionsContract
+from nautilus_trader.core.nautilus_pyo3 import FuturesContract
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
 
-aapl_option = TestInstrumentProviderPyo3.appl_option()
+futures_contract_es = TestInstrumentProviderPyo3.futures_contract_es()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.appl_option()
-    item_2 = TestInstrumentProviderPyo3.appl_option()
+    item_1 = TestInstrumentProviderPyo3.btcusdt_binance()
+    item_2 = TestInstrumentProviderPyo3.btcusdt_binance()
     assert item_1 == item_2
 
 
 def test_hash():
-    assert hash(aapl_option) == hash(aapl_option)
+    assert hash(futures_contract_es) == hash(futures_contract_es)
 
 
 def test_to_dict():
-    result = aapl_option.to_dict()
-    assert OptionsContract.from_dict(result) == aapl_option
+    result = futures_contract_es.to_dict()
+    assert FuturesContract.from_dict(result) == futures_contract_es
     assert result == {
-        "type": "OptionsContract",
-        "id": "AAPL211217C00150000.OPRA",
-        "raw_symbol": "AAPL211217C00150000",
-        "asset_class": "EQUITY",
-        "underlying": "AAPL",
-        "option_kind": "CALL",
+        "type": "FuturesContract",
+        "id": "ESZ21.CME",
+        "raw_symbol": "ESZ21",
+        "asset_class": "INDEX",
+        "underlying": "ES",
         "expiration": 1639699200000000000,
-        "strike_price": "149.0",
-        "currency": "USDT",
+        "currency": "USD",
         "price_precision": 2,
         "price_increment": "0.01",
-        "margin_init": 0.0,
-        "margin_maint": 0.0,
         "maker_fee": 0.001,
         "taker_fee": 0.001,
+        "margin_maint": 0.0,
+        "margin_init": 0.0,
         "lot_size": "1.0",
-        "max_quantity": None,
-        "min_quantity": None,
+        "multiplier": "1.0",
         "max_price": None,
+        "max_quantity": None,
         "min_price": None,
+        "min_quantity": None,
     }
