@@ -6,6 +6,7 @@ Released on TBC (UTC).
 - Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
 - Added `support_contingent_orders` option for venues (to simulate venues which do not support contingent orders)
 - Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingenct orders)
+- Improved `RedisCacheDatabase` client connection error handling with retries
 
 ### Breaking Changes
 - Transformed orders will now retain the original `ts_init` timestamp
