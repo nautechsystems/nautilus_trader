@@ -43,8 +43,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 # fmt: on
 
-pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
-
 
 @pytest.mark.parametrize(
     ("contract", "instrument_id"),
