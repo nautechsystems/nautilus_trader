@@ -17,6 +17,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class DatabentoInstrumentProvider(InstrumentProvider):
@@ -48,3 +49,20 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
 
         self._clock = clock
+
+    async def load_all_async(self, filters: dict | None = None) -> None:
+        pass
+
+    async def load_ids_async(
+        self,
+        instrument_ids: list[InstrumentId],
+        filters: dict | None = None,
+    ) -> None:
+        pass
+
+    async def load_async(
+        self,
+        instrument_id: InstrumentId,
+        filters: dict | None = None,
+    ) -> None:
+        pass
