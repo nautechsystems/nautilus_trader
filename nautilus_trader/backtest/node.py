@@ -302,7 +302,7 @@ class BacktestNode:
             engine.add_data(
                 data=capsule_to_list(chunk),
                 validate=False,  # Cannot validate mixed type stream
-                sort=False,  # Already sorted from kmerge
+                sort=True,  # Temporarily sorting  # Already sorted from kmerge
             )
             engine.run(
                 run_config_id=run_config_id,
