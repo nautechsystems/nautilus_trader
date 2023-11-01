@@ -31,9 +31,9 @@ def test_hash():
 
 
 def test_to_dict():
-    dict = crypto_perpetual_ethusdt_perp.to_dict()
-    assert CryptoPerpetual.from_dict(dict) == crypto_perpetual_ethusdt_perp
-    assert dict == {
+    result = crypto_perpetual_ethusdt_perp.to_dict()
+    assert CryptoPerpetual.from_dict(result) == crypto_perpetual_ethusdt_perp
+    assert result == {
         "type": "CryptoPerpetual",
         "id": "ETHUSDT-PERP.BINANCE",
         "raw_symbol": "ETHUSDT",
