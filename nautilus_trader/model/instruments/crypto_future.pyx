@@ -17,8 +17,9 @@ from decimal import Decimal
 from typing import Optional
 
 import msgspec
+import pandas as pd
+import pytz
 
-from cpython.datetime cimport date
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -48,8 +49,10 @@ cdef class CryptoFuture(Instrument):
         The underlying asset.
     quote_currency : Currency
         The contract quote currency.
-    expiry_date : date
-        The contract expiry date.
+    activation_ns : uint64_t
+        The UNIX timestamp (nanoseconds) for contract activation.
+    expiration_ns : uint64_t
+        The UNIX timestamp (nanoseconds) for contract expiration.
     price_precision : int
         The price decimal precision.
     size_precision : int
@@ -122,7 +125,8 @@ cdef class CryptoFuture(Instrument):
         Currency underlying not None,
         Currency quote_currency not None,
         Currency settlement_currency not None,
-        date expiry_date,
+        uint64_t activation_ns,
+        uint64_t expiration_ns,
         int price_precision,
         int size_precision,
         Price price_increment not None,
@@ -173,7 +177,8 @@ cdef class CryptoFuture(Instrument):
 
         self.underlying = underlying
         self.settlement_currency = settlement_currency
-        self.expiry_date = expiry_date
+        self.activation_ns = activation_ns
+        self.expiration_ns = expiration_ns
 
     cpdef Currency get_base_currency(self):
         """
@@ -185,6 +190,32 @@ cdef class CryptoFuture(Instrument):
 
         """
         return self.underlying
+
+    @property
+    def activation_utc(self) -> pd.Timestamp:
+        """
+        Return the contract activation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.activation_ns, tz=pytz.utc)
+
+    @property
+    def expiration_utc(self) -> pd.Timestamp:
+        """
+        Return the contract expriation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
     @staticmethod
     cdef CryptoFuture from_dict_c(dict values):
@@ -202,7 +233,8 @@ cdef class CryptoFuture(Instrument):
             underlying=Currency.from_str_c(values["underlying"]),
             quote_currency=Currency.from_str_c(values["quote_currency"]),
             settlement_currency=Currency.from_str_c(values["settlement_currency"]),
-            expiry_date=date.fromisoformat(values['expiry_date']),
+            activation_ns=values["activation_ns"],
+            expiration_ns=values["expiration_ns"],
             price_precision=values["price_precision"],
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
@@ -232,7 +264,8 @@ cdef class CryptoFuture(Instrument):
             "underlying": obj.underlying.code,
             "quote_currency": obj.quote_currency.code,
             "settlement_currency": obj.settlement_currency.code,
-            "expiry_date": obj.expiry_date.isoformat(),
+            "activation_ns": obj.activation_ns,
+            "expiration_ns": obj.expiration_ns,
             "price_precision": obj.price_precision,
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,

@@ -7,8 +7,20 @@ Released on TBC (UTC).
 - Added `support_contingent_orders` option for venues (to simulate venues which do not support contingent orders)
 - Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingenct orders)
 - Improved `RedisCacheDatabase` client connection error handling with retries
+- Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `FuturesContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionsContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `CryptoFuture.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 
 ### Breaking Changes
+- Renamed `FuturesContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Renamed `OptionsContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Renamed `CryptoFuture.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Changed `FuturesContract` arrow schema
+- Changed `OptionsContract` arrow schema
+- Changed `CryptoFuture` arrow schema
 - Transformed orders will now retain the original `ts_init` timestamp
 - Removed unimplemented `batch_more` option for `Strategy.modify_order`
 - Removed `InstrumentProvider.venue` property (redundant as a provider may have many venues)

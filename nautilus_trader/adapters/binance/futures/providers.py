@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime as dt
 from decimal import Decimal
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -328,13 +328,20 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 BinanceFuturesContractType.NEXT_MONTH,
                 BinanceFuturesContractType.NEXT_QUARTER,
             ):
+                expiry_date_part = symbol_info.symbol.partition("_")[2]
+                expiration = pd.to_datetime(expiry_date_part, format="%y%m%d", utc=True)
+                expiration += pd.Timedelta(hours=8)
+
+                activation = expiration - pd.Timedelta(days=90)  # TODO: Improve accuracy
+
                 instrument = CryptoFuture(
                     instrument_id=instrument_id,
                     raw_symbol=raw_symbol,
                     underlying=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
-                    expiry_date=dt.strptime(symbol_info.symbol.partition("_")[2], "%y%m%d").date(),
+                    activation_ns=activation.value,
+                    expiration_ns=expiration.value,
                     price_precision=price_precision,
                     size_precision=size_precision,
                     price_increment=price_increment,

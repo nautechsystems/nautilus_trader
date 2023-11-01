@@ -42,7 +42,8 @@ impl OptionsContract {
         asset_class: AssetClass,
         underlying: String,
         option_kind: OptionKind,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         strike_price: Price,
         currency: Currency,
         price_precision: u8,
@@ -63,7 +64,8 @@ impl OptionsContract {
             asset_class,
             underlying,
             option_kind,
-            expiration,
+            activation_ns,
+            expiration_ns,
             strike_price,
             currency,
             price_precision,
@@ -109,7 +111,8 @@ impl OptionsContract {
         dict.set_item("asset_class", self.asset_class.to_string())?;
         dict.set_item("underlying", self.underlying.to_string())?;
         dict.set_item("option_kind", self.option_kind.to_string())?;
-        dict.set_item("expiration", self.expiration.to_i64())?;
+        dict.set_item("activation_ns", self.activation_ns.to_u64())?;
+        dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
         dict.set_item("strike_price", self.strike_price.to_string())?;
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;

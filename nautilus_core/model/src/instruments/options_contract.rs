@@ -42,7 +42,8 @@ pub struct OptionsContract {
     pub asset_class: AssetClass,
     pub underlying: String,
     pub option_kind: OptionKind,
-    pub expiration: UnixNanos,
+    pub activation_ns: UnixNanos,
+    pub expiration_ns: UnixNanos,
     pub strike_price: Price,
     pub currency: Currency,
     pub price_precision: u8,
@@ -66,7 +67,8 @@ impl OptionsContract {
         asset_class: AssetClass,
         underlying: String,
         option_kind: OptionKind,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         strike_price: Price,
         currency: Currency,
         price_precision: u8,
@@ -87,7 +89,8 @@ impl OptionsContract {
             asset_class,
             underlying,
             option_kind,
-            expiration,
+            activation_ns,
+            expiration_ns,
             strike_price,
             currency,
             price_precision,
@@ -230,6 +233,7 @@ pub mod stubs {
 
     #[fixture]
     pub fn options_contract_appl() -> OptionsContract {
+        let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
         let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
         OptionsContract::new(
             InstrumentId::from("AAPL211217C00150000.OPRA"),
@@ -237,6 +241,7 @@ pub mod stubs {
             AssetClass::Equity,
             String::from("AAPL"),
             OptionKind::Call,
+            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
             expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
             Price::from("149.0"),
             Currency::USD(),

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 from unittest.mock import AsyncMock
 
 import msgspec.structs
@@ -113,7 +112,7 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
     assert option.id == instrument_id
     assert option.asset_class == AssetClass.EQUITY
     assert option.multiplier == 100
-    assert option.expiry_date == datetime.date(2023, 1, 20)
+    assert option.expiration_ns == 1674172800000000000
     assert option.strike_price == Price.from_str("100.0")
     assert option.kind == OptionKind.CALL
     assert option.price_increment == Price.from_str("0.01")
