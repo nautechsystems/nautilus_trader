@@ -41,7 +41,8 @@ impl CryptoFuture {
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -64,7 +65,8 @@ impl CryptoFuture {
             underlying,
             quote_currency,
             settlement_currency,
-            expiration,
+            activation_ns,
+            expiration_ns,
             price_precision,
             size_precision,
             price_increment,
@@ -114,7 +116,8 @@ impl CryptoFuture {
             "settlement_currency",
             self.settlement_currency.code.to_string(),
         )?;
-        dict.set_item("expiration", self.expiration.to_i64())?;
+        dict.set_item("activation_ns", self.activation_ns.to_u64())?;
+        dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;

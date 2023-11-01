@@ -41,7 +41,8 @@ pub struct FuturesContract {
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
     pub underlying: String,
-    pub expiration: UnixNanos,
+    pub activation_ns: UnixNanos,
+    pub expiration_ns: UnixNanos,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
@@ -64,7 +65,8 @@ impl FuturesContract {
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
@@ -84,7 +86,8 @@ impl FuturesContract {
             raw_symbol,
             asset_class,
             underlying,
-            expiration,
+            activation_ns,
+            expiration_ns,
             currency,
             price_precision,
             price_increment,
@@ -227,12 +230,14 @@ pub mod stubs {
 
     #[fixture]
     pub fn futures_contract_es() -> FuturesContract {
+        let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
         let expiration = Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0).unwrap();
         FuturesContract::new(
             InstrumentId::new(Symbol::from("ESZ21"), Venue::from("CME")),
             Symbol::from("ESZ21"),
             AssetClass::Index,
             String::from("ES"),
+            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
             expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
             Currency::USD(),
             2,

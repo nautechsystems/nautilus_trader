@@ -41,7 +41,8 @@ impl FuturesContract {
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
@@ -61,7 +62,8 @@ impl FuturesContract {
             raw_symbol,
             asset_class,
             underlying,
-            expiration,
+            activation_ns,
+            expiration_ns,
             currency,
             price_precision,
             price_increment,
@@ -106,7 +108,8 @@ impl FuturesContract {
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;
         dict.set_item("underlying", self.underlying.to_string())?;
-        dict.set_item("expiration", self.expiration.to_i64())?;
+        dict.set_item("activation_ns", self.activation_ns.to_u64())?;
+        dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;

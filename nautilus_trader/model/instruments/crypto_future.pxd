@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -24,8 +24,10 @@ cdef class CryptoFuture(Instrument):
     """The underlying asset for the contract.\n\n:returns: `Currency`"""
     cdef readonly Currency settlement_currency
     """The settlement currency for the contract.\n\n:returns: `Currency`"""
-    cdef readonly date expiry_date
-    """The expiry date for the contract.\n\n:returns: `date`"""
+    cdef readonly uint64_t activation_ns
+    """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
+    cdef readonly uint64_t expiration_ns
+    """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     @staticmethod
     cdef CryptoFuture from_dict_c(dict values)
