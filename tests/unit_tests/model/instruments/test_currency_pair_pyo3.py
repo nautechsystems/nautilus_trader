@@ -31,9 +31,9 @@ def test_hash():
 
 
 def test_to_dict():
-    dict = btcusdt_binance.to_dict()
-    assert CurrencyPair.from_dict(dict) == btcusdt_binance
-    assert dict == {
+    result = btcusdt_binance.to_dict()
+    assert CurrencyPair.from_dict(result) == btcusdt_binance
+    assert result == {
         "type": "CurrencyPair",
         "id": "BTCUSDT.BINANCE",
         "raw_symbol": "BTCUSDT",

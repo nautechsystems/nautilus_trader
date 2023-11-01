@@ -31,16 +31,17 @@ def test_hash():
 
 
 def test_to_dict():
-    dict = aapl_option.to_dict()
-    assert OptionsContract.from_dict(dict) == aapl_option
-    assert dict == {
+    result = aapl_option.to_dict()
+    assert OptionsContract.from_dict(result) == aapl_option
+    assert result == {
         "type": "OptionsContract",
         "id": "AAPL211217C00150000.OPRA",
         "raw_symbol": "AAPL211217C00150000",
         "asset_class": "EQUITY",
         "underlying": "AAPL",
         "option_kind": "CALL",
-        "expiration": 1639699200000000000,
+        "activation_ns": 1631836800000000000,
+        "expiration_ns": 1639699200000000000,
         "strike_price": "149.0",
         "currency": "USDT",
         "price_precision": 2,

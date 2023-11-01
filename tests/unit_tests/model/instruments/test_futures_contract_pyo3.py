@@ -13,48 +13,45 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
+from nautilus_trader.core.nautilus_pyo3 import FuturesContract
 from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
 
 
-crypto_future_btcusdt = TestInstrumentProviderPyo3.btcusdt_future_binance()
+futures_contract_es = TestInstrumentProviderPyo3.futures_contract_es()
 
 
 def test_equality():
-    item_1 = TestInstrumentProviderPyo3.btcusdt_future_binance()
-    item_2 = TestInstrumentProviderPyo3.btcusdt_future_binance()
+    item_1 = TestInstrumentProviderPyo3.btcusdt_binance()
+    item_2 = TestInstrumentProviderPyo3.btcusdt_binance()
     assert item_1 == item_2
 
 
 def test_hash():
-    assert hash(crypto_future_btcusdt) == hash(crypto_future_btcusdt)
+    assert hash(futures_contract_es) == hash(futures_contract_es)
 
 
 def test_to_dict():
-    result = crypto_future_btcusdt.to_dict()
-    assert CryptoFuture.from_dict(result) == crypto_future_btcusdt
+    result = futures_contract_es.to_dict()
+    assert FuturesContract.from_dict(result) == futures_contract_es
     assert result == {
-        "type": "CryptoPerpetual",
-        "id": "BTCUSDT_220325.BINANCE",
-        "raw_symbol": "BTCUSDT",
-        "underlying": "BTC",
-        "quote_currency": "USDT",
-        "settlement_currency": "USDT",
-        "activation_ns": 1640390400000000000,
-        "expiration_ns": 1648166400000000000,
+        "type": "FuturesContract",
+        "id": "ESZ21.CME",
+        "raw_symbol": "ESZ21",
+        "asset_class": "INDEX",
+        "underlying": "ES",
+        "activation_ns": 1631836800000000000,
+        "expiration_ns": 1639699200000000000,
+        "currency": "USD",
         "price_precision": 2,
-        "size_precision": 6,
         "price_increment": "0.01",
-        "size_increment": "0.000001",
+        "maker_fee": 0.001,
+        "taker_fee": 0.001,
         "margin_maint": 0.0,
         "margin_init": 0.0,
-        "maker_fee": 0.0,
-        "taker_fee": 0.0,
-        "lot_size": None,
-        "max_notional": None,
-        "max_price": "1000000.0",
-        "max_quantity": "9000",
-        "min_notional": "10.00000000 USDT",
-        "min_price": "0.01",
-        "min_quantity": "0.00001",
+        "lot_size": "1.0",
+        "multiplier": "1.0",
+        "max_price": None,
+        "max_quantity": None,
+        "min_price": None,
+        "min_quantity": None,
     }

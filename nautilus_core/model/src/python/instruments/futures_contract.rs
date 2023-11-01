@@ -26,14 +26,14 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 
 use crate::{
-    enums::{AssetClass, OptionKind},
+    enums::AssetClass,
     identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-    instruments::options_contract::OptionsContract,
+    instruments::futures_contract::FuturesContract,
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
 #[pymethods]
-impl OptionsContract {
+impl FuturesContract {
     #[allow(clippy::too_many_arguments)]
     #[new]
     fn py_new(
@@ -41,10 +41,8 @@ impl OptionsContract {
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
-        option_kind: OptionKind,
         activation_ns: UnixNanos,
         expiration_ns: UnixNanos,
-        strike_price: Price,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
@@ -52,6 +50,7 @@ impl OptionsContract {
         margin_maint: Decimal,
         maker_fee: Decimal,
         taker_fee: Decimal,
+        multiplier: Quantity,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -63,10 +62,8 @@ impl OptionsContract {
             raw_symbol,
             asset_class,
             underlying,
-            option_kind,
             activation_ns,
             expiration_ns,
-            strike_price,
             currency,
             price_precision,
             price_increment,
@@ -74,6 +71,7 @@ impl OptionsContract {
             margin_maint,
             maker_fee,
             taker_fee,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -105,15 +103,13 @@ impl OptionsContract {
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
         let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OptionsContract))?;
+        dict.set_item("type", stringify!(FuturesContract))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("asset_class", self.asset_class.to_string())?;
         dict.set_item("underlying", self.underlying.to_string())?;
-        dict.set_item("option_kind", self.option_kind.to_string())?;
         dict.set_item("activation_ns", self.activation_ns.to_u64())?;
         dict.set_item("expiration_ns", self.expiration_ns.to_u64())?;
-        dict.set_item("strike_price", self.strike_price.to_string())?;
         dict.set_item("currency", self.currency.code.to_string())?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
@@ -121,6 +117,7 @@ impl OptionsContract {
         dict.set_item("margin_maint", self.margin_maint.to_f64())?;
         dict.set_item("maker_fee", self.maker_fee.to_f64())?;
         dict.set_item("taker_fee", self.taker_fee.to_f64())?;
+        dict.set_item("multiplier", self.multiplier.to_string())?;
         match self.lot_size {
             Some(value) => dict.set_item("lot_size", value.to_string())?,
             None => dict.set_item("lot_size", py.None())?,
