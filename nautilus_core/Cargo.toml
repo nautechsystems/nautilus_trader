@@ -32,7 +32,7 @@ rmp-serde = "1.1.2"
 rust_decimal = "1.32.0"
 rust_decimal_macros = "1.32.0"
 serde = { version = "1.0.190", features = ["derive"] }
-serde_json = "1.0.107"
+serde_json = "1.0.108"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.50"
 tracing = "0.1.40"

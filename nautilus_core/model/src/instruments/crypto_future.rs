@@ -42,7 +42,8 @@ pub struct CryptoFuture {
     pub underlying: Currency,
     pub quote_currency: Currency,
     pub settlement_currency: Currency,
-    pub expiration: UnixNanos,
+    pub activation_ns: UnixNanos,
+    pub expiration_ns: UnixNanos,
     pub price_precision: u8,
     pub size_precision: u8,
     pub price_increment: Price,
@@ -68,7 +69,8 @@ impl CryptoFuture {
         underlying: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -91,7 +93,8 @@ impl CryptoFuture {
             underlying,
             quote_currency,
             settlement_currency,
-            expiration,
+            activation_ns,
+            expiration_ns,
             price_precision,
             size_precision,
             price_increment,
@@ -236,6 +239,7 @@ pub mod stubs {
 
     #[fixture]
     pub fn crypto_future_btcusdt() -> CryptoFuture {
+        let activation = Utc.with_ymd_and_hms(2014, 4, 8, 0, 0, 0).unwrap();
         let expiration = Utc.with_ymd_and_hms(2014, 7, 8, 0, 0, 0).unwrap();
         CryptoFuture::new(
             InstrumentId::from("ETHUSDT-123.BINANCE"),
@@ -243,6 +247,7 @@ pub mod stubs {
             Currency::from("BTC"),
             Currency::from("USDT"),
             Currency::from("USDT"),
+            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
             expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
             2,
             6,
