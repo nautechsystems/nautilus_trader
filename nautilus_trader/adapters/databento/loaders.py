@@ -25,15 +25,14 @@ from databento.common.symbology import InstrumentMap
 from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
 from nautilus_trader.adapters.databento.enums import DatabentoInstrumentClass
+from nautilus_trader.adapters.databento.parsing import parse_book_action
+from nautilus_trader.adapters.databento.parsing import parse_order_side
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.enums import AssetClass
-from nautilus_trader.model.enums import BookAction
-from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import Equity
@@ -161,32 +160,6 @@ class DatabentoDataLoader:
         else:
             raise ValueError(f"Schema {type(record).__name__} is currently unsupported by Nautilus")
 
-    def _parse_order_side(self, value: str) -> OrderSide:
-        match value:
-            case "A":
-                return OrderSide.BUY
-            case "B":
-                return OrderSide.SELL
-            case _:
-                return OrderSide.NO_ORDER_SIDE
-
-    def _parse_book_action(self, value: str) -> BookAction:
-        match value:
-            case "A":
-                return BookAction.ADD
-            case "C":
-                return BookAction.DELETE
-            case "M":
-                return BookAction.UPDATE
-            case "R":
-                return BookAction.CLEAR
-            case "T":
-                return BookAction.UPDATE
-            case "F":
-                return BookAction.UPDATE
-            case _:
-                raise ValueError(f"Invalid `BookAction`, was {value}")
-
     def _parse_instrument(self, record: databento.InstrumentDefMsg) -> Instrument:
         publisher = self._publishers[record.publisher_id]
         instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
@@ -234,7 +207,8 @@ class DatabentoDataLoader:
             multiplier=Quantity(record.contract_multiplier, precision=0),
             lot_size=Quantity(record.min_lot_size_round_lot, precision=0),
             underlying=record.underlying,
-            expiry_date=unix_nanos_to_dt(record.expiration).date(),  # TODO(should be a timestamp)
+            activation_ns=record.activation,
+            expiration_ns=record.expiration,
             ts_event=record.ts_event,
             ts_init=record.ts_recv,
         )
@@ -246,8 +220,8 @@ class DatabentoDataLoader:
     ) -> OrderBookDelta:
         return OrderBookDelta.from_raw(
             instrument_id=instrument_id,
-            book_action=self._parse_book_action(record.action),
-            side=self._parse_order_side(record.side),
+            book_action=parse_book_action(record.action),
+            side=parse_order_side(record.side),
             price_raw=record.price,
             price_prec=2,  # TODO
             size_raw=record.size,
