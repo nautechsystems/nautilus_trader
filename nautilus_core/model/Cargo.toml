@@ -26,7 +26,7 @@ ustr = { workspace = true }
 chrono = { workspace = true }
 derive_builder = "0.12.0"
 evalexpr = "11.1.0"
-indexmap = "2.0.2"
+indexmap = "2.1.0"
 tabled = "0.12.2"
 thousands = "0.2.0"
 
