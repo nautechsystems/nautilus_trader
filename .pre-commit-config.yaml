@@ -28,7 +28,7 @@ repos:
     rev: v0.19.1
     hooks:
       - id: gitlint
-      - id: gitlint-ci
+      # - id: gitlint-ci
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.6
