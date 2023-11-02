@@ -24,6 +24,12 @@ repos:
       - id: check-xml
       - id: check-yaml
 
+  - repo: https://github.com/jorisroovers/gitlint
+    rev: v0.19.1
+    hooks:
+      - id: gitlint
+      - id: gitlint-ci
+
   - repo: https://github.com/codespell-project/codespell
     rev: v2.2.6
     hooks:
