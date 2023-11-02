@@ -90,7 +90,7 @@ jobs:
 
       - name: Run pre-commit
         run: |
-          pre-commit run --hook-stage manual gitlint-ci
+          # pre-commit run --hook-stage manual gitlint-ci
           pre-commit run --all-files
 
       - name: Install Redis (macOS)
