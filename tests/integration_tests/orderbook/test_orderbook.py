@@ -38,7 +38,7 @@ class TestOrderBook:
         assert i == 1999
 
     def test_l2_feed(self):
-        filename = TEST_DATA_DIR / "L2_feed.json"
+        filename = TEST_DATA_DIR / "bitmex" / "L2_feed.json"
 
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),
@@ -66,7 +66,7 @@ class TestOrderBook:
 
     @pytest.mark.skip("segfault on check_integrity")
     def test_l3_feed(self):
-        filename = TEST_DATA_DIR / "L3_feed.json"
+        filename = TEST_DATA_DIR / "bitmex" / "L3_feed.json"
 
         book = OrderBook(
             instrument_id=TestIdStubs.audusd_id(),

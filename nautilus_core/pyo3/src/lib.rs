@@ -126,7 +126,7 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
 
     // Indicators
     let n = "indicators";
-    let submodule = pyo3::wrap_pymodule!(nautilus_indicators::indicators);
+    let submodule = pyo3::wrap_pymodule!(nautilus_indicators::python::indicators);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;

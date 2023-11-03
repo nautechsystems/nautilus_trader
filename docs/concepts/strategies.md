@@ -32,6 +32,8 @@ Since a trading strategy is a class which inherits from `Strategy`, you must def
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
 
 ```python
+from nautilus_trader.trading.strategy import Strategy
+
 class MyStrategy(Strategy):
     def __init__(self) -> None:
         super().__init__()  # <-- the super class must be called to initialize the strategy
@@ -75,6 +77,18 @@ These handlers deal with market data updates.
 You can use these handlers to define actions upon receiving new market data.
 
 ```python
+from nautilus_trader.core.data import Data
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data.book import OrderBookDeltas
+from nautilus_trader.model.data.status import InstrumentClose
+from nautilus_trader.model.data.status import InstrumentStatus
+from nautilus_trader.model.data.status import VenueStatus
+from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.orderbook import OrderBook
+
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
 def on_order_book(self, order_book: OrderBook) -> None:
 def on_ticker(self, ticker: Ticker) -> None:
@@ -99,6 +113,24 @@ Handlers in this category are triggered by events related to orders.
 3. `on_event(...)`
 
 ```python
+from nautilus_trader.model.events import OrderAccepted
+from nautilus_trader.model.events import OrderCanceled
+from nautilus_trader.model.events import OrderCancelRejected
+from nautilus_trader.model.events import OrderDenied
+from nautilus_trader.model.events import OrderEmulated
+from nautilus_trader.model.events import OrderEvent
+from nautilus_trader.model.events import OrderExpired
+from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.events import OrderInitialized
+from nautilus_trader.model.events import OrderModifyRejected
+from nautilus_trader.model.events import OrderPendingCancel
+from nautilus_trader.model.events import OrderPendingUpdate
+from nautilus_trader.model.events import OrderRejected
+from nautilus_trader.model.events import OrderReleased
+from nautilus_trader.model.events import OrderSubmitted
+from nautilus_trader.model.events import OrderTriggered
+from nautilus_trader.model.events import OrderUpdated
+
 def on_order_initialized(self, event: OrderInitialized) -> None:
 def on_order_denied(self, event: OrderDenied) -> None:
 def on_order_emulated(self, event: OrderEmulated) -> None:
@@ -128,6 +160,11 @@ Handlers in this category are triggered by events related to positions.
 3. `on_event(...)`
 
 ```python
+from nautilus_trader.model.events import PositionChanged
+from nautilus_trader.model.events import PositionClosed
+from nautilus_trader.model.events import PositionEvent
+from nautilus_trader.model.events import PositionOpened
+
 def on_position_opened(self, event: PositionOpened) -> None:
 def on_position_changed(self, event: PositionChanged) -> None:
 def on_position_closed(self, event: PositionClosed) -> None:
@@ -140,6 +177,8 @@ This handler will eventually receive all event messages which arrive at the stra
 which no other specific handler exists.
 
 ```python
+from nautilus_trader.core.message import Event
+
 def on_event(self, event: Event) -> None:
 ```
 
@@ -180,19 +219,22 @@ Strategies have access to a comprehensive `Clock` which provides a number of met
 different timestamps, as well as setting time alerts or timers.
 
 ```{note}
-See the `Clock` [API reference](../api_reference/common.md#Clock) for a complete list of available methods.
+See the `Clock` [API reference](../api_reference/common.md) for a complete list of available methods.
 ```
 
 #### Current timestamps
 
 While there are multiple ways to obtain current timestamps, here are two commonly used methods as examples:
 
-**UTC Timestamp:** This method returns a timezone-aware (UTC) timestamp:
+To get the current UTC timestamp as a tz-aware `pd.Timestamp`:
 ```python
+import pandas as pd
+
+
 now: pd.Timestamp = self.clock.utc_now()
 ```
 
-**Unix Nanoseconds:** This method provides the current timestamp in nanoseconds since the UNIX epoch:
+To get the current UTC timestamp as nanoseconds since the UNIX epoch:
 ```python
 unix_nanos: int = self.clock.timestamp_ns()
 ```
@@ -259,6 +301,14 @@ The following shows a general outline of available methods.
 #### Account and positional information
 
 ```python
+import decimal
+
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.accounting.accounts.base import Account
+from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.identifiers import InstrumentId
+
 def account(self, venue: Venue) -> Account
 
 def balances_locked(self, venue: Venue) -> dict[Currency, Money]
@@ -289,7 +339,7 @@ metrics and statistics.
 Refer to the `PortfolioAnalyzer` in the [API Reference](../api_reference/analysis.md) for a complete description
 of all available methods.
 
-```{tip}
+```{note}
 Also see the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
 ```
 
@@ -300,35 +350,42 @@ tailored for algorithmic trading. These commands are essential for executing str
 and ensuring seamless interaction with various trading venues. In the following sections, we will 
 delve into the specifics of each command and its use cases.
 
+```{tip}
+The [Execution](../concepts/execution.md) guide explains the flow through the system, and can be helpful to read in conjunction with the below.
+```
+
 #### Submitting orders
 
 An `OrderFactory` is provided on the base class for every `Strategy` as a convenience, reducing
 the amount of boilerplate required to create different `Order` objects (although these objects
 can still be initialized directly with the `Order.__init__(...)` constructor if the trader prefers).
 
-The component an order flows to when submitted for execution depends on the following:
+The component a `SubmitOrder` or `SubmitOrderList` command will flow to for execution depends on the following:
 
-- If an `emulation_trigger` is specified, the order will _firstly_ be sent to the `OrderEmulator`
-- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the order will _firstly_ be sent to the relevant `ExecAlgorithm` (assuming it exists and has been registered correctly)
-- Otherwise, the order will _firstly_ be sent to the `RiskEngine`
-
-The following examples show method implementations for a `Strategy`.
+- If an `emulation_trigger` is specified, the command will _firstly_ be sent to the `OrderEmulator`
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), the command will _firstly_ be sent to the relevant `ExecAlgorithm`
+- Otherwise, the command will _firstly_ be sent to the `RiskEngine`
 
 This example submits a `LIMIT` BUY order for emulation (see [OrderEmulator](advanced/emulated_orders.md)):
 ```python
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        order: LimitOrder = self.order_factory.limit(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(5000.00),
-            emulation_trigger=TriggerType.LAST_TRADE,
-        )
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.orders import LimitOrder
 
-        self.submit_order(order)
+
+def buy(self) -> None:
+    """
+    Users simple buy method (example).
+    """
+    order: LimitOrder = self.order_factory.limit(
+        instrument_id=self.instrument_id,
+        order_side=OrderSide.BUY,
+        quantity=self.instrument.make_qty(self.trade_size),
+        price=self.instrument.make_price(5000.00),
+        emulation_trigger=TriggerType.LAST_TRADE,
+    )
+
+    self.submit_order(order)
 ```
 
 ```{note}
@@ -337,34 +394,104 @@ It's possible to specify both order emulation, and an execution algorithm.
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
 ```python
-    def buy(self) -> None:
-        """
-        Users simple buy method (example).
-        """
-        order: MarketOrder = self.order_factory.market(
-            instrument_id=self.instrument_id,
-            order_side=OrderSide.BUY,
-            quantity=self.instrument.make_qty(self.trade_size),
-            time_in_force=TimeInForce.FOK,
-            exec_algorithm_id=ExecAlgorithmId("TWAP"),
-            exec_algorithm_params={"horizon_secs": 20, "interval_secs": 2.5},
-        )
+from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import TimeInForce
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 
-        self.submit_order(order)
+
+def buy(self) -> None:
+    """
+    Users simple buy method (example).
+    """
+    order: MarketOrder = self.order_factory.market(
+        instrument_id=self.instrument_id,
+        order_side=OrderSide.BUY,
+        quantity=self.instrument.make_qty(self.trade_size),
+        time_in_force=TimeInForce.FOK,
+        exec_algorithm_id=ExecAlgorithmId("TWAP"),
+        exec_algorithm_params={"horizon_secs": 20, "interval_secs": 2.5},
+    )
+
+    self.submit_order(order)
 ```
 
-#### Managed GTD expiry
+#### Canceling orders
 
-It's possible for the strategy to manage expiry for orders with a time in force of GTD (_Good 'till Date_).
-This may be desirable if the exchange/broker does not support this time in force option, or for any
-reason you prefer the strategy to manage this.
+Orders can be canceled individually, as a batch, or all orders for an instrument (with an optional side filter).
 
-To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
-a time in force of GTD, the strategy will automatically start an internal time alert.
-Once the internal GTD time alert is reached, the order will be canceled (if not already closed).
+If the order is already *closed* or already pending cancel, then a warning will be logged.
 
-Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
-`managed_gtd_expiry` you should set `use_gtd=False` for your execution client config.
+If the order is currently *open* then the status will become `PENDING_CANCEL`.
+
+The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command will flow to for execution depends on the following:
+
+- If the order is currently emulated, the command will _firstly_ be sent to the `OrderEmulator`
+- If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will _firstly_ be sent to the relevant `ExecAlgorithm`
+- Otherwise, the order will _firstly_ be sent to the `ExecutionEngine`
+
+```{note}
+Any managed GTD timer will also be canceled after the command has left the strategy.
+```
+
+The following shows how to cancel an individual order:
+```python
+
+self.cancel_order(order)
+
+```
+
+The following shows how to cancel a batch of orders:
+```python
+from nautilus_trader.model import Order
+
+
+my_order_list: list[Order] = [order1, order2, order3]
+self.cancel_orders(my_order_list)
+
+```
+
+The following shows how to cancel all orders:
+
+```python
+
+self.cancel_all_orders()
+
+```
+
+#### Modifying orders
+
+Orders can be modified individually when emulated, or *open* on a venue (if supported).
+
+If the order is already *closed* or already pending cancel, then a warning will be logged.
+If the order is currently *open* then the status will become `PENDING_UPDATE`.
+
+```{warning}
+At least one value must differ from the original order for the command to be valid.
+```
+
+The component a `ModifyOrder` command will flow to for execution depends on the following:
+
+- If the order is currently emulated, the command will _firstly_ be sent to the `OrderEmulator`
+- Otherwise, the order will _firstly_ be sent to the `RiskEngine`
+
+```{note}
+Once an order is under the control of an execution algorithm, it cannot be directly modified by a strategy (only canceled).
+```
+
+The following shows how to modify the size of `LIMIT` BUY order currently *open* on a venue:
+```python
+from nautilus_trader.model import Quantity
+
+
+new_quantity: Quantity = Quantity.from_int(5)
+self.modify_order(order, new_quantity)
+
+```
+
+```{note}
+The price and trigger price can also be modified (when emulated or supported by a venue).
+
+```
 
 ## Configuration
 
@@ -425,6 +552,19 @@ Even though it often makes sense to define a strategy which will trade a single
 instrument. The number of instruments a single strategy can work with is only limited by machine resources.
 ```
 
+### Managed GTD expiry
+
+It's possible for the strategy to manage expiry for orders with a time in force of GTD (_Good 'till Date_).
+This may be desirable if the exchange/broker does not support this time in force option, or for any
+reason you prefer the strategy to manage this.
+
+To use this option, pass `manage_gtd_expiry=True` to your `StrategyConfig`. When an order is submitted with
+a time in force of GTD, the strategy will automatically start an internal time alert.
+Once the internal GTD time alert is reached, the order will be canceled (if not already *closed*).
+
+Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
+`managed_gtd_expiry` you should set `use_gtd=False` for your execution client config.
+
 ### Multiple strategies
 
 If you intend running multiple instances of the same strategy, with different
@@ -444,4 +584,3 @@ example the above config would result in a strategy ID of `MyStrategy-001`.
 ```{tip}
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
 ```
-

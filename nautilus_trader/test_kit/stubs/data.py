@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import json
 from datetime import datetime
 from os import PathLike
@@ -121,8 +119,8 @@ class TestDataStubs:
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000],
-            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:2000],
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv")[:2000],
         )
         return ticks
 
@@ -414,7 +412,7 @@ class TestDataStubs:
     def l1_feed():
         provider = TestDataProvider()
         updates = []
-        for _, row in provider.read_csv_ticks("truefx-usdjpy-ticks.csv").iterrows():
+        for _, row in provider.read_csv_ticks("truefx/usdjpy-ticks.csv").iterrows():
             for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
                 updates.append(
                     {

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Literal, Optional
+from typing import Literal
 
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
 
@@ -47,8 +47,8 @@ class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
 
     """
 
-    username: Optional[str] = None
-    password: Optional[str] = None
+    username: str | None = None
+    password: str | None = None
     trading_mode: Literal["paper", "live"] = "paper"
     start: bool = False
     read_only_api: bool = True
@@ -102,14 +102,14 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
             ),
         )
 
-    load_contracts: Optional[frozenset[IBContract]] = None
-    build_options_chain: Optional[bool] = None
-    build_futures_chain: Optional[bool] = None
-    min_expiry_days: Optional[int] = None
-    max_expiry_days: Optional[int] = None
+    load_contracts: frozenset[IBContract] | None = None
+    build_options_chain: bool | None = None
+    build_futures_chain: bool | None = None
+    min_expiry_days: int | None = None
+    max_expiry_days: int | None = None
 
-    cache_validity_days: Optional[int] = None
-    pickle_path: Optional[str] = None
+    cache_validity_days: int | None = None
+    pickle_path: str | None = None
 
 
 class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -140,7 +140,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     )
 
     ibg_host: str = "127.0.0.1"
-    ibg_port: Optional[int] = None
+    ibg_port: int | None = None
     ibg_client_id: int = 1
     gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig()
     use_regular_trading_hours: bool = True
@@ -169,9 +169,9 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
         InteractiveBrokersInstrumentProviderConfig()
     )
     ibg_host: str = "127.0.0.1"
-    ibg_port: Optional[int] = None
+    ibg_port: int | None = None
     ibg_client_id: int = 1
     gateway: InteractiveBrokersGatewayConfig = InteractiveBrokersGatewayConfig()
-    account_id: Optional[str] = None
+    account_id: str | None = None
 
     # trade_outside_regular_hours (possible to set flag in order)

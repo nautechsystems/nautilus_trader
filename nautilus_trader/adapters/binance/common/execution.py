@@ -15,7 +15,6 @@
 
 import asyncio
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 
@@ -178,8 +177,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         # Listen keys
         self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
-        self._ping_listen_keys_task: Optional[asyncio.Task] = None
-        self._listen_key: Optional[str] = None
+        self._ping_listen_keys_task: asyncio.Task | None = None
+        self._listen_key: str | None = None
 
         # WebSocket API
         self._ws_client = BinanceWebSocketClient(
@@ -312,9 +311,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ) -> Optional[OrderStatusReport]:
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None:
         PyCondition.false(
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
@@ -357,7 +356,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             if not client_order_id:
                 self._log.warning("Cannot retry without a client order ID.")
             else:
-                order: Optional[Order] = self._cache.order(client_order_id)
+                order: Order | None = self._cache.order(client_order_id)
                 if order is None:
                     self._log.warning("Order not found in cache.")
                     return None
@@ -410,23 +409,23 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _get_binance_position_status_reports(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> list[PositionStatusReport]:
         # Implement in child class
         raise NotImplementedError
 
     async def _get_binance_active_position_symbols(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> set[str]:
         # Implement in child class
         raise NotImplementedError
 
     async def generate_order_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self._log.info("Requesting OrderStatusReports...")
@@ -442,18 +441,25 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # Get all orders for those active symbols
             binance_orders: list[BinanceOrder] = []
             for symbol in active_symbols:
-                response = await self._http_account.query_all_orders(
-                    symbol=symbol,
-                    start_time=secs_to_millis(start.timestamp()) if start is not None else None,
-                    end_time=secs_to_millis(end.timestamp()) if end is not None else None,
-                )
+                # Here we don't pass a `start_time` or `end_time` as order reports appear to go
+                # randomly missing when these are specified. We filter on the Nautilus side below.
+                # Explicitly setting limit to the max lookback of 1000, in the future we should
+                # add pagination.
+                response = await self._http_account.query_all_orders(symbol=symbol, limit=1_000)
                 binance_orders.extend(response)
         except BinanceError as e:
             self._log.exception(f"Cannot generate OrderStatusReport: {e.message}", e)
             return []
 
+        start_ms = secs_to_millis(start.timestamp()) if start is not None else None
+        end_ms = secs_to_millis(end.timestamp()) if end is not None else None
+
         reports: list[OrderStatusReport] = []
         for order in binance_orders:
+            if start_ms is not None and order.time < start_ms:
+                continue  # Filter start on the Nautilus side
+            if end_ms is not None and order.time > end_ms:
+                continue  # Filter end on the Nautilus side
             if order.origQty and Decimal(order.origQty) == 0:
                 continue  # Cannot parse zero quantity order (filter for Binance)
             report = order.parse_to_order_status_report(
@@ -475,10 +481,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_trade_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[TradeReport]:
         self._log.info("Requesting TradeReports...")
 
@@ -526,9 +532,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def generate_position_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         self._log.info("Requesting PositionStatusReports...")
 
@@ -570,7 +576,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
         return time_in_force
 
-    def _determine_good_till_date(self, order: Order) -> Optional[int]:
+    def _determine_good_till_date(self, order: Order) -> int | None:
         good_till_date = nanos_to_millis(order.expire_time_ns) if order.expire_time_ns else None
         if self._binance_account_type.is_spot_or_margin:
             good_till_date = None
@@ -580,7 +586,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     def _determine_reduce_only(self, order: Order) -> bool:
         return order.is_reduce_only if self._use_reduce_only else False
 
-    def _determine_reduce_only_str(self, order: Order) -> Optional[str]:
+    def _determine_reduce_only_str(self, order: Order) -> str | None:
         if self._binance_account_type.is_futures:
             return str(self._determine_reduce_only(order))
         return None
@@ -759,7 +765,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         # Ensure activation price
-        activation_price: Optional[Price] = order.trigger_price
+        activation_price: Price | None = order.trigger_price
         if not activation_price:
             quote = self._cache.quote_tick(order.instrument_id)
             trade = self._cache.trade_tick(order.instrument_id)
@@ -796,7 +802,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         nautilus_symbol: str = BinanceSymbol(symbol).parse_as_nautilus(
             self._binance_account_type,
         )
-        instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
+        instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
             self._instrument_ids[nautilus_symbol] = instrument_id
@@ -809,7 +815,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        order: Optional[Order] = self._cache.order(command.client_order_id)
+        order: Order | None = self._cache.order(command.client_order_id)
         if order is None:
             self._log.error(f"{command.client_order_id!r} not found to modify.")
             return
@@ -911,9 +917,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
-        venue_order_id: Optional[VenueOrderId],
+        venue_order_id: VenueOrderId | None,
     ) -> None:
-        order: Optional[Order] = self._cache.order(client_order_id)
+        order: Order | None = self._cache.order(client_order_id)
         if order is None:
             self._log.error(f"{client_order_id!r} not found to cancel.")
             return

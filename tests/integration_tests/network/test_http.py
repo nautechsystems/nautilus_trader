@@ -13,8 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections.abc import Callable
 from collections.abc import Coroutine
-from typing import Any, Callable
+from typing import Any
 
 import msgspec
 import pytest

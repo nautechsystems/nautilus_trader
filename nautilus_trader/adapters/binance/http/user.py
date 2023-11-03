@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -88,7 +87,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
         """
 
-        symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
+        symbol: BinanceSymbol | None = None  # MARGIN_ISOLATED only, mandatory
 
     class PutDeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -103,20 +102,20 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
         """
 
-        symbol: Optional[BinanceSymbol] = None  # MARGIN_ISOLATED only, mandatory
-        listenKey: Optional[str] = None  # SPOT/MARGIN only, mandatory
+        symbol: BinanceSymbol | None = None  # MARGIN_ISOLATED only, mandatory
+        listenKey: str | None = None  # SPOT/MARGIN only, mandatory
 
-    async def _post(self, parameters: Optional[PostParameters] = None) -> BinanceListenKey:
+    async def _post(self, parameters: PostParameters | None = None) -> BinanceListenKey:
         method_type = HttpMethod.POST
         raw = await self._method(method_type, parameters)
         return self._post_resp_decoder.decode(raw)
 
-    async def _put(self, parameters: Optional[PutDeleteParameters] = None) -> dict:
+    async def _put(self, parameters: PutDeleteParameters | None = None) -> dict:
         method_type = HttpMethod.PUT
         raw = await self._method(method_type, parameters)
         return self._put_resp_decoder.decode(raw)
 
-    async def _delete(self, parameters: Optional[PutDeleteParameters] = None) -> dict:
+    async def _delete(self, parameters: PutDeleteParameters | None = None) -> dict:
         method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._delete_resp_decoder.decode(raw)
@@ -172,7 +171,7 @@ class BinanceUserDataHttpAPI:
 
     async def create_listen_key(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> BinanceListenKey:
         """
         Create Binance ListenKey.
@@ -186,8 +185,8 @@ class BinanceUserDataHttpAPI:
 
     async def keepalive_listen_key(
         self,
-        symbol: Optional[str] = None,
-        listen_key: Optional[str] = None,
+        symbol: str | None = None,
+        listen_key: str | None = None,
     ):
         """
         Ping/Keepalive Binance ListenKey.
@@ -201,8 +200,8 @@ class BinanceUserDataHttpAPI:
 
     async def delete_listen_key(
         self,
-        symbol: Optional[str] = None,
-        listen_key: Optional[str] = None,
+        symbol: str | None = None,
+        listen_key: str | None = None,
     ):
         """
         Delete Binance ListenKey.

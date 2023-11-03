@@ -15,7 +15,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11"]
+        python-version: ["3.10", "3.11"]
     defaults:
       run:
         shell: bash
@@ -89,7 +89,9 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Run pre-commit
-        run: pre-commit run --all-files
+        run: |
+          # pre-commit run --hook-stage manual gitlint-ci
+          pre-commit run --all-files
 
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'

@@ -16,7 +16,6 @@
 import sys
 import tempfile
 from decimal import Decimal
-from typing import Optional
 
 import pandas as pd
 import pytest
@@ -85,7 +84,7 @@ class TestBacktestEngine:
             BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
         )
 
-    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
+    def create_engine(self, config: BacktestEngineConfig | None = None) -> BacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),
@@ -100,8 +99,8 @@ class TestBacktestEngine:
         wrangler = QuoteTickDataWrangler(self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000],
-            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:2000],
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:2000],
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv")[:2000],
         )
         engine.add_instrument(USDJPY_SIM)
         engine.add_data(ticks)
@@ -275,7 +274,7 @@ class TestBacktestEngineCashAccount:
             BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)),
         )
 
-    def create_engine(self, config: Optional[BacktestEngineConfig] = None) -> BacktestEngine:
+    def create_engine(self, config: BacktestEngineConfig | None = None) -> BacktestEngine:
         engine = BacktestEngine(config)
         engine.add_venue(
             venue=Venue("SIM"),
@@ -321,7 +320,7 @@ class TestBacktestEngineData:
 
     def test_add_pyo3_data_raises_type_error(self) -> None:
         # Arrange
-        path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+        path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
         df = pd.read_csv(path)
 
         wrangler = wranglers_v2.QuoteTickDataWrangler.from_instrument(AUDUSD_SIM)
@@ -503,7 +502,7 @@ class TestBacktestEngineData:
         self.engine.add_instrument(AUDUSD_SIM)
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
         provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+        ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
 
         # Act
         self.engine.add_data(ticks)
@@ -517,7 +516,7 @@ class TestBacktestEngineData:
 
         wrangler = TradeTickDataWrangler(ETHUSDT_BINANCE)
         provider = TestDataProvider()
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
         # Act
         self.engine.add_data(ticks)
@@ -544,7 +543,7 @@ class TestBacktestEngineData:
             instrument=USDJPY_SIM,
         )
         provider = TestDataProvider()
-        bars = wrangler.process(provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:2000])
+        bars = wrangler.process(provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:2000])
 
         # Act
         self.engine.add_instrument(USDJPY_SIM)
@@ -622,8 +621,8 @@ class TestBacktestWithAddedBars:
         )
 
         provider = TestDataProvider()
-        bid_bars = bid_wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"))
-        ask_bars = ask_wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"))
+        bid_bars = bid_wrangler.process(provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv"))
+        ask_bars = ask_wrangler.process(provider.read_csv_bars("fxcm/gbpusd-m1-ask-2012.csv"))
 
         # Add data
         self.engine.add_instrument(GBPUSD_SIM)

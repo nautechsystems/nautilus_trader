@@ -1,6 +1,5 @@
 # ruff: noqa: UP007 PYI021 PYI044 PYI053
 # fmt: off
-from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Awaitable
@@ -15,8 +14,8 @@ from nautilus_trader.core.data import Data
 
 
 # Python Interface typing:
-# We will eventually separate these into separate .pyi files per module, for now this at least
-# provides import resolution as well as docstring.
+# We will eventually separate these into a .pyi file per module, for now this at least
+# provides import resolution as well as docstrings.
 
 ###################################################################################################
 # Core
@@ -591,7 +590,7 @@ class Quantity:
 
 class CryptoFuture: ...
 class CryptoPerpetual: ...
-class CurrenyPair: ...
+class CurrencyPair: ...
 class Equity: ...
 class FuturesContract: ...
 class OptionsContract: ...
@@ -640,13 +639,20 @@ class Quota:
     @classmethod
     def rate_per_hour(cls, max_burst: int) -> Quota: ...
 
+class WebSocketConfig:
+    def __init__(
+        self,
+        url: str,
+        handler: Callable[..., Any],
+        headers: list[tuple[str, str]],
+        heartbeat: int | None = None,
+    ) -> None: ...
+
 class WebSocketClient:
     @classmethod
     def connect(
         cls,
-        url: str,
-        handler: Callable[[Any], Any],
-        heartbeat: int | None = None,
+        config: WebSocketConfig,
         post_connection: Callable[..., None] | None = None,
         post_reconnection: Callable[..., None] | None = None,
         post_disconnection: Callable[..., None] | None = None,

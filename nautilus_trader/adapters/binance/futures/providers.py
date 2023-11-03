@@ -13,11 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime as dt
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -74,10 +73,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         logger: Logger,
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
-        config: Optional[InstrumentProviderConfig] = None,
+        config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
-            venue=BINANCE_VENUE,
             logger=logger,
             config=config,
         )
@@ -121,7 +119,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             9: BinanceFuturesFeeRates(feeTier=9, maker="0.000000", taker="0.000170"),
         }
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -146,7 +144,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -154,7 +152,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+            PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
@@ -191,9 +189,9 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 position_risk=position_risk[symbol],
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+        PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
@@ -224,8 +222,8 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         self,
         symbol_info: BinanceFuturesSymbolInfo,
         ts_event: int,
-        position_risk: Optional[BinanceFuturesPositionRisk] = None,
-        fee: Optional[BinanceFuturesCommissionRate] = None,
+        position_risk: BinanceFuturesPositionRisk | None = None,
+        fee: BinanceFuturesCommissionRate | None = None,
     ) -> None:
         contract_type_str = symbol_info.contractType
 
@@ -330,13 +328,20 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 BinanceFuturesContractType.NEXT_MONTH,
                 BinanceFuturesContractType.NEXT_QUARTER,
             ):
+                expiry_date_part = symbol_info.symbol.partition("_")[2]
+                expiration = pd.to_datetime(expiry_date_part, format="%y%m%d", utc=True)
+                expiration += pd.Timedelta(hours=8)
+
+                activation = expiration - pd.Timedelta(days=90)  # TODO: Improve accuracy
+
                 instrument = CryptoFuture(
                     instrument_id=instrument_id,
                     raw_symbol=raw_symbol,
                     underlying=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
-                    expiry_date=dt.strptime(symbol_info.symbol.partition("_")[2], "%y%m%d").date(),
+                    activation_ns=activation.value,
+                    expiration_ns=expiration.value,
                     price_precision=price_precision,
                     size_precision=size_precision,
                     price_increment=price_increment,

@@ -95,14 +95,14 @@ impl DataBackendSession {
     /// Query a file for its records. the caller must specify `T` to indicate
     /// the kind of data expected from this query.
     ///
-    /// table_name: Logical table_name assigned to this file. Queries to this file should address the
+    /// `table_name`: Logical `table_name` assigned to this file. Queries to this file should address the
     /// file by its table name.
-    /// file_path: Path to file
-    /// sql_query: A custom sql query to retrieve records from file. If no query is provided a default
-    /// query "SELECT * FROM <table_name>" is run.
+    /// `file_path`: Path to file
+    /// `sql_query`: A custom sql query to retrieve records from file. If no query is provided a default
+    /// query "SELECT * FROM <`table_name`>" is run.
     ///
     /// # Safety
-    /// The file data must be ordered by the ts_init in ascending order for this
+    /// The file data must be ordered by the `ts_init` in ascending order for this
     /// to work correctly.
     pub fn add_file<T>(
         &mut self,

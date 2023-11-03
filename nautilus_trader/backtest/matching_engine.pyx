@@ -125,6 +125,9 @@ cdef class OrderMatchingEngine:
         If stop orders are rejected if already in the market on submitting.
     support_gtd_orders : bool, default True
         If orders with GTD time in force will be supported by the venue.
+    support_contingent_orders : bool, default True
+        If contingent orders will be supported/respected by the venue.
+        If False then its expected the strategy will be managing any contingent orders.
     use_position_ids : bool, default True
         If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False
@@ -149,6 +152,7 @@ cdef class OrderMatchingEngine:
         bint bar_execution = True,
         bint reject_stop_orders = True,
         bint support_gtd_orders = True,
+        bint support_contingent_orders = True,
         bint use_position_ids = True,
         bint use_random_ids = False,
         bint use_reduce_only = True,
@@ -172,6 +176,7 @@ cdef class OrderMatchingEngine:
         self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
+        self._support_contingent_orders = support_contingent_orders
         self._use_position_ids = use_position_ids
         self._use_random_ids = use_random_ids
         self._use_reduce_only = use_reduce_only
@@ -638,7 +643,7 @@ cdef class OrderMatchingEngine:
         self._account_ids[order.trader_id] = account_id
 
         cdef Order parent
-        if order.parent_order_id is not None:
+        if self._support_contingent_orders and order.parent_order_id is not None:
             parent = self.cache.order(order.parent_order_id)
             assert parent is not None and parent.contingency_type == ContingencyType.OTO, "OTO parent not found"
             if parent.status_c() == OrderStatus.REJECTED and order.is_open_c():
@@ -1680,7 +1685,10 @@ cdef class OrderMatchingEngine:
             # Remove order from market
             self._core.delete_order(order)
 
-        # Check contingency orders
+        if not self._support_contingent_orders:
+            return
+
+        # Check contingent orders
         cdef ClientOrderId client_order_id
         cdef Order child_order
         if order.contingency_type == ContingencyType.OTO:
@@ -1824,7 +1832,7 @@ cdef class OrderMatchingEngine:
         self._core.add_order(order)
 
     cpdef void expire_order(self, Order order):
-        if order.contingency_type != ContingencyType.NO_CONTINGENCY:
+        if self._support_contingent_orders and order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self._cancel_contingent_orders(order)
 
         self._generate_order_expired(order)
@@ -1843,7 +1851,7 @@ cdef class OrderMatchingEngine:
 
         self._generate_order_canceled(order)
 
-        if order.contingency_type != ContingencyType.NO_CONTINGENCY and cancel_contingencies:
+        if self._support_contingent_orders and order.contingency_type != ContingencyType.NO_CONTINGENCY and cancel_contingencies:
             self._cancel_contingent_orders(order)
 
     cpdef void update_order(
@@ -1895,7 +1903,7 @@ cdef class OrderMatchingEngine:
             raise ValueError(
                 f"invalid `OrderType` was {order.order_type}")  # pragma: no cover (design-time error)
 
-        if order.contingency_type != ContingencyType.NO_CONTINGENCY and update_contingencies:
+        if self._support_contingent_orders and order.contingency_type != ContingencyType.NO_CONTINGENCY and update_contingencies:
             self._update_contingent_orders(order)
 
     cpdef void trigger_stop_order(self, Order order):
@@ -1959,7 +1967,7 @@ cdef class OrderMatchingEngine:
                 )
 
     cdef void _cancel_contingent_orders(self, Order order):
-        # Iterate all contingency orders and cancel if active
+        # Iterate all contingent orders and cancel if active
         cdef ClientOrderId client_order_id
         cdef Order contingent_order
         for client_order_id in order.linked_order_ids:

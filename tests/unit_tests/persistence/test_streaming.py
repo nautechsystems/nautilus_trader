@@ -16,7 +16,6 @@
 import copy
 import sys
 from collections import Counter
-from typing import Optional
 
 import msgspec.json
 import pytest
@@ -44,7 +43,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 @pytest.mark.skipif(sys.platform == "win32", reason="failing on Windows")
 class TestPersistenceStreaming:
     def setup(self) -> None:
-        self.catalog: Optional[ParquetDataCatalog] = None
+        self.catalog: ParquetDataCatalog | None = None
 
     def _run_default_backtest(self, betfair_catalog):
         self.catalog = betfair_catalog

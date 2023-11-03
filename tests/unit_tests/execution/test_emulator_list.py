@@ -29,6 +29,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.common import OrderEmulatorConfig
+from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -64,7 +65,7 @@ ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
 class TestOrderEmulatorWithOrderLists:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
@@ -150,6 +151,7 @@ class TestOrderEmulatorWithOrderLists:
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            support_contingent_orders=False,
         )
 
         self.exec_client = BacktestExecClient(
@@ -183,7 +185,7 @@ class TestOrderEmulatorWithOrderLists:
         self.emulator.start()
         self.strategy.start()
 
-    def test_submit_stop_order_bulk_then_emulates(self):
+    def test_submit_stop_order_bulk_then_emulates(self) -> None:
         # Arrange
         stop1 = self.strategy.order_factory.stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -226,7 +228,7 @@ class TestOrderEmulatorWithOrderLists:
         assert stop2 in self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
         assert stop3 in self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id).get_orders()
 
-    def test_submit_bracket_order_with_limit_entry_then_emulates_sl_tp(self):
+    def test_submit_bracket_order_with_limit_entry_then_emulates_sl_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -252,7 +254,7 @@ class TestOrderEmulatorWithOrderLists:
             bracket.first,
         ]
 
-    def test_submit_bracket_order_with_stop_limit_entry_then_emulates_sl_tp(self):
+    def test_submit_bracket_order_with_stop_limit_entry_then_emulates_sl_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -280,7 +282,9 @@ class TestOrderEmulatorWithOrderLists:
             bracket.first,
         ]
 
-    def test_submit_bracket_order_with_market_entry_immediately_submits_then_emulates_sl_tp(self):
+    def test_submit_bracket_order_with_market_entry_immediately_submits_then_emulates_sl_tp(
+        self,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -302,7 +306,7 @@ class TestOrderEmulatorWithOrderLists:
         assert self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id) is None
         assert self.exec_engine.command_count == 1
 
-    def test_submit_bracket_when_entry_filled_then_emulates_sl_and_tp(self):
+    def test_submit_bracket_when_entry_filled_then_emulates_sl_and_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -346,7 +350,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[2].position_id == position_id
         assert self.exec_engine.command_count == 1
 
-    def test_modify_emulated_sl_quantity_also_updates_tp(self):
+    def test_modify_emulated_sl_quantity_also_updates_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -397,7 +401,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[1].position_id == position_id
         assert bracket.orders[2].position_id == position_id
 
-    def test_modify_emulated_tp_price(self):
+    def test_modify_emulated_tp_price(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -447,7 +451,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[1].position_id == position_id
         assert bracket.orders[2].position_id == position_id
 
-    def test_submit_bracket_when_stop_limit_entry_filled_then_emulates_sl_and_tp(self):
+    def test_submit_bracket_when_stop_limit_entry_filled_then_emulates_sl_and_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -502,8 +506,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_rejected_oto_entry_cancels_contingencies(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -549,8 +553,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_cancel_bracket(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -594,8 +598,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_cancel_oto_entry_cancels_contingencies(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -639,8 +643,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_expired_oto_entry_then_cancels_contingencies(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -686,8 +690,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_update_oto_entry_updates_quantity_of_contingencies(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -733,8 +737,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_triggered_sl_submits_market_order(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -796,8 +800,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_triggered_stop_limit_tp_submits_limit_order(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -868,8 +872,8 @@ class TestOrderEmulatorWithOrderLists:
     )
     def test_triggered_then_filled_tp_cancels_sl(
         self,
-        contingency_type,
-    ):
+        contingency_type: ContingencyType,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -939,7 +943,7 @@ class TestOrderEmulatorWithOrderLists:
         assert not matching_core.order_exists(sl_order.client_order_id)
         assert not matching_core.order_exists(tp_order.client_order_id)
 
-    def test_triggered_then_partially_filled_oco_sl_cancels_tp(self):
+    def test_triggered_then_partially_filled_oco_sl_cancels_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1012,7 +1016,7 @@ class TestOrderEmulatorWithOrderLists:
         assert not matching_core.order_exists(sl_order.client_order_id)
         assert not matching_core.order_exists(tp_order.client_order_id)
 
-    def test_triggered_then_partially_filled_ouo_sl_updated_tp(self):
+    def test_triggered_then_partially_filled_ouo_sl_updated_tp(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1090,7 +1094,9 @@ class TestOrderEmulatorWithOrderLists:
         assert not matching_core.order_exists(sl_order.client_order_id)
         assert matching_core.order_exists(tp_order.client_order_id)
 
-    def test_released_order_with_quote_quantity_sets_contingent_orders_to_base_quantity(self):
+    def test_released_order_with_quote_quantity_sets_contingent_orders_to_base_quantity(
+        self,
+    ) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1138,7 +1144,7 @@ class TestOrderEmulatorWithOrderLists:
         assert sl_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
         assert tp_order.leaves_qty == ETHUSDT_PERP_BINANCE.make_qty(0.002)
 
-    def test_restart_emulator_with_emulated_parent(self):
+    def test_restart_emulator_with_emulated_parent(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1172,7 +1178,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[1].status == OrderStatus.INITIALIZED
         assert bracket.orders[2].status == OrderStatus.INITIALIZED
 
-    def test_restart_emulator_with_partially_filled_parent(self):
+    def test_restart_emulator_with_partially_filled_parent(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1213,7 +1219,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[1].status == OrderStatus.EMULATED
         assert bracket.orders[2].status == OrderStatus.EMULATED
 
-    def test_restart_emulator_then_cancel_bracket(self):
+    def test_restart_emulator_then_cancel_bracket(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1245,7 +1251,7 @@ class TestOrderEmulatorWithOrderLists:
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.CANCELED
 
-    def test_restart_emulator_with_closed_parent_position(self):
+    def test_restart_emulator_with_closed_parent_position(self) -> None:
         # Arrange
         bracket = self.strategy.order_factory.bracket(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -1296,3 +1302,242 @@ class TestOrderEmulatorWithOrderLists:
         assert closing_order.status == OrderStatus.FILLED
         assert bracket.orders[1].status == OrderStatus.CANCELED
         assert bracket.orders[2].status == OrderStatus.CANCELED
+
+    def test_managed_contingent_orders_with_canceled_bracket(self) -> None:
+        # Arrange
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_order_type=OrderType.LIMIT_IF_TOUCHED,
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5150.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            emulation_trigger=TriggerType.BID_ASK,
+            contingency_type=ContingencyType.OUO,
+        )
+
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        # Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5000.0,
+            ask_price=5000.0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
+        # Submit order
+        strategy.submit_order_list(
+            order_list=bracket,
+            position_id=PositionId("P-001"),
+        )
+        self.exchange.process(0)
+
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5100.0,
+            ask_price=5100.0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
+        # Act
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        strategy.cancel_order(tp_order)
+        self.exchange.process(0)
+
+        # Assert
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        entry_order = self.cache.order(bracket.orders[0].client_order_id)
+        sl_order = self.cache.order(bracket.orders[1].client_order_id)
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        assert self.exec_engine.command_count == 3
+        assert len(self.emulator.get_submit_order_commands()) == 1
+        assert self.cache.orders_emulated_count() == 0
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.CANCELED
+        assert tp_order.status == OrderStatus.CANCELED
+        assert sl_order.quantity == Quantity.from_int(10)
+        assert tp_order.quantity == Quantity.from_int(10)
+        assert not matching_core.order_exists(entry_order.client_order_id)
+        assert not matching_core.order_exists(sl_order.client_order_id)
+        assert not matching_core.order_exists(tp_order.client_order_id)
+
+    def test_managed_contingent_orders_with_modified_open_order(self) -> None:
+        # Arrange
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_order_type=OrderType.LIMIT_IF_TOUCHED,
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5150.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            emulation_trigger=TriggerType.BID_ASK,
+            contingency_type=ContingencyType.OUO,
+        )
+
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        # Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5000.0,
+            ask_price=5000.0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
+        # Submit order
+        strategy.submit_order_list(
+            order_list=bracket,
+            position_id=PositionId("P-001"),
+        )
+        self.exchange.process(0)
+
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5100.0,
+            ask_price=5100.0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
+        # Act
+        new_quantity = Quantity.from_int(5)
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        strategy.modify_order(tp_order, new_quantity)
+        self.exchange.process(0)
+
+        # Assert
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        entry_order = self.cache.order(bracket.orders[0].client_order_id)
+        sl_order = self.cache.order(bracket.orders[1].client_order_id)
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        assert self.exec_engine.command_count == 3
+        assert len(self.emulator.get_submit_order_commands()) == 2
+        assert self.cache.orders_emulated_count() == 1
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.EMULATED
+        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.quantity == new_quantity
+        assert tp_order.quantity == new_quantity
+        assert not matching_core.order_exists(entry_order.client_order_id)
+        assert matching_core.order_exists(sl_order.client_order_id)
+        assert not matching_core.order_exists(tp_order.client_order_id)
+
+    def test_managed_contingent_orders_with_modified_emulated_order(self) -> None:
+        # Arrange
+        bracket = self.strategy.order_factory.bracket(
+            instrument_id=ETHUSDT_PERP_BINANCE.id,
+            order_side=OrderSide.BUY,
+            quantity=ETHUSDT_PERP_BINANCE.make_qty(10),
+            sl_trigger_price=ETHUSDT_PERP_BINANCE.make_price(4900.0),
+            tp_order_type=OrderType.LIMIT_IF_TOUCHED,
+            tp_price=ETHUSDT_PERP_BINANCE.make_price(5150.0),
+            tp_trigger_price=ETHUSDT_PERP_BINANCE.make_price(5100.0),
+            emulation_trigger=TriggerType.BID_ASK,
+            contingency_type=ContingencyType.OUO,
+        )
+
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        # Prepare market
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5000.0,
+            ask_price=5000.0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
+        # Submit order
+        strategy.submit_order_list(
+            order_list=bracket,
+            position_id=PositionId("P-001"),
+        )
+        self.exchange.process(0)
+
+        tick = TestDataStubs.quote_tick(
+            instrument=ETHUSDT_PERP_BINANCE,
+            bid_price=5100.0,
+            ask_price=5100.0,
+        )
+
+        self.data_engine.process(tick)
+        self.exchange.process_quote_tick(tick)
+        self.exchange.process(0)
+
+        # Act
+        new_quantity = Quantity.from_int(5)
+        sl_order = self.cache.order(bracket.orders[1].client_order_id)
+        strategy.modify_order(sl_order, new_quantity)
+        self.exchange.process(0)
+
+        # Assert
+        matching_core = self.emulator.get_matching_core(ETHUSDT_PERP_BINANCE.id)
+        entry_order = self.cache.order(bracket.orders[0].client_order_id)
+        sl_order = self.cache.order(bracket.orders[1].client_order_id)
+        tp_order = self.cache.order(bracket.orders[2].client_order_id)
+        assert self.exec_engine.command_count == 3
+        assert len(self.emulator.get_submit_order_commands()) == 2
+        assert self.cache.orders_emulated_count() == 1
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.EMULATED
+        assert tp_order.status == OrderStatus.ACCEPTED
+        assert sl_order.quantity == new_quantity
+        assert tp_order.quantity == new_quantity
+        assert not matching_core.order_exists(entry_order.client_order_id)
+        assert matching_core.order_exists(sl_order.client_order_id)
+        assert not matching_core.order_exists(tp_order.client_order_id)

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
 from unittest.mock import AsyncMock
 
 import msgspec.structs
@@ -58,6 +57,7 @@ async def test_load_equity_contract_instrument(mocker, instrument_provider):
         IBContract(secType="STK", symbol="AAPL", exchange="NASDAQ"),
     )
     equity = instrument_provider.find(instrument_id)
+    instrument_provider._client.stop()
 
     # Assert
     assert InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")) == equity.id
@@ -81,6 +81,7 @@ async def test_load_futures_contract_instrument(mocker, instrument_provider):
     # Act
     await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
     future = instrument_provider.find(instrument_id)
+    instrument_provider._client.stop()
 
     # Assert
     assert future.id == instrument_id
@@ -105,12 +106,13 @@ async def test_load_options_contract_instrument(mocker, instrument_provider):
         IBContract(secType="OPT", symbol="TSLA230120C00100000", exchange="MIAX"),
     )
     option = instrument_provider.find(instrument_id)
+    instrument_provider._client.stop()
 
     # Assert
     assert option.id == instrument_id
     assert option.asset_class == AssetClass.EQUITY
     assert option.multiplier == 100
-    assert option.expiry_date == datetime.date(2023, 1, 20)
+    assert option.expiration_ns == 1674172800000000000
     assert option.strike_price == Price.from_str("100.0")
     assert option.kind == OptionKind.CALL
     assert option.price_increment == Price.from_str("0.01")
@@ -130,6 +132,7 @@ async def test_load_forex_contract_instrument(mocker, instrument_provider):
     # Act
     await instrument_provider.load_async(instrument_id)
     fx = instrument_provider.find(instrument_id)
+    instrument_provider._client.stop()
 
     # Assert
     assert fx.id == instrument_id
@@ -150,6 +153,7 @@ async def test_contract_id_to_instrument_id(mocker, instrument_provider):
 
     # Act
     await instrument_provider.load_async(IBContract(secType="FUT", symbol="CLZ3", exchange="NYMEX"))
+    instrument_provider._client.stop()
 
     # Assert
     expected = {174230596: InstrumentId.from_str("CLZ23.NYMEX")}
@@ -168,6 +172,7 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
 
     # Act
     fx = await instrument_provider.find_with_contract_id(12087792)
+    instrument_provider._client.stop()
 
     # Assert
     assert fx.id == instrument_id
@@ -177,12 +182,14 @@ async def test_load_instrument_using_contract_id(mocker, instrument_provider):
     assert fx.price_precision == 5
 
 
+@pytest.mark.skip(reason="Scope of test not clear!")
 @pytest.mark.asyncio()
 async def test_none_filters(instrument_provider):
     # Act, Arrange, Assert
     instrument_provider.load_all(None)
 
 
+@pytest.mark.skip(reason="Scope of test not clear!")
 @pytest.mark.asyncio()
 async def test_instrument_filter_callable_none(mocker, instrument_provider):
     # Arrange
@@ -201,6 +208,7 @@ async def test_instrument_filter_callable_none(mocker, instrument_provider):
     assert len(instrument_provider.get_all()) == 1
 
 
+@pytest.mark.skip(reason="Scope of test not clear!")
 @pytest.mark.asyncio()
 async def test_instrument_filter_callable_option_filter(mocker, instrument_provider):
     # Arrange

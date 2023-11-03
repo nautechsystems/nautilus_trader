@@ -20,36 +20,43 @@ use crate::datetime::{
     secs_to_millis, secs_to_nanos, unix_nanos_to_iso8601,
 };
 
+#[must_use]
 #[pyfunction(name = "secs_to_nanos")]
 pub fn py_secs_to_nanos(secs: f64) -> u64 {
     secs_to_nanos(secs)
 }
 
+#[must_use]
 #[pyfunction(name = "secs_to_millis")]
 pub fn py_secs_to_millis(secs: f64) -> u64 {
     secs_to_millis(secs)
 }
 
+#[must_use]
 #[pyfunction(name = "millis_to_nanos")]
 pub fn py_millis_to_nanos(millis: f64) -> u64 {
     millis_to_nanos(millis)
 }
 
+#[must_use]
 #[pyfunction(name = "micros_to_nanos")]
 pub fn py_micros_to_nanos(micros: f64) -> u64 {
     micros_to_nanos(micros)
 }
 
+#[must_use]
 #[pyfunction(name = "nanos_to_secs")]
 pub fn py_nanos_to_secs(nanos: u64) -> f64 {
     nanos_to_secs(nanos)
 }
 
+#[must_use]
 #[pyfunction(name = "nanos_to_millis")]
 pub fn py_nanos_to_millis(nanos: u64) -> u64 {
     nanos_to_millis(nanos)
 }
 
+#[must_use]
 #[pyfunction(name = "nanos_to_micros")]
 pub fn py_nanos_to_micros(nanos: u64) -> u64 {
     nanos_to_micros(nanos)

@@ -90,8 +90,8 @@ class TestBacktestAcceptanceTestsUSDJPY:
         wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv"),
-            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv"),
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
         )
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_data(ticks)
@@ -214,8 +214,8 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
         wrangler = QuoteTickDataWrangler(self.gbpusd)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
-            ask_data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+            bid_data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv"),
+            ask_data=provider.read_csv_bars("fxcm/gbpusd-m1-ask-2012.csv"),
         )
         self.engine.add_instrument(self.gbpusd)
         self.engine.add_data(ticks)
@@ -347,10 +347,10 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
 
         # Build externally aggregated bars
         bid_bars = bid_wrangler.process(
-            data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv"),
+            data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv"),
         )
         ask_bars = ask_wrangler.process(
-            data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv"),
+            data=provider.read_csv_bars("fxcm/gbpusd-m1-ask-2012.csv"),
         )
 
         self.engine.add_instrument(self.gbpusd)
@@ -421,7 +421,7 @@ class TestBacktestAcceptanceTestsBTCUSDTSpotNoCashPositions:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -487,7 +487,7 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Build externally aggregated bars
         bars = wrangler.process(
-            data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(bars)
@@ -526,8 +526,8 @@ class TestBacktestAcceptanceTestsBTCUSDTEmaCrossTWAP:
 
         # Build ticks from bar data
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
-            ask_data=provider.read_csv_bars("ftx-btc-perp-20211231-20220201_1m.csv")[:10_000],
+            bid_data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
+            ask_data=provider.read_csv_bars("btc-perp-20211231-20220201_1m.csv")[:10_000],
         )
 
         self.engine.add_data(ticks)
@@ -583,7 +583,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         # Setup data
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         wrangler = QuoteTickDataWrangler(self.audusd)
-        ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+        ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
         self.engine.add_instrument(self.audusd)
         self.engine.add_data(ticks)
 
@@ -663,7 +663,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         # Add data
         provider = TestDataProvider()
         wrangler = TradeTickDataWrangler(instrument=self.ethusdt)
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
         self.engine.add_data(ticks)
 
     def teardown(self):
@@ -727,7 +727,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
+                if isinstance(d, OrderBookDelta | OrderBookDeltas)
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)
@@ -785,7 +785,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             order_book_deltas = [
                 d
                 for d in data
-                if isinstance(d, (OrderBookDelta, OrderBookDeltas))
+                if isinstance(d, OrderBookDelta | OrderBookDeltas)
                 and d.instrument_id == instrument.id
             ]
             self.engine.add_instrument(instrument)

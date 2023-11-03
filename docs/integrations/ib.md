@@ -26,6 +26,11 @@ queries below for common use cases
 Example config: 
 
 ```python
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.config import TradingNodeConfig
+
 config_node = TradingNodeConfig(
     data_clients={
         "IB": InteractiveBrokersDataClientConfig(
@@ -56,6 +61,9 @@ configuration(s) and set the environment variables to your TWS (Traders Workstat
 
 ```python
 import os
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.config import TradingNodeConfig
+
 
 config = TradingNodeConfig(
     data_clients={
@@ -65,7 +73,7 @@ config = TradingNodeConfig(
             ...  # Omitted
     },
     exec_clients = {
-        "IB": InteractiveBrokersExecutionClientConfig(
+        "IB": InteractiveBrokersExecClientConfig(
             username=os.getenv("TWS_USERNAME"),
             password=os.getenv("TWS_PASSWORD"),
             ...  # Omitted
@@ -77,6 +85,9 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
+from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 

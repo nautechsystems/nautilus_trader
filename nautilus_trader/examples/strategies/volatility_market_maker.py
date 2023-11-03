@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional, Union
 
 import pandas as pd
 
@@ -107,11 +106,11 @@ class VolatilityMarketMaker(Strategy):
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
 
-        self.instrument: Optional[Instrument] = None  # Initialized in on_start
+        self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
-        self.buy_order: Union[LimitOrder, None] = None
-        self.sell_order: Union[LimitOrder, None] = None
+        self.buy_order: LimitOrder | None = None
+        self.sell_order: LimitOrder | None = None
 
     def on_start(self) -> None:
         """

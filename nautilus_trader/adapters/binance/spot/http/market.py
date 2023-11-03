@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -73,11 +72,11 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
 
         """
 
-        symbol: Optional[BinanceSymbol] = None
-        symbols: Optional[BinanceSymbols] = None
-        permissions: Optional[BinanceSpotPermissions] = None
+        symbol: BinanceSymbol | None = None
+        symbols: BinanceSymbols | None = None
+        permissions: BinanceSpotPermissions | None = None
 
-    async def get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotExchangeInfo:
+    async def get(self, parameters: GetParameters | None = None) -> BinanceSpotExchangeInfo:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -163,9 +162,9 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
 
     async def query_spot_exchange_info(
         self,
-        symbol: Optional[str] = None,
-        symbols: Optional[list[str]] = None,
-        permissions: Optional[BinanceSpotPermissions] = None,
+        symbol: str | None = None,
+        symbols: list[str] | None = None,
+        permissions: BinanceSpotPermissions | None = None,
     ) -> BinanceSpotExchangeInfo:
         """
         Check Binance Spot exchange information.

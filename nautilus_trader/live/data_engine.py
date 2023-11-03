@@ -13,10 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import asyncio
 from asyncio import Queue
+from typing import Final
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -57,7 +56,7 @@ class LiveDataEngine(DataEngine):
 
     """
 
-    _sentinel = None
+    _sentinel: Final[None] = None
 
     def __init__(
         self,
@@ -242,7 +241,7 @@ class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._cmd_queue.put_nowait(command)
+            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full at "
@@ -273,7 +272,7 @@ class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._req_queue.put_nowait(request)
+            self._loop.call_soon_threadsafe(self._req_queue.put_nowait, request)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_req_queue.put` as queue full at "
@@ -303,7 +302,7 @@ class LiveDataEngine(DataEngine):
         PyCondition.not_none(response, "response")
 
         try:
-            self._res_queue.put_nowait(response)
+            self._loop.call_soon_threadsafe(self._res_queue.put_nowait, response)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_res_queue.put` as queue full at "
@@ -334,7 +333,7 @@ class LiveDataEngine(DataEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._data_queue.put_nowait(data)
+            self._loop.call_soon_threadsafe(self._data_queue.put_nowait, data)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_data_queue.put` as queue full at "
@@ -346,10 +345,10 @@ class LiveDataEngine(DataEngine):
     # -- INTERNAL -------------------------------------------------------------------------------------
 
     def _enqueue_sentinels(self) -> None:
-        self._cmd_queue.put_nowait(self._sentinel)
-        self._req_queue.put_nowait(self._sentinel)
-        self._res_queue.put_nowait(self._sentinel)
-        self._data_queue.put_nowait(self._sentinel)
+        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._req_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._res_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._data_queue.put_nowait, self._sentinel)
         self._log.debug("Sentinel messages placed on queues.")
 
     def _on_start(self) -> None:
@@ -385,8 +384,8 @@ class LiveDataEngine(DataEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("DataCommand message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "DataCommand message queue stopped"
             if not self._cmd_queue.empty():
@@ -406,8 +405,8 @@ class LiveDataEngine(DataEngine):
                 self._handle_request(request)
         except asyncio.CancelledError:
             self._log.warning("DataRequest message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "DataRequest message queue stopped"
             if not self._req_queue.empty():
@@ -427,8 +426,8 @@ class LiveDataEngine(DataEngine):
                 self._handle_response(response)
         except asyncio.CancelledError:
             self._log.warning("DataResponse message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "DataResponse message queue stopped"
             if not self._res_queue.empty():
@@ -446,8 +445,8 @@ class LiveDataEngine(DataEngine):
                 self._handle_data(data)
         except asyncio.CancelledError:
             self._log.warning("Data message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "Data message queue stopped"
             if not self._data_queue.empty():

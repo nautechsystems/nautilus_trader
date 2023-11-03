@@ -55,6 +55,7 @@ pub enum MovingAverageType {
 pub struct MovingAverageFactory;
 
 impl MovingAverageFactory {
+    #[must_use]
     pub fn create(
         moving_average_type: MovingAverageType,
         period: usize,
@@ -79,3 +80,4 @@ pub mod ama;
 pub mod dema;
 pub mod ema;
 pub mod sma;
+pub mod wma;

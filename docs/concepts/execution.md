@@ -159,6 +159,8 @@ Received orders will arrive via the following `on_order(...)` method. These rece
 know as "primary" (original) orders when being handled by an execution algorithm.
 
 ```python
+from nautilus_trader.model.orders.base import Order
+
 def on_order(self, order: Order) -> None:  # noqa (too complex)
     """
     Actions to be performed when running and receives an order.
@@ -213,7 +215,7 @@ e.g. `O-20230404-001-000-E1` (for the first spawned order)
 
 ```{note}
 The "primary" and "secondary" / "spawn" terminology was specifically chosen to avoid conflict
-or confusion with the "parent" and "child" contingency orders terminology (an execution algorithm may also deal with contingent orders).
+or confusion with the "parent" and "child" contingent orders terminology (an execution algorithm may also deal with contingent orders).
 ```
 
 ### Managing execution algorithm orders

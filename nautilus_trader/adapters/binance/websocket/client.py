@@ -15,7 +15,8 @@
 
 import asyncio
 import json
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from nautilus_trader.adapters.binance.common.schemas.symbol import BinanceSymbol
 from nautilus_trader.common.clock import LiveClock
@@ -23,6 +24,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
 class BinanceWebSocketClient:
@@ -65,7 +67,7 @@ class BinanceWebSocketClient:
         self._loop = loop
 
         self._streams: list[str] = []
-        self._inner: Optional[WebSocketClient] = None
+        self._inner: WebSocketClient | None = None
         self._is_connecting = False
         self._msg_id: int = 0
 
@@ -119,10 +121,16 @@ class BinanceWebSocketClient:
 
         self._log.debug(f"Connecting to {ws_url}...")
         self._is_connecting = True
-        self._inner = await WebSocketClient.connect(
+
+        config = WebSocketConfig(
             url=ws_url,
             handler=self._handler,
             heartbeat=60,
+            headers=[],
+        )
+
+        self._inner = await WebSocketClient.connect(
+            config=config,
             post_reconnection=self.reconnect,
         )
         self._is_connecting = False
@@ -253,7 +261,7 @@ class BinanceWebSocketClient:
 
     async def subscribe_mini_ticker(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> None:
         """
         Subscribe to individual symbol or all symbols mini ticker stream.
@@ -273,7 +281,7 @@ class BinanceWebSocketClient:
 
     async def unsubscribe_mini_ticker(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> None:
         """
         Unsubscribe to individual symbol or all symbols mini ticker stream.
@@ -286,7 +294,7 @@ class BinanceWebSocketClient:
 
     async def subscribe_ticker(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> None:
         """
         Subscribe to individual symbol or all symbols ticker stream.
@@ -306,7 +314,7 @@ class BinanceWebSocketClient:
 
     async def unsubscribe_ticker(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> None:
         """
         Unsubscribe from individual symbol or all symbols ticker stream.
@@ -319,7 +327,7 @@ class BinanceWebSocketClient:
 
     async def subscribe_book_ticker(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> None:
         """
         Subscribe to individual symbol or all book tickers stream.
@@ -338,7 +346,7 @@ class BinanceWebSocketClient:
 
     async def unsubscribe_book_ticker(
         self,
-        symbol: Optional[str] = None,
+        symbol: str | None = None,
     ) -> None:
         """
         Unsubscribe from individual symbol or all book tickers.
@@ -407,8 +415,8 @@ class BinanceWebSocketClient:
 
     async def subscribe_mark_price(
         self,
-        symbol: Optional[str] = None,
-        speed: Optional[int] = None,
+        symbol: str | None = None,
+        speed: int | None = None,
     ) -> None:
         """
         Subscribe to aggregate mark price stream.
@@ -423,8 +431,8 @@ class BinanceWebSocketClient:
 
     async def unsubscribe_mark_price(
         self,
-        symbol: Optional[str] = None,
-        speed: Optional[int] = None,
+        symbol: str | None = None,
+        speed: int | None = None,
     ) -> None:
         """
         Unsubscribe from aggregate mark price stream.

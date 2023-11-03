@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from typing import Optional
 
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.data import BarType
@@ -43,7 +42,7 @@ class MockStrategy(Strategy):
         self.ema1 = ExponentialMovingAverage(10)
         self.ema2 = ExponentialMovingAverage(20)
 
-        self.position_id: Optional[PositionId] = None
+        self.position_id: PositionId | None = None
 
         self.calls: list[str] = []
 

@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -219,9 +217,8 @@ class PortfolioAnalyzer:
         if not self._realized_pnls:
             return None
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) > 1:
+                raise ValueError("`currency` was `None` for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
 
         return self._realized_pnls.get(currency)
@@ -259,14 +256,14 @@ class PortfolioAnalyzer:
         """
         if not self._account_balances:
             return 0.0
+
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) > 1:
+                raise ValueError("`currency` was `None` for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
-        assert (
-            unrealized_pnl is None or unrealized_pnl.currency == currency
-        ), f"unrealized PnL curreny is not {currency}"
+
+        if unrealized_pnl is not None and unrealized_pnl.currency != currency:
+            raise ValueError(f"unrealized PnL currency is not {currency}")
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -310,14 +307,14 @@ class PortfolioAnalyzer:
         """
         if not self._account_balances:
             return 0.0
+
         if currency is None:
-            assert (
-                len(self._account_balances) == 1
-            ), "currency was None for multi-currency portfolio"
+            if len(self._account_balances) != 1:
+                raise ValueError("currency was None for multi-currency portfolio")
             currency = next(iter(self._account_balances.keys()))
-        assert (
-            unrealized_pnl is None or unrealized_pnl.currency == currency
-        ), f"unrealized PnL curreny is not {currency}"
+
+        if unrealized_pnl is not None and unrealized_pnl.currency != currency:
+            raise ValueError(f"unrealized PnL currency is not {currency}")
 
         account_balance = self._account_balances.get(currency)
         account_balance_starting = self._account_balances_starting.get(currency, Money(0, currency))
@@ -372,7 +369,7 @@ class PortfolioAnalyzer:
             value = stat.calculate_from_realized_pnls(realized_pnls)
             if value is None:
                 continue  # Not implemented
-            if not isinstance(value, (int, float, str, bool)):
+            if not isinstance(value, int | float | str | bool):
                 value = str(value)
             output[name] = value
 
@@ -392,7 +389,7 @@ class PortfolioAnalyzer:
             value = stat.calculate_from_returns(self._returns)
             if value is None:
                 continue  # Not implemented
-            if not isinstance(value, (int, float, str, bool)):
+            if not isinstance(value, int | float | str | bool):
                 value = str(value)
             output[name] = value
 
@@ -413,7 +410,7 @@ class PortfolioAnalyzer:
             value = stat.calculate_from_positions(self._positions)
             if value is None:
                 continue  # Not implemented
-            if not isinstance(value, (int, float, str, bool)):
+            if not isinstance(value, int | float | str | bool):
                 value = str(value)
             output[name] = value
 
@@ -486,7 +483,7 @@ class PortfolioAnalyzer:
         output = []
         for k, v in stats.items():
             padding = max_length - len(k) + 1
-            v_formatted = f"{v:_}" if isinstance(v, (int, float, Decimal)) else str(v)
+            v_formatted = f"{v:_}" if isinstance(v, int | float | Decimal) else str(v)
             output.append(f"{k}: {' ' * padding}{v_formatted}")
 
         return output

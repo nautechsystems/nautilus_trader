@@ -32,6 +32,7 @@ from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -39,6 +40,7 @@ from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
@@ -74,7 +76,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestStrategy:
-    def setup(self):
+    def setup(self) -> None:
         # Fixture Setup
         self.clock = TestClock()
         self.logger = Logger(
@@ -138,6 +140,8 @@ class TestStrategy:
             clock=self.clock,
             logger=self.logger,
             latency_model=LatencyModel(0),
+            support_contingent_orders=False,
+            use_reduce_only=False,
         )
 
         self.data_client = BacktestMarketDataClient(
@@ -182,7 +186,7 @@ class TestStrategy:
         self.data_engine.start()
         self.exec_engine.start()
 
-    def test_strategy_to_importable_config_with_no_specific_config(self):
+    def test_strategy_to_importable_config_with_no_specific_config(self) -> None:
         # Arrange
         config = StrategyConfig()
 
@@ -200,15 +204,17 @@ class TestStrategy:
             "order_id_tag": None,
             "strategy_id": None,
             "external_order_claims": None,
+            "manage_contingent_orders": False,
             "manage_gtd_expiry": False,
         }
 
-    def test_strategy_to_importable_config(self):
+    def test_strategy_to_importable_config(self) -> None:
         # Arrange
         config = StrategyConfig(
             order_id_tag="001",
             strategy_id="ALPHA-01",
             external_order_claims=["ETHUSDT-PERP.DYDX"],
+            manage_contingent_orders=True,
             manage_gtd_expiry=True,
         )
 
@@ -226,10 +232,11 @@ class TestStrategy:
             "order_id_tag": "001",
             "strategy_id": "ALPHA-01",
             "external_order_claims": ["ETHUSDT-PERP.DYDX"],
+            "manage_contingent_orders": True,
             "manage_gtd_expiry": True,
         }
 
-    def test_strategy_equality(self):
+    def test_strategy_equality(self) -> None:
         # Arrange
         strategy1 = Strategy(config=StrategyConfig(order_id_tag="AUD/USD-001"))
         strategy2 = Strategy(config=StrategyConfig(order_id_tag="AUD/USD-001"))
@@ -240,7 +247,7 @@ class TestStrategy:
         assert strategy1 == strategy2
         assert strategy2 != strategy3
 
-    def test_str_and_repr(self):
+    def test_str_and_repr(self) -> None:
         # Arrange
         strategy = Strategy(config=StrategyConfig(order_id_tag="GBP/USD-MM"))
 
@@ -248,14 +255,14 @@ class TestStrategy:
         assert str(strategy) == "Strategy-GBP/USD-MM"
         assert repr(strategy) == "Strategy(Strategy-GBP/USD-MM)"
 
-    def test_id(self):
+    def test_id(self) -> None:
         # Arrange
         strategy = Strategy()
 
         # Act, Assert
         assert strategy.id == StrategyId("Strategy-None")
 
-    def test_initialization(self):
+    def test_initialization(self) -> None:
         # Arrange
         strategy = Strategy(config=StrategyConfig(order_id_tag="001"))
         strategy.register(
@@ -271,7 +278,7 @@ class TestStrategy:
         assert strategy.state == ComponentState.READY
         assert not strategy.indicators_initialized()
 
-    def test_on_save_when_not_overridden_does_nothing(self):
+    def test_on_save_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -289,7 +296,7 @@ class TestStrategy:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_load_when_not_overridden_does_nothing(self):
+    def test_on_load_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -307,7 +314,7 @@ class TestStrategy:
         # Assert
         assert True  # Exception not raised
 
-    def test_save_when_not_registered_logs_error(self):
+    def test_save_when_not_registered_logs_error(self) -> None:
         # Arrange
         config = StrategyConfig()
 
@@ -325,7 +332,7 @@ class TestStrategy:
         # Assert
         assert True  # Exception not raised
 
-    def test_save_when_user_code_raises_error_logs_and_reraises(self):
+    def test_save_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         strategy = KaboomStrategy()
         strategy.register(
@@ -341,7 +348,7 @@ class TestStrategy:
         with pytest.raises(RuntimeError):
             strategy.save()
 
-    def test_load_when_user_code_raises_error_logs_and_reraises(self):
+    def test_load_when_user_code_raises_error_logs_and_reraises(self) -> None:
         # Arrange
         strategy = KaboomStrategy()
         strategy.register(
@@ -357,7 +364,7 @@ class TestStrategy:
         with pytest.raises(RuntimeError):
             strategy.load({"something": b"123456"})
 
-    def test_load(self):
+    def test_load(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -369,7 +376,7 @@ class TestStrategy:
             logger=self.logger,
         )
 
-        state = {}
+        state: dict[str, bytes] = {}
 
         # Act
         strategy.load(state)
@@ -378,7 +385,7 @@ class TestStrategy:
         # TODO: Write a users custom save method
         assert True
 
-    def test_reset(self):
+    def test_reset(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
@@ -413,7 +420,7 @@ class TestStrategy:
         assert strategy.ema1.count == 0
         assert strategy.ema2.count == 0
 
-    def test_dispose(self):
+    def test_dispose(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
@@ -435,7 +442,7 @@ class TestStrategy:
         assert "on_dispose" in strategy.calls
         assert strategy.is_disposed
 
-    def test_save_load(self):
+    def test_save_load(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
@@ -457,7 +464,7 @@ class TestStrategy:
         assert "on_save" in strategy.calls
         assert strategy.is_initialized
 
-    def test_register_indicator_for_quote_ticks_when_already_registered(self):
+    def test_register_indicator_for_quote_ticks_when_already_registered(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -481,7 +488,7 @@ class TestStrategy:
         assert ema1 in strategy.registered_indicators
         assert ema2 in strategy.registered_indicators
 
-    def test_register_indicator_for_trade_ticks_when_already_registered(self):
+    def test_register_indicator_for_trade_ticks_when_already_registered(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -505,7 +512,7 @@ class TestStrategy:
         assert ema1 in strategy.registered_indicators
         assert ema2 in strategy.registered_indicators
 
-    def test_register_indicator_for_bars_when_already_registered(self):
+    def test_register_indicator_for_bars_when_already_registered(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -530,7 +537,7 @@ class TestStrategy:
         assert ema1 in strategy.registered_indicators
         assert ema2 in strategy.registered_indicators
 
-    def test_register_indicator_for_multiple_data_sources(self):
+    def test_register_indicator_for_multiple_data_sources(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -554,7 +561,7 @@ class TestStrategy:
         assert len(strategy.registered_indicators) == 1
         assert ema in strategy.registered_indicators
 
-    def test_handle_quote_tick_updates_indicator_registered_for_quote_ticks(self):
+    def test_handle_quote_tick_updates_indicator_registered_for_quote_ticks(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -578,7 +585,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 2
 
-    def test_handle_quote_ticks_with_no_ticks_logs_and_continues(self):
+    def test_handle_quote_ticks_with_no_ticks_logs_and_continues(self) -> None:
         # Arrange
         strategy = KaboomStrategy()
         strategy.register(
@@ -599,7 +606,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 0
 
-    def test_handle_quote_ticks_updates_indicator_registered_for_quote_ticks(self):
+    def test_handle_quote_ticks_updates_indicator_registered_for_quote_ticks(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -622,7 +629,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 1
 
-    def test_handle_trade_tick_updates_indicator_registered_for_trade_ticks(self):
+    def test_handle_trade_tick_updates_indicator_registered_for_trade_ticks(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -646,7 +653,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 2
 
-    def test_handle_trade_ticks_updates_indicator_registered_for_trade_ticks(self):
+    def test_handle_trade_ticks_updates_indicator_registered_for_trade_ticks(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -669,7 +676,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 1
 
-    def test_handle_trade_ticks_with_no_ticks_logs_and_continues(self):
+    def test_handle_trade_ticks_with_no_ticks_logs_and_continues(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -690,7 +697,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 0
 
-    def test_handle_bar_updates_indicator_registered_for_bars(self):
+    def test_handle_bar_updates_indicator_registered_for_bars(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = Strategy()
@@ -714,7 +721,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 2
 
-    def test_handle_bars_updates_indicator_registered_for_bars(self):
+    def test_handle_bars_updates_indicator_registered_for_bars(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = Strategy()
@@ -737,7 +744,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 1
 
-    def test_handle_bars_with_no_bars_logs_and_continues(self):
+    def test_handle_bars_with_no_bars_logs_and_continues(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_gbpusd_1sec_mid()
         strategy = Strategy()
@@ -759,7 +766,7 @@ class TestStrategy:
         # Assert
         assert ema.count == 0
 
-    def test_stop_cancels_a_running_time_alert(self):
+    def test_stop_cancels_a_running_time_alert(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
@@ -782,7 +789,7 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 0
 
-    def test_stop_cancels_a_running_timer(self):
+    def test_stop_cancels_a_running_timer(self) -> None:
         # Arrange
         bar_type = TestDataStubs.bartype_audusd_1min_bid()
         strategy = MockStrategy(bar_type)
@@ -810,7 +817,7 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 0
 
-    def test_start_when_manage_gtd_reactivates_timers(self):
+    def test_start_when_manage_gtd_reactivates_timers(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
         strategy = Strategy(config)
@@ -855,7 +862,42 @@ class TestStrategy:
             "GTD-EXPIRY:O-19700101-0000-000-None-2",
         ]
 
-    def test_submit_order_when_duplicate_id_then_denies(self):
+    def test_start_when_manage_gtd_and_order_past_expiration_then_cancels(self) -> None:
+        # Arrange
+        config = StrategyConfig(manage_gtd_expiry=True)
+        strategy = Strategy(config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.limit(
+            USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("100.00"),
+            time_in_force=TimeInForce.GTD,
+            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+        )
+
+        strategy.submit_order(order1)
+        self.exchange.process(0)
+
+        strategy.clock.cancel_timers()  # <-- Simulate restart
+        self.clock.set_time(dt_to_unix_nanos(order1.expire_time + pd.Timedelta(minutes=1)))
+
+        # Act
+        strategy.start()
+
+        # Assert
+        assert strategy.clock.timer_count == 0
+        assert order1.is_pending_cancel
+
+    def test_submit_order_when_duplicate_id_then_denies(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -892,7 +934,7 @@ class TestStrategy:
         # Assert
         assert order2.status == OrderStatus.DENIED
 
-    def test_submit_order_with_valid_order_successfully_submits(self):
+    def test_submit_order_with_valid_order_successfully_submits(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -921,7 +963,7 @@ class TestStrategy:
         assert not strategy.cache.is_order_open(order.client_order_id)
         assert strategy.cache.is_order_closed(order.client_order_id)
 
-    def test_submit_order_with_managed_gtd_starts_timer(self):
+    def test_submit_order_with_managed_gtd_starts_timer(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
         strategy = Strategy(config)
@@ -950,7 +992,7 @@ class TestStrategy:
         assert strategy.clock.timer_count == 1
         assert strategy.clock.timer_names == ["GTD-EXPIRY:O-19700101-0000-000-None-1"]
 
-    def test_submit_order_with_managed_gtd_when_immediately_filled_cancels_timer(self):
+    def test_submit_order_with_managed_gtd_when_immediately_filled_cancels_timer(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
         strategy = Strategy(config)
@@ -980,7 +1022,7 @@ class TestStrategy:
         assert strategy.clock.timer_count == 0
         assert order.status == OrderStatus.FILLED
 
-    def test_submit_order_list_with_duplicate_order_list_id_then_denies(self):
+    def test_submit_order_list_with_duplicate_order_list_id_then_denies(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1044,7 +1086,7 @@ class TestStrategy:
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
 
-    def test_submit_order_list_with_duplicate_order_id_then_denies(self):
+    def test_submit_order_list_with_duplicate_order_id_then_denies(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1101,7 +1143,7 @@ class TestStrategy:
         assert stop_loss.status == OrderStatus.DENIED
         assert take_profit.status == OrderStatus.DENIED
 
-    def test_submit_order_list_with_valid_order_successfully_submits(self):
+    def test_submit_order_list_with_valid_order_successfully_submits(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1135,7 +1177,7 @@ class TestStrategy:
         assert entry.status == OrderStatus.ACCEPTED
         assert entry in strategy.cache.orders_open()
 
-    def test_submit_order_list_with_managed_gtd_starts_timer(self):
+    def test_submit_order_list_with_managed_gtd_starts_timer(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
         strategy = Strategy(config)
@@ -1168,7 +1210,7 @@ class TestStrategy:
         assert strategy.clock.timer_count == 1
         assert strategy.clock.timer_names == ["GTD-EXPIRY:O-19700101-0000-000-None-1"]
 
-    def test_submit_order_list_with_managed_gtd_when_immediately_filled_cancels_timer(self):
+    def test_submit_order_list_with_managed_gtd_when_immediately_filled_cancels_timer(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
         strategy = Strategy(config)
@@ -1203,7 +1245,7 @@ class TestStrategy:
         assert bracket.orders[1].status == OrderStatus.ACCEPTED
         assert bracket.orders[2].status == OrderStatus.ACCEPTED
 
-    def test_cancel_gtd_expiry(self):
+    def test_cancel_gtd_expiry(self) -> None:
         # Arrange
         config = StrategyConfig(manage_gtd_expiry=True)
         strategy = Strategy(config)
@@ -1233,7 +1275,7 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 0
 
-    def test_cancel_order(self):
+    def test_cancel_order(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1268,7 +1310,7 @@ class TestStrategy:
         assert not strategy.cache.is_order_open(order.client_order_id)
         assert strategy.cache.is_order_closed(order.client_order_id)
 
-    def test_cancel_order_when_pending_cancel_does_not_submit_command(self):
+    def test_cancel_order_when_pending_cancel_does_not_submit_command(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1302,7 +1344,7 @@ class TestStrategy:
         assert strategy.cache.is_order_open(order.client_order_id)
         assert not strategy.cache.is_order_closed(order.client_order_id)
 
-    def test_cancel_order_when_closed_does_not_submit_command(self):
+    def test_cancel_order_when_closed_does_not_submit_command(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1336,7 +1378,7 @@ class TestStrategy:
         assert not strategy.cache.is_order_open(order.client_order_id)
         assert strategy.cache.is_order_closed(order.client_order_id)
 
-    def test_modify_order_when_pending_cancel_does_not_submit_command(self):
+    def test_modify_order_when_pending_cancel_does_not_submit_command(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1370,7 +1412,7 @@ class TestStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_modify_order_when_closed_does_not_submit_command(self):
+    def test_modify_order_when_closed_does_not_submit_command(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1404,7 +1446,7 @@ class TestStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_modify_order_when_no_changes_does_not_submit_command(self):
+    def test_modify_order_when_no_changes_does_not_submit_command(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1435,7 +1477,7 @@ class TestStrategy:
         # Assert
         assert self.exec_engine.command_count == 1
 
-    def test_modify_order(self):
+    def test_modify_order(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1475,7 +1517,7 @@ class TestStrategy:
         assert not strategy.cache.is_order_closed(order.client_order_id)
         assert strategy.portfolio.is_flat(order.instrument_id)
 
-    def test_cancel_orders(self):
+    def test_cancel_orders(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1513,7 +1555,7 @@ class TestStrategy:
         # Assert
         # TODO: WIP!
 
-    def test_cancel_all_orders(self):
+    def test_cancel_all_orders(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1556,7 +1598,7 @@ class TestStrategy:
         assert order1 in self.cache.orders_closed()
         assert order2 in strategy.cache.orders_closed()
 
-    def test_close_position_when_position_already_closed_does_nothing(self):
+    def test_close_position_when_position_already_closed_does_nothing(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1596,7 +1638,7 @@ class TestStrategy:
         # Assert
         assert strategy.portfolio.is_completely_flat()
 
-    def test_close_position(self):
+    def test_close_position(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1631,7 +1673,7 @@ class TestStrategy:
             if order.side == OrderSide.SELL:
                 assert order.tags == "EXIT"
 
-    def test_close_all_positions(self):
+    def test_close_all_positions(self) -> None:
         # Arrange
         strategy = Strategy()
         strategy.register(
@@ -1642,8 +1684,6 @@ class TestStrategy:
             clock=self.clock,
             logger=self.logger,
         )
-
-        # Start strategy and submit orders to open positions
         strategy.start()
 
         order1 = strategy.order_factory.market(
@@ -1675,3 +1715,145 @@ class TestStrategy:
         for order in orders:
             if order.side == OrderSide.SELL:
                 assert order.tags == "EXIT"
+
+    @pytest.mark.parametrize(
+        ("contingency_type"),
+        [
+            ContingencyType.OCO,
+            ContingencyType.OUO,
+        ],
+    )
+    def test_managed_contingenies_when_canceled_entry_then_cancels_oto_orders(
+        self,
+        contingency_type: ContingencyType,
+    ) -> None:
+        # Arrange
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        bracket = strategy.order_factory.bracket(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_price=Price.from_str("80.000"),
+            sl_trigger_price=Price.from_str("90.000"),
+            tp_price=Price.from_str("90.500"),
+            entry_order_type=OrderType.LIMIT,
+            contingency_type=contingency_type,
+        )
+
+        strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act
+        strategy.cancel_order(bracket.first)
+        self.exchange.process(0)
+
+        # Assert
+        assert bracket.orders[0].status == OrderStatus.CANCELED
+        assert bracket.orders[1].status == OrderStatus.PENDING_CANCEL
+        assert bracket.orders[2].status == OrderStatus.PENDING_CANCEL
+
+    @pytest.mark.parametrize(
+        ("contingency_type"),
+        [
+            ContingencyType.OCO,
+            ContingencyType.OUO,
+        ],
+    )
+    def test_managed_contingenies_when_canceled_bracket_then_cancels_contingent_order(
+        self,
+        contingency_type: ContingencyType,
+    ) -> None:
+        # Arrange
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        bracket = strategy.order_factory.bracket(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("90.000"),
+            tp_price=Price.from_str("90.500"),
+            entry_order_type=OrderType.MARKET,
+            contingency_type=contingency_type,
+        )
+
+        strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act
+        strategy.cancel_order(bracket.orders[1])
+        self.exchange.process(0)
+
+        # Assert
+        assert bracket.orders[0].status == OrderStatus.FILLED
+        assert bracket.orders[1].status == OrderStatus.CANCELED
+        assert bracket.orders[2].status == OrderStatus.PENDING_CANCEL
+
+    def test_managed_contingenies_when_modify_bracket_then_modifies_ouo_order(
+        self,
+    ) -> None:
+        # Arrange
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        bracket = strategy.order_factory.bracket(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            sl_trigger_price=Price.from_str("90.000"),
+            tp_price=Price.from_str("90.500"),
+            entry_order_type=OrderType.MARKET,
+            contingency_type=ContingencyType.OUO,
+        )
+
+        strategy.submit_order_list(bracket)
+        self.exchange.process(0)
+
+        # Act
+        new_quantity = Quantity.from_int(50_000)
+        strategy.modify_order(bracket.orders[1], new_quantity)
+        self.exchange.process(0)
+
+        # Assert
+        assert bracket.orders[0].status == OrderStatus.FILLED
+        assert bracket.orders[1].status == OrderStatus.ACCEPTED
+        assert bracket.orders[2].status == OrderStatus.PENDING_UPDATE
+        assert bracket.orders[1].quantity == new_quantity

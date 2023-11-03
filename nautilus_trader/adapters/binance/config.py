@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.config import LiveDataClientConfig
@@ -52,11 +51,11 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
 
     """
 
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
+    api_key: str | None = None
+    api_secret: str | None = None
     account_type: BinanceAccountType = BinanceAccountType.SPOT
-    base_url_http: Optional[str] = None
-    base_url_ws: Optional[str] = None
+    base_url_http: str | None = None
+    base_url_ws: str | None = None
     us: bool = False
     testnet: bool = False
     use_agg_trade_ticks: bool = False
@@ -108,11 +107,11 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
 
     """
 
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
+    api_key: str | None = None
+    api_secret: str | None = None
     account_type: BinanceAccountType = BinanceAccountType.SPOT
-    base_url_http: Optional[str] = None
-    base_url_ws: Optional[str] = None
+    base_url_http: str | None = None
+    base_url_ws: str | None = None
     us: bool = False
     testnet: bool = False
     clock_sync_interval_secs: int = 0
@@ -120,5 +119,5 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     use_reduce_only: bool = True
     use_position_ids: bool = True
     treat_expired_as_canceled: bool = False
-    max_retries: Optional[PositiveInt] = None
-    retry_delay: Optional[PositiveFloat] = None
+    max_retries: PositiveInt | None = None
+    retry_delay: PositiveFloat | None = None

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 from pytest_mock import MockerFixture
@@ -224,7 +224,7 @@ def components(data_engine, exec_engine, risk_engine, strategy):
     return
 
 
-def _collect_events(msgbus, filter_types: Optional[tuple[type, ...]] = None):
+def _collect_events(msgbus, filter_types: tuple[type, ...] | None = None):
     events = []
 
     def handler(event: Event) -> None:

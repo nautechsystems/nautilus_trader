@@ -79,7 +79,7 @@ if __name__ == "__main__":
 
     # Add data
     wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
-    ticks = wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
+    ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
     engine.add_data(ticks)
 
     # Configure your strategy

@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import inspect
-from typing import Any, Optional
+from typing import Any
 
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import ActorConfig
@@ -40,7 +40,7 @@ class MockActor(Actor):
     Provides a mock actor for testing.
     """
 
-    def __init__(self, config: Optional[ActorConfig] = None):
+    def __init__(self, config: ActorConfig | None = None):
         super().__init__(config)
 
         self.store: list[object] = []

@@ -17,15 +17,14 @@ The `LiveExecutionClient` class is responsible for interfacing with a particular
 which may be presented directly by an exchange, or broker intermediary.
 """
 
-from __future__ import annotations
-
 import asyncio
 import functools
 import traceback
 from asyncio import Task
+from collections.abc import Callable
 from collections.abc import Coroutine
 from datetime import timedelta
-from typing import Any, Callable
+from typing import Any
 
 import pandas as pd
 

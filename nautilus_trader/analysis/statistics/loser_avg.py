@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -25,7 +25,7 @@ class AvgLoser(PortfolioStatistic):
     Calculates the average loser from a series of PnLs.
     """
 
-    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Optional[Any]:
+    def calculate_from_realized_pnls(self, realized_pnls: pd.Series) -> Any | None:
         # Preconditions
         if realized_pnls is None or realized_pnls.empty:
             return 0.0

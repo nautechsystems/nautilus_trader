@@ -15,7 +15,6 @@
 
 import datetime
 from decimal import Decimal
-from typing import Union
 
 import pytest
 
@@ -43,8 +42,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 # fmt: on
-
-pytestmark = pytest.mark.skip(reason="Skip due currently flaky mocks")
 
 
 @pytest.mark.parametrize(
@@ -316,7 +313,7 @@ def test_timedelta_to_duration_str(timedelta, expected):
         (Decimal("1E-8"), 8),
     ],
 )
-def test_tick_size_to_precision(tick_size: Union[float, Decimal], expected: int):
+def test_tick_size_to_precision(tick_size: float | Decimal, expected: int):
     # Arrange, Act
     result = _tick_size_to_precision(tick_size)
 
