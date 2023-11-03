@@ -19,9 +19,9 @@ Released on 3rd November 2023 (UTC).
 - Renamed `FuturesContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Renamed `OptionsContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Renamed `CryptoFuture.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
-- Changed `FuturesContract` arrow schema
-- Changed `OptionsContract` arrow schema
-- Changed `CryptoFuture` arrow schema
+- Changed `FuturesContract` Arrow schema
+- Changed `OptionsContract` Arrow schema
+- Changed `CryptoFuture` Arrow schema
 - Transformed orders will now retain the original `ts_init` timestamp
 - Removed unimplemented `batch_more` option for `Strategy.modify_order`
 - Removed `InstrumentProvider.venue` property (redundant as a provider may have many venues)
@@ -275,7 +275,7 @@ Released on 19th May 2023 (UTC).
 - Fixed `MatchingEngine` processing of reduce only for child contingent orders
 - Fixed `MatchingEngine` position ID assignment for child contingent orders
 - Fixed `Actor` handling of historical data from requests (will now call `on_historical_data` regardless of state), thanks for reporting @miller-moore
-- Fixed pyarrow schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
+- Fixed `pyarrow` schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
 
 ---
 

@@ -70,7 +70,7 @@ The NautilusTrader platform defines a range of built-in data types crafted speci
 a trading domain
 
 ## [Adapters](adapters.md)
-The NautilusTrader design allows for integrating data publishers and/or trading venues
+The NautilusTrader design allows for integrating data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage. 
 
 ## [Logging](logging.md)

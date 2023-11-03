@@ -174,7 +174,7 @@ typedef enum BookAction {
  */
 typedef enum BookType {
     /**
-     * Top-of-book best bid/offer, one level per side.
+     * Top-of-book best bid/ask, one level per side.
      */
     L1_MBP = 1,
     /**

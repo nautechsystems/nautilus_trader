@@ -16,7 +16,7 @@
 The `LiveDataClient` class is responsible for interfacing with a particular API which
 may be presented directly by an exchange, or broker intermediary.
 
-It could also be possible to write clients for specialized data publishers.
+It could also be possible to write clients for specialized data providers.
 
 """
 
