@@ -390,7 +390,7 @@ impl FromU8 for BookAction {
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum BookType {
-    /// Top-of-book best bid/offer, one level per side.
+    /// Top-of-book best bid/ask, one level per side.
     L1_MBP = 1,
     /// Market by price, one order per level (aggregated).
     L2_MBP = 2,

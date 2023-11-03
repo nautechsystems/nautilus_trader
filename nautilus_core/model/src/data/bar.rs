@@ -240,7 +240,7 @@ impl Bar {
         metadata
     }
 
-    /// Returns the field map for the type, for use with arrow schemas.
+    /// Returns the field map for the type, for use with Arrow schemas.
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("open".to_string(), "Int64".to_string());
