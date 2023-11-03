@@ -14,7 +14,7 @@
 ```
 
 NautilusTrader is designed in a modular way to work with 'adapters' which provide
-connectivity to data publishers and/or trading venues - converting their raw API
+connectivity to data providers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
 ```{warning}

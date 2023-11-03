@@ -467,7 +467,7 @@ cdef class BarType:
         The bar type aggregation source. If ``INTERNAL`` the `DataEngine`
         will subscribe to the necessary ticks and aggregate bars accordingly.
         Else if ``EXTERNAL`` then bars will be subscribed to directly from
-        the data publisher.
+        the venue / data provider.
 
     Notes
     -----
