@@ -29,6 +29,10 @@ typedef struct CVec {
     uintptr_t cap;
 } CVec;
 
+/**
+ * Represents a pseudo-random UUID (universally unique identifier)
+ * version 4 based on a 128-bit label as specified in RFC 4122.
+ */
 typedef struct UUID4_t {
     uint8_t value[37];
 } UUID4_t;

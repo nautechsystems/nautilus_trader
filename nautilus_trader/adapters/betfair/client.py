@@ -34,9 +34,6 @@ from betfair_parser.spec.betting.orders import ListClearedOrders
 from betfair_parser.spec.betting.orders import ListCurrentOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
-from betfair_parser.spec.betting.orders import _CancelOrdersParams
-from betfair_parser.spec.betting.orders import _PlaceOrdersParams
-from betfair_parser.spec.betting.orders import _ReplaceOrdersParams
 from betfair_parser.spec.betting.type_definitions import CancelExecutionReport
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummary
 from betfair_parser.spec.betting.type_definitions import ClearedOrderSummaryReport
@@ -149,7 +146,7 @@ class BetfairHttpClient:
     async def disconnect(self):
         self._log.info("Disconnecting..")
         self.reset_headers()
-        self._log.info("Disconnected.")
+        self._log.info("Disconnected.", color=LogColor.GREEN)
 
     async def keep_alive(self):
         """
@@ -195,14 +192,14 @@ class BetfairHttpClient:
     async def get_account_funds(self, wallet: Optional[str] = None) -> AccountFundsResponse:
         return await self._post(request=GetAccountFunds.with_params(wallet=wallet))
 
-    async def place_orders(self, params: _PlaceOrdersParams) -> PlaceExecutionReport:
-        return await self._post(PlaceOrders(params=params))
+    async def place_orders(self, request: PlaceOrders) -> PlaceExecutionReport:
+        return await self._post(request)
 
-    async def replace_orders(self, params: _ReplaceOrdersParams) -> ReplaceExecutionReport:
-        return await self._post(ReplaceOrders(params=params))
+    async def replace_orders(self, request: ReplaceOrders) -> ReplaceExecutionReport:
+        return await self._post(request)
 
-    async def cancel_orders(self, params: _CancelOrdersParams) -> CancelExecutionReport:
-        return await self._post(CancelOrders(params=params))
+    async def cancel_orders(self, request: CancelOrders) -> CancelExecutionReport:
+        return await self._post(request)
 
     async def list_current_orders(
         self,

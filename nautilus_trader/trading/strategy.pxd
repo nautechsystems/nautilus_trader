@@ -19,6 +19,8 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.execution.messages cimport CancelOrder
+from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.indicators.base.indicator cimport Indicator
 from nautilus_trader.model.data.bar cimport Bar
@@ -105,14 +107,24 @@ cdef class Strategy(Actor):
         Price price=*,
         Price trigger_price=*,
         ClientId client_id=*,
+        bint batch_more=*,
     )
     cpdef void cancel_order(self, Order order, ClientId client_id=*)
     cpdef void cancel_all_orders(self, InstrumentId instrument_id, OrderSide order_side=*, ClientId client_id=*)
     cpdef void close_position(self, Position position, ClientId client_id=*, str tags=*)
     cpdef void close_all_positions(self, InstrumentId instrument_id, PositionSide position_side=*, ClientId client_id=*, str tags=*)
     cpdef void query_order(self, Order order, ClientId client_id=*)
-    cpdef void cancel_gtd_expiry(self, Order order)
+    cdef ModifyOrder _create_modify_order(
+        self,
+        Order order,
+        Quantity quantity=*,
+        Price price=*,
+        Price trigger_price=*,
+        ClientId client_id=*,
+    )
+    cdef CancelOrder _create_cancel_order(self, Order order, ClientId client_id=*)
 
+    cpdef void cancel_gtd_expiry(self, Order order)
     cdef bint _has_gtd_expiry_timer(self, ClientOrderId client_order_id)
     cdef str _get_gtd_expiry_timer_name(self, ClientOrderId client_order_id)
     cdef void _set_gtd_expiry(self, Order order)

@@ -38,15 +38,12 @@ from nautilus_trader.live.node import TradingNode
 
 async def main(market_id: str):
     # Connect to Betfair client early to load instruments and account currency
-    loop = asyncio.get_event_loop()
     logger = Logger(clock=LiveClock())
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
         app_key=None,  # Pass here or will source from the `BETFAIR_APP_KEY` env var
-        cert_dir=None,  # Pass here or will source from the `BETFAIR_CERT_DIR` env var
         logger=logger,
-        loop=loop,
     )
     await client.connect()
 

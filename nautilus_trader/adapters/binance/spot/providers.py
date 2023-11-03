@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Optional
 
 import msgspec
 
@@ -75,10 +74,9 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         is_testnet: bool = False,
-        config: Optional[InstrumentProviderConfig] = None,
+        config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
-            venue=BINANCE_VENUE,
             logger=logger,
             config=config,
         )
@@ -100,7 +98,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         self._decoder = msgspec.json.Decoder()
         self._encoder = msgspec.json.Encoder()
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
@@ -134,7 +132,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
@@ -142,7 +140,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+            PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
@@ -176,15 +174,19 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         }
 
         for symbol in symbols:
+            if self._is_testnet:
+                fee = BinanceSpotTradeFee(symbol, "0.0", "0.0")
+            else:
+                fee = fees_dict[symbol]
             self._parse_instrument(
                 symbol_info=symbol_info_dict[symbol],
-                fee=fees_dict[symbol],
+                fee=fee,
                 ts_event=millis_to_nanos(exchange_info.serverTime),
             )
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+        PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
@@ -224,7 +226,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
     def _parse_instrument(
         self,
         symbol_info: BinanceSpotSymbolInfo,
-        fee: Optional[BinanceSpotTradeFee],
+        fee: BinanceSpotTradeFee | None,
         ts_event: int,
     ) -> None:
         ts_init = self._clock.timestamp_ns()

@@ -22,6 +22,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport LiquiditySide
+from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport liquidity_side_to_str
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -658,3 +659,24 @@ cdef class MarginAccount(Account):
             pnls[pnl.currency] = pnl
 
         return list(pnls.values())
+
+    cpdef Money balance_impact(
+        self,
+        Instrument instrument,
+        Quantity quantity,
+        Price price,
+        OrderSide order_side,
+    ):
+        cdef:
+            object leverage = self.leverage(instrument.id)
+            double margin_impact = 1.0 / leverage
+            Money raw_money
+        if order_side == OrderSide.BUY:
+            raw_money = -instrument.notional_value(quantity, price)
+            return Money(raw_money * margin_impact, raw_money.currency)
+        elif order_side == OrderSide.SELL:
+            raw_money = instrument.notional_value(quantity, price)
+            return Money(raw_money * margin_impact, raw_money.currency)
+
+        else:
+            raise RuntimeError(f"invalid `OrderSide`, was {order_side}")  # pragma: no cover (design-time error)

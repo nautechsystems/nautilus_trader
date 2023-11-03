@@ -30,6 +30,8 @@ use crate::{
     types::{price::Price, quantity::Quantity},
 };
 
+pub type OrderId = u64;
+
 pub const NULL_ORDER: BookOrder = BookOrder {
     side: OrderSide::NoOrderSide,
     price: Price {
@@ -55,7 +57,7 @@ pub struct BookOrder {
     /// The order size.
     pub size: Quantity,
     /// The order ID.
-    pub order_id: u64,
+    pub order_id: OrderId,
 }
 
 impl BookOrder {
@@ -152,7 +154,7 @@ impl Display for BookOrder {
 #[pymethods]
 impl BookOrder {
     #[new]
-    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: u64) -> Self {
+    fn py_new(side: OrderSide, price: Price, size: Quantity, order_id: OrderId) -> Self {
         Self::new(side, price, size, order_id)
     }
 
@@ -258,7 +260,6 @@ impl BookOrder {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -285,7 +286,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
 
         assert_eq!(order.price, price);
         assert_eq!(order.size, size);
@@ -300,7 +301,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
         let book_price = order.to_book_price();
 
         assert_eq!(book_price.value, price);
@@ -314,7 +315,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
         let exposure = order.exposure();
 
         assert_eq!(exposure, price.as_f64() * size.as_f64());
@@ -326,11 +327,11 @@ mod tests {
         let size = Quantity::from("10");
         let order_id = 123456;
 
-        let order_buy = BookOrder::new(OrderSide::Buy, price.clone(), size.clone(), order_id);
+        let order_buy = BookOrder::new(OrderSide::Buy, price, size, order_id);
         let signed_size_buy = order_buy.signed_size();
         assert_eq!(signed_size_buy, size.as_f64());
 
-        let order_sell = BookOrder::new(OrderSide::Sell, price.clone(), size.clone(), order_id);
+        let order_sell = BookOrder::new(OrderSide::Sell, price, size, order_id);
         let signed_size_sell = order_sell.signed_size();
         assert_eq!(signed_size_sell, -(size.as_f64()));
     }
@@ -342,7 +343,7 @@ mod tests {
         let side = OrderSide::Buy;
         let order_id = 123456;
 
-        let order = BookOrder::new(side, price.clone(), size.clone(), order_id);
+        let order = BookOrder::new(side, price, size, order_id);
         let display = format!("{}", order);
 
         let expected = format!("{},{},{},{}", price, size, side, order_id);
@@ -364,7 +365,7 @@ mod tests {
         )
         .unwrap();
 
-        let book_order = BookOrder::from_quote_tick(&tick, side.clone());
+        let book_order = BookOrder::from_quote_tick(&tick, side);
 
         assert_eq!(book_order.side, side);
         assert_eq!(

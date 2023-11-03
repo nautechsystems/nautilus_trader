@@ -21,6 +21,7 @@ from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.common import MAX_BET_PRICE
 from nautilus_trader.adapters.betfair.common import MIN_BET_PRICE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
+from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
@@ -50,7 +51,7 @@ class TestBettingInstrument:
             use_quote_for_inverse=False,
         ).as_decimal()
         # We are long 100 at 0.5 probability, aka 2.0 in odds terms
-        assert notional == Decimal("200.0")
+        assert notional == Decimal("100.0")
 
     @pytest.mark.parametrize(
         ("value", "n", "expected"),
@@ -82,3 +83,19 @@ class TestBettingInstrument:
         instrument = betting_instrument()
         data = instrument.to_dict(instrument)
         assert data["venue_name"] == "BETFAIR"
+
+    @pytest.mark.parametrize(
+        "price, quantity, expected",
+        [
+            (5.0, 100.0, 100),
+            (1.50, 100.0, 100),
+            (5.0, 100.0, 100),
+            (5.0, 300.0, 300),
+        ],
+    )
+    def test_betting_instrument_notional_value(self, price, quantity, expected):
+        notional = self.instrument.notional_value(
+            price=betfair_float_to_price(price),
+            quantity=betfair_float_to_quantity(quantity),
+        ).as_double()
+        assert notional == expected

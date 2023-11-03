@@ -199,8 +199,7 @@ cdef class BettingInstrument(Instrument):
 
     cpdef Money notional_value(self, Quantity quantity, Price price, bint use_quote_for_inverse=False):
         Condition.not_none(quantity, "quantity")
-        cdef double bet_price = 1.0 / price.as_f64_c()
-        return Money(quantity.as_f64_c() * float(self.multiplier) * bet_price, self.quote_currency)
+        return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
 
 
 def make_symbol(
@@ -212,14 +211,14 @@ def make_symbol(
     Make symbol.
 
     >>> make_symbol(market_id="1.201070830", selection_id="123456", selection_handicap=None)
-    Symbol('1.201070830|123456|None')
+    Symbol('1.201070830-123456-None')
 
     """
 
     def _clean(s):
         return str(s).replace(" ", "").replace(":", "")
 
-    value: str = "|".join(
+    value: str = "-".join(
         [_clean(k) for k in (market_id, selection_id, selection_handicap)],
     )
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"

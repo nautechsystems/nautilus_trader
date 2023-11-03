@@ -111,7 +111,6 @@ cdef class OrderManager:
         self._cancel_order_handler: Callable[[Order], None] = cancel_order_handler
 
         self._submit_order_commands: dict[ClientOrderId, SubmitOrder] = {}
-        self._pending_cancels = set()
 
     cpdef dict get_submit_order_commands(self):
         """
@@ -162,7 +161,6 @@ cdef class OrderManager:
         Reset the manager, clearing all stateful values.
         """
         self._submit_order_commands.clear()
-        self._pending_cancels.clear()
 
     cpdef void cancel_order(self, Order order):
         """
@@ -176,12 +174,14 @@ cdef class OrderManager:
         """
         Condition.not_none(order, "order")
 
-        if order.client_order_id in self._pending_cancels:
-            return  # Already local pending cancel
+        if self._cache.is_order_pending_cancel_local(order.client_order_id):
+            return  # Already pending cancel locally
 
         if order.is_closed_c():
-            self._log.error("Cannot cancel order: already closed.")
+            self._log.warning("Cannot cancel order: already closed.")
             return
+
+        self._cache.update_order_pending_cancel_local(order)
 
         if self.debug:
             self._log.info(f"Cancelling order {order}.", LogColor.MAGENTA)
@@ -190,8 +190,6 @@ cdef class OrderManager:
 
         if self._cancel_order_handler is not None:
             self._cancel_order_handler(order)
-
-        self._pending_cancels.add(order.client_order_id)
 
         # Generate event
         cdef uint64_t ts_now = self._clock.timestamp_ns()
@@ -286,8 +284,6 @@ cdef class OrderManager:
                 f"order for {repr(canceled.client_order_id)} not found. {canceled}.",
                 )
             return
-
-        self._pending_cancels.discard(order.client_order_id)
 
         if order.contingency_type != ContingencyType.NO_CONTINGENCY:
             self.handle_contingencies(order)

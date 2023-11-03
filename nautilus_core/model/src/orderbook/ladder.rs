@@ -21,7 +21,7 @@ use std::{
 
 use super::book::BookIntegrityError;
 use crate::{
-    data::order::BookOrder,
+    data::order::{BookOrder, OrderId},
     enums::OrderSide,
     orderbook::level::Level,
     types::{price::Price, quantity::Quantity},
@@ -122,30 +122,29 @@ impl Ladder {
 
     pub fn update(&mut self, order: BookOrder) {
         if let Some(price) = self.cache.get(&order.order_id) {
-            let level = self.levels.get_mut(price).unwrap();
-            if order.price == level.price.value {
-                // Size update for this level
-                level.update(order);
-            } else {
-                // Price update, delete and insert at new level
+            if let Some(level) = self.levels.get_mut(price) {
+                if order.price == level.price.value {
+                    // Update at current price level
+                    level.update(order);
+                    return;
+                }
+
+                // Price update: delete and insert at new level
                 level.delete(&order);
                 if level.is_empty() {
                     self.levels.remove(price);
                 }
-                self.add(order);
             }
-        } else {
-            // TODO(cs): Reinstate this with strict mode
-            // None => panic!("No order with ID {}", &order.order_id),
-            self.add(order);
         }
+
+        self.add(order);
     }
 
     pub fn delete(&mut self, order: BookOrder) {
         self.remove(order.order_id);
     }
 
-    pub fn remove(&mut self, order_id: u64) {
+    pub fn remove(&mut self, order_id: OrderId) {
         if let Some(price) = self.cache.remove(&order_id) {
             let level = self.levels.get_mut(&price).unwrap();
             level.remove(order_id);
@@ -219,15 +218,12 @@ mod tests {
         data::order::BookOrder,
         enums::OrderSide,
         orderbook::ladder::{BookPrice, Ladder},
-        types::{
-            price::{Price, PRICE_MAX, PRICE_MIN},
-            quantity::Quantity,
-        },
+        types::{price::Price, quantity::Quantity},
     };
 
     #[rstest]
     fn test_book_price_bid_sorting() {
-        let mut bid_prices = vec![
+        let mut bid_prices = [
             BookPrice::new(Price::from("2.0"), OrderSide::Buy),
             BookPrice::new(Price::from("4.0"), OrderSide::Buy),
             BookPrice::new(Price::from("1.0"), OrderSide::Buy),
@@ -239,7 +235,7 @@ mod tests {
 
     #[rstest]
     fn test_book_price_ask_sorting() {
-        let mut ask_prices = vec![
+        let mut ask_prices = [
             BookPrice::new(Price::from("2.0"), OrderSide::Sell),
             BookPrice::new(Price::from("4.0"), OrderSide::Sell),
             BookPrice::new(Price::from("1.0"), OrderSide::Sell),
@@ -498,7 +494,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MAX, 2).unwrap(), // <-- Simulate a MARKET order
+            price: Price::max(2), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Buy,
             order_id: 4,
@@ -508,17 +504,17 @@ mod tests {
 
         assert_eq!(fills.len(), 3);
 
-        let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::from("100.00"));
-        assert_eq!(size1, &Quantity::from(100));
+        let (price1, size1) = fills[0];
+        assert_eq!(price1, Price::from("100.00"));
+        assert_eq!(size1, Quantity::from(100));
 
-        let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::from("101.00"));
-        assert_eq!(size2, &Quantity::from(200));
+        let (price2, size2) = fills[1];
+        assert_eq!(price2, Price::from("101.00"));
+        assert_eq!(size2, Quantity::from(200));
 
-        let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::from("102.00"));
-        assert_eq!(size3, &Quantity::from(200));
+        let (price3, size3) = fills[2];
+        assert_eq!(price3, Price::from("102.00"));
+        assert_eq!(size3, Quantity::from(200));
     }
 
     #[rstest]
@@ -547,7 +543,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MIN, 2).unwrap(), // <-- Simulate a MARKET order
+            price: Price::min(2), // <-- Simulate a MARKET order
             size: Quantity::from(500),
             side: OrderSide::Sell,
             order_id: 4,
@@ -557,17 +553,17 @@ mod tests {
 
         assert_eq!(fills.len(), 3);
 
-        let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::from("102.00"));
-        assert_eq!(size1, &Quantity::from(100));
+        let (price1, size1) = fills[0];
+        assert_eq!(price1, Price::from("102.00"));
+        assert_eq!(size1, Quantity::from(100));
 
-        let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::from("101.00"));
-        assert_eq!(size2, &Quantity::from(200));
+        let (price2, size2) = fills[1];
+        assert_eq!(price2, Price::from("101.00"));
+        assert_eq!(size2, Quantity::from(200));
 
-        let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::from("100.00"));
-        assert_eq!(size3, &Quantity::from(200));
+        let (price3, size3) = fills[2];
+        assert_eq!(price3, Price::from("100.00"));
+        assert_eq!(size3, Quantity::from(200));
     }
 
     #[rstest]
@@ -596,7 +592,7 @@ mod tests {
         ]);
 
         let order = BookOrder {
-            price: Price::new(PRICE_MIN, 2).unwrap(), // <-- Simulate a MARKET order
+            price: Price::min(2),                  // <-- Simulate a MARKET order
             size: Quantity::from("699.999999999"), // <-- Size slightly less than total size in ladder
             side: OrderSide::Sell,
             order_id: 4,
@@ -606,16 +602,16 @@ mod tests {
 
         assert_eq!(fills.len(), 3);
 
-        let (price1, size1) = &fills[0];
-        assert_eq!(price1, &Price::from("102.00"));
-        assert_eq!(size1, &Quantity::from("100.000000000"));
+        let (price1, size1) = fills[0];
+        assert_eq!(price1, Price::from("102.00"));
+        assert_eq!(size1, Quantity::from("100.000000000"));
 
-        let (price2, size2) = &fills[1];
-        assert_eq!(price2, &Price::from("101.00"));
-        assert_eq!(size2, &Quantity::from("200.000000000"));
+        let (price2, size2) = fills[1];
+        assert_eq!(price2, Price::from("101.00"));
+        assert_eq!(size2, Quantity::from("200.000000000"));
 
-        let (price3, size3) = &fills[2];
-        assert_eq!(price3, &Price::from("100.00"));
-        assert_eq!(size3, &Quantity::from("399.999999999"));
+        let (price3, size3) = fills[2];
+        assert_eq!(price3, Price::from("100.00"));
+        assert_eq!(size3, Quantity::from("399.999999999"));
     }
 }

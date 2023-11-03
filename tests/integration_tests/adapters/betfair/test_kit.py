@@ -39,10 +39,10 @@ from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.data import BetfairParser
-from nautilus_trader.adapters.betfair.historic import make_betfair_reader
+from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
+from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import market_definition_to_instruments
-from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -55,7 +55,7 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.persistence.external.readers import LinePreprocessor
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
 
@@ -177,9 +177,9 @@ class BetfairTestStubs:
         yield from parser.parse(stream_decode(line))
 
     @staticmethod
-    def betfair_venue_config() -> BacktestVenueConfig:
+    def betfair_venue_config(name="BETFAIR") -> BacktestVenueConfig:
         return BacktestVenueConfig(  # typing: ignore
-            name="BETFAIR",
+            name=name,
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",
@@ -208,11 +208,18 @@ class BetfairTestStubs:
         add_strategy=True,
         bypass_risk=False,
         flush_interval_ms: Optional[int] = None,
+        bypass_logging: bool = True,
+        log_level: str = "WARNING",
+        venue_name: str = "BETFAIR",
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
-            logging=LoggingConfig(bypass_logging=True),
+            logging=LoggingConfig(
+                log_level=log_level,
+                bypass_logging=bypass_logging,
+            ),
             risk_engine=RiskEngineConfig(bypass=bypass_risk),
             streaming=BetfairTestStubs.streaming_config(
+                catalog_fs_protocol=catalog_fs_protocol,
                 catalog_path=catalog_path,
                 flush_interval_ms=flush_interval_ms,
             )
@@ -233,7 +240,7 @@ class BetfairTestStubs:
         )
         run_config = BacktestRunConfig(  # typing: ignore
             engine=engine_config,
-            venues=[BetfairTestStubs.betfair_venue_config()],
+            venues=[BetfairTestStubs.betfair_venue_config(name=venue_name)],
             data=[
                 BacktestDataConfig(  # typing: ignore
                     data_cls=TradeTick.fully_qualified_name(),
@@ -250,13 +257,6 @@ class BetfairTestStubs:
             ],
         )
         return run_config
-
-    @staticmethod
-    def betfair_reader(
-        instrument_provider: Optional[InstrumentProvider] = None,
-        line_preprocessor: Optional[LinePreprocessor] = None,
-    ):
-        return make_betfair_reader(instrument_provider, line_preprocessor)
 
 
 class BetfairRequests:
@@ -826,3 +826,17 @@ def betting_instrument_handicap() -> BettingInstrument:
             "ts_init": 0,
         },
     )
+
+
+def load_betfair_data(catalog: ParquetDataCatalog):
+    fn = TEST_DATA_DIR + "/betfair/1.166564490.bz2"
+
+    # Write betting instruments
+    instruments = betting_instruments_from_file(fn)
+    catalog.write_data(instruments)
+
+    # Write data
+    data = list(parse_betfair_file(fn))
+    catalog.write_data(data)
+
+    return catalog

@@ -34,7 +34,7 @@ impl Nanos {
 impl From<Duration> for Nanos {
     fn from(d: Duration) -> Self {
         // This will panic:
-        Nanos(
+        Self(
             d.as_nanos()
                 .try_into()
                 .expect("Duration is longer than 584 years"),
@@ -45,37 +45,37 @@ impl From<Duration> for Nanos {
 impl fmt::Debug for Nanos {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         let d = Duration::from_nanos(self.0);
-        write!(f, "Nanos({:?})", d)
+        write!(f, "Nanos({d:?})")
     }
 }
 
-impl Add<Nanos> for Nanos {
-    type Output = Nanos;
+impl Add<Self> for Nanos {
+    type Output = Self;
 
-    fn add(self, rhs: Nanos) -> Self::Output {
-        Nanos(self.0 + rhs.0)
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0)
     }
 }
 
 impl Mul<u64> for Nanos {
-    type Output = Nanos;
+    type Output = Self;
 
     fn mul(self, rhs: u64) -> Self::Output {
-        Nanos(self.0 * rhs)
+        Self(self.0 * rhs)
     }
 }
 
-impl Div<Nanos> for Nanos {
+impl Div<Self> for Nanos {
     type Output = u64;
 
-    fn div(self, rhs: Nanos) -> Self::Output {
+    fn div(self, rhs: Self) -> Self::Output {
         self.0 / rhs.0
     }
 }
 
 impl From<u64> for Nanos {
     fn from(u: u64) -> Self {
-        Nanos(u)
+        Self(u)
     }
 }
 
@@ -87,26 +87,26 @@ impl From<Nanos> for u64 {
 
 impl From<Nanos> for Duration {
     fn from(n: Nanos) -> Self {
-        Duration::from_nanos(n.0)
+        Self::from_nanos(n.0)
     }
 }
 
 impl Nanos {
     #[inline]
-    pub fn saturating_sub(self, rhs: Nanos) -> Nanos {
-        Nanos(self.0.saturating_sub(rhs.0))
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        Self(self.0.saturating_sub(rhs.0))
     }
 }
 
 impl clock::Reference for Nanos {
     #[inline]
     fn duration_since(&self, earlier: Self) -> Nanos {
-        (*self as Nanos).saturating_sub(earlier)
+        (*self as Self).saturating_sub(earlier)
     }
 
     #[inline]
     fn saturating_sub(&self, duration: Nanos) -> Self {
-        (*self as Nanos).saturating_sub(duration)
+        (*self as Self).saturating_sub(duration)
     }
 }
 
@@ -114,7 +114,7 @@ impl Add<Duration> for Nanos {
     type Output = Self;
 
     fn add(self, other: Duration) -> Self {
-        let other: Nanos = other.into();
+        let other: Self = other.into();
         self + other
     }
 }

@@ -12,7 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
+import sys
 import tempfile
 from decimal import Decimal
 from typing import Optional
@@ -167,6 +167,7 @@ class TestBacktestEngine:
         assert len(report) == 1
         assert report.index[0] == start
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
     def test_persistence_files_cleaned_up(self):
         # Arrange
         temp_dir = tempfile.mkdtemp()

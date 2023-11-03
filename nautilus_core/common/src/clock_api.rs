@@ -68,7 +68,7 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
 }
 
 /// # Safety
-/// - Assumes `callback_ptr` is a valid PyCallable pointer.
+/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_register_default_handler(
     clock: &mut TestClock_API,
@@ -127,7 +127,7 @@ pub extern "C" fn test_clock_timer_count(clock: &mut TestClock_API) -> usize {
 /// # Safety
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid PyCallable pointer.
+/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_time_alert_ns(
     clock: &mut TestClock_API,
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
 /// # Safety
 ///
 /// - Assumes `name_ptr` is a valid C string pointer.
-/// - Assumes `callback_ptr` is a valid PyCallable pointer.
+/// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_set_timer_ns(
     clock: &mut TestClock_API,
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
     let data: Vec<TimeEventHandler> =
-        unsafe { Vec::from_raw_parts(ptr as *mut TimeEventHandler, len, cap) };
+        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler>(), len, cap) };
     drop(data); // Memory freed here
 }
 

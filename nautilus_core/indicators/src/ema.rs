@@ -48,15 +48,15 @@ impl Indicator for ExponentialMovingAverage {
     }
 
     fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.py_update_raw(tick.extract_price(self.price_type).into())
+        self.py_update_raw(tick.extract_price(self.price_type).into());
     }
 
     fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.py_update_raw((&tick.price).into())
+        self.py_update_raw((&tick.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.py_update_raw((&bar.close).into())
+        self.py_update_raw((&bar.close).into());
     }
 
     fn reset(&mut self) {
@@ -118,27 +118,27 @@ impl ExponentialMovingAverage {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.py_update_raw(tick.extract_price(self.price_type).into())
+        self.py_update_raw(tick.extract_price(self.price_type).into());
     }
 
     #[pyo3(name = "handle_trade_tick")]
     fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into())
+        self.update_raw((&tick.price).into());
     }
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into())
+        self.update_raw((&bar.close).into());
     }
 
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
-        self.reset()
+        self.reset();
     }
 
     #[pyo3(name = "update_raw")]
     fn py_update_raw(&mut self, value: f64) {
-        self.update_raw(value)
+        self.update_raw(value);
     }
 }
 

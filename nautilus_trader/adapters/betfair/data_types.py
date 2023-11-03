@@ -12,11 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-import copy
 from enum import Enum
 from typing import Optional
 
+import msgspec
 import pyarrow as pa
 
 # fmt: off
@@ -29,10 +28,9 @@ from nautilus_trader.model.data.ticker import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import book_action_from_str
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.serialization.arrow.implementations.order_book import deserialize as deserialize_orderbook
-from nautilus_trader.serialization.arrow.implementations.order_book import serialize as serialize_orderbook
-from nautilus_trader.serialization.arrow.schema import NAUTILUS_PARQUET_SCHEMA
-from nautilus_trader.serialization.arrow.serializer import register_parquet
+from nautilus_trader.serialization.arrow.serializer import make_dict_deserializer
+from nautilus_trader.serialization.arrow.serializer import make_dict_serializer
+from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_object
 
 
@@ -49,33 +47,25 @@ class SubscriptionStatus(Enum):
     RUNNING = 2
 
 
-class BSPOrderBookDeltas(OrderBookDeltas):
-    """
-    Represents a batch of Betfair BSP order book delta.
-    """
-
-
 class BSPOrderBookDelta(OrderBookDelta):
-    """
-    Represents a `Betfair` BSP order book delta.
-    """
-
     @staticmethod
-    def from_dict(values) -> "BSPOrderBookDelta":
+    def from_dict(values) -> "BSPOrderBookDeltas":
         PyCondition.not_none(values, "values")
+        instrument_id = InstrumentId.from_str(values["instrument_id"])
         action: BookAction = book_action_from_str(values["action"])
         if action != BookAction.CLEAR:
             book_dict = {
-                "price": str(values["price"]),
-                "size": str(values["size"]),
-                "side": values["side"],
-                "order_id": values["order_id"],
+                "price": str(values["order"]["price"]),
+                "size": str(values["order"]["size"]),
+                "side": values["order"]["side"],
+                "order_id": values["order"]["order_id"],
             }
             book_order = BookOrder.from_dict(book_dict)
         else:
             book_order = None
+
         return BSPOrderBookDelta(
-            instrument_id=InstrumentId.from_str(values["instrument_id"]),
+            instrument_id=instrument_id,
             action=action,
             order=book_order,
             ts_event=values["ts_event"],
@@ -87,6 +77,42 @@ class BSPOrderBookDelta(OrderBookDelta):
         values = OrderBookDelta.to_dict(obj)
         values["type"] = obj.__class__.__name__
         return values
+
+    @classmethod
+    def schema(cls) -> pa.Schema:
+        return pa.schema(
+            {
+                "action": pa.uint8(),
+                "side": pa.uint8(),
+                "price": pa.int64(),
+                "size": pa.uint64(),
+                "order_id": pa.uint64(),
+                "flags": pa.uint8(),
+                "ts_event": pa.uint64(),
+                "ts_init": pa.uint64(),
+            },
+            metadata={"type": "BSPOrderBookDelta"},
+        )
+
+
+class BSPOrderBookDeltas(OrderBookDeltas):
+    """
+    Represents a `Betfair` BSP order book delta.
+    """
+
+    @staticmethod
+    def to_dict(obj) -> dict:
+        values = super().to_dict(obj)
+        values["type"] = obj.__class__.__name__
+        return values
+
+    def from_dict(self, data: dict):
+        return BSPOrderBookDeltas(
+            instrument_id=InstrumentId.from_str(data["instrument_id"]),
+            deltas=[
+                BSPOrderBookDelta.from_dict(delta) for delta in msgspec.json.decode(data["deltas"])
+            ],
+        )
 
 
 class BetfairTicker(Ticker):
@@ -141,7 +167,8 @@ class BetfairTicker(Ticker):
             else None,
         )
 
-    def to_dict(self):
+    @staticmethod
+    def to_dict(self: "BetfairTicker"):
         return {
             "type": type(self).__name__,
             "instrument_id": self.instrument_id.value,
@@ -201,6 +228,7 @@ class BetfairStartingPrice(Data):
             bsp=values["bsp"] if values["bsp"] else None,
         )
 
+    @staticmethod
     def to_dict(self):
         return {
             "type": type(self).__name__,
@@ -212,30 +240,31 @@ class BetfairStartingPrice(Data):
 
 
 # Register serialization/parquet BetfairTicker
-register_serializable_object(BetfairTicker, BetfairTicker.to_dict, BetfairTicker.from_dict)
-register_parquet(cls=BetfairTicker, schema=BetfairTicker.schema())
+register_arrow(
+    cls=BetfairTicker,
+    schema=BetfairTicker.schema(),
+    serializer=make_dict_serializer(schema=BetfairTicker.schema()),
+    deserializer=make_dict_deserializer(BetfairTicker),
+)
 
 # Register serialization/parquet BetfairStartingPrice
-register_serializable_object(
-    BetfairStartingPrice,
-    BetfairStartingPrice.to_dict,
-    BetfairStartingPrice.from_dict,
+register_arrow(
+    cls=BetfairStartingPrice,
+    schema=BetfairStartingPrice.schema(),
+    serializer=make_dict_serializer(schema=BetfairStartingPrice.schema()),
+    deserializer=make_dict_deserializer(BetfairStartingPrice),
 )
-register_parquet(cls=BetfairStartingPrice, schema=BetfairStartingPrice.schema())
 
 # Register serialization/parquet BSPOrderBookDeltas
-BSP_ORDERBOOK_SCHEMA: pa.Schema = copy.copy(NAUTILUS_PARQUET_SCHEMA[OrderBookDelta])
-BSP_ORDERBOOK_SCHEMA = BSP_ORDERBOOK_SCHEMA.with_metadata({"type": "BSPOrderBookDelta"})
-
 register_serializable_object(
     BSPOrderBookDeltas,
     BSPOrderBookDeltas.to_dict,
     BSPOrderBookDeltas.from_dict,
 )
-register_parquet(
+
+register_arrow(
     cls=BSPOrderBookDeltas,
-    serializer=serialize_orderbook,
-    deserializer=deserialize_orderbook,
-    schema=BSP_ORDERBOOK_SCHEMA,
-    chunk=True,
+    serializer=BSPOrderBookDeltas.to_dict,
+    deserializer=BSPOrderBookDeltas.from_dict,
+    schema=BSPOrderBookDelta.schema(),
 )

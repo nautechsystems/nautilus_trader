@@ -449,6 +449,9 @@ pub enum CurrencyType {
     /// A type of currency issued by governments which is not backed by a commodity.
     #[pyo3(name = "FIAT")]
     Fiat = 2,
+    /// A type of currency that is based on the value of an underlying commodity.
+    #[pyo3(name = "COMMODITY_BACKED")]
+    CommodityBacked = 3,
 }
 
 /// The type of event for an instrument close.

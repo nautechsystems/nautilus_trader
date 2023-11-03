@@ -43,22 +43,24 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-# Safety: Do NOT deallocate the capsule here
+# SAFETY: Do NOT deallocate the capsule here
 cdef inline list capsule_to_data_list(object capsule):
     cdef CVec* data = <CVec*>PyCapsule_GetPointer(capsule, NULL)
     cdef Data_t* ptr = <Data_t*>data.ptr
-    cdef list ticks = []
+    cdef list objects = []
 
     cdef uint64_t i
     for i in range(0, data.len):
         if ptr[i].tag == Data_t_Tag.TRADE:
-            ticks.append(TradeTick.from_mem_c(ptr[i].trade))
+            objects.append(TradeTick.from_mem_c(ptr[i].trade))
         elif ptr[i].tag == Data_t_Tag.QUOTE:
-            ticks.append(QuoteTick.from_mem_c(ptr[i].quote))
+            objects.append(QuoteTick.from_mem_c(ptr[i].quote))
         elif ptr[i].tag == Data_t_Tag.DELTA:
-            ticks.append(OrderBookDelta.from_mem_c(ptr[i].delta))
+            objects.append(OrderBookDelta.from_mem_c(ptr[i].delta))
+        elif ptr[i].tag == Data_t_Tag.BAR:
+            objects.append(Bar.from_mem_c(ptr[i].bar))
 
-    return ticks
+    return objects
 
 
 def list_from_capsule(capsule) -> list[Data]:

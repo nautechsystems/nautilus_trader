@@ -32,6 +32,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core.nautilus_pyo3.network import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.msgbus.bus import MessageBus
@@ -40,6 +41,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
 
 
+@lru_cache(1)
 def get_cached_binance_http_client(
     clock: LiveClock,
     logger: Logger,
@@ -86,6 +88,22 @@ def get_cached_binance_http_client(
     secret = secret or _get_api_secret(account_type, is_testnet)
     default_http_base_url = _get_http_base_url(account_type, is_testnet, is_us)
 
+    # Setup rate limit quotas
+    if account_type.is_spot:
+        # Spot
+        ratelimiter_default_quota = Quota.rate_per_minute(6000)
+        ratelimiter_quotas: list[tuple[str, Quota]] = [
+            ("order", Quota.rate_per_minute(3000)),
+            ("allOrders", Quota.rate_per_minute(int(3000 / 20))),
+        ]
+    else:
+        # Futures
+        ratelimiter_default_quota = Quota.rate_per_minute(2400)
+        ratelimiter_quotas = [
+            ("order", Quota.rate_per_minute(1200)),
+            ("allOrders", Quota.rate_per_minute(int(1200 / 20))),
+        ]
+
     client_key: str = "|".join((key, secret))
     if client_key not in BINANCE_HTTP_CLIENTS:
         client = BinanceHttpClient(
@@ -94,6 +112,8 @@ def get_cached_binance_http_client(
             key=key,
             secret=secret,
             base_url=base_url or default_http_base_url,
+            ratelimiter_quotas=ratelimiter_quotas,
+            ratelimiter_default_quota=ratelimiter_default_quota,
         )
         BINANCE_HTTP_CLIENTS[client_key] = client
     return BINANCE_HTTP_CLIENTS[client_key]

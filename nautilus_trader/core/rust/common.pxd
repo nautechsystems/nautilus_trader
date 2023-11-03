@@ -170,7 +170,7 @@ cdef extern from "../includes/common.h":
     void test_clock_drop(TestClock_API clock);
 
     # # Safety
-    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_register_default_handler(TestClock_API *clock, PyObject *callback_ptr);
 
     void test_clock_set_time(TestClock_API *clock, uint64_t to_time_ns);
@@ -190,7 +190,7 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `name_ptr` is a valid C string pointer.
-    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_set_time_alert_ns(TestClock_API *clock,
                                       const char *name_ptr,
                                       uint64_t alert_time_ns,
@@ -199,7 +199,7 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `name_ptr` is a valid C string pointer.
-    # - Assumes `callback_ptr` is a valid PyCallable pointer.
+    # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_set_timer_ns(TestClock_API *clock,
                                  const char *name_ptr,
                                  uint64_t interval_ns,

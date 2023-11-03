@@ -21,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 use crate::{
-    currencies::USD,
     enums::{
         ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
         TriggerType,
@@ -482,7 +481,7 @@ impl Default for OrderFilled {
             order_type: OrderType::Market,
             last_qty: Quantity::new(100_000.0, 0).unwrap(),
             last_px: Price::from("1.00000"),
-            currency: *USD,
+            currency: Currency::USD(),
             commission: None,
             liquidity_side: LiquiditySide::Taker,
             event_id: Default::default(),

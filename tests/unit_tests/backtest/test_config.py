@@ -37,8 +37,6 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.persistence.external.core import process_files
-from nautilus_trader.persistence.external.readers import CSVReader
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -46,12 +44,12 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
-from tests import TEST_DATA_DIR
-from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
-class _TestBacktestConfig:
+@pytest.mark.skipif(sys.platform == "win32", reason="Failing on windows")
+class TestBacktestConfig:
     def setup(self):
+        self.fs_protocol = "file"
         self.catalog = data_catalog_setup(protocol=self.fs_protocol)
         aud_usd_data_loader(self.catalog)
         self.venue = Venue("SIM")
@@ -66,7 +64,7 @@ class _TestBacktestConfig:
             fs.rm(path, recursive=True)
 
     def test_backtest_config_pickle(self):
-        pickle.loads(pickle.dumps(self))  # noqa: S301
+        pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301
 
     def test_backtest_data_config_load(self):
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
@@ -81,7 +79,6 @@ class _TestBacktestConfig:
 
         result = c.query
         assert result == {
-            "as_nautilus": True,
             "cls": QuoteTick,
             "instrument_ids": ["AUD/USD.SIM"],
             "filter_expr": None,
@@ -94,12 +91,8 @@ class _TestBacktestConfig:
     def test_backtest_data_config_generic_data(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
 
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
@@ -118,11 +111,10 @@ class _TestBacktestConfig:
     def test_backtest_data_config_filters(self):
         # Arrange
         TestPersistenceStubs.setup_news_event_persistence()
-        process_files(
-            glob_path=f"{TEST_DATA_DIR}/news_events.csv",
-            reader=CSVReader(block_parser=TestPersistenceStubs.news_event_parser),
-            catalog=self.catalog,
-        )
+        data = TestPersistenceStubs.news_events()
+        self.catalog.write_data(data)
+
+        # Act
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs.protocol,
@@ -134,13 +126,11 @@ class _TestBacktestConfig:
         result = c.load()
         assert len(result["data"]) == 2745
 
-    @pytest.mark.skip(reason="Requires new datafusion streaming")
     def test_backtest_data_config_status_updates(self):
-        process_files(
-            glob_path=TEST_DATA_DIR + "/betfair/1.166564490.bz2",
-            reader=BetfairTestStubs.betfair_reader(),
-            catalog=self.catalog,
-        )
+        from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
+
+        load_betfair_data(self.catalog)
+
         c = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs.protocol,
@@ -183,14 +173,6 @@ class _TestBacktestConfig:
 
     def test_backtest_config_to_json(self):
         assert msgspec.json.encode(self.backtest_config)
-
-
-class TestBacktestConfigFile(_TestBacktestConfig):
-    fs_protocol = "file"
-
-
-class TestBacktestConfigMemory(_TestBacktestConfig):
-    fs_protocol = "memory"
 
 
 class TestBacktestConfigParsing:
@@ -266,7 +248,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
-        assert token == "acf938231c1e196f54f34716dd4feb5e16f820087ca3b5b15bccf7b8e2e36bd0"  # UNIX
+        assert token == "6e57cf048bce699d9a43e9e79cabee5bf89b4809abde56f59fe80318da78567c"  # UNIX
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(

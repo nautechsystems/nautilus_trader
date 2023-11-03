@@ -78,7 +78,8 @@ impl QuoteTickDataWrangler {
                 Err(e) => return Err(to_pyvalue_err(e)),
             };
 
-            let batch_deltas = QuoteTick::decode_batch(&self.metadata, record_batch);
+            let batch_deltas =
+                QuoteTick::decode_batch(&self.metadata, record_batch).map_err(to_pyvalue_err)?;
             quotes.extend(batch_deltas);
         }
 

@@ -167,7 +167,7 @@ mod tests {
             ClientOrderId::from("id2"),
             ClientOrderId::from("id3"),
         ];
-        let ustr = optional_vec_client_order_ids_to_ustr(Some(client_order_ids.into())).unwrap();
+        let ustr = optional_vec_client_order_ids_to_ustr(Some(client_order_ids)).unwrap();
         assert_eq!(ustr.to_string(), "id1,id2,id3");
     }
 }

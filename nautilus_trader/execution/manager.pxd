@@ -55,8 +55,6 @@ cdef class OrderManager:
     cdef object _submit_order_handler
     cdef object _cancel_order_handler
 
-    cdef set _pending_cancels
-
     cpdef dict get_submit_order_commands(self)
     cpdef void cache_submit_order_command(self, SubmitOrder command)
     cpdef SubmitOrder pop_submit_order_command(self, ClientOrderId client_order_id)
