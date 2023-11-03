@@ -7,7 +7,7 @@ Released on 3rd November 2023 (UTC).
 - Improved `RedisCacheDatabase` client connection error handling with retries
 - Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
 - Added `support_contingent_orders` option for venues (to simulate venues which do not support contingent orders)
-- Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingenct orders)
+- Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingent orders)
 - Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
