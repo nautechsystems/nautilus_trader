@@ -48,9 +48,6 @@ if platform.system() == "Linux":
     # Use clang as the default compiler
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
-# elif platform.system() == "Windows":
-#     os.environ["CC"] = "cl"
-#     os.environ["CXX"] = "cl"
 
 TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
 
@@ -146,15 +143,8 @@ def _build_extensions() -> list[Extension]:
     extra_compile_args = []
     extra_link_args = RUST_LIBS
 
-    if platform.system() == "Darwin":
-        extra_compile_args.append("-Wno-unreachable-code-fallthrough")
-        extra_link_args.append("-flat_namespace")
-        extra_link_args.append("-undefined")
-        extra_link_args.append("suppress")
-
     if platform.system() != "Windows":
         # Suppress warnings produced by Cython boilerplate
-        extra_compile_args.append("-Wno-parentheses-equality")
         extra_compile_args.append("-Wno-unreachable-code")
         if BUILD_MODE == "release":
             extra_compile_args.append("-O2")

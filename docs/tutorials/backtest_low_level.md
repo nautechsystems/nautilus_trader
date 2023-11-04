@@ -50,7 +50,7 @@ Next, we need to wrangle this data into a list of Nautilus `TradeTick` objects, 
 ```python
 # Load stub test data
 provider = TestDataProvider()
-trades_df = provider.read_csv_ticks("binance-ethusdt-trades.csv")
+trades_df = provider.read_csv_ticks("binance/ethusdt-trades.csv")
 
 # Initialize the instrument which matches the data
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

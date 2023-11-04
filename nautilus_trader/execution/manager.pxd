@@ -34,6 +34,7 @@ from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
+from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.identifiers cimport StrategyId
@@ -49,6 +50,7 @@ cdef class OrderManager:
     cdef MessageBus _msgbus
     cdef Cache _cache
 
+    cdef readonly bint active_local
     cdef readonly bint debug
 
     cdef dict _submit_order_commands
@@ -66,10 +68,11 @@ cdef class OrderManager:
     cpdef void cancel_order(self, Order order)
     cpdef void modify_order_quantity(self, Order order, Quantity new_quantity)
     cpdef void create_new_submit_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
+    cpdef bint should_manage_order(self, Order order)
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 
-    cpdef void handle_position_event(self, PositionEvent event)
+    cpdef void handle_event(self, Event event)
     cpdef void handle_order_rejected(self, OrderRejected rejected)
     cpdef void handle_order_canceled(self, OrderCanceled canceled)
     cpdef void handle_order_expired(self, OrderExpired expired)
@@ -77,11 +80,12 @@ cdef class OrderManager:
     cpdef void handle_order_filled(self, OrderFilled filled)
     cpdef void handle_contingencies(self, Order order)
     cpdef void handle_contingencies_update(self, Order order)
+    cpdef void handle_position_event(self, PositionEvent event)
 
 # -- EGRESS ---------------------------------------------------------------------------------------
 
     cpdef void send_emulator_command(self, TradingCommand command)
-    cpdef void send_algo_command(self, TradingCommand command)
+    cpdef void send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id)
     cpdef void send_risk_command(self, TradingCommand command)
     cpdef void send_exec_command(self, TradingCommand command)
     cpdef void send_risk_event(self, OrderEvent event)

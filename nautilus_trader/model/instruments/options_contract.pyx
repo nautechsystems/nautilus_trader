@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
-from libc.stdint cimport uint64_t
-
 from decimal import Decimal
+
+import pandas as pd
+import pytz
+
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
@@ -45,9 +47,9 @@ cdef class OptionsContract(Instrument):
     raw_symbol : Symbol
         The native/local/raw symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The futures contract asset class.
+        The options contract asset class.
     currency : Currency
-        The futures contract currency.
+        The options contract currency.
     price_precision : int
         The price decimal precision.
     price_increment : Price
@@ -56,12 +58,14 @@ cdef class OptionsContract(Instrument):
         The option multiplier.
     lot_size : Quantity
         The rounded lot unit size (standard/board).
-    strike_price : Price
-        The option strike price.
     underlying : str
         The underlying asset.
-    expiry_date : date
-        The option expiry date.
+    strike_price : Price
+        The option strike price.
+    activation_ns : uint64_t
+        The UNIX timestamp (nanoseconds) for contract activation.
+    expiration_ns : uint64_t
+        The UNIX timestamp (nanoseconds) for contract expiration.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -91,10 +95,11 @@ cdef class OptionsContract(Instrument):
         Price price_increment not None,
         Quantity multiplier not None,
         Quantity lot_size not None,
-        Price strike_price not None,
         str underlying,
-        date expiry_date,
         OptionKind kind,
+        uint64_t activation_ns,
+        uint64_t expiration_ns,
+        Price strike_price not None,
         uint64_t ts_event,
         uint64_t ts_init,
         dict info = None,
@@ -128,9 +133,36 @@ cdef class OptionsContract(Instrument):
             info=info,
         )
         self.underlying = underlying
-        self.expiry_date = expiry_date
-        self.strike_price = strike_price
         self.kind = kind
+        self.activation_ns = activation_ns
+        self.expiration_ns = expiration_ns
+        self.strike_price = strike_price
+
+    @property
+    def activation_utc(self) -> pd.Timestamp:
+        """
+        Return the contract activation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.activation_ns, tz=pytz.utc)
+
+    @property
+    def expiration_utc(self) -> pd.Timestamp:
+        """
+        Return the contract expriation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
     @staticmethod
     cdef OptionsContract from_dict_c(dict values):
@@ -144,10 +176,11 @@ cdef class OptionsContract(Instrument):
             price_increment=Price.from_str(values["price_increment"]),
             multiplier=Quantity.from_str(values["multiplier"]),
             lot_size=Quantity.from_str(values["lot_size"]),
-            underlying=values['underlying'],
-            expiry_date=date.fromisoformat(values["expiry_date"]),
-            strike_price=Price.from_str(values["strike_price"]),
+            underlying=values["underlying"],
             kind=option_kind_from_str(values["kind"]),
+            activation_ns=values["activation_ns"],
+            expiration_ns=values["expiration_ns"],
+            strike_price=Price.from_str(values["strike_price"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -168,11 +201,12 @@ cdef class OptionsContract(Instrument):
             "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
             "underlying": str(obj.underlying),
-            "expiry_date": obj.expiry_date.isoformat(),
+            "kind": option_kind_to_str(obj.kind),
+            "activation_ns": obj.activation_ns,
+            "expiration_ns": obj.expiration_ns,
             "strike_price": str(obj.strike_price),
             "margin_init": str(obj.margin_init),
             "margin_maint": str(obj.margin_maint),
-            "kind": option_kind_to_str(obj.kind),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }

@@ -19,6 +19,7 @@ import time
 from decimal import Decimal
 
 import msgspec
+import pandas as pd
 from ibapi.contract import ContractDetails
 
 # fmt: off
@@ -26,6 +27,7 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import asset_class_from_str
 from nautilus_trader.model.identifiers import InstrumentId
@@ -95,7 +97,7 @@ re_fop_original = re.compile(
 re_crypto = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
 
 
-def _extract_isin(details: IBContractDetails):
+def _extract_isin(details: IBContractDetails) -> int:
     for tag_value in details.secIdList:
         if tag_value.tag == "ISIN":
             return tag_value.value
@@ -107,7 +109,7 @@ def _tick_size_to_precision(tick_size: float | Decimal) -> int:
     return len(tick_size_str.partition(".")[2].rstrip("0"))
 
 
-def sec_type_to_asset_class(sec_type: str):
+def sec_type_to_asset_class(sec_type: str) -> AssetClass:
     mapping = {
         "STK": "EQUITY",
         "IND": "INDEX",
@@ -129,7 +131,7 @@ def parse_instrument(
     security_type = contract_details.contract.secType
     if security_type == "STK":
         return parse_equity_contract(details=contract_details)
-    elif security_type == "FUT" or security_type == "CONTFUT":
+    elif security_type in ("FUT", "CONTFUT"):
         return parse_futures_contract(details=contract_details)
     elif security_type == "OPT":
         return parse_options_contract(details=contract_details)
@@ -152,6 +154,7 @@ def parse_equity_contract(details: IBContractDetails) -> Equity:
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+
     return Equity(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -173,6 +176,13 @@ def parse_futures_contract(
     price_precision: int = _tick_size_to_precision(details.minTick)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+    expiration = pd.to_datetime(  # TODO: Check correctness
+        details.contract.lastTradeDateOrContractMonth,
+        format="%Y%m%d",
+        utc=True,
+    )
+    activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
+
     return FuturesContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -183,10 +193,8 @@ def parse_futures_contract(
         multiplier=Quantity.from_str(details.contract.multiplier),
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
-        expiry_date=datetime.datetime.strptime(
-            details.contract.lastTradeDateOrContractMonth,
-            "%Y%m%d",
-        ).date(),
+        activation_ns=activation.value,
+        expiration_ns=expiration.value,
         ts_event=timestamp,
         ts_init=timestamp,
         info=contract_details_to_dict(details),
@@ -204,6 +212,13 @@ def parse_options_contract(
         "C": OptionKind.CALL,
         "P": OptionKind.PUT,
     }[details.contract.right]
+    expiration = pd.to_datetime(  # TODO: Check correctness
+        details.contract.lastTradeDateOrContractMonth,
+        format="%Y%m%d",
+        utc=True,
+    )
+    activation = expiration - pd.Timedelta(days=90)  # TODO: Make this more accurate
+
     return OptionsContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -215,10 +230,8 @@ def parse_options_contract(
         lot_size=Quantity.from_int(1),
         underlying=details.underSymbol,
         strike_price=Price(details.contract.strike, price_precision),
-        expiry_date=datetime.datetime.strptime(
-            details.contract.lastTradeDateOrContractMonth,
-            "%Y%m%d",
-        ).date(),
+        activation_ns=activation.value,
+        expiration_ns=expiration.value,
         kind=kind,
         ts_event=timestamp,
         ts_init=timestamp,
@@ -233,6 +246,7 @@ def parse_forex_contract(
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+
     return CurrencyPair(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),
@@ -266,6 +280,7 @@ def parse_crypto_contract(
     size_precision: int = _tick_size_to_precision(details.minSize)
     timestamp = time.time_ns()
     instrument_id = ib_contract_to_instrument_id(details.contract)
+
     return CryptoPerpetual(
         instrument_id=instrument_id,
         raw_symbol=Symbol(details.contract.localSymbol),

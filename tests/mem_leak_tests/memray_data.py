@@ -50,13 +50,13 @@ if __name__ == "__main__":
         print(f"Run: {count}/{total_runs}")
 
         # Process data
-        ticks = quote_tick_wrangler.process(provider.read_csv_ticks("truefx-audusd-ticks.csv"))
-        ticks = trade_tick_wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+        ticks = quote_tick_wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
+        ticks = trade_tick_wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
         # Add data
         bid_bars = bid_wrangler.process(
-            data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:10_000],
+            data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv")[:10_000],
         )
         ask_bars = ask_wrangler.process(
-            data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv")[:10_000],
+            data=provider.read_csv_bars("fxcm/gbpusd-m1-ask-2012.csv")[:10_000],
         )

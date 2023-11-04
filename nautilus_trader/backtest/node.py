@@ -25,6 +25,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.model.currency import Currency
@@ -135,10 +136,10 @@ class BacktestNode:
                     batch_size_bytes=config.batch_size_bytes,
                 )
                 results.append(result)
-            except Exception as ex:
+            except Exception as e:
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
-                print(f"Error running {config}: {ex}")
+                print(f"Error running {config}: {e}")
 
         return results
 
@@ -151,6 +152,16 @@ class BacktestNode:
             for data_config in config.data:
                 if data_config.instrument_id is None:
                     continue  # No instrument associated with data
+
+                if data_config.start_time is not None and data_config.end_time is not None:
+                    start = dt_to_unix_nanos(data_config.start_time)
+                    end = dt_to_unix_nanos(data_config.end_time)
+
+                    if end < start:
+                        raise ValueError(
+                            f"Invalid data config: end_time ({data_config.end_time}) is before start_time ({data_config.start_time}).",
+                        )
+
                 instrument_id: InstrumentId = InstrumentId.from_str(data_config.instrument_id)
                 if instrument_id.venue not in venue_ids:
                     raise ValueError(
@@ -191,6 +202,7 @@ class BacktestNode:
                 frozen_account=config.frozen_account,
                 reject_stop_orders=config.reject_stop_orders,
                 support_gtd_orders=config.support_gtd_orders,
+                support_contingent_orders=config.support_contingent_orders,
                 use_position_ids=config.use_position_ids,
                 use_random_ids=config.use_random_ids,
                 use_reduce_only=config.use_reduce_only,
@@ -290,7 +302,7 @@ class BacktestNode:
             engine.add_data(
                 data=capsule_to_list(chunk),
                 validate=False,  # Cannot validate mixed type stream
-                sort=False,  # Already sorted from kmerge
+                sort=True,  # Temporarily sorting  # Already sorted from kmerge
             )
             engine.run(
                 run_config_id=run_config_id,

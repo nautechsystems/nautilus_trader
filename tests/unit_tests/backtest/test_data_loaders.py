@@ -56,7 +56,7 @@ class TestBacktestLoaders:
 class TestParquetTickDataLoaders:
     def test_btcusdt_trade_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act
-        path = TEST_DATA_DIR / "binance-btcusdt-trades.parquet"
+        path = TEST_DATA_DIR / "binance" / "btcusdt-trades.parquet"
         ticks = ParquetTickDataLoader.load(path)
 
         # Assert
@@ -69,7 +69,7 @@ class TestParquetTickDataLoaders:
 
     def test_btcusdt_quote_ticks_from_parquet_loader_return_expected_row(self):
         # Arrange, Act
-        path = TEST_DATA_DIR / "binance-btcusdt-quotes.parquet"
+        path = TEST_DATA_DIR / "binance" / "btcusdt-quotes.parquet"
         ticks = ParquetTickDataLoader.load(path)
 
         # Assert

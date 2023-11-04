@@ -17,6 +17,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use anyhow::Result;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -43,19 +44,18 @@ pub struct CurrencyPair {
     pub size_precision: u8,
     pub price_increment: Price,
     pub size_increment: Quantity,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
+    pub maker_fee: Decimal,
+    pub taker_fee: Decimal,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
 }
 
 impl CurrencyPair {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -66,17 +66,17 @@ impl CurrencyPair {
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             id,
             raw_symbol,
             quote_currency,
@@ -85,16 +85,16 @@ impl CurrencyPair {
             size_precision,
             price_increment,
             size_increment,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-        }
+        })
     }
 }
 
@@ -200,5 +200,62 @@ impl Instrument for CurrencyPair {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use std::str::FromStr;
+
+    use rstest::fixture;
+    use rust_decimal::Decimal;
+
+    use crate::{
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+        instruments::currency_pair::CurrencyPair,
+        types::{currency::Currency, price::Price, quantity::Quantity},
+    };
+
+    #[fixture]
+    pub fn currency_pair_btcusdt() -> CurrencyPair {
+        CurrencyPair::new(
+            InstrumentId::from("BTCUSDT.BINANCE"),
+            Symbol::from("BTCUSDT"),
+            Currency::from("BTC"),
+            Currency::from("USDT"),
+            2,
+            6,
+            Price::from("0.01"),
+            Quantity::from("0.000001"),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            None,
+            Some(Quantity::from("9000")),
+            Some(Quantity::from("0.000001")),
+            Some(Price::from("1000000")),
+            Some(Price::from("0.01")),
+        )
+        .unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::instruments::currency_pair::{stubs::currency_pair_btcusdt, CurrencyPair};
+
+    #[rstest]
+    fn test_equality(currency_pair_btcusdt: CurrencyPair) {
+        let cloned = currency_pair_btcusdt.clone();
+        assert_eq!(currency_pair_btcusdt, cloned)
     }
 }

@@ -61,7 +61,7 @@ def run(*args, **kwargs):
     # Add data
     provider = TestDataProvider()
     wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+    ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
     engine.add_data(ticks)
 
     # Configure your strategy

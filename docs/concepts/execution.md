@@ -215,7 +215,7 @@ e.g. `O-20230404-001-000-E1` (for the first spawned order)
 
 ```{note}
 The "primary" and "secondary" / "spawn" terminology was specifically chosen to avoid conflict
-or confusion with the "parent" and "child" contingency orders terminology (an execution algorithm may also deal with contingent orders).
+or confusion with the "parent" and "child" contingent orders terminology (an execution algorithm may also deal with contingent orders).
 ```
 
 ### Managing execution algorithm orders

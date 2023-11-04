@@ -30,7 +30,7 @@ from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -55,6 +55,7 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     bar_execution: bool = True
     reject_stop_orders: bool = True
     support_gtd_orders: bool = True
+    support_contingent_orders: bool = True
     use_position_ids: bool = True
     use_random_ids: bool = False
     use_reduce_only: bool = True
@@ -110,13 +111,13 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     def start_time_nanos(self) -> int:
         if self.start_time is None:
             return 0
-        return maybe_dt_to_unix_nanos(pd.Timestamp(self.start_time))
+        return dt_to_unix_nanos(self.start_time)
 
     @property
     def end_time_nanos(self) -> int:
         if self.end_time is None:
             return sys.maxsize
-        return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
+        return dt_to_unix_nanos(self.end_time)
 
     def catalog(self) -> ParquetDataCatalog:
         from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog

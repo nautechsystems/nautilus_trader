@@ -19,6 +19,7 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport TradingCommand
@@ -67,6 +68,7 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Strategy(Actor):
+    cdef OrderManager _manager
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
@@ -78,8 +80,8 @@ cdef class Strategy(Actor):
     """The order management system for the strategy.\n\n:returns: `OmsType`"""
     cdef readonly list external_order_claims
     """The external order claims instrument IDs for the strategy.\n\n:returns: `list[InstrumentId]`"""
-    cdef readonly bint manage_contingencies
-    """If contingency orders should be managed automatically by the strategy.\n\n:returns: `bool`"""
+    cdef readonly bint manage_contingent_orders
+    """If contingent orders should be managed automatically by the strategy.\n\n:returns: `bool`"""
     cdef readonly bint manage_gtd_expiry
     """If all order GTD time in force expirations should be managed automatically by the strategy.\n\n:returns: `bool`"""
 
@@ -142,7 +144,6 @@ cdef class Strategy(Actor):
         Price price=*,
         Price trigger_price=*,
         ClientId client_id=*,
-        bint batch_more=*,
     )
     cpdef void cancel_order(self, Order order, ClientId client_id=*)
     cpdef void cancel_orders(self, list orders, ClientId client_id=*)
@@ -173,10 +174,3 @@ cdef class Strategy(Actor):
     cdef OrderPendingCancel _generate_order_pending_cancel(self, Order order)
     cdef void _deny_order(self, Order order, str reason)
     cdef void _deny_order_list(self, OrderList order_list, str reason)
-
-# -- EGRESS ---------------------------------------------------------------------------------------
-
-    cdef void _send_emulator_command(self, TradingCommand command)
-    cdef void _send_algo_command(self, TradingCommand command, ExecAlgorithmId exec_algorithm_id)
-    cdef void _send_risk_command(self, TradingCommand command)
-    cdef void _send_exec_command(self, TradingCommand command)

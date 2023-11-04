@@ -151,10 +151,7 @@ class TestLiveExecutionEngine:
             logger=self.logger,
         )
 
-        self.instrument_provider = InstrumentProvider(
-            venue=SIM,
-            logger=self.logger,
-        )
+        self.instrument_provider = InstrumentProvider(logger=self.logger)
         self.instrument_provider.add(AUDUSD_SIM)
         self.instrument_provider.add(GBPUSD_SIM)
         self.cache.add_instrument(AUDUSD_SIM)
@@ -379,8 +376,7 @@ class TestLiveExecutionEngine:
         self.exec_engine.kill()
 
         # Assert
-        assert self.exec_engine.cmd_qsize() == 0
-        assert self.exec_engine.evt_qsize() == 0
+        assert self.exec_engine.is_stopped
 
     @pytest.mark.asyncio()
     async def test_execute_command_places_command_on_queue(self):

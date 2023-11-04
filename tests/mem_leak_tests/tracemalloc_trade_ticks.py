@@ -34,7 +34,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 def run(*args, **kwargs):
     # provider = TestDataProvider()
     # wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    # _ = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+    # _ = wrangler.process(provider.read_csv_ticks("binance/binance-ethusdt-trades.csv"))
     _ = TradeTick(
         ETHUSDT_BINANCE.id,
         Price.from_str("1.00000"),

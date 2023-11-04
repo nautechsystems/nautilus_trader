@@ -96,5 +96,5 @@ class TestBetfairFactory:
         )
 
         # Assert
-        assert BetfairDataClient == type(data_client)
-        assert BetfairExecutionClient == type(exec_client)
+        assert BetfairDataClient is type(data_client)
+        assert BetfairExecutionClient is type(exec_client)

@@ -20,7 +20,7 @@ Each of these data types inherits from `Data`, which defines two fields:
 
 This inheritance ensures chronological data ordering (vital for backtesting), while also enhancing analytics.
 
-Consistency is key; data flows through the platform in exactly the same way for all system contexts (`backtest`, `sandbox`, `live`)
+Consistency is key; data flows through the platform in exactly the same way for all system environment contexts (`backtest`, `sandbox`, `live`)
 primarily through the `MessageBus` to the `DataEngine` and onto subscribed or registered handlers.
 
 For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom/Generic data guide](advanced/custom_data.md) for more details.
@@ -97,7 +97,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
 # Load raw data
-data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance-btcusdt-depth-snap.csv")
+data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance/binance/btcusdt-depth-snap.csv")
 df = BinanceOrderBookDeltaDataLoader.load(data_path)
 
 # Setup a wrangler
@@ -170,7 +170,7 @@ be overwritten. To prevent data loss, ensure that the `basename_template` (or th
 generates unique filenames for different data sets.
 ```
 
-Rust Arrow schema implementations and available for the follow data types (enhanced performance):
+Rust Arrow schema implementations are available for the follow data types (enhanced performance):
 - `OrderBookDelta`
 - `QuoteTick`
 - `TradeTick`
