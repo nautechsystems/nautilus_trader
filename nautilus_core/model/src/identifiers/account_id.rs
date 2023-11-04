@@ -78,33 +78,14 @@ impl From<&str> for AccountId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::*;
-
-    #[fixture]
-    pub fn account_id() -> AccountId {
-        AccountId::from("SIM-001")
-    }
-
-    #[fixture]
-    pub fn account_ib() -> AccountId {
-        AccountId::from("IB-1234567890")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_account_id_new_invalid_string() {

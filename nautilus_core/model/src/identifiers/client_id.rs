@@ -63,33 +63,14 @@ impl From<&str> for ClientId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::client_id::ClientId;
-
-    #[fixture]
-    pub fn client_id_binance() -> ClientId {
-        ClientId::from("BINANCE")
-    }
-
-    #[fixture]
-    pub fn client_id_dydx() -> ClientId {
-        ClientId::from("COINBASE")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(client_id_binance: ClientId) {

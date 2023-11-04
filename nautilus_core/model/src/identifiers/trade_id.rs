@@ -76,28 +76,13 @@ impl From<&str> for TradeId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::trade_id::TradeId;
-
-    #[fixture]
-    pub fn test_trade_id() -> TradeId {
-        TradeId::from("1234567890")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, TradeId};
+    use crate::identifiers::{stubs::*, trade_id::TradeId};
 
     #[rstest]
     fn test_string_reprs(test_trade_id: TradeId) {

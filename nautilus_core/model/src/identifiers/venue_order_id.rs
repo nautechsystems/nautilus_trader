@@ -71,33 +71,17 @@ impl From<&str> for VenueOrderId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::venue_order_id::VenueOrderId;
-
-    #[fixture]
-    pub fn venue_order_id() -> VenueOrderId {
-        VenueOrderId::from("001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::stubs;
+    use crate::identifiers::{stubs::*, venue_order_id::VenueOrderId};
 
     #[rstest]
-    fn test_string_reprs() {
-        let id = stubs::venue_order_id();
-        assert_eq!(id.to_string(), "001");
-        assert_eq!(format!("{id}"), "001");
+    fn test_string_reprs(venue_order_id: VenueOrderId) {
+        assert_eq!(venue_order_id.to_string(), "001");
+        assert_eq!(format!("{venue_order_id}"), "001");
     }
 }
