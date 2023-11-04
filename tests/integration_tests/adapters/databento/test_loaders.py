@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
+
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
@@ -24,14 +26,154 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import Equity
+from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from tests import TEST_DATA_DIR
+
+
+@pytest.mark.skip(reason="Used for initial development")
+def test_loader_definition_glbx_all_symbols() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento/definition-glbx-all-symbols2.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 10_000_000
+
+
+def test_loader_definition_glbx_futures() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento/definition-glbx-es-fut.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], FuturesContract)
+    assert isinstance(data[1], FuturesContract)
+    instrument = data[0]
+    assert instrument.id == InstrumentId.from_str("ESM3.GLBX")
+    assert instrument.raw_symbol == Symbol("ESM3")
+    assert instrument.asset_class == AssetClass.EQUITY
+    assert instrument.asset_type == AssetType.FUTURE
+    assert instrument.quote_currency == USD
+    assert not instrument.is_inverse
+    assert instrument.underlying == ""
+    assert instrument.price_precision == 2
+    assert instrument.price_increment == Price.from_str("0.25")
+    assert instrument.size_precision == 0
+    assert instrument.size_increment == 1
+    assert instrument.multiplier == 1
+    assert instrument.lot_size == 1
+    assert instrument.ts_event == 1680451436384637671
+    assert instrument.ts_init == 1680451436501583647
+
+
+def test_loader_definition_glbx_futures_spread() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento/definition-glbx-es-futspread.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], FuturesContract)
+    assert isinstance(data[1], FuturesContract)
+    instrument = data[0]
+    assert instrument.id == InstrumentId.from_str("ESH5-ESM5.GLBX")
+    assert instrument.raw_symbol == Symbol("ESH5-ESM5")
+    assert instrument.asset_class == AssetClass.EQUITY
+    assert instrument.asset_type == AssetType.FUTURE
+    assert instrument.quote_currency == USD
+    assert not instrument.is_inverse
+    assert instrument.underlying == ""
+    assert instrument.price_precision == 2
+    assert instrument.price_increment == Price.from_str("0.05")
+    assert instrument.size_precision == 0
+    assert instrument.size_increment == 1
+    assert instrument.multiplier == 1
+    assert instrument.lot_size == 1
+    assert instrument.ts_event == 1690715037047650849
+    assert instrument.ts_init == 1690848000000000000
+
+
+def test_loader_definition_glbx_options() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento/definition-glbx-es-opt.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], OptionsContract)
+    assert isinstance(data[1], OptionsContract)
+    instrument = data[0]
+    assert instrument.id == InstrumentId.from_str("ESM4 C4250.GLBX")
+    assert instrument.raw_symbol == Symbol("ESM4 C4250")
+    assert instrument.asset_class == AssetClass.EQUITY
+    assert instrument.asset_type == AssetType.OPTION
+    assert instrument.quote_currency == USD
+    assert not instrument.is_inverse
+    assert instrument.underlying == "ESM4"
+    assert instrument.kind == OptionKind.CALL
+    assert instrument.strike_price == Price.from_str("4250.00")
+    assert instrument.price_precision == 2
+    assert instrument.price_increment == Price.from_str("0.01")
+    assert instrument.size_precision == 0
+    assert instrument.size_increment == 1
+    assert instrument.multiplier == 1
+    assert instrument.lot_size == 1
+    assert instrument.ts_event == 1690714895387000000
+    assert instrument.ts_init == 1690848000000000000
+
+
+def test_loader_definition_opra_pillar() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento/definition-opra.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], OptionsContract)
+    assert isinstance(data[1], OptionsContract)
+    instrument = data[0]
+    assert instrument.id == InstrumentId.from_str("SPY   240119P00340000.OPRA")  # OSS symbol
+    assert instrument.raw_symbol == Symbol("SPY   240119P00340000")
+    assert instrument.asset_class == AssetClass.EQUITY
+    assert instrument.asset_type == AssetType.OPTION
+    assert instrument.quote_currency == USD
+    assert not instrument.is_inverse
+    assert instrument.underlying == "SPY"
+    assert instrument.kind == OptionKind.PUT
+    assert instrument.strike_price == Price.from_str("340.00")
+    assert instrument.price_precision == 2
+    assert instrument.price_increment == Price.from_str("0.01")
+    assert instrument.size_precision == 0
+    assert instrument.size_increment == 1
+    assert instrument.multiplier == 1
+    assert instrument.lot_size == 1
+    assert instrument.ts_event == 1690885800418954240
+    assert instrument.ts_init == 1690885800419158943
 
 
 def test_loader_with_xnasitch_definition() -> None:
@@ -205,8 +347,8 @@ def test_loader_with_ohlcv_1s() -> None:
     assert bar.low == Price.from_str("3720.25")
     assert bar.close == Price.from_str("3720.50")
     assert bar.volume == Price.from_str("0")
-    assert bar.ts_event == 1609160400000000000
-    assert bar.ts_init == 1609160400000000000
+    assert bar.ts_event == 1609160401000000000
+    assert bar.ts_init == 1609160401000000000
 
 
 def test_loader_with_ohlcv_1m() -> None:
@@ -224,8 +366,8 @@ def test_loader_with_ohlcv_1m() -> None:
     bar = data[0]
     assert bar.bar_type == BarType.from_str("ESH1.GLBX-1-MINUTE-LAST-EXTERNAL")
     assert bar.open == Price.from_str("3720.25")
-    assert bar.ts_event == 1609160400000000000
-    assert bar.ts_init == 1609160400000000000
+    assert bar.ts_event == 1609160460000000000
+    assert bar.ts_init == 1609160460000000000
 
 
 def test_loader_with_ohlcv_1h() -> None:
@@ -243,8 +385,8 @@ def test_loader_with_ohlcv_1h() -> None:
     bar = data[0]
     assert bar.bar_type == BarType.from_str("ESH1.GLBX-1-HOUR-LAST-EXTERNAL")
     assert bar.open == Price.from_str("3720.25")  # Bug??
-    assert bar.ts_event == 1609160400000000000
-    assert bar.ts_init == 1609160400000000000
+    assert bar.ts_event == 1609164000000000000
+    assert bar.ts_init == 1609164000000000000
 
 
 def test_loader_with_ohlcv_1d() -> None:
