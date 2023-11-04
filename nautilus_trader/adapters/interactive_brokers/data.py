@@ -49,7 +49,8 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the InteractiveBrokers exchange.
+    Provides a data client for the InteractiveBrokers exchange by using the `Gateway` to
+    stream market data.
     """
 
     def __init__(

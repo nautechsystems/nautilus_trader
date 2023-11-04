@@ -18,26 +18,26 @@ from os import PathLike
 import pandas as pd
 
 
-class CSVTickDataLoader:
+class CSVDataLoader:
     """
-    Provides a generic tick data CSV file loader.
+    Loads a CSV file to a `pandas.DataFrame`.
     """
 
     @staticmethod
     def load(
         file_path: PathLike[str] | str,
-        index_col: str | int = "timestamp",
+        timestamp_column: str | int = "timestamp",
         format: str = "mixed",
     ) -> pd.DataFrame:
         """
-        Return a tick `pandas.DataFrame` loaded from the given CSV `file_path`.
+        Return a `pandas.DataFrame` loaded from the given CSV `file_path`.
 
         Parameters
         ----------
         file_path : str, path object or file-like object
             The path to the CSV file.
-        index_col : str | int, default 'timestamp'
-            The index column.
+        timestamp_column : str | int, default 'timestamp'
+            Name of the timestamp column in the CSV file
         format : str, default 'mixed'
             The timestamp column format.
 
@@ -48,54 +48,26 @@ class CSVTickDataLoader:
         """
         df = pd.read_csv(
             file_path,
-            index_col=index_col,
+            index_col=timestamp_column,
             parse_dates=True,
         )
         df.index = pd.to_datetime(df.index, format=format)
         return df
 
 
-class CSVBarDataLoader:
+class ParquetDataLoader:
     """
-    Provides a generic bar data CSV file loader.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the bar `pandas.DataFrame` loaded from the given CSV `file_path`.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_csv(
-            file_path,
-            index_col="timestamp",
-            parse_dates=True,
-        )
-        df.index = pd.to_datetime(df.index, format="mixed")
-        return df
-
-
-class ParquetTickDataLoader:
-    """
-    Provides a generic tick data Parquet file loader.
+    Loads Parquet data to a `pandas.DataFrame`.
     """
 
     @staticmethod
     def load(
         file_path: PathLike[str] | str,
         timestamp_column: str = "timestamp",
+        format: str = "mixed",
     ) -> pd.DataFrame:
         """
-        Return the tick `pandas.DataFrame` loaded from the given Parquet `file_path`.
+        Return the `pandas.DataFrame` loaded from the given Parquet `file_path`.
 
         Parameters
         ----------
@@ -103,6 +75,8 @@ class ParquetTickDataLoader:
             The path to the Parquet file.
         timestamp_column: str
             Name of the timestamp column in the parquet data
+        format : str, default 'mixed'
+            The timestamp column format.
 
         Returns
         -------
@@ -111,31 +85,7 @@ class ParquetTickDataLoader:
         """
         df = pd.read_parquet(file_path)
         df = df.set_index(timestamp_column)
-        return df
-
-
-class ParquetBarDataLoader:
-    """
-    Provides a generic bar data Parquet file loader.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the bar `pandas.DataFrame` loaded from the given Parquet `file_path`.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the Parquet file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_parquet(file_path)
-        df = df.set_index("timestamp")
+        df.index = pd.to_datetime(df.index, format=format)
         return df
 
 

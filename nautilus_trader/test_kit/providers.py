@@ -55,10 +55,8 @@ from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.loaders import CSVBarDataLoader
-from nautilus_trader.persistence.loaders import CSVTickDataLoader
-from nautilus_trader.persistence.loaders import ParquetBarDataLoader
-from nautilus_trader.persistence.loaders import ParquetTickDataLoader
+from nautilus_trader.persistence.loaders import CSVDataLoader
+from nautilus_trader.persistence.loaders import ParquetDataLoader
 
 
 class TestInstrumentProvider:
@@ -600,22 +598,22 @@ class TestDataProvider:
     def read_csv_ticks(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return CSVTickDataLoader.load(file_path=f)
+            return CSVDataLoader.load(file_path=f)
 
     def read_csv_bars(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return CSVBarDataLoader.load(file_path=f)
+            return CSVDataLoader.load(file_path=f)
 
     def read_parquet_ticks(self, path: str, timestamp_column: str = "timestamp") -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return ParquetTickDataLoader.load(file_path=f, timestamp_column=timestamp_column)
+            return ParquetDataLoader.load(file_path=f, timestamp_column=timestamp_column)
 
     def read_parquet_bars(self, path: str) -> pd.DataFrame:
         uri = self._make_uri(path=path)
         with fsspec.open(uri) as f:
-            return ParquetBarDataLoader.load(file_path=f)
+            return ParquetDataLoader.load(file_path=f)
 
 
 class TestDataGenerator:

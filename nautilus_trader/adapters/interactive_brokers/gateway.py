@@ -51,8 +51,8 @@ class InteractiveBrokersGateway:
 
     def __init__(
         self,
-        username: str,
-        password: str,
+        username: str | None = None,
+        password: str | None = None,
         host: str | None = "localhost",
         port: int | None = None,
         trading_mode: str | None = "paper",
