@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 
@@ -25,6 +26,16 @@ def parse_order_side(value: str) -> OrderSide:
             return OrderSide.SELL
         case _:
             return OrderSide.NO_ORDER_SIDE
+
+
+def parse_aggressor_side(value: str) -> AggressorSide:
+    match value:
+        case "A":
+            return AggressorSide.BUYER
+        case "B":
+            return AggressorSide.SELLER
+        case _:
+            return AggressorSide.NO_AGGRESSOR
 
 
 def parse_book_action(value: str) -> BookAction:
