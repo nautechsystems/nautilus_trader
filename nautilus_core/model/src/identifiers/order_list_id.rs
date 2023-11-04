@@ -63,32 +63,18 @@ impl From<&str> for OrderListId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::order_list_id::OrderListId;
-
-    #[fixture]
-    pub fn test_order_list_id() -> OrderListId {
-        OrderListId::from("001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, OrderListId};
+    use super::*;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
-    fn test_string_reprs(test_order_list_id: OrderListId) {
-        assert_eq!(test_order_list_id.to_string(), "001");
-        assert_eq!(format!("{test_order_list_id}"), "001");
+    fn test_string_reprs(order_list_id_test: OrderListId) {
+        assert_eq!(order_list_id_test.to_string(), "001");
+        assert_eq!(format!("{order_list_id_test}"), "001");
     }
 }
