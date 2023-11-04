@@ -54,7 +54,7 @@ def clock():
 
 @pytest.fixture()
 def logger(clock):
-    return Logger(clock, bypass=False)
+    return Logger(clock, bypass=True)  # Bypass for normal testing
 
 
 @pytest.fixture()
