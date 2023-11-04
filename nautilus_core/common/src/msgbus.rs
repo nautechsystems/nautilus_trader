@@ -15,61 +15,62 @@
 
 use std::{collections::HashMap, rc::Rc};
 
-use nautilus_core::uuid::UUID4;
-
-use crate::clock::TestClock;
+use nautilus_core::{message::Message, uuid::UUID4};
 
 type Handler = Rc<dyn Fn(&Message)>;
 
+/// Provides a generic message bus to facilitate various messaging patterns.
+///
+/// The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
+/// well as direct point-to-point messaging to registered endpoints.
+///
+/// Pub/Sub wildcard patterns for hierarchical topics are possible:
+///  - `*` asterisk represents one or more characters in a pattern.
+///  - `?` question mark represents a single character in a pattern.
+///
+/// Given a topic and pattern potentially containing wildcard characters, i.e.
+/// `*` and `?`, where `?` can match any single character in the topic, and `*`
+/// can match any number of characters including zero characters.
+///
+/// The asterisk in a wildcard matches any character zero or more times. For
+/// example, `comp*` matches anything beginning with `comp` which means `comp`,
+/// `complete`, and `computer` are all matched.
+///
+/// A question mark matches a single character once. For example, `c?mp` matches
+/// `camp` and `comp`. The question mark can also be used more than once.
+/// For example, `c??p` would match both of the above examples and `coop`.
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-enum Message {
-    Command {
-        id: UUID4,
-        ts_init: u64,
-    },
-    Document {
-        id: UUID4,
-        ts_init: u64,
-    },
-    Event {
-        id: UUID4,
-        ts_init: u64,
-        ts_event: u64,
-    },
-    Request {
-        id: UUID4,
-        ts_init: u64,
-    },
-    Response {
-        id: UUID4,
-        ts_init: u64,
-        correlation_id: UUID4,
-    },
-}
-
-#[allow(dead_code)]
-struct MessageBus {
-    name: String,
-    clock: TestClock,
+pub struct MessageBus {
+    /// The name for the message bus.
+    pub name: String,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
     /// * '*' - any number of any characters
     subscriptions: HashMap<String, Handler>,
     /// maps a pattern to all the handlers registered for it
-    /// this is updated whenever a new subscription is created
+    /// this is updated whenever a new subscription is created.
     patterns: HashMap<String, Vec<Handler>>,
-    /// handles a message or a request destined for a specific endpoint
+    /// handles a message or a request destined for a specific endpoint.
     endpoints: HashMap<String, Handler>,
     /// Relates a request with a response
     /// a request maps it's id to a handler so that a response
-    /// with the same id can later be handled
+    /// with the same id can later be handled.
     correlation_index: HashMap<UUID4, Handler>,
 }
 
 #[allow(dead_code)]
 impl MessageBus {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_owned(),
+            subscriptions: HashMap::new(),
+            patterns: HashMap::new(),
+            endpoints: HashMap::new(),
+            correlation_index: HashMap::new(),
+        }
+    }
+
     // TODO: not needed accessible from struct field
     fn endpoints(&self) {}
 

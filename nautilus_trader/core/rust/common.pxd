@@ -110,6 +110,32 @@ cdef extern from "../includes/common.h":
     cdef struct Logger_t:
         pass
 
+    # Provides a generic message bus to facilitate various messaging patterns.
+    #
+    # The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
+    # well as direct point-to-point messaging to registered endpoints.
+    #
+    # Pub/Sub wildcard patterns for hierarchical topics are possible:
+    #  - `*` asterisk represents one or more characters in a pattern.
+    #  - `?` question mark represents a single character in a pattern.
+    #
+    # Given a topic and pattern potentially containing wildcard characters, i.e.
+    # `*` and `?`, where `?` can match any single character in the topic, and `*`
+    # can match any number of characters including zero characters.
+    #
+    # The asterisk in a wildcard matches any character zero or more times. For
+    # example, `comp*` matches anything beginning with `comp` which means `comp`,
+    # `complete`, and `computer` are all matched.
+    #
+    # A question mark matches a single character once. For example, `c?mp` matches
+    # `camp` and `comp`. The question mark can also be used more than once.
+    # For example, `c??p` would match both of the above examples and `coop`.
+    cdef struct MessageBus:
+        pass
+
+    cdef struct PythonSwitchboard:
+        pass
+
     cdef struct TestClock:
         pass
 
@@ -146,6 +172,18 @@ cdef extern from "../includes/common.h":
     # having to manually access the underlying `Logger` instance.
     cdef struct Logger_API:
         Logger_t *_0;
+
+    # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
+    #
+    # This struct wraps `MessageBus` in a way that makes it compatible with C function
+    # calls, enabling interaction with `MessageBus` in a C environment.
+    #
+    # It implements the `Deref` trait, allowing instances of `MessageBus_API` to be
+    # dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
+    # having to manually access the underlying `MessageBus` instance.
+    cdef struct MessageBus_API:
+        MessageBus *inner;
+        PythonSwitchboard *switchboard;
 
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:
@@ -202,6 +240,7 @@ cdef extern from "../includes/common.h":
     void test_clock_drop(TestClock_API clock);
 
     # # Safety
+    #
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_register_default_handler(TestClock_API *clock, PyObject *callback_ptr);
 
@@ -311,6 +350,11 @@ cdef extern from "../includes/common.h":
                     LogColor color,
                     const char *component_ptr,
                     const char *message_ptr);
+
+    # # Safety
+    #
+    # - Assumes `name_ptr` is a valid C string pointer.
+    MessageBus_API test_msgbus_new(const char *name_ptr);
 
     # # Safety
     #
