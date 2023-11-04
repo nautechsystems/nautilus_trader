@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 from nautilus_trader.core.nautilus_pyo3 import Equity
-from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
+from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 aapl_equity = TestInstrumentProviderPyo3.appl_equity()
