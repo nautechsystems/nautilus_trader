@@ -76,6 +76,10 @@ class DatabentoDataLoader:
      - OHLCV_1D
      - DEFINITION
 
+    For the loader to work correctly, you must first either:
+     - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
+     - Manually add Nautilus instrument objects through `add_instruments(...)`
+
     """
 
     def __init__(self) -> None:
@@ -83,6 +87,36 @@ class DatabentoDataLoader:
         self._instruments: dict[InstrumentId, Instrument] = {}
 
         self.load_publishers(path=Path(__file__).resolve().parent / "publishers.json")
+
+    def publishers(self) -> dict[int, DatabentoPublisher]:
+        """
+        Return the internal Databento publishers currently held by the loader.
+
+        Returns
+        -------
+        dict[int, DatabentoPublisher]
+
+        Notes
+        -----
+        Returns a copy of the internal dictionary.
+
+        """
+        return self._publishers.copy()
+
+    def instruments(self) -> dict[InstrumentId, Instrument]:
+        """
+        Return the internal Nautilus instruments currently held by the loader.
+
+        Returns
+        -------
+        dict[InstrumentId, Instrument]
+
+        Notes
+        -----
+        Returns a copy of the internal dictionary.
+
+        """
+        return self._instruments.copy()
 
     def load_publishers(self, path: PathLike[str] | str) -> None:
         """
@@ -118,7 +152,29 @@ class DatabentoDataLoader:
         # TODO: Validate actually definitions schema
         instruments = self.from_dbn(path)
 
-        self._instruments = {i.instrument_id: i for i in instruments}
+        self._instruments = {i.id: i for i in instruments}
+
+    def add_instruments(self, instrument: Instrument | list[Instrument]) -> None:
+        """
+        Add the given `instrument`(s) for use by the loader.
+
+        Parameters
+        ----------
+        instrument : Instrument | list[Instrument]
+            The Nautilus instrument(s) to add.
+
+        Warnings
+        --------
+        Will overwrite any existing instrument(s) with the same Nautilus instrument ID(s).
+
+        """
+        if not isinstance(instrument, list):
+            instruments = [instrument]
+        else:
+            instruments = instrument
+
+        for inst in instruments:
+            self._instruments[inst.id] = inst
 
     def from_dbn(self, path: PathLike[str] | str) -> list[Data]:
         """

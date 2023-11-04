@@ -55,6 +55,43 @@ def test_loader_definition_glbx_all_symbols() -> None:
     assert len(data) == 10_000_000
 
 
+def test_get_publishers() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+
+    # Act
+    result = loader.publishers()
+
+    # Assert
+    assert len(result) == 43  # From built-in map
+
+
+def test_get_instruments_when_no_instruments() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+
+    # Act
+    result = loader.instruments()
+
+    # Assert
+    assert len(result) == 0  # No instruments loaded yet
+
+
+def test_get_instruments() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-fut.dbn.zst"
+
+    # Act
+    loader.load_instruments(path)
+    instruments = loader.instruments()
+
+    # Assert
+    expected_id = InstrumentId.from_str("ESM3.GLBX")
+    assert len(instruments) == 1
+    assert instruments[expected_id].id == expected_id
+
+
 def test_loader_definition_glbx_futures() -> None:
     # Arrange
     loader = DatabentoDataLoader()
