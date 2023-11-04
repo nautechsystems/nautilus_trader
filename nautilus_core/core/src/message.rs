@@ -13,7 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod logging;
-pub mod msgbus;
-pub mod timer;
+use crate::{time::UnixNanos, uuid::UUID4};
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Command {
+        id: UUID4,
+        ts_init: UnixNanos,
+    },
+    Document {
+        id: UUID4,
+        ts_init: UnixNanos,
+    },
+    Event {
+        id: UUID4,
+        ts_init: UnixNanos,
+        ts_event: UnixNanos,
+    },
+    Request {
+        id: UUID4,
+        ts_init: UnixNanos,
+    },
+    Response {
+        id: UUID4,
+        ts_init: UnixNanos,
+        correlation_id: UUID4,
+    },
+}
