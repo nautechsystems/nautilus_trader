@@ -78,32 +78,17 @@ impl From<&str> for TraderId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::trader_id::TraderId;
-
-    #[fixture]
-    pub fn test_trader() -> TraderId {
-        TraderId::from("TRADER-001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, TraderId};
+    use crate::identifiers::{stubs::*, trader_id::TraderId};
 
     #[rstest]
-    fn test_string_reprs(test_trader: TraderId) {
-        assert_eq!(test_trader.to_string(), "TRADER-001");
-        assert_eq!(format!("{test_trader}"), "TRADER-001");
+    fn test_string_reprs(trader_test: TraderId) {
+        assert_eq!(trader_test.to_string(), "TRADER-001");
+        assert_eq!(format!("{trader_test}"), "TRADER-001");
     }
 }

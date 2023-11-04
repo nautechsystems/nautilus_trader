@@ -70,21 +70,6 @@ impl From<&str> for PositionId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::position_id::PositionId;
-
-    #[fixture]
-    pub fn test_position_id() -> PositionId {
-        PositionId::from("P-123456789")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -92,11 +77,11 @@ mod tests {
     use rstest::rstest;
 
     use super::PositionId;
-    use crate::identifiers::position_id::stubs::test_position_id;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
-    fn test_string_reprs(test_position_id: PositionId) {
-        assert_eq!(test_position_id.to_string(), "P-123456789");
-        assert_eq!(format!("{test_position_id}"), "P-123456789");
+    fn test_string_reprs(position_id_test: PositionId) {
+        assert_eq!(position_id_test.to_string(), "P-123456789");
+        assert_eq!(format!("{position_id_test}"), "P-123456789");
     }
 }

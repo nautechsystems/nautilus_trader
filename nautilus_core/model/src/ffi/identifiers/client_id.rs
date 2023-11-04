@@ -44,7 +44,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::identifiers::client_id::stubs::{client_id_binance, client_id_dydx};
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_client_id_to_cstr_c() {

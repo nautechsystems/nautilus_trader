@@ -80,21 +80,6 @@ impl From<&str> for StrategyId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::strategy_id::StrategyId;
-
-    #[fixture]
-    pub fn strategy_id_ema_cross() -> StrategyId {
-        StrategyId::from("EMACross-001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -102,7 +87,7 @@ mod tests {
     use rstest::rstest;
 
     use super::StrategyId;
-    use crate::identifiers::strategy_id::stubs::strategy_id_ema_cross;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
