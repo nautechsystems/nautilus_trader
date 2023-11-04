@@ -364,12 +364,21 @@ impl From<OrderInitialized> for MarketOrder {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-// #[cfg(test)]
-// mod tests{
-//     use rstest::rstest;
-//
-//     #[rstest]
-//     #[should_panic(expected = "`MarketOrder` code")]
-//     fn test_non_positive_quantity(){
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::{enums::TimeInForce, orders::stubs::*, types::quantity::Quantity};
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    fn test_positive_quantity_condition() {
+        let _ = market_order(Quantity::from(0), None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "GTD not supported for Market orders")]
+    fn test_gtd_condition() {
+        let _ = market_order(Quantity::from(100), Some(TimeInForce::Gtd));
+    }
+}

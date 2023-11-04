@@ -281,7 +281,7 @@ impl<'de> Deserialize<'de> for Quantity {
 
 pub fn check_quantity_positive(value: Quantity) -> Result<()> {
     if !value.is_positive() {
-        bail!("Condition failed: invalid `Quantity` for not positive, was {value}")
+        bail!("Condition failed: invalid `Quantity`, should be positive and was {value}")
     }
     Ok(())
 }
