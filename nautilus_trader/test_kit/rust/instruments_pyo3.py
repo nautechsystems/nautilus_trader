@@ -31,7 +31,7 @@ from nautilus_trader.core.nautilus_pyo3 import OptionsContract
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import Symbol
-from nautilus_trader.test_kit.rust.types import TestTypesProviderPyo3
+from nautilus_trader.test_kit.rust.types_pyo3 import TestTypesProviderPyo3
 
 
 class TestInstrumentProviderPyo3:
