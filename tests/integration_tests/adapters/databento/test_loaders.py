@@ -39,11 +39,14 @@ from nautilus_trader.model.objects import Quantity
 from tests import TEST_DATA_DIR
 
 
+DATABENTO_TEST_DATA_DIR = TEST_DATA_DIR / "databento"
+
+
 @pytest.mark.skip(reason="Used for initial development")
 def test_loader_definition_glbx_all_symbols() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/definition-glbx-all-symbols2.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-all-symbols2.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -55,7 +58,7 @@ def test_loader_definition_glbx_all_symbols() -> None:
 def test_loader_definition_glbx_futures() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/definition-glbx-es-fut.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-fut.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -85,7 +88,7 @@ def test_loader_definition_glbx_futures() -> None:
 def test_loader_definition_glbx_futures_spread() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/definition-glbx-es-futspread.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-futspread.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -115,7 +118,7 @@ def test_loader_definition_glbx_futures_spread() -> None:
 def test_loader_definition_glbx_options() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/definition-glbx-es-opt.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-opt.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -147,7 +150,7 @@ def test_loader_definition_glbx_options() -> None:
 def test_loader_definition_opra_pillar() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/definition-opra.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "definition-opra.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -179,7 +182,7 @@ def test_loader_definition_opra_pillar() -> None:
 def test_loader_with_xnasitch_definition() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/definition.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "definition.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -208,7 +211,7 @@ def test_loader_with_xnasitch_definition() -> None:
 def test_loader_with_xnasitch_mbo() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/mbo.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "mbo.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -233,7 +236,7 @@ def test_loader_with_xnasitch_mbo() -> None:
 def test_loader_with_mbp_1() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/mbp-1.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "mbp-1.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -255,7 +258,7 @@ def test_loader_with_mbp_1() -> None:
 def test_loader_with_mbp_10() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/mbp-10.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "mbp-10.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -277,7 +280,7 @@ def test_loader_with_mbp_10() -> None:
 def test_loader_with_tbbo() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/tbbo.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "tbbo.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -309,7 +312,7 @@ def test_loader_with_tbbo() -> None:
 def test_loader_with_trades() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/trades.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "trades.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -331,7 +334,7 @@ def test_loader_with_trades() -> None:
 def test_loader_with_ohlcv_1s() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/ohlcv-1s.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "ohlcv-1s.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -354,7 +357,7 @@ def test_loader_with_ohlcv_1s() -> None:
 def test_loader_with_ohlcv_1m() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/ohlcv-1m.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "ohlcv-1m.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -373,7 +376,7 @@ def test_loader_with_ohlcv_1m() -> None:
 def test_loader_with_ohlcv_1h() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/ohlcv-1h.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "ohlcv-1h.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
@@ -392,7 +395,7 @@ def test_loader_with_ohlcv_1h() -> None:
 def test_loader_with_ohlcv_1d() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = TEST_DATA_DIR / "databento/ohlcv-1d.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "ohlcv-1d.dbn.zst"
 
     # Act
     data = loader.from_dbn(path)
