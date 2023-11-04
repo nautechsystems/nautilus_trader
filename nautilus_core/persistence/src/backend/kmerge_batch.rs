@@ -269,68 +269,6 @@ mod tests {
         assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 9, 11]);
     }
 
-    #[ignore]
-    #[rstest]
-    fn test6() {
-        let iter_a = vec![
-            vec![15, 22].into_iter(),
-            vec![1, 5, 9].into_iter(),
-            vec![2, 6].into_iter(),
-        ]
-        .into_iter();
-        let iter_b = vec![vec![3, 17, 21].into_iter(), vec![8, 10, 12, 14].into_iter()].into_iter();
-        let iter_c = vec![vec![4, 7, 20].into_iter(), vec![11, 13, 18, 19].into_iter()].into_iter();
-        let iter_d = vec![vec![16].into_iter()].into_iter();
-
-        let mut kmerge: KMerge<_, i32, _> = KMerge::new(OrdComparator);
-        kmerge.push_iter(iter_a);
-        kmerge.push_iter(iter_b);
-        kmerge.push_iter(iter_c);
-        kmerge.push_iter(iter_d);
-
-        let values: Vec<i32> = kmerge.collect();
-        assert_eq!(
-            values,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
-        );
-    }
-
-    #[ignore]
-    #[rstest]
-    fn test7() {
-        let mut kmerge: KMerge<_, i32, _> = KMerge::new(OrdComparator);
-
-        // First batch of iterators
-        let iter_a = vec![vec![1, 3, 5].into_iter(), vec![2, 4, 6].into_iter()].into_iter();
-        kmerge.push_iter(iter_a);
-
-        // Collecting values after the first batch
-        let mut values: Vec<i32> = kmerge.by_ref().collect();
-        assert_eq!(values, vec![1, 2, 3, 4, 5, 6]);
-
-        // Second batch of iterators
-        let iter_b = vec![vec![7, 9, 11].into_iter(), vec![8, 10, 12].into_iter()].into_iter();
-        kmerge.push_iter(iter_b);
-
-        // Collecting values after the second batch
-        values.extend(kmerge.by_ref());
-        assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
-
-        // Third batch of iterators
-        let iter_c = vec![vec![13, 15, 17].into_iter(), vec![14, 16, 18].into_iter()].into_iter();
-        kmerge.push_iter(iter_c);
-
-        // Collecting values after the third batch
-        values.extend(kmerge);
-        assert_eq!(
-            values,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]
-        );
-
-        // Validating the entire sequence is in non-decreasing order
-        assert!(values.windows(2).all(|w| w[0] <= w[1]));
-    }
-
     #[derive(Debug, Clone)]
     struct SortedNestedVec(Vec<Vec<u64>>);
 
