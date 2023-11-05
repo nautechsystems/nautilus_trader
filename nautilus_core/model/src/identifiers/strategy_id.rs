@@ -53,7 +53,7 @@ impl StrategyId {
     }
 
     pub fn get_tag(&self) -> &str {
-        self.value.split("-").last().unwrap()
+        self.value.split('-').last().unwrap()
     }
 }
 

@@ -51,7 +51,7 @@ impl TraderId {
     }
 
     pub fn get_tag(&self) -> &str {
-        self.value.split("-").last().unwrap()
+        self.value.split('-').last().unwrap()
     }
 }
 
@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_tag(trader_id: TraderId){
+    fn test_get_tag(trader_id: TraderId) {
         assert_eq!(trader_id.get_tag(), "001");
     }
 }

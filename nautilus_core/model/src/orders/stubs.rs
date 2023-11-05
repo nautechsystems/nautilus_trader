@@ -24,7 +24,7 @@ use crate::{
 
 // ---- MarketOrder ----
 pub fn market_order(quantity: Quantity, time_in_force: Option<TimeInForce>) -> MarketOrder {
-    let trader = trader_test();
+    let trader = trader_id();
     let strategy = strategy_id_ema_cross();
     let instrument = instrument_id_eth_usdt_binance();
     let client_order_id = client_order_id();

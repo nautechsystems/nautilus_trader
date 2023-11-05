@@ -88,7 +88,6 @@ impl Default for MonotonicClock {
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
-
     /// Return the current UNIX time in seconds.
     fn timestamp(&mut self) -> f64;
 
@@ -222,8 +221,6 @@ impl Default for TestClock {
 }
 
 impl Clock for TestClock {
-
-
     fn timestamp(&mut self) -> f64 {
         nanos_to_secs(self.time_ns)
     }
@@ -345,8 +342,7 @@ pub struct LiveClock {
     callbacks_py: HashMap<String, PyObject>,
 }
 
-impl LiveClock{
-
+impl LiveClock {
     pub fn new() -> Self {
         Self {
             internal: MonotonicClock::default(),
@@ -366,8 +362,6 @@ impl Default for LiveClock {
 }
 
 impl Clock for LiveClock {
-
-
     fn timestamp(&mut self) -> f64 {
         self.internal.unix_timestamp_secs()
     }

@@ -15,9 +15,7 @@
 
 pub mod client_order_id;
 
-
-pub trait IdentifierGenerator<T>{
-
+pub trait IdentifierGenerator<T> {
     fn set_count(&mut self, count: usize);
 
     fn reset(&mut self);
