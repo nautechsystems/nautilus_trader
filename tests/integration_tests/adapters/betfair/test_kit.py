@@ -24,7 +24,10 @@ import pandas as pd
 from aiohttp import ClientResponse
 from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import EndpointType
+from betfair_parser.spec.common import Handicap
+from betfair_parser.spec.common import MarketId
 from betfair_parser.spec.common import Request
+from betfair_parser.spec.common import SelectionId
 from betfair_parser.spec.common import encode
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import OCM
@@ -128,9 +131,7 @@ class BetfairTestStubs:
                 return resp
             elif request.endpoint_type == EndpointType.NAVIGATION:
                 resp = MagicMock(spec=ClientResponse)
-                resp.body = msgspec.json.encode(
-                    BetfairResponses.navigation_list_navigation(),
-                )
+                resp.body = msgspec.json.encode(BetfairResponses.navigation_list_navigation())
                 return resp
             else:
                 raise KeyError(rpc_method)
@@ -308,17 +309,20 @@ class BetfairRequests:
 
 class BetfairResponses:
     @staticmethod
-    def load(filename: str):
+    def load(filename: str, request_id: int = 1):
         raw = (RESOURCES_PATH / "responses" / filename).read_bytes()
-        return msgspec.json.decode(raw)
+        data = msgspec.json.decode(raw)
+        if "id" in data:
+            data["id"] = request_id
+        return data
 
     @staticmethod
-    def account_details():
-        return BetfairResponses.load("account_details.json")
+    def account_details(request_id: int = 1):
+        return BetfairResponses.load("account_details.json", request_id=request_id)
 
     @staticmethod
-    def account_funds_no_exposure():
-        return BetfairResponses.load("account_funds_no_exposure.json")
+    def account_funds_no_exposure(request_id: int = 1):
+        return BetfairResponses.load("account_funds_no_exposure.json", request_id=request_id)
 
     @staticmethod
     def account_funds_with_exposure():
@@ -779,9 +783,9 @@ class BetfairDataProvider:
 
 
 def betting_instrument(
-    market_id: str = "1.179082386",
-    selection_id: int = 50214,
-    selection_handicap: float | None = None,
+    market_id: MarketId = "1.179082386",
+    selection_id: SelectionId = 50214,
+    selection_handicap: Handicap | None = None,
 ) -> BettingInstrument:
     return BettingInstrument(
         venue_name=BETFAIR_VENUE.value,
@@ -798,7 +802,7 @@ def betting_instrument(
         market_name="AFC Conference Winner",
         market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
         market_type="SPECIAL",
-        selection_handicap=selection_handicap,
+        selection_handicap=selection_handicap or 0.0,
         selection_id=selection_id,
         selection_name="Kansas City Chiefs",
         currency="GBP",

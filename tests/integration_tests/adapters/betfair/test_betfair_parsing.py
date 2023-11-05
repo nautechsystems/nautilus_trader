@@ -17,6 +17,7 @@ import asyncio
 import datetime
 from collections import Counter
 from collections import defaultdict
+from copy import copy
 
 import msgspec
 import pytest
@@ -37,6 +38,7 @@ from betfair_parser.spec.common import OrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import decode
 from betfair_parser.spec.common import encode
+from betfair_parser.spec.common.messages import _default_id_generator
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import BestAvailableToBack
 from betfair_parser.spec.streaming import MarketChange
@@ -51,6 +53,7 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
+from nautilus_trader.adapters.betfair.parsing.common import instrument_id_betfair_ids
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
@@ -283,7 +286,7 @@ class TestBetfairParsingStreaming:
             ):
                 instrument_id = update.instrument_id
                 if instrument_id not in books:
-                    instrument = betting_instrument(*instrument_id.value.split("-", maxsplit=2))
+                    instrument = betting_instrument(*instrument_id_betfair_ids(instrument_id))
                     books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
@@ -342,12 +345,13 @@ class TestBetfairParsing:
         )
         result = order_submit_to_place_order_params(command=command, instrument=self.instrument)
         expected = PlaceOrders.with_params(
+            request_id=result.id,
             market_id="1.179082386",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
                     selection_id=50214,
-                    handicap=None,
+                    handicap=0.0,
                     side=Side.BACK,
                     limit_order=LimitOrder(
                         price=2.5,
@@ -381,6 +385,7 @@ class TestBetfairParsing:
             instrument=self.instrument,
         )
         expected = ReplaceOrders.with_params(
+            request_id=result.id,
             market_id="1.179082386",
             instructions=[ReplaceInstruction(bet_id=1, new_price=1.35)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
@@ -399,6 +404,7 @@ class TestBetfairParsing:
             instrument=self.instrument,
         )
         expected = CancelOrders.with_params(
+            request_id=result.id,
             market_id="1.179082386",
             instructions=[CancelInstruction(bet_id=228302937743, size_reduction=None)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
@@ -408,9 +414,15 @@ class TestBetfairParsing:
 
     @pytest.mark.asyncio()
     async def test_account_statement(self, betfair_client):
-        mock_betfair_request(betfair_client, BetfairResponses.account_details())
+        mock_betfair_request(
+            betfair_client,
+            BetfairResponses.account_details(request_id=request_id()),
+        )
         detail = await self.client.get_account_details()
-        mock_betfair_request(betfair_client, BetfairResponses.account_funds_no_exposure())
+        mock_betfair_request(
+            betfair_client,
+            BetfairResponses.account_funds_no_exposure(request_id=request_id()),
+        )
         funds = await self.client.get_account_funds()
         result = betfair_account_to_account_state(
             account_detail=detail,
@@ -485,7 +497,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
             selection_id=50214,
-            handicap=None,
+            handicap=0.0,
             side=Side.BACK,
             limit_order=LimitOrder(
                 size=10.0,
@@ -515,7 +527,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT_ON_CLOSE,
             selection_id=50214,
-            handicap=None,
+            handicap=0.0,
             side=Side.BACK,
             limit_order=None,
             limit_on_close_order=LimitOnCloseOrder(liability=10.0, price=3.05),
@@ -532,7 +544,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
             selection_id=50214,
-            handicap=None,
+            handicap=0.0,
             side=Side.BACK,
             limit_order=LimitOrder(
                 size=100.0,
@@ -557,7 +569,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
             selection_id=50214,
-            handicap=None,
+            handicap=0.0,
             side=Side.LAY,
             limit_order=LimitOrder(
                 size=100.0,
@@ -674,3 +686,14 @@ class TestBetfairParsing:
             and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-0.0-BSP.BETFAIR")
         ]
         assert len(single_instrument_bsp_updates) == 1
+
+
+def request_id() -> int:
+    """
+    `betfair_parser uses an auto=incrementing request_id which can cause issues with the
+    test suite depending on how it is run.
+
+    Return the current request value for testing purposes
+
+    """
+    return next(copy(_default_id_generator))

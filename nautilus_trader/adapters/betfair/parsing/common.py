@@ -15,6 +15,10 @@
 
 from functools import lru_cache
 
+from betfair_parser.spec.common import Handicap
+from betfair_parser.spec.common import MarketId
+from betfair_parser.spec.common import SelectionId
+
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
@@ -27,9 +31,9 @@ def hash_market_trade(timestamp: int, price: float, volume: float):
 
 @lru_cache
 def betfair_instrument_id(
-    market_id: str,
-    selection_id: float,
-    selection_handicap: float | None,
+    market_id: MarketId,
+    selection_id: SelectionId,
+    selection_handicap: Handicap | None,
 ) -> InstrumentId:
     """
     Create an instrument ID from betfair fields.
@@ -41,6 +45,13 @@ def betfair_instrument_id(
     PyCondition.not_empty(market_id, "market_id")
     symbol = make_symbol(market_id, selection_id, selection_handicap)
     return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)
+
+
+def instrument_id_betfair_ids(
+    instrument_id: InstrumentId,
+) -> tuple[MarketId, SelectionId, Handicap]:
+    parts = instrument_id.symbol.value.split("-", maxsplit=2)
+    return MarketId(parts[0]), SelectionId(parts[1]), Handicap(parts[2])
 
 
 def chunk(list_like, n):

@@ -30,6 +30,7 @@ from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
 from betfair_parser.spec.betting.type_definitions import LimitOrder
 from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
+from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
@@ -240,7 +241,7 @@ def order_update_to_replace_order_params(
         customer_ref=command.id.value.replace("-", ""),
         instructions=[
             ReplaceInstruction(
-                bet_id=int(venue_order_id.value),
+                bet_id=BetId(venue_order_id.value),
                 new_price=command.price.as_double(),
             ),
         ],
@@ -256,7 +257,7 @@ def order_cancel_to_cancel_order_params(
     """
     return CancelOrders.with_params(
         market_id=instrument.market_id,
-        instructions=[CancelInstruction(bet_id=int(command.venue_order_id.value))],
+        instructions=[CancelInstruction(bet_id=BetId(command.venue_order_id.value))],
         customer_ref=command.id.value.replace("-", ""),
     )
 
