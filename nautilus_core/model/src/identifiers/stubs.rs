@@ -115,13 +115,13 @@ pub fn symbol_aud_usd() -> Symbol {
 // ---- TradeId ----
 
 #[fixture]
-pub fn test_trade_id() -> TradeId {
+pub fn trade_id() -> TradeId {
     TradeId::from("1234567890")
 }
 
 // ---- TraderId ----
 #[fixture]
-pub fn trader_test() -> TraderId {
+pub fn trader_id() -> TraderId {
     TraderId::from("TRADER-001")
 }
 
