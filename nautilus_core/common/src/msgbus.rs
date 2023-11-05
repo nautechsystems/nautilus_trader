@@ -13,14 +13,87 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::HashMap,
+    hash::{Hash, Hasher},
+    rc::Rc,
+};
 
 use nautilus_core::{message::Message, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
+use ustr::Ustr;
 
 /// Defines a handler which can take a `Message`.
 #[allow(dead_code)]
 pub type Handler = Rc<dyn Fn(&Message)>;
+
+// Represents a subscription to a particular topic.
+//
+// This is an internal class intended to be used by the message bus to organize
+// topics and their subscribers.
+#[derive(Copy, Clone, Debug)]
+pub struct Subscription<T>
+where
+    T: Clone,
+{
+    topic: Ustr,
+    handler: T,
+    handler_id: Ustr,
+    priority: u8,
+}
+
+impl<T> Subscription<T>
+where
+    T: Clone,
+{
+    pub fn new(topic: Ustr, handler: T, handler_id: Ustr, priority: Option<u8>) -> Self {
+        Self {
+            topic,
+            handler,
+            handler_id,
+            priority: priority.unwrap_or(0),
+        }
+    }
+}
+
+impl<T> PartialEq<Self> for Subscription<T>
+where
+    T: Clone,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.topic == other.topic && self.handler_id == other.handler_id
+    }
+}
+
+impl<T> Eq for Subscription<T> where T: Clone {}
+
+impl<T> PartialOrd for Subscription<T>
+where
+    T: Clone,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<T> Ord for Subscription<T>
+where
+    T: Clone,
+{
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.priority.cmp(&other.priority)
+    }
+}
+
+impl<T> Hash for Subscription<T>
+where
+    T: Clone,
+{
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.topic.hash(state);
+        self.handler_id.hash(state);
+    }
+}
 
 /// Provides a generic message bus to facilitate various messaging patterns.
 ///
@@ -55,12 +128,12 @@ where
     /// a topic can be a string with wildcards
     /// * '?' - any character
     /// * '*' - any number of any characters
-    subscriptions: HashMap<String, T>,
+    subscriptions: HashMap<Subscription<T>, Vec<Ustr>>,
     /// maps a pattern to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
-    patterns: HashMap<String, Vec<T>>,
+    patterns: HashMap<Ustr, Vec<Subscription<T>>>,
     /// handles a message or a request destined for a specific endpoint.
-    endpoints: HashMap<String, T>,
+    endpoints: HashMap<Ustr, T>,
     /// Relates a request with a response
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
@@ -91,43 +164,63 @@ where
 
     /// Returns the topics for active subscriptions.
     pub fn topics(&self) -> Vec<&str> {
-        self.subscriptions.keys().map(|k| k.as_str()).collect()
+        self.subscriptions
+            .keys()
+            .map(|s| s.topic.as_str())
+            .collect()
     }
 
     /// Registers the given `handler` for the `endpoint` address.
     pub fn register(&mut self, endpoint: String, handler: T) {
         // updates value if key already exists
-        self.endpoints.insert(endpoint, handler);
+        self.endpoints.insert(Ustr::from(&endpoint), handler);
     }
 
-    pub fn deregister(&mut self, endpoint: &String) {
+    /// Deregisters the given `handler` for the `endpoint` address.
+    pub fn deregister(&mut self, endpoint: &str) {
         // removes entry if it exists for endpoint
-        self.endpoints.remove(endpoint);
+        self.endpoints.remove(&Ustr::from(endpoint));
     }
 
     /// Subscribes the given `handler` to the `topic`.
-    pub fn subscribe(&mut self, topic: String, handler: T) {
-        if self.subscriptions.contains_key(&topic) {
+    pub fn subscribe(&mut self, topic: &str, handler: T, handler_id: &str, priority: Option<u8>) {
+        let sub = Subscription::new(Ustr::from(topic), handler, Ustr::from(handler_id), priority);
+
+        if self.subscriptions.contains_key(&sub) {
             // TODO: log
             return;
         }
 
-        self.subscriptions.insert(topic, handler);
+        // Find existing patterns which match this topic
+        let mut matches = Vec::new();
+        for (pattern, subs) in self.patterns.iter_mut() {
+            if is_matching(&Ustr::from(topic), pattern) {
+                subs.push(sub.clone());
+                subs.sort(); // Sort in priority order
+                matches.push(*pattern);
+            }
+        }
+
+        self.subscriptions.insert(sub, matches);
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe(&mut self, topic: &String, _handler: T) {
-        self.subscriptions.remove(topic);
+    pub fn unsubscribe(&mut self, topic: &str, handler: T, handler_id: &str) {
+        let sub = Subscription::new(Ustr::from(topic), handler, Ustr::from(handler_id), None);
+
+        self.subscriptions.remove(&sub);
     }
 
     /// Returns the handler for the given `endpoint`.
     pub fn get_endpoint(&self, endpoint: &str) -> Option<&T> {
-        self.endpoints.get(endpoint)
+        self.endpoints.get(&Ustr::from(endpoint))
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
-    pub fn has_subscribers(&self, pattern: &String) -> bool {
-        self.matching_handlers(pattern).next().is_some()
+    pub fn has_subscribers(&self, pattern: &str) -> bool {
+        self.matching_handlers(&Ustr::from(pattern))
+            .next()
+            .is_some()
     }
 
     // fn send(&self, endpoint: &String, msg: &Message) {
@@ -182,39 +275,42 @@ where
     // one of those fields or reconstruct the subscription as a tuple and
     // return that.
     // Depends on on how the output of this function is meant to be used
-    fn matching_handlers<'a>(&'a self, pattern: &'a String) -> impl Iterator<Item = &'a T> {
-        self.subscriptions.iter().filter_map(|(topic, handler)| {
-            if is_matching(topic, pattern) {
-                Some(handler)
+    fn matching_handlers<'a>(&'a self, pattern: &'a Ustr) -> impl Iterator<Item = &'a T> {
+        self.subscriptions.iter().filter_map(move |(sub, _)| {
+            if is_matching(&sub.topic, pattern) {
+                Some(&sub.handler)
             } else {
                 None
             }
         })
     }
 
-    pub fn get_matching_handlers(&mut self, pattern: String) -> &mut Vec<T> {
-        // TODO: check if clone can be avoided
-        // Although not possible with this style - https://github.com/rust-lang/rust/issues/51604
-        let entry = self.patterns.entry(pattern.clone());
-
+    // TODO: Need to improve the efficiency of this
+    pub fn get_matching_handlers<'a>(
+        &'a mut self,
+        pattern: &'a Ustr,
+    ) -> &'a mut Vec<Subscription<T>> {
+        // The closure must return Vec<Subscription<T>>, not Vec<T>
         let matching_handlers = || {
             self.subscriptions
                 .iter()
-                .filter_map(|(topic, handler)| {
-                    if is_matching(topic, &pattern) {
-                        Some(handler.clone())
+                .filter_map(|(sub, _)| {
+                    if is_matching(&sub.topic, pattern) {
+                        Some(sub.clone())
                     } else {
                         None
                     }
                 })
-                .collect()
+                .collect::<Vec<Subscription<T>>>()
         };
 
-        entry.or_insert_with(matching_handlers)
+        self.patterns
+            .entry(*pattern)
+            .or_insert_with(matching_handlers)
     }
 
-    fn publish(&mut self, pattern: String, _msg: &Message) {
-        let _handlers = self.get_matching_handlers(pattern);
+    pub fn publish(&mut self, pattern: Ustr, _msg: &Message) {
+        let _handlers = self.get_matching_handlers(&pattern);
 
         // call matched handlers
         // handlers.iter().for_each(|handler| handler(msg));
@@ -226,7 +322,7 @@ where
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
-fn is_matching(topic: &String, pattern: &String) -> bool {
+fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     let mut table = [[false; 256]; 256];
     table[0][0] = true;
 
@@ -282,6 +378,7 @@ mod tests {
         let msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
 
         assert!(msgbus.topics().is_empty());
+        assert!(!msgbus.has_subscribers(&"my-topic".to_string()));
     }
 
     #[rstest]
@@ -297,6 +394,7 @@ mod tests {
         msgbus.register(endpoint.clone(), handler.clone());
 
         assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
+        assert!(msgbus.get_endpoint(&endpoint).is_some());
     }
 
     #[rstest]
@@ -325,8 +423,9 @@ mod tests {
             format!("{:?}", m);
         });
 
-        msgbus.subscribe(topic.clone(), handler.clone());
+        msgbus.subscribe(&topic, handler.clone(), "a", Some(1));
 
+        assert!(msgbus.has_subscribers(&topic));
         assert_eq!(msgbus.topics(), vec![topic]);
     }
 
@@ -340,8 +439,8 @@ mod tests {
             format!("{:?}", m);
         });
 
-        msgbus.subscribe(topic.clone(), handler.clone());
-        msgbus.unsubscribe(&topic, handler.clone());
+        msgbus.subscribe(&topic, handler.clone(), "a", None);
+        msgbus.unsubscribe(&topic, handler.clone(), "a");
 
         assert!(msgbus.topics().is_empty());
     }

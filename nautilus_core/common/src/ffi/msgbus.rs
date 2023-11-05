@@ -30,6 +30,7 @@ use pyo3::{
     types::{PyList, PyString},
     AsPyPointer, Python,
 };
+use ustr::Ustr;
 
 use crate::msgbus::MessageBus;
 
@@ -123,8 +124,10 @@ pub unsafe extern "C" fn msgbus_get_matching_handlers(
     pattern_ptr: *const c_char,
 ) -> CVec {
     let pattern = cstr_to_string(pattern_ptr);
-    // TODO: Avoid clone
-    (*bus.get_matching_handlers(pattern)).clone().into()
+    // TODO: Avoid clone and take direct pointer
+    (*bus.get_matching_handlers(&Ustr::from(&pattern)))
+        .clone()
+        .into()
 }
 
 #[allow(clippy::drop_non_drop)]
@@ -157,7 +160,7 @@ mod tests {
         let handler: Handler = Rc::new(|_m: &_| Python::with_gil(|_| {}));
 
         let mut msgbus = MessageBus::<Handler>::new(trader_id, None);
-        msgbus.subscribe(topic.clone(), handler.clone());
+        msgbus.subscribe(&topic, handler.clone(), "id_of_method", None);
 
         assert_eq!(msgbus.topics(), vec![topic]);
     }
