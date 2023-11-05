@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{Arc, Mutex};
 
 use chrono::{Datelike, NaiveDateTime, Timelike};
 use nautilus_model::identifiers::{
@@ -27,7 +26,7 @@ pub struct ClientOrderIdGenerator {
     trader_id: TraderId,
     strategy_id: StrategyId,
     clock: Box<dyn Clock>,
-    count: Arc<Mutex<usize>>,
+    count: usize
 }
 
 impl ClientOrderIdGenerator {
@@ -37,42 +36,36 @@ impl ClientOrderIdGenerator {
         clock: Box<dyn Clock>,
         initial_count: Option<usize>,
     ) -> Self {
-        let count = Arc::new(Mutex::new(initial_count.unwrap_or(0)));
         Self {
             trader_id,
             strategy_id,
             clock,
-            count,
+            count: initial_count.unwrap_or(0)
         }
     }
 }
 
 impl IdentifierGenerator<ClientOrderId> for ClientOrderIdGenerator {
     fn set_count(&mut self, count: usize) {
-        let mut c = self.count.lock().unwrap();
-        *c = count;
+        self.count = count;
     }
 
     fn reset(&mut self) {
-        let mut c = self.count.lock().unwrap();
-        *c = 0;
+        self.count = 0;
     }
 
     fn count(&self) -> usize {
-        let c = self.count.lock().unwrap();
-        *c
+        self.count
     }
 
     fn generate(&mut self) -> ClientOrderId {
         let datetime_tag = self.get_datetime_tag();
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
-        let mut c = self.count.lock().unwrap();
-        *c += 1;
-        let current_count = *c;
+        self.count += 1;
         let id = format!(
             "O-{}-{}-{}-{}",
-            datetime_tag, trader_tag, strategy_tag, current_count
+            datetime_tag, trader_tag, strategy_tag, self.count
         );
         ClientOrderId::new(&id).unwrap()
     }
