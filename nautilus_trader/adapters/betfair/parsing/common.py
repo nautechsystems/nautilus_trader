@@ -28,8 +28,8 @@ def hash_market_trade(timestamp: int, price: float, volume: float):
 @lru_cache
 def betfair_instrument_id(
     market_id: str,
-    selection_id: str,
-    selection_handicap: str | None,
+    selection_id: float,
+    selection_handicap: float | None,
 ) -> InstrumentId:
     """
     Create an instrument ID from betfair fields.

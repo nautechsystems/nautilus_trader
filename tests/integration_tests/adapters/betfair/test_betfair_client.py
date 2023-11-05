@@ -18,7 +18,7 @@ from betfair_parser.exceptions import AccountAPINGException
 from betfair_parser.spec.accounts.enums import Wallet
 from betfair_parser.spec.accounts.operations import GetAccountDetails
 from betfair_parser.spec.accounts.operations import GetAccountFunds
-from betfair_parser.spec.accounts.operations import _GetAccountDetailsParams
+from betfair_parser.spec.accounts.operations import Params
 from betfair_parser.spec.accounts.operations import _GetAccountFundsParams
 from betfair_parser.spec.accounts.type_definitions import AccountFundsResponse
 from betfair_parser.spec.betting.enums import BetStatus
@@ -84,7 +84,6 @@ async def test_connect(betfair_client):
     expected = Login(
         jsonrpc="2.0",
         id=1,
-        method="login",
         params=_LoginParams(username="", password=""),
     )
     assert request == expected
@@ -112,7 +111,7 @@ async def test_list_navigation(betfair_client):
     assert len(nav.children) == 28
 
     _, request = betfair_client._request.call_args[0]
-    assert request == Menu(jsonrpc="2.0", id=0, method="", params={})
+    assert request == Menu(jsonrpc="2.0", id=0, params=None)
 
 
 @pytest.mark.asyncio()
@@ -151,7 +150,7 @@ async def test_get_account_details(betfair_client):
         jsonrpc="2.0",
         id=1,
         method="AccountAPING/v1.0/getAccountDetails",
-        params=_GetAccountDetailsParams(),
+        params=Params(),
     )
     assert request == expected
 

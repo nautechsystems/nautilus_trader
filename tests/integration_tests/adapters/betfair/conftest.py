@@ -40,7 +40,7 @@ from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
 @pytest.fixture()
 def instrument():
-    return betting_instrument(selection_handicap="0.0")
+    return betting_instrument(selection_handicap=0.0)
 
 
 @pytest.fixture()

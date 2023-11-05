@@ -110,7 +110,7 @@ def market_change_to_updates(  # noqa: C901
         for rc in mc.rc:
             instrument_id = betfair_instrument_id(
                 market_id=mc.id,
-                selection_id=str(rc.id),
+                selection_id=rc.id,
                 selection_handicap=parse_handicap(rc.hc),
             )
 
@@ -190,7 +190,7 @@ def market_definition_to_instrument_status(
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            selection_id=str(runner.id),
+            selection_id=runner.id,
             selection_handicap=parse_handicap(runner.handicap),
         )
         key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
@@ -235,7 +235,7 @@ def runner_to_instrument_close(
 ) -> InstrumentClose | None:
     instrument_id: InstrumentId = betfair_instrument_id(
         market_id=market_id,
-        selection_id=str(runner.id),
+        selection_id=runner.id,
         selection_handicap=parse_handicap(runner.handicap),
     )
 
@@ -284,7 +284,7 @@ def runner_to_betfair_starting_price(
     if runner.bsp is not None:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            selection_id=str(runner.id),
+            selection_id=runner.id,
             selection_handicap=parse_handicap(runner.handicap),
         )
         return BetfairStartingPrice(

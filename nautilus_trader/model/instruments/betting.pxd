@@ -14,16 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int8_t
+from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.instruments.base cimport Instrument
 
 
 cdef class BettingInstrument(Instrument):
-    cdef readonly str event_type_id
+    cdef readonly int event_type_id
     cdef readonly str event_type_name
-    cdef readonly str competition_id
+    cdef readonly int competition_id
     cdef readonly str competition_name
-    cdef readonly str event_id
+    cdef readonly int event_id
     cdef readonly str event_name
     cdef readonly str event_country_code
     cdef readonly datetime event_open_date
@@ -32,9 +35,9 @@ cdef class BettingInstrument(Instrument):
     cdef readonly str market_name
     cdef readonly datetime market_start_time
     cdef readonly str market_type
-    cdef readonly str selection_id
+    cdef readonly int selection_id
     cdef readonly str selection_name
-    cdef readonly str selection_handicap
+    cdef readonly float selection_handicap
 
     @staticmethod
     cdef BettingInstrument from_dict_c(dict values)

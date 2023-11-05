@@ -93,8 +93,8 @@ async def _setup_order_state(
                     if not cache.instrument(instrument_id):
                         instrument = betting_instrument(
                             market_id=oc.id,
-                            selection_id=str(orc.id),
-                            selection_handicap=str(orc.hc or 0.0),
+                            selection_id=orc.id,
+                            selection_handicap=orc.hc or 0.0,
                         )
                         cache.add_instrument(instrument)
                     if not cache.order(client_order_id):
