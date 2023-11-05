@@ -59,10 +59,7 @@ from nautilus_trader.model.objects import Quantity
 
 class DatabentoDataLoader:
     """
-    Provides a data loader for Databento format data.
-
-    Supported encodings:
-     - Databento Binary Encoding (DBN)
+    Provides a data loader for Databento Binary Encoding (DBN) format data.
 
     Supported schemas:
      - MBO
@@ -79,6 +76,10 @@ class DatabentoDataLoader:
     For the loader to work correctly, you must first either:
      - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
      - Manually add Nautilus instrument objects through `add_instruments(...)`
+
+    References
+    ----------
+    https://docs.databento.com/knowledge-base/new-users/dbn-encoding
 
     """
 
