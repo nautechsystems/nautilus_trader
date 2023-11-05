@@ -988,7 +988,7 @@ pub enum PriceType {
 )]
 pub enum TimeInForce {
     /// Good Till Canceled (GTC) - the order remains active until canceled.
-    #[pyo3(name = "GTD")]
+    #[pyo3(name = "GTC")]
     Gtc = 1,
     /// Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
     #[pyo3(name = "IOC")]

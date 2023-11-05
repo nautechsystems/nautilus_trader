@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import FuturesContract
-from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
+from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 futures_contract_es = TestInstrumentProviderPyo3.futures_contract_es()

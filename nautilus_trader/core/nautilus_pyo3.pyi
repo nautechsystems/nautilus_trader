@@ -21,7 +21,8 @@ from nautilus_trader.core.data import Data
 # Core
 ###################################################################################################
 
-class UUID4: ...
+class UUID4:
+    def __init__(self, value: str) -> None: ...
 class LogGuard: ...
 
 def set_global_log_collector(
