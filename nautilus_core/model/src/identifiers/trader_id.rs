@@ -49,6 +49,10 @@ impl TraderId {
             value: Ustr::from(s),
         })
     }
+
+    pub fn get_tag(&self) -> &str {
+        self.value.split('-').last().unwrap()
+    }
 }
 
 impl Default for TraderId {
@@ -87,8 +91,13 @@ mod tests {
     use crate::identifiers::{stubs::*, trader_id::TraderId};
 
     #[rstest]
-    fn test_string_reprs(trader_test: TraderId) {
-        assert_eq!(trader_test.to_string(), "TRADER-001");
-        assert_eq!(format!("{trader_test}"), "TRADER-001");
+    fn test_string_reprs(trader_id: TraderId) {
+        assert_eq!(trader_id.to_string(), "TRADER-001");
+        assert_eq!(format!("{trader_id}"), "TRADER-001");
+    }
+
+    #[rstest]
+    fn test_get_tag(trader_id: TraderId) {
+        assert_eq!(trader_id.get_tag(), "001");
     }
 }

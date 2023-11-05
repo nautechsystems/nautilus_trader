@@ -51,6 +51,10 @@ impl StrategyId {
             value: Ustr::from(s),
         })
     }
+
+    pub fn get_tag(&self) -> &str {
+        self.value.split('-').last().unwrap()
+    }
 }
 
 impl Default for StrategyId {
@@ -93,5 +97,10 @@ mod tests {
     fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
         assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
         assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
+    }
+
+    #[rstest]
+    fn test_get_tag(strategy_id_ema_cross: StrategyId) {
+        assert_eq!(strategy_id_ema_cross.get_tag(), "001");
     }
 }
