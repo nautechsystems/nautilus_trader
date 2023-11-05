@@ -88,8 +88,6 @@ impl Default for MonotonicClock {
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
-    /// Return a new [Clock].
-    fn new() -> Self;
 
     /// Return the current UNIX time in seconds.
     fn timestamp(&mut self) -> f64;
@@ -151,6 +149,17 @@ pub struct TestClock {
 }
 
 impl TestClock {
+    pub fn new() -> Self {
+        Self {
+            time_ns: 0,
+            timers: HashMap::new(),
+            default_callback: None,
+            default_callback_py: None,
+            _callbacks: HashMap::new(), // TBC
+            callbacks_py: HashMap::new(),
+        }
+    }
+
     #[must_use]
     pub fn get_timers(&self) -> &HashMap<String, TestTimer> {
         &self.timers
@@ -206,17 +215,14 @@ impl TestClock {
     }
 }
 
-impl Clock for TestClock {
-    fn new() -> Self {
-        Self {
-            time_ns: 0,
-            timers: HashMap::new(),
-            default_callback: None,
-            default_callback_py: None,
-            _callbacks: HashMap::new(), // TBC
-            callbacks_py: HashMap::new(),
-        }
+impl Default for TestClock {
+    fn default() -> Self {
+        Self::new()
     }
+}
+
+impl Clock for TestClock {
+
 
     fn timestamp(&mut self) -> f64 {
         nanos_to_secs(self.time_ns)
@@ -339,8 +345,9 @@ pub struct LiveClock {
     callbacks_py: HashMap<String, PyObject>,
 }
 
-impl Clock for LiveClock {
-    fn new() -> Self {
+impl LiveClock{
+
+    pub fn new() -> Self {
         Self {
             internal: MonotonicClock::default(),
             timers: HashMap::new(),
@@ -350,6 +357,16 @@ impl Clock for LiveClock {
             callbacks_py: HashMap::new(),
         }
     }
+}
+
+impl Default for LiveClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Clock for LiveClock {
+
 
     fn timestamp(&mut self) -> f64 {
         self.internal.unix_timestamp_secs()
