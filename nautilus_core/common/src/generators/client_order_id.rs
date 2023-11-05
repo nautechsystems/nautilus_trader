@@ -1,0 +1,166 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
+
+use crate::generators::IdentifierGenerator;
+use std::sync::{Arc, Mutex};
+use chrono::{Datelike, NaiveDateTime, Timelike};
+use nautilus_model::identifiers::client_order_id::ClientOrderId;
+use nautilus_model::identifiers::strategy_id::StrategyId;
+use nautilus_model::identifiers::trader_id::TraderId;
+use crate::clock::{Clock};
+
+#[derive()]
+#[repr(C)]
+pub struct ClientOrderIdGenerator{
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    clock: Box<dyn Clock>,
+    count: Arc<Mutex<usize>>
+}
+
+impl ClientOrderIdGenerator {
+    pub fn new(trader_id: TraderId, strategy_id: StrategyId, clock: Box<dyn Clock>, initial_count: Option<usize>) -> Self {
+        let count = Arc::new(Mutex::new(initial_count.unwrap_or(0)));
+        Self {
+            trader_id,
+            strategy_id,
+            clock,
+            count
+        }
+    }
+}
+
+impl IdentifierGenerator<ClientOrderId> for ClientOrderIdGenerator {
+    fn set_count(&mut self, count: usize) {
+        let mut c = self.count.lock().unwrap();
+        *c = count;
+    }
+    fn reset(&mut self) {
+        let mut c = self.count.lock().unwrap();
+        *c = 0;
+    }
+
+    fn count(&self) -> usize {
+        let c = self.count.lock().unwrap();
+        *c
+    }
+    fn generate(&mut self) -> ClientOrderId{
+        let datetime_tag = self.get_datetime_tag();
+        let trader_tag = self.trader_id.get_tag();
+        let strategy_tag = self.strategy_id.get_tag();
+        let mut c = self.count.lock().unwrap();
+        *c += 1;
+        let current_count = *c;
+        let id = format!("O-{}-{}-{}-{}", datetime_tag,trader_tag, strategy_tag, current_count);
+        let client_order_id = ClientOrderId::new(&id).unwrap();
+        client_order_id
+    }
+
+    fn get_datetime_tag(&mut self) -> String {
+        let millis = self.clock.timestamp_ms() as i64;
+        let now_utc = NaiveDateTime::from_timestamp_millis(millis).unwrap();
+        format!("{}{:02}{:02}-{:02}{:02}", now_utc.year(), now_utc.month(), now_utc.day(), now_utc.hour(), now_utc.minute())
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests{
+    use rstest::rstest;
+    use nautilus_model::identifiers::client_order_id::ClientOrderId;
+    use nautilus_model::identifiers::strategy_id::StrategyId;
+    use crate::generators::client_order_id::ClientOrderIdGenerator;
+    use nautilus_model::identifiers::trader_id::TraderId;
+    use crate::clock::{TestClock};
+    use crate::generators::IdentifierGenerator;
+
+    fn get_client_order_id_generator(
+        initial_count: Option<usize>,
+    ) -> ClientOrderIdGenerator {
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("EMACross-001");
+        let clock = TestClock::new();
+        ClientOrderIdGenerator::new(trader_id, strategy_id, Box::new(clock),initial_count)
+    }
+
+    #[rstest]
+    fn test_init(){
+        let generator = get_client_order_id_generator(None);
+        assert_eq!(generator.count(), 0);
+    }
+
+    #[rstest]
+    fn test_init_with_initial_count(){
+        let generator = get_client_order_id_generator(Some(7));
+        assert_eq!(generator.count(), 7);
+    }
+
+    #[rstest]
+    fn test_datetime_tag(){
+        let mut generator = get_client_order_id_generator(None);
+        let tag = generator.get_datetime_tag();
+        let result = "19700101-0000";
+        assert_eq!(tag, result);
+    }
+
+
+    #[rstest]
+    fn test_generate_order_id() {
+        let mut generator = get_client_order_id_generator(None);
+        let result1 = generator.generate();
+        let result2 = generator.generate();
+        let result3 = generator.generate();
+        assert_eq!(
+            result1, ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()
+        );
+        assert_eq!(
+            result2, ClientOrderId::new("O-19700101-0000-001-001-2").unwrap()
+        );
+        assert_eq!(
+            result3, ClientOrderId::new("O-19700101-0000-001-001-3") .unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_reset(){
+        let mut generator = get_client_order_id_generator(None);
+        generator.generate();
+        generator.generate();
+        generator.reset();
+        let result = generator.generate();
+        assert_eq!(
+            result, ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()
+        );
+
+    }
+}
