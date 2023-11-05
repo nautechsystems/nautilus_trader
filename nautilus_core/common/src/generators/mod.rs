@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::identifiers::strategy_id::StrategyId;
+
 pub mod client_order_id;
 pub mod order_list_id;
+pub mod position_id_generator;
 
 pub trait IdentifierGenerator<T> {
     fn set_count(&mut self, count: usize);
@@ -24,6 +27,18 @@ pub trait IdentifierGenerator<T> {
     fn count(&self) -> usize;
 
     fn generate(&mut self) -> T;
+
+    fn get_datetime_tag(&mut self) -> String;
+}
+
+pub trait StrategyIdentifierGenerator<T> {
+    fn set_count(&mut self, strategy_id: StrategyId, count: usize);
+
+    fn reset(&mut self);
+
+    fn get_count(&self, strategy_id: StrategyId) -> usize;
+
+    fn generate(&mut self, strategy_id: StrategyId, flipped: Option<bool>) -> T;
 
     fn get_datetime_tag(&mut self) -> String;
 }
