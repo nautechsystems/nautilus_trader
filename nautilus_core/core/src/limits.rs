@@ -13,16 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod correctness;
-pub mod datetime;
-pub mod limits;
-pub mod message;
-pub mod parsing;
-pub mod serialization;
-pub mod time;
-pub mod uuid;
+pub const INT8_MIN: i8 = i8::MIN;
+pub const INT16_MIN: i16 = i16::MIN;
+pub const INT32_MIN: i32 = i32::MIN;
+pub const INT64_MIN: i64 = i64::MIN;
+pub const UINT8_MIN: u8 = u8::MIN;
+pub const UINT16_MIN: u16 = u16::MIN;
+pub const UINT32_MIN: u32 = u32::MIN;
+pub const UINT64_MIN: u64 = u64::MIN;
 
-#[cfg(feature = "ffi")]
-pub mod ffi;
-#[cfg(feature = "python")]
-pub mod python;
+pub const INT8_MAX: i8 = i8::MAX;
+pub const INT16_MAX: i16 = i16::MAX;
+pub const INT32_MAX: i32 = i32::MAX;
+pub const INT64_MAX: i64 = i64::MAX;
+pub const UINT8_MAX: u8 = u8::MAX;
+pub const UINT16_MAX: u16 = u16::MAX;
+pub const UINT32_MAX: u32 = u32::MAX;
+pub const UINT64_MAX: u64 = u64::MAX;

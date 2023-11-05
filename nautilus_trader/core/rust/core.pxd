@@ -4,6 +4,38 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
+    const int8_t INT8_MIN # = INT8_MIN
+
+    const int16_t INT16_MIN # = INT16_MIN
+
+    const int32_t INT32_MIN # = INT32_MIN
+
+    const int64_t INT64_MIN # = INT64_MIN
+
+    const uint8_t UINT8_MIN # = UINT8_MIN
+
+    const uint16_t UINT16_MIN # = UINT16_MIN
+
+    const uint32_t UINT32_MIN # = UINT32_MIN
+
+    const uint64_t UINT64_MIN # = UINT64_MIN
+
+    const int8_t INT8_MAX # = INT8_MAX
+
+    const int16_t INT16_MAX # = INT16_MAX
+
+    const int32_t INT32_MAX # = INT32_MAX
+
+    const int64_t INT64_MAX # = INT64_MAX
+
+    const uint8_t UINT8_MAX # = UINT8_MAX
+
+    const uint16_t UINT16_MAX # = UINT16_MAX
+
+    const uint32_t UINT32_MAX # = UINT32_MAX
+
+    const uint64_t UINT64_MAX # = UINT64_MAX
+
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
     # memory, it's length and the capacity of the vector it was allocated from.
     #
