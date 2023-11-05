@@ -135,3 +135,30 @@ pub extern "C" fn vec_msgbus_handlers_drop(v: CVec) {
         unsafe { Vec::from_raw_parts(ptr.cast::<ffi::PyObject>(), len, cap) };
     drop(data); // Memory freed here
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use rstest::*;
+
+    use super::*;
+    use crate::msgbus::Handler;
+
+    #[rstest]
+    fn test_subscribe_python_callable() {
+        let trader_id = TraderId::from("trader-001");
+        let topic = "my-topic".to_string();
+
+        // TODO: Create a Python list and pass the message in a closure to the `append` method
+        let handler: Handler = Rc::new(|_m: &_| Python::with_gil(|_| {}));
+
+        let mut msgbus = MessageBus::<Handler>::new(trader_id, None);
+        msgbus.subscribe(topic.clone(), handler.clone());
+
+        assert_eq!(msgbus.topics(), vec![topic]);
+    }
+}
