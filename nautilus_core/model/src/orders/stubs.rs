@@ -13,19 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(dead_code)]
+use nautilus_core::uuid::UUID4;
 
-pub mod base;
-pub mod default;
-pub mod limit;
-pub mod limit_if_touched;
-pub mod market;
-pub mod market_if_touched;
-pub mod market_to_limit;
-pub mod stop_limit;
-pub mod stop_market;
-pub mod trailing_stop_limit;
-pub mod trailing_stop_market;
+use crate::{
+    enums::{OrderSide, TimeInForce},
+    identifiers::stubs::*,
+    orders::market::MarketOrder,
+    types::quantity::Quantity,
+};
 
-#[cfg(test)]
-pub mod stubs;
+// ---- MarketOrder ----
+pub fn market_order(quantity: Quantity, time_in_force: Option<TimeInForce>) -> MarketOrder {
+    let trader = trader_test();
+    let strategy = strategy_id_ema_cross();
+    let instrument = instrument_id_eth_usdt_binance();
+    let client_order_id = client_order_id();
+    MarketOrder::new(
+        trader,
+        strategy,
+        instrument,
+        client_order_id,
+        OrderSide::Buy,
+        quantity,
+        time_in_force.unwrap_or(TimeInForce::Gtc),
+        UUID4::new(),
+        12321312321312,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}
