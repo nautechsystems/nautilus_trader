@@ -65,6 +65,10 @@ impl DerefMut for Logger_API {
 /// - Assumes `trader_id_ptr` is a valid C string pointer.
 /// - Assumes `machine_id_ptr` is a valid C string pointer.
 /// - Assumes `instance_id_ptr` is a valid C string pointer.
+/// - Assumes `directory_ptr` is a valid C string pointer or NULL.
+/// - Assumes `file_name_ptr` is a valid C string pointer or NULL.
+/// - Assumes `file_format_ptr` is a valid C string pointer or NULL.
+/// - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn logger_new(
     trader_id_ptr: *const c_char,

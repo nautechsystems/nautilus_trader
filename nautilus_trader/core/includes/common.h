@@ -225,9 +225,7 @@ typedef struct Logger_t Logger_t;
  * `camp` and `comp`. The question mark can also be used more than once.
  * For example, `c??p` would match both of the above examples and `coop`.
  */
-typedef struct MessageBus MessageBus;
-
-typedef struct PythonSwitchboard PythonSwitchboard;
+typedef struct MessageBus_PyObject MessageBus_PyObject;
 
 typedef struct TestClock TestClock;
 
@@ -285,8 +283,7 @@ typedef struct Logger_API {
  * having to manually access the underlying `MessageBus` instance.
  */
 typedef struct MessageBus_API {
-    struct MessageBus *inner;
-    struct PythonSwitchboard *switchboard;
+    struct MessageBus_PyObject *_0;
 } MessageBus_API;
 
 /**
@@ -459,6 +456,10 @@ uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
  * - Assumes `trader_id_ptr` is a valid C string pointer.
  * - Assumes `machine_id_ptr` is a valid C string pointer.
  * - Assumes `instance_id_ptr` is a valid C string pointer.
+ * - Assumes `directory_ptr` is a valid C string pointer or NULL.
+ * - Assumes `file_name_ptr` is a valid C string pointer or NULL.
+ * - Assumes `file_format_ptr` is a valid C string pointer or NULL.
+ * - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
  */
 struct Logger_API logger_new(const char *trader_id_ptr,
                              const char *machine_id_ptr,
@@ -500,9 +501,30 @@ void logger_log(struct Logger_API *logger,
 /**
  * # Safety
  *
+ * - Assumes `trader_id_ptr` is a valid C string pointer.
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-struct MessageBus_API test_msgbus_new(const char *name_ptr);
+struct MessageBus_API msgbus_new(const char *trader_id_ptr, const char *name_ptr);
+
+const PyObject *msgbus_endpoints(struct MessageBus_API bus);
+
+const PyObject *msgbus_topics(struct MessageBus_API bus);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ */
+const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpoint_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+CVec msgbus_get_matching_handlers(struct MessageBus_API bus, const char *pattern_ptr);
+
+void vec_msgbus_handlers_drop(CVec v);
 
 /**
  * # Safety

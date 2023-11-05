@@ -102,7 +102,7 @@ pub unsafe fn cstr_to_string(ptr: *const c_char) -> String {
 ///
 /// # Safety
 ///
-/// - Assumes `ptr` is a valid C string pointer.
+/// - Assumes `ptr` is a valid C string pointer or NULL.
 #[must_use]
 pub unsafe fn optional_cstr_to_string(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
