@@ -45,6 +45,7 @@ pub struct WebSocketConfig {
     handler: PyObject,
     headers: Vec<(String, String)>,
     heartbeat: Option<u64>,
+    message: Option<String>,
 }
 
 #[pymethods]
@@ -55,12 +56,14 @@ impl WebSocketConfig {
         handler: PyObject,
         headers: Vec<(String, String)>,
         heartbeat: Option<u64>,
+        message: Option<String>,
     ) -> Self {
         Self {
             url,
             handler,
             headers,
             heartbeat,
+            message,
         }
     }
 }
@@ -95,6 +98,7 @@ impl WebSocketClientInner {
             handler,
             heartbeat,
             headers,
+            message,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
@@ -102,7 +106,7 @@ impl WebSocketClientInner {
         // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Self::spawn_read_task(reader, handler.clone());
 
-        let heartbeat_task = Self::spawn_heartbeat_task(*heartbeat, writer.clone());
+        let heartbeat_task = Self::spawn_heartbeat_task(*heartbeat, config.message.clone(), writer.clone());
 
         Ok(Self {
             config,
@@ -133,6 +137,7 @@ impl WebSocketClientInner {
     /// Optionally spawn a hearbeat task to periodically ping the server.
     pub fn spawn_heartbeat_task(
         heartbeat: Option<u64>,
+        message: Option<String>,
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
         heartbeat.map(|duration| {
@@ -142,7 +147,11 @@ impl WebSocketClientInner {
                     sleep(duration).await;
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
-                    match guard.send(Message::Ping(vec![])).await {
+                    let guard_send_response = match message {
+                        Some(msg) => guard.send(Message::Text(msg)).await,
+                        None => guard.send(Message::Ping(vec![])).await,
+                    };
+                    match guard_send_response {
                         Ok(()) => debug!("Sent heartbeat"),
                         Err(e) => error!("Failed to send heartbeat: {e}"),
                     }
@@ -236,7 +245,7 @@ impl WebSocketClientInner {
 
         self.read_task = Self::spawn_read_task(reader, self.config.handler.clone());
         self.heartbeat_task =
-            Self::spawn_heartbeat_task(self.config.heartbeat, self.writer.clone());
+            Self::spawn_heartbeat_task(self.config.heartbeat, self.config.message.clone(), self.writer.clone());
 
         Ok(())
     }
