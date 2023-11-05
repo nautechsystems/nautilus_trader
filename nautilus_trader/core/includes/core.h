@@ -5,6 +5,38 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define INT8_MIN INT8_MIN
+
+#define INT16_MIN INT16_MIN
+
+#define INT32_MIN INT32_MIN
+
+#define INT64_MIN INT64_MIN
+
+#define UINT8_MIN UINT8_MIN
+
+#define UINT16_MIN UINT16_MIN
+
+#define UINT32_MIN UINT32_MIN
+
+#define UINT64_MIN UINT64_MIN
+
+#define INT8_MAX INT8_MAX
+
+#define INT16_MAX INT16_MAX
+
+#define INT32_MAX INT32_MAX
+
+#define INT64_MAX INT64_MAX
+
+#define UINT8_MAX UINT8_MAX
+
+#define UINT16_MAX UINT16_MAX
+
+#define UINT32_MAX UINT32_MAX
+
+#define UINT64_MAX UINT64_MAX
+
 /**
  * `CVec` is a C compatible struct that stores an opaque pointer to a block of
  * memory, it's length and the capacity of the vector it was allocated from.
