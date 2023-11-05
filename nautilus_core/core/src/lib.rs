@@ -15,7 +15,6 @@
 
 pub mod correctness;
 pub mod datetime;
-pub mod limits;
 pub mod message;
 pub mod parsing;
 pub mod serialization;
