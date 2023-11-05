@@ -13,13 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use nautilus_core::{message::Message, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 
-// Previous handler alias for Rust
-// type Handler = Rc<dyn Fn(&Message)>;
+/// Defines a handler which can take a `Message`.
+#[allow(dead_code)]
+pub type Handler = Rc<dyn Fn(&Message)>;
 
 /// Provides a generic message bus to facilitate various messaging patterns.
 ///
@@ -71,6 +72,7 @@ impl<T> MessageBus<T>
 where
     T: Clone,
 {
+    /// Initializes a new instance of the [`MessageBus<T>`].
     pub fn new(trader_id: TraderId, name: Option<String>) -> Self {
         Self {
             trader_id,
@@ -82,14 +84,17 @@ where
         }
     }
 
+    /// Returns the registered endpoint addresses.
     pub fn endpoints(&self) -> Vec<&str> {
         self.endpoints.keys().map(|k| k.as_str()).collect()
     }
 
+    /// Returns the topics for active subscriptions.
     pub fn topics(&self) -> Vec<&str> {
         self.subscriptions.keys().map(|k| k.as_str()).collect()
     }
 
+    /// Registers the given `handler` for the `endpoint` address.
     pub fn register(&mut self, endpoint: String, handler: T) {
         // updates value if key already exists
         self.endpoints.insert(endpoint, handler);
@@ -100,6 +105,7 @@ where
         self.endpoints.remove(endpoint);
     }
 
+    /// Subscribes the given `handler` to the `topic`.
     pub fn subscribe(&mut self, topic: String, handler: T) {
         if self.subscriptions.contains_key(&topic) {
             // TODO: log
@@ -109,15 +115,17 @@ where
         self.subscriptions.insert(topic, handler);
     }
 
-    #[allow(unused_variables)]
-    pub fn unsubscribe(&mut self, topic: &String, handler: T) {
+    /// Unsubscribes the given `handler` from the `topic`.
+    pub fn unsubscribe(&mut self, topic: &String, _handler: T) {
         self.subscriptions.remove(topic);
     }
 
+    /// Returns the handler for the given `endpoint`.
     pub fn get_endpoint(&self, endpoint: &str) -> Option<&T> {
         self.endpoints.get(endpoint)
     }
 
+    /// Returns whether there are subscribers for the given `pattern`.
     pub fn has_subscribers(&self, pattern: &String) -> bool {
         self.matching_handlers(pattern).next().is_some()
     }
@@ -242,4 +250,99 @@ fn is_matching(topic: &String, pattern: &String) -> bool {
     });
 
     table[n][m]
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_new() {
+        let trader_id = TraderId::from("trader-001");
+        let msgbus = MessageBus::<Handler>::new(trader_id, None);
+
+        assert_eq!(msgbus.trader_id, trader_id);
+        assert_eq!(msgbus.name, stringify!(MessageBus));
+    }
+
+    #[rstest]
+    fn test_endpoints_when_no_endpoints() {
+        let msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+
+        assert!(msgbus.endpoints().is_empty());
+    }
+
+    #[rstest]
+    fn test_topics_when_no_subscriptions() {
+        let msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+
+        assert!(msgbus.topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_regsiter_endpoint() {
+        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let endpoint = "MyEndpoint".to_string();
+
+        // Useless handler for testing
+        let handler = Rc::new(|m: &_| {
+            format!("{:?}", m);
+        });
+
+        msgbus.register(endpoint.clone(), handler.clone());
+
+        assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
+    }
+
+    #[rstest]
+    fn test_deregsiter_endpoint() {
+        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let endpoint = "MyEndpoint".to_string();
+
+        // Useless handler for testing
+        let handler = Rc::new(|m: &_| {
+            format!("{:?}", m);
+        });
+
+        msgbus.register(endpoint.clone(), handler.clone());
+        msgbus.deregister(&endpoint);
+
+        assert!(msgbus.endpoints().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribe() {
+        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let topic = "my-topic".to_string();
+
+        // Useless handler for testing
+        let handler = Rc::new(|m: &_| {
+            format!("{:?}", m);
+        });
+
+        msgbus.subscribe(topic.clone(), handler.clone());
+
+        assert_eq!(msgbus.topics(), vec![topic]);
+    }
+
+    #[rstest]
+    fn test_unsubscribe() {
+        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let topic = "my-topic".to_string();
+
+        // Useless handler for testing
+        let handler = Rc::new(|m: &_| {
+            format!("{:?}", m);
+        });
+
+        msgbus.subscribe(topic.clone(), handler.clone());
+        msgbus.unsubscribe(&topic, handler.clone());
+
+        assert!(msgbus.topics().is_empty());
+    }
 }
