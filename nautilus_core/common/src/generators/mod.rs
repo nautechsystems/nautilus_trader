@@ -13,19 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-pub mod logging;
-pub mod msgbus;
-pub mod testing;
-pub mod timer;
-pub mod generators;
-#[cfg(feature = "ffi")]
-pub mod ffi;
-#[cfg(feature = "python")]
-pub mod python;
+pub mod client_order_id;
 
-#[cfg(feature = "test")]
-pub mod stubs {
-    use crate::{clock::stubs::*, logging::stubs::*};
+
+pub trait IdentifierGenerator<T>{
+
+    fn set_count(&mut self, count: usize);
+
+    fn reset(&mut self);
+
+    fn count(&self) -> usize;
+
+    fn generate(&mut self) -> T;
+
+    fn get_datetime_tag(&mut self) -> String;
 }
