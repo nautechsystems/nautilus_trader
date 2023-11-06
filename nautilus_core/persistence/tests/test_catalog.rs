@@ -16,7 +16,7 @@
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
-    trade::TradeTick, Data,
+    trade::TradeTick, Data, HasTsInit,
 };
 use nautilus_persistence::{
     backend::session::{DataBackendSession, QueryResult},
@@ -24,6 +24,39 @@ use nautilus_persistence::{
 };
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
+
+#[rstest]
+fn test_user_data() {
+    pyo3::prepare_freethreaded_python();
+
+    let file_path = "../../tests/test_data/user_data.parquet";
+    let catalog = DataBackendSession::new(2);
+    Python::with_gil(|py| {
+        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        pycatalog
+            .call_method1(
+                py,
+                "add_file",
+                (NautilusDataType::QuoteTick, "order_book_deltas", file_path),
+            )
+            .unwrap();
+        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+        loop {
+            let chunk = result.call_method0(py, "__next__").unwrap();
+            let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+            let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+            if cvec.len == 0 {
+                break;
+            } else {
+                let slice: &[QuoteTick] =
+                    unsafe { std::slice::from_raw_parts(cvec.ptr as *const QuoteTick, cvec.len) };
+                dbg!(slice[0].get_ts_init());
+                dbg!(slice[1].get_ts_init());
+                assert!(is_monotonically_increasing_by_init(slice));
+            }
+        }
+    });
+}
 
 #[rstest]
 fn test_order_book_delta_query() {
