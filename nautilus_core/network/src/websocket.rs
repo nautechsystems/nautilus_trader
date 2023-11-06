@@ -715,4 +715,71 @@ counter = Counter()",
         sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn message_ping_test() {
+        prepare_freethreaded_python();
+
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
+
+        let (checker, handler) = Python::with_gil(|py| {
+            let pymod = PyModule::from_code(
+                py,
+                r"
+class Checker:
+    def __init__(self):
+        self.check = False
+
+    def handler(self, bytes):
+        if bytes.decode() == 'heartbeat message':
+            self.check = True
+
+    def get_check(self):
+        return self.check
+
+checker = Checker()",
+                "",
+                "",
+            )
+            .unwrap();
+
+            let checker = pymod.getattr("checker").unwrap().into_py(py);
+            let handler = checker.getattr(py, "handler").unwrap().into_py(py);
+
+            (checker, handler)
+        });
+
+        // Initialize test server and config
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
+        let config = WebSocketConfig::new(
+            format!("ws://127.0.0.1:{}", server.port),
+            handler.clone(),
+            vec![(header_key, header_value)],
+            Some(1),
+            Some("heartbeat message".to_string()),
+        );
+        let client = WebSocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        // Check if ping message has the correct message
+        sleep(Duration::from_secs(2)).await;
+        let check_value: bool = Python::with_gil(|py| {
+            checker
+                .getattr(py, "get_check")
+                .unwrap()
+                .call0(py)
+                .unwrap()
+                .extract(py)
+                .unwrap()
+        });
+        assert!(check_value);
+
+        // Shutdown client and wait for read task to terminate
+        client.disconnect().await;
+        sleep(Duration::from_secs(1)).await;
+        assert!(client.is_disconnected());
+    }
 }
