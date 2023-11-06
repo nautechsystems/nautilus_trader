@@ -106,7 +106,8 @@ impl WebSocketClientInner {
         // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Self::spawn_read_task(reader, handler.clone());
 
-        let heartbeat_task = Self::spawn_heartbeat_task(*heartbeat, config.message.clone(), writer.clone());
+        let heartbeat_task =
+            Self::spawn_heartbeat_task(*heartbeat, message.clone(), writer.clone());
 
         Ok(Self {
             config,
@@ -147,7 +148,7 @@ impl WebSocketClientInner {
                     sleep(duration).await;
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
-                    let guard_send_response = match message {
+                    let guard_send_response = match message.clone() {
                         Some(msg) => guard.send(Message::Text(msg)).await,
                         None => guard.send(Message::Ping(vec![])).await,
                     };
@@ -244,8 +245,11 @@ impl WebSocketClientInner {
         drop(guard);
 
         self.read_task = Self::spawn_read_task(reader, self.config.handler.clone());
-        self.heartbeat_task =
-            Self::spawn_heartbeat_task(self.config.heartbeat, self.config.message.clone(), self.writer.clone());
+        self.heartbeat_task = Self::spawn_heartbeat_task(
+            self.config.heartbeat,
+            self.config.message.clone(),
+            self.writer.clone(),
+        );
 
         Ok(())
     }
@@ -649,6 +653,7 @@ counter = Counter()",
             format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
             vec![(header_key, header_value)],
+            None,
             None,
         );
         let client = WebSocketClient::connect(config, None, None, None)
