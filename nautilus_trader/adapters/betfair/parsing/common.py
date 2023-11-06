@@ -38,7 +38,7 @@ def betfair_instrument_id(
     """
     Create an instrument ID from betfair fields.
 
-    >>> betfair_instrument_id(market_id="1.201070830", selection_id="123456", selection_handicap=None)
+    >>> betfair_instrument_id(market_id="1.201070830", selection_id=123456, selection_handicap=None)
     InstrumentId('1.201070830-123456-None.BETFAIR')
 
     """

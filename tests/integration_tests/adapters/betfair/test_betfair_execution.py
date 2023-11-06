@@ -84,8 +84,8 @@ async def _setup_order_state(
                 for order_update in orc.uo:
                     instrument_id = betfair_instrument_id(
                         market_id=oc.id,
-                        selection_id=str(orc.id),
-                        selection_handicap=str(orc.hc or 0.0),
+                        selection_id=orc.id,
+                        selection_handicap=orc.hc or 0.0,
                     )
                     order_id = str(order_update.id)
                     venue_order_id = VenueOrderId(order_id)
@@ -938,8 +938,8 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
     # Arrange
     instrument = betting_instrument(
         market_id="1.219194342",
-        selection_id=str(61288616),
-        selection_handicap=str(0.0),
+        selection_id=61288616,
+        selection_handicap=0.0,
     )
     cache.add_instrument(instrument)
     instrument_id = instrument.id

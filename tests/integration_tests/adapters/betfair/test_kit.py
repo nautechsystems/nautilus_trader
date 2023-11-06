@@ -16,7 +16,6 @@
 import bz2
 import gzip
 import pathlib
-from asyncio import Future
 from unittest.mock import MagicMock
 
 import msgspec
@@ -54,6 +53,7 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import TraderId
@@ -74,12 +74,14 @@ async def async_magic():
 MagicMock.__await__ = lambda x: async_magic().__await__()
 
 
-def mock_betfair_request(obj, response, attr="_request"):
-    mock_resp = MagicMock(spec=ClientResponse)
-    mock_resp.body = encode(response)
+def mock_betfair_request(obj, response):
+    async def mock_request(method: HttpMethod, request: Request):
+        mock_resp = MagicMock(spec=ClientResponse)
+        response["id"] = request.id
+        mock_resp.body = encode(response)
+        return mock_resp
 
-    setattr(obj, attr, MagicMock(return_value=Future()))
-    getattr(obj, attr).return_value.set_result(mock_resp)
+    setattr(obj, "_request", MagicMock(side_effect=mock_request))
 
 
 class BetfairTestStubs:
@@ -116,8 +118,8 @@ class BetfairTestStubs:
                 "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
                 "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
                 "SportsAPING/v1.0/list": BetfairResponses.betting_list_market_catalogue,
-                "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_place_order_success(),
-                "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_replace_orders_success(),
+                "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_place_order_success,
+                "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_replace_orders_success,
                 "SportsAPING/v1.0/cancelOrders": BetfairResponses.betting_cancel_orders_success,
                 "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders,
                 "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
@@ -325,60 +327,63 @@ class BetfairResponses:
         return BetfairResponses.load("account_funds_no_exposure.json", request_id=request_id)
 
     @staticmethod
-    def account_funds_with_exposure():
+    def account_funds_with_exposure(request_id: int = 1):
         return BetfairResponses.load("account_funds_with_exposure.json")
 
     @staticmethod
-    def account_funds_error():
-        return BetfairResponses.load("account_funds_error.json")
+    def account_funds_error(request_id: int = 1):
+        return BetfairResponses.load("account_funds_error.json", request_id=request_id)
 
     @staticmethod
-    def betting_cancel_orders_success():
-        return BetfairResponses.load("betting_cancel_orders_success.json")
+    def betting_cancel_orders_success(request_id: int = 1):
+        return BetfairResponses.load("betting_cancel_orders_success.json", request_id=request_id)
 
     @staticmethod
-    def betting_cancel_orders_error():
-        return BetfairResponses.load("betting_cancel_orders_error.json")
+    def betting_cancel_orders_error(request_id: int = 1):
+        return BetfairResponses.load("betting_cancel_orders_error.json", request_id=request_id)
 
     @staticmethod
-    def betting_place_order_error():
-        return BetfairResponses.load("betting_place_order_error.json")
+    def betting_place_order_error(request_id: int = 1):
+        return BetfairResponses.load("betting_place_order_error.json", request_id=request_id)
 
     @staticmethod
-    def betting_place_order_success():
-        return BetfairResponses.load("betting_place_order_success.json")
+    def betting_place_order_success(request_id: int = 1):
+        return BetfairResponses.load("betting_place_order_success.json", request_id=request_id)
 
     @staticmethod
-    def betting_place_orders_old():
-        return BetfairResponses.load("betting_place_orders_old.json")
+    def betting_place_orders_old(request_id: int = 1):
+        return BetfairResponses.load("betting_place_orders_old.json", request_id=request_id)
 
     @staticmethod
-    def betting_replace_orders_success():
-        return BetfairResponses.load("betting_replace_orders_success.json")
+    def betting_replace_orders_success(request_id: int = 1):
+        return BetfairResponses.load("betting_replace_orders_success.json", request_id=request_id)
 
     @staticmethod
-    def betting_replace_orders_success_multi():
-        return BetfairResponses.load("betting_replace_orders_success_multi.json")
+    def betting_replace_orders_success_multi(request_id: int = 1):
+        return BetfairResponses.load(
+            "betting_replace_orders_success_multi.json",
+            request_id=request_id,
+        )
 
     @staticmethod
-    def cert_login():
-        return BetfairResponses.load("cert_login.json")
+    def cert_login(request_id: int = 1):
+        return BetfairResponses.load("cert_login.json", request_id=request_id)
 
     @staticmethod
-    def login_success():
-        return BetfairResponses.load("login_success.json")
+    def login_success(request_id: int = 1):
+        return BetfairResponses.load("login_success.json", request_id=request_id)
 
     @staticmethod
-    def login_failure():
-        return BetfairResponses.load("login_failure.json")
+    def login_failure(request_id: int = 1):
+        return BetfairResponses.load("login_failure.json", request_id=request_id)
 
     @staticmethod
-    def list_cleared_orders():
-        return BetfairResponses.load("list_cleared_orders.json")
+    def list_cleared_orders(request_id: int = 1):
+        return BetfairResponses.load("list_cleared_orders.json", request_id=request_id)
 
     @staticmethod
-    def list_current_orders():
-        return BetfairResponses.load("list_current_orders.json")
+    def list_current_orders(request_id: int = 1):
+        return BetfairResponses.load("list_current_orders.json", request_id=request_id)
 
     @staticmethod
     def list_current_orders_empty():
