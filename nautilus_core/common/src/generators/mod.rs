@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod client_order_id;
+pub mod order_list_id;
 
 pub trait IdentifierGenerator<T> {
     fn set_count(&mut self, count: usize);
