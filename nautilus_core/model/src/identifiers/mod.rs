@@ -96,13 +96,3 @@ pub extern "C" fn interned_string_stats() {
 
     ustr::string_cache_iter().for_each(|s| println!("{}", s));
 }
-
-// #[cfg(test)]
-// pub mod stubs {
-//     use crate::identifiers::{
-//         account_id::stubs::*, client_id::stubs::*, client_order_id::stubs::*,
-//         component_id::stubs::*, exec_algorithm_id::stubs::*, instrument_id::stubs::*,
-//         order_list_id::stubs::*, position_id::stubs::*, strategy_id::stubs::*, symbol::stubs::*,
-//         trade_id::stubs::*, trader_id::stubs::*, venue::stubs::*, venue_order_id::stubs::*,
-//     };
-// }

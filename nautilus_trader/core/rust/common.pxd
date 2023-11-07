@@ -130,10 +130,7 @@ cdef extern from "../includes/common.h":
     # A question mark matches a single character once. For example, `c?mp` matches
     # `camp` and `comp`. The question mark can also be used more than once.
     # For example, `c??p` would match both of the above examples and `coop`.
-    cdef struct MessageBus:
-        pass
-
-    cdef struct PythonSwitchboard:
+    cdef struct MessageBus_PyObject:
         pass
 
     cdef struct TestClock:
@@ -182,8 +179,7 @@ cdef extern from "../includes/common.h":
     # dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
     # having to manually access the underlying `MessageBus` instance.
     cdef struct MessageBus_API:
-        MessageBus *inner;
-        PythonSwitchboard *switchboard;
+        MessageBus_PyObject *_0;
 
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:
@@ -316,6 +312,10 @@ cdef extern from "../includes/common.h":
     # - Assumes `trader_id_ptr` is a valid C string pointer.
     # - Assumes `machine_id_ptr` is a valid C string pointer.
     # - Assumes `instance_id_ptr` is a valid C string pointer.
+    # - Assumes `directory_ptr` is a valid C string pointer or NULL.
+    # - Assumes `file_name_ptr` is a valid C string pointer or NULL.
+    # - Assumes `file_format_ptr` is a valid C string pointer or NULL.
+    # - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
     Logger_API logger_new(const char *trader_id_ptr,
                           const char *machine_id_ptr,
                           const char *instance_id_ptr,
@@ -353,8 +353,25 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
+    # - Assumes `trader_id_ptr` is a valid C string pointer.
     # - Assumes `name_ptr` is a valid C string pointer.
-    MessageBus_API test_msgbus_new(const char *name_ptr);
+    MessageBus_API msgbus_new(const char *trader_id_ptr, const char *name_ptr);
+
+    const PyObject *msgbus_endpoints(MessageBus_API bus);
+
+    const PyObject *msgbus_topics(MessageBus_API bus);
+
+    # # Safety
+    #
+    # - Assumes `endpoint_ptr` is a valid C string pointer.
+    const PyObject *msgbus_get_endpoint(MessageBus_API bus, const char *endpoint_ptr);
+
+    # # Safety
+    #
+    # - Assumes `pattern_ptr` is a valid C string pointer.
+    CVec msgbus_get_matching_handlers(MessageBus_API bus, const char *pattern_ptr);
+
+    void vec_msgbus_handlers_drop(CVec v);
 
     # # Safety
     #

@@ -85,8 +85,8 @@ mod tests {
     use crate::identifiers::{stubs::*, trade_id::TradeId};
 
     #[rstest]
-    fn test_string_reprs(test_trade_id: TradeId) {
-        assert_eq!(test_trade_id.to_string(), "1234567890");
-        assert_eq!(format!("{test_trade_id}"), "1234567890");
+    fn test_string_reprs(trade_id: TradeId) {
+        assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(format!("{trade_id}"), "1234567890");
     }
 }

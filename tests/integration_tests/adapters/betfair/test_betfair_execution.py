@@ -53,6 +53,7 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -84,8 +85,8 @@ async def _setup_order_state(
                 for order_update in orc.uo:
                     instrument_id = betfair_instrument_id(
                         market_id=oc.id,
-                        selection_id=str(orc.id),
-                        selection_handicap=str(orc.hc or 0.0),
+                        selection_id=orc.id,
+                        selection_handicap=orc.hc or null_handicap(),
                     )
                     order_id = str(order_update.id)
                     venue_order_id = VenueOrderId(order_id)
@@ -93,8 +94,8 @@ async def _setup_order_state(
                     if not cache.instrument(instrument_id):
                         instrument = betting_instrument(
                             market_id=oc.id,
-                            selection_id=str(orc.id),
-                            selection_handicap=str(orc.hc or 0.0),
+                            selection_id=orc.id,
+                            selection_handicap=orc.hc or null_handicap(),
                         )
                         cache.add_instrument(instrument)
                     if not cache.order(client_order_id):
@@ -228,7 +229,6 @@ def test_order(instrument, strategy_id):
 @pytest.mark.asyncio()
 async def test_submit_order_success(exec_client: BetfairDataClient, strategy, test_order):
     # Arrange
-    mock_betfair_request(exec_client._client, BetfairResponses.betting_place_order_success())
 
     # Act
     strategy.submit_order(test_order)
@@ -273,7 +273,6 @@ async def test_modify_order_success(
     events,
 ):
     # Arrange
-    mock_betfair_request(exec_client._client, BetfairResponses.betting_replace_orders_success())
     await accept_order(test_order, venue_order_id=venue_order_id)
 
     # Act
@@ -307,7 +306,7 @@ async def test_modify_order_error_order_doesnt_exist(
     expected_args = tuple(
         {
             "strategy_id": StrategyId("S-001"),
-            "instrument_id": InstrumentId.from_str("1.179082386-50214-0.0.BETFAIR"),
+            "instrument_id": InstrumentId.from_str("1.179082386-50214-None.BETFAIR"),
             "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
             "venue_order_id": None,
             "reason": "ORDER NOT IN CACHE",
@@ -328,7 +327,6 @@ async def test_modify_order_error_no_venue_id(
 ):
     # Arrange
     order = await submit_order(test_order)
-    mock_betfair_request(betfair_client, BetfairResponses.betting_replace_orders_success())
 
     # Act
     command = TestCommandStubs.modify_order_command(price=betfair_float_to_price(2.0), order=order)
@@ -362,7 +360,6 @@ async def test_cancel_order_success(
 ):
     # Arrange
     order = await accept_order(order=test_order, venue_order_id=venue_order_id)
-    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
 
     # Act
     command = TestCommandStubs.cancel_order_command(order=order)
@@ -720,7 +717,6 @@ async def test_betfair_back_order_reduces_balance(
         client_order_id=order.client_order_id,
         venue_order_id=order.venue_order_id,
     )
-    mock_betfair_request(betfair_client, BetfairResponses.betting_cancel_orders_success())
     exec_client.cancel_order(command)
     await asyncio.sleep(0)
     balance_cancel = account.balances()[GBP]
@@ -938,8 +934,8 @@ async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy
     # Arrange
     instrument = betting_instrument(
         market_id="1.219194342",
-        selection_id=str(61288616),
-        selection_handicap=str(0.0),
+        selection_id=61288616,
+        selection_handicap=0.0,
     )
     cache.add_instrument(instrument)
     instrument_id = instrument.id
