@@ -37,7 +37,6 @@ from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.parsing.common import betfair_instrument_id
 from nautilus_trader.adapters.betfair.parsing.common import hash_market_trade
-from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.model.data.book import NULL_ORDER
@@ -110,8 +109,8 @@ def market_change_to_updates(  # noqa: C901
         for rc in mc.rc:
             instrument_id = betfair_instrument_id(
                 market_id=mc.id,
-                selection_id=str(rc.id),
-                selection_handicap=parse_handicap(rc.hc),
+                selection_id=rc.id,
+                selection_handicap=rc.hc,
             )
 
             # Order book data
@@ -190,8 +189,8 @@ def market_definition_to_instrument_status(
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            selection_id=str(runner.id),
-            selection_handicap=parse_handicap(runner.handicap),
+            selection_id=runner.id,
+            selection_handicap=runner.handicap,
         )
         key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
         if runner.status in (RunnerStatus.REMOVED, RunnerStatus.REMOVED_VACANT):
@@ -235,8 +234,8 @@ def runner_to_instrument_close(
 ) -> InstrumentClose | None:
     instrument_id: InstrumentId = betfair_instrument_id(
         market_id=market_id,
-        selection_id=str(runner.id),
-        selection_handicap=parse_handicap(runner.handicap),
+        selection_id=runner.id,
+        selection_handicap=runner.handicap,
     )
 
     if runner.status in (RunnerStatus.LOSER, RunnerStatus.REMOVED):
@@ -284,8 +283,8 @@ def runner_to_betfair_starting_price(
     if runner.bsp is not None:
         instrument_id = betfair_instrument_id(
             market_id=market_id,
-            selection_id=str(runner.id),
-            selection_handicap=parse_handicap(runner.handicap),
+            selection_id=runner.id,
+            selection_handicap=runner.handicap,
         )
         return BetfairStartingPrice(
             instrument_id=make_bsp_instrument_id(instrument_id),
@@ -548,21 +547,21 @@ async def generate_trades_list(
         self._log.warn(f"Found no existing order for {venue_order_id}")
         return []
     fill = filled[0]
-    ts_event = pd.Timestamp(fill.lastMatchedDate).value
+    ts_event = pd.Timestamp(fill.last_matched_date).value
     return [
         TradeReport(
             account_id=AccountId("BETFAIR"),
             instrument_id=betfair_instrument_id(
-                fill.marketId,
-                str(fill.selectionId),
-                str(fill.handicap),
+                fill.market_id,
+                fill.selection_id,
+                fill.handicap,
             ),
             order_side=OrderSide.NO_ORDER_SIDE,  # TODO: Needs this
-            venue_order_id=VenueOrderId(fill.betId),
+            venue_order_id=VenueOrderId(fill.bet_id),
             venue_position_id=None,  # Can be None
-            trade_id=TradeId(fill.lastMatchedDate),
-            last_qty=betfair_float_to_quantity(fill.sizeSettled),
-            last_px=betfair_float_to_price(fill.priceMatched),
+            trade_id=TradeId(fill.last_matched_date),
+            last_qty=betfair_float_to_quantity(fill.size_settled),
+            last_px=betfair_float_to_price(fill.price_matched),
             commission=None,  # Can be None
             liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
             report_id=UUID4(),
