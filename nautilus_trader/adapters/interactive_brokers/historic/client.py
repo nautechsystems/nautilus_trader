@@ -65,99 +65,13 @@ class HistoricInteractiveBrokersClient:
             client_id=client_id,
         )
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         # Connect client
         await self._client.is_running_async()
         self._client.registered_nautilus_clients.add(1)
 
         # Set Market Data Type
         await self._client.set_market_data_type(self.market_data_type)
-
-    async def request_ticks(
-        self,
-        tick_type: Literal["TRADES", "BID_ASK"],
-        start_date_time: datetime.datetime,
-        end_date_time: datetime.datetime,
-        tz_name: str,
-        contracts: list[IBContract] | None = None,
-        instrument_ids: list[str] | None = None,
-        use_rth: bool = True,
-    ) -> list[TradeTick | QuoteTick]:
-        """
-        Return TradeTicks or QuoteTicks for one or more bar specifications for a list of
-        IBContracts and/or InstrumentId strings.
-
-        Parameters
-        ----------
-        tick_type : Literal["TRADES", "BID_ASK"]
-            The type of ticks to retrieve.
-        start_date_time : datetime.date
-            The start date for the ticks.
-        end_date_time : datetime.date
-            The end date for the ticks.
-        tz_name : str
-            The timezone to use.
-        contracts : list[IBContract], default 'None'
-            IBContracts defining which ticks to retrieve.
-        instrument_ids : list[str], default 'None'
-            Instrument IDs (e.g. AAPL.NASDAQ) defining which ticks to retrieve.
-        use_rth : bool, default 'True'
-            Whether to use regular trading hours.
-
-        Returns
-        -------
-        list[TradeTick | QuoteTick]
-
-        """
-        start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
-        end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
-        contracts = contracts or []
-        instrument_ids = instrument_ids or []
-        if not contracts and not instrument_ids:
-            raise ValueError("Either contracts or instrument_ids must be provided")
-
-        # Convert instrument_id strings to IBContracts
-        contracts.extend(
-            [
-                instrument_id_to_ib_contract(
-                    InstrumentId.from_str(instrument_id),
-                )
-                for instrument_id in instrument_ids
-            ],
-        )
-
-        data: list[TradeTick | QuoteTick] = []
-        for contract in contracts:
-            while True:
-                # breakpoint()
-                print("Requesting ticks from", start_date_time)
-                ticks = await self._client.get_historical_ticks(
-                    contract=contract,
-                    tick_type=tick_type,
-                    start_date_time=start_date_time,
-                    use_rth=use_rth,
-                )
-                print("Number of ticks retrieved:", len(ticks))
-                if not ticks:
-                    continue
-                data.extend(ticks)
-                print("Number of ticks in data:", len(data))
-
-                timestamps = [tick.ts_event for tick in ticks]
-                min_timestamp: pd.Timestamp = unix_nanos_to_dt(min(timestamps))
-                max_timestamp: pd.Timestamp = unix_nanos_to_dt(max(timestamps))
-
-                # For very liquid products, a 1s period may contain 1000 ticks - the maximum that IB allows
-                # -- so we need to step the time forward to the next second avoid getting stuck when iterating.
-                if min_timestamp.floor("S") == max_timestamp.floor("S"):
-                    max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
-
-                if max_timestamp >= end_date_time:
-                    break
-
-                start_date_time = max_timestamp
-
-        return data
 
     async def request_instruments(
         self,
@@ -261,21 +175,117 @@ class HistoricInteractiveBrokersClient:
             # Request instruments if not in cache because get_historical_bars
             # requires instruments for the make_price method to construct bars
             if not self._client._cache.instrument(ib_contract_to_instrument_id(contract)):
+                self.log.info(f"Fetching Instrument for: {ib_contract_to_instrument_id(contract)}")
                 await self.request_instruments(contracts=[contract])
 
             for bar_spec in bar_specifications:
+                bar_type = BarType(
+                    ib_contract_to_instrument_id(contract),
+                    BarSpecification.from_str(bar_spec),
+                    AggregationSource.EXTERNAL,
+                )
+                self.log.info(f"Requesting bars: {bar_type}")
                 bars = await self._client.get_historical_bars(
-                    BarType(
-                        ib_contract_to_instrument_id(contract),
-                        BarSpecification.from_str(bar_spec),
-                        AggregationSource.EXTERNAL,
-                    ),
+                    bar_type,
                     contract,
                     use_rth,
                     end_date_time.strftime("%Y%m%d-%H:%M:%S"),
                     duration,
                 )
                 data.extend(bars)
+
+        return data
+
+    async def request_ticks(
+        self,
+        tick_type: Literal["TRADES", "BID_ASK"],
+        start_date_time: datetime.datetime,
+        end_date_time: datetime.datetime,
+        tz_name: str,
+        contracts: list[IBContract] | None = None,
+        instrument_ids: list[str] | None = None,
+        use_rth: bool = True,
+    ) -> list[TradeTick | QuoteTick]:
+        """
+        Return TradeTicks or QuoteTicks for one or more bar specifications for a list of
+        IBContracts and/or InstrumentId strings.
+
+        Parameters
+        ----------
+        tick_type : Literal["TRADES", "BID_ASK"]
+            The type of ticks to retrieve.
+        start_date_time : datetime.date
+            The start date for the ticks.
+        end_date_time : datetime.date
+            The end date for the ticks.
+        tz_name : str
+            The timezone to use.
+        contracts : list[IBContract], default 'None'
+            IBContracts defining which ticks to retrieve.
+        instrument_ids : list[str], default 'None'
+            Instrument IDs (e.g. AAPL.NASDAQ) defining which ticks to retrieve.
+        use_rth : bool, default 'True'
+            Whether to use regular trading hours.
+
+        Returns
+        -------
+        list[TradeTick | QuoteTick]
+
+        """
+        start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
+        end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
+        contracts = contracts or []
+        instrument_ids = instrument_ids or []
+        if not contracts and not instrument_ids:
+            raise ValueError("Either contracts or instrument_ids must be provided")
+
+        # Convert instrument_id strings to IBContracts
+        contracts.extend(
+            [
+                instrument_id_to_ib_contract(
+                    InstrumentId.from_str(instrument_id),
+                )
+                for instrument_id in instrument_ids
+            ],
+        )
+
+        data: list[TradeTick | QuoteTick] = []
+        for contract in contracts:
+            self.log.info(f"Requesting ticks for: {ib_contract_to_instrument_id(contract)}")
+            while True:
+                self.log.info(f"Requesting ticks from: {start_date_time}")
+                ticks = await self._client.get_historical_ticks(
+                    contract=contract,
+                    tick_type=tick_type,
+                    start_date_time=start_date_time,
+                    use_rth=use_rth,
+                )
+                self.log.info(f"Number of ticks retrieved: {len(ticks)}")
+                if not ticks:
+                    continue
+
+                self.log.info(f"Number of ticks in data: {len(data)}")
+
+                timestamps = [tick.ts_event for tick in ticks]
+                min_timestamp: pd.Timestamp = unix_nanos_to_dt(min(timestamps))
+                max_timestamp: pd.Timestamp = unix_nanos_to_dt(max(timestamps))
+
+                # For very liquid products, a 1s period may contain 1000 ticks - the maximum that IB allows
+                # -- so we need to step the time forward to the next second avoid getting stuck when iterating.
+                if min_timestamp.floor("S") == max_timestamp.floor("S"):
+                    max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
+
+                if max_timestamp >= end_date_time:
+                    # Filter out any ticks after the end_date_time
+                    ticks = [
+                        tick for tick in ticks if unix_nanos_to_dt(tick.ts_event) <= end_date_time
+                    ]
+                    data.extend(ticks)
+                    break
+
+                data.extend(ticks)
+
+                start_date_time = max_timestamp
 
         return data
 
@@ -292,35 +302,40 @@ async def main():
     client = HistoricInteractiveBrokersClient(port=4002, client_id=5)
     await client._connect()
     await asyncio.sleep(2)
+
     instruments = await client.request_instruments(
         contracts=[contract],
-        # instrument_ids=[instrument_id],
+        instrument_ids=[instrument_id],
     )
-    # bars = await client.request_bars(
-    #     bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-    #     end_date_time=datetime.datetime.now(),
-    #     duration="1 D",
-    #     contracts=[contract],
-    #     instrument_ids=[instrument_id],
-    # )
 
-    # Configure global logging level (optional, can be more restrictive)
-    # logging.basicConfig(level=logging.DEBUG)
+    bars = await client.request_bars(
+        bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
+        end_date_time=datetime.datetime(2023, 11, 6, 16, 0),
+        duration="1 D",
+        contracts=[contract],
+        instrument_ids=[instrument_id],
+    )
 
-    # Set the logging level for a specific library
-    # library_logger = logging.getLogger('ibapi.connection')
-    # library_logger.setLevel(logging.DEBUG)
-
-    ticks = await client.request_ticks(
+    trade_ticks = await client.request_ticks(
         "TRADES",
-        start_date_time=datetime.date.today() - datetime.timedelta(days=4),
-        end_date_time=datetime.date.today() - datetime.timedelta(days=3),
+        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
         tz_name="America/New_York",
         contracts=[contract],
-        # instrument_ids=[instrument_id],
+        instrument_ids=[instrument_id],
     )
+
+    quote_ticks = await client.request_ticks(
+        "BID_ASK",
+        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
+        tz_name="America/New_York",
+        contracts=[contract],
+        instrument_ids=[instrument_id],
+    )
+
     catalog = ParquetDataCatalog("./catalog")
-    catalog.write_data(instruments + bars + ticks)
+    catalog.write_data(instruments + bars + trade_ticks + quote_ticks)
 
 
 if __name__ == "__main__":
