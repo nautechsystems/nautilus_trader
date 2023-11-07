@@ -37,6 +37,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 
 
 class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
@@ -173,7 +174,6 @@ def market_definition_to_instruments(
 ) -> list[BettingInstrument]:
     instruments: list[BettingInstrument] = []
     for runner in market_definition.runners:
-        print(f"{market_definition.competition_id=}")
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
             event_type_id=market_definition.event_type_id.value,
@@ -193,7 +193,7 @@ def market_definition_to_instruments(
             market_type=market_definition.market_type,
             selection_id=runner.id,
             selection_name=runner.name or "",
-            selection_handicap=runner.hc or 0.0,
+            selection_handicap=runner.hc or null_handicap(),
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             currency=currency,
             ts_event=time.time_ns(),
