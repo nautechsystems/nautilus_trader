@@ -72,7 +72,6 @@ class BetfairInstrumentProvider(InstrumentProvider):
     ):
         assert config is not None, "Must pass config to BetfairInstrumentProvider"
         super().__init__(
-            venue=BETFAIR_VENUE,
             logger=logger,
             config=config,
         )

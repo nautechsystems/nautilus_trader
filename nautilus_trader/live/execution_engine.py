@@ -17,7 +17,7 @@ import asyncio
 import math
 from asyncio import Queue
 from decimal import Decimal
-from typing import Any
+from typing import Any, Final
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -93,7 +93,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     """
 
-    _sentinel = None
+    _sentinel: Final[None] = None
 
     def __init__(
         self,
@@ -271,7 +271,7 @@ class LiveExecutionEngine(ExecutionEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._cmd_queue.put_nowait(command)
+            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full "
@@ -301,7 +301,7 @@ class LiveExecutionEngine(ExecutionEngine):
         PyCondition.not_none(event, "event")
 
         try:
-            self._evt_queue.put_nowait(event)
+            self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, event)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_evt_queue.put` as queue full "
@@ -313,8 +313,8 @@ class LiveExecutionEngine(ExecutionEngine):
     # -- INTERNAL -------------------------------------------------------------------------------------
 
     def _enqueue_sentinel(self) -> None:
-        self._cmd_queue.put_nowait(self._sentinel)
-        self._evt_queue.put_nowait(self._sentinel)
+        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
         self._log.debug("Sentinel messages placed on queues.")
 
     def _on_start(self) -> None:
@@ -363,8 +363,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("Command message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -384,8 +384,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._handle_event(event)
         except asyncio.CancelledError:
             self._log.warning("Event message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
@@ -622,7 +622,7 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         # Order must have been accepted from this point
-        if order.status == OrderStatus.INITIALIZED or order.status == OrderStatus.SUBMITTED:
+        if order.status in (OrderStatus.INITIALIZED, OrderStatus.SUBMITTED):
             self._generate_order_accepted(order, report)
 
         # Update order quantity and price differences
@@ -781,10 +781,10 @@ class LiveExecutionEngine(ExecutionEngine):
     ) -> OrderFilled:
         # Infer liquidity side
         liquidity_side: LiquiditySide = LiquiditySide.NO_LIQUIDITY_SIDE
-        if (
-            order.order_type == OrderType.MARKET
-            or order.order_type == OrderType.STOP_MARKET
-            or order.order_type == OrderType.TRAILING_STOP_MARKET
+        if order.order_type in (
+            OrderType.MARKET,
+            OrderType.STOP_MARKET,
+            OrderType.TRAILING_STOP_MARKET,
         ):
             liquidity_side = LiquiditySide.TAKER
         elif report.post_only:

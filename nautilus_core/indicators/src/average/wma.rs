@@ -69,11 +69,11 @@ impl WeightedMovingAverage {
     fn weighted_average(&self) -> f64 {
         let mut sum = 0.0;
         let mut weight_sum = 0.0;
-        let reverse_weights: Vec<f64> = self.weights.iter().cloned().rev().collect();
+        let reverse_weights: Vec<f64> = self.weights.iter().copied().rev().collect();
         for (index, input) in self.inputs.iter().rev().enumerate() {
             let weight = reverse_weights.get(index).unwrap();
             sum += input * weight;
-            weight_sum += weight
+            weight_sum += weight;
         }
         sum / weight_sum
     }
@@ -152,7 +152,7 @@ mod tests {
 
     #[rstest]
     fn test_wma_initialized(indicator_wma_10: WeightedMovingAverage) {
-        let display_str = format!("{}", indicator_wma_10);
+        let display_str = format!("{indicator_wma_10}");
         assert_eq!(
             display_str,
             "WeightedMovingAverage(10,[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])"
@@ -196,7 +196,7 @@ mod tests {
     fn test_value_with_two_inputs(mut indicator_wma_10: WeightedMovingAverage) {
         indicator_wma_10.update_raw(1.0);
         indicator_wma_10.update_raw(2.0);
-        let result = (2.0 * 1.0 + 1.0 * 0.9) / 1.9;
+        let result = 2.0f64.mul_add(1.0, 1.0 * 0.9) / 1.9;
         assert_eq!(indicator_wma_10.value, result);
     }
 
@@ -205,14 +205,14 @@ mod tests {
         indicator_wma_10.update_raw(1.0);
         indicator_wma_10.update_raw(2.0);
         indicator_wma_10.update_raw(3.0);
-        let result = (3.0 * 1.0 + 2.0 * 0.9 + 1.0 * 0.8) / (1.0 + 0.9 + 0.8);
+        let result = 1.0f64.mul_add(0.8, 3.0f64.mul_add(1.0, 2.0 * 0.9)) / (1.0 + 0.9 + 0.8);
         assert_eq!(indicator_wma_10.value, result);
     }
 
     #[rstest]
     fn test_value_expected_with_exact_period(mut indicator_wma_10: WeightedMovingAverage) {
         for i in 1..11 {
-            indicator_wma_10.update_raw(i as f64);
+            indicator_wma_10.update_raw(f64::from(i));
         }
         assert_eq!(indicator_wma_10.value, 7.0);
     }
@@ -220,9 +220,9 @@ mod tests {
     #[rstest]
     fn test_value_expected_with_more_inputs(mut indicator_wma_10: WeightedMovingAverage) {
         for i in 1..=11 {
-            indicator_wma_10.update_raw(i as f64);
+            indicator_wma_10.update_raw(f64::from(i));
         }
-        assert_eq!(indicator_wma_10.value(), 8.0000000000000018);
+        assert_eq!(indicator_wma_10.value(), 8.000_000_000_000_002);
     }
 
     #[rstest]

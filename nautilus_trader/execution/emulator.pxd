@@ -65,6 +65,7 @@ cdef class OrderEmulator(Actor):
 
     cpdef void _check_monitoring(self, StrategyId strategy_id, PositionId position_id)
     cpdef void _cancel_order(self, Order order)
+    cpdef void _update_order(self, Order order, Quantity new_quantity)
 
 # -------------------------------------------------------------------------------------------------
 

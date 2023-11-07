@@ -82,10 +82,10 @@ fn test_quote_tick_query() {
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
 
-    if let Data::Quote(q) = &ticks[0] {
+    if let Data::Quote(q) = ticks[0] {
         assert_eq!("EUR/USD.SIM", q.instrument_id.to_string());
     } else {
-        assert!(false);
+        panic!("Invalid test");
     }
 
     assert_eq!(ticks.len(), expected_length);
@@ -128,10 +128,10 @@ fn test_trade_tick_query() {
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
 
-    if let Data::Trade(t) = &ticks[0] {
+    if let Data::Trade(t) = ticks[0] {
         assert_eq!("EUR/USD.SIM", t.instrument_id.to_string());
     } else {
-        assert!(false);
+        panic!("Invalid test");
     }
 
     assert_eq!(ticks.len(), expected_length);
@@ -150,7 +150,7 @@ fn test_bar_query() {
     if let Data::Bar(b) = &ticks[0] {
         assert_eq!("ADABTC.BINANCE", b.bar_type.instrument_id.to_string());
     } else {
-        assert!(false);
+        panic!("Invalid test");
     }
 
     assert_eq!(ticks.len(), expected_length);

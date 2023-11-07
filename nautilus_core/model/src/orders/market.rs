@@ -18,6 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use anyhow::{bail, Result};
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use ustr::Ustr;
@@ -36,7 +37,10 @@ use crate::{
         venue::Venue, venue_order_id::VenueOrderId,
     },
     orders::base::OrderError,
-    types::{price::Price, quantity::Quantity},
+    types::{
+        price::Price,
+        quantity::{check_quantity_positive, Quantity},
+    },
 };
 
 #[cfg_attr(
@@ -48,7 +52,6 @@ pub struct MarketOrder {
 }
 
 impl MarketOrder {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         trader_id: TraderId,
@@ -58,6 +61,8 @@ impl MarketOrder {
         order_side: OrderSide,
         quantity: Quantity,
         time_in_force: TimeInForce,
+        init_id: UUID4,
+        ts_init: UnixNanos,
         reduce_only: bool,
         quote_quantity: bool,
         contingency_type: Option<ContingencyType>,
@@ -68,10 +73,14 @@ impl MarketOrder {
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Ustr>,
-        init_id: UUID4,
-        ts_init: UnixNanos,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        // check if quantity is positive
+        check_quantity_positive(quantity)?;
+        // market order cannot be GTD
+        if time_in_force == TimeInForce::Gtd {
+            bail!("{}", "GTD not supported for Market orders");
+        }
+        Ok(Self {
             core: OrderCore::new(
                 trader_id,
                 strategy_id,
@@ -95,7 +104,7 @@ impl MarketOrder {
                 init_id,
                 ts_init,
             ),
-        }
+        })
     }
 }
 
@@ -335,6 +344,8 @@ impl From<OrderInitialized> for MarketOrder {
             event.order_side,
             event.quantity,
             event.time_in_force,
+            event.event_id,
+            event.ts_event,
             event.reduce_only,
             event.quote_quantity,
             event.contingency_type,
@@ -345,8 +356,29 @@ impl From<OrderInitialized> for MarketOrder {
             event.exec_algorithm_params,
             event.exec_spawn_id,
             event.tags,
-            event.event_id,
-            event.ts_event,
         )
+        .unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::{enums::TimeInForce, orders::stubs::*, types::quantity::Quantity};
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    fn test_positive_quantity_condition() {
+        let _ = market_order(Quantity::from(0), None);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "GTD not supported for Market orders")]
+    fn test_gtd_condition() {
+        let _ = market_order(Quantity::from(100), Some(TimeInForce::Gtd));
     }
 }

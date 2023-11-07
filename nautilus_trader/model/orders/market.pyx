@@ -323,6 +323,9 @@ cdef class MarketOrder(Order):
             tags=order.tags,
         )
 
+        # Use original order initialization timestamp
+        transformed.ts_init = order.ts_init
+
         Order._hydrate_initial_events(original=order, transformed=transformed)
 
         return transformed

@@ -362,6 +362,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
+        support_contingent_orders: bool = True,
         use_position_ids: bool = True,
         use_random_ids: bool = False,
         use_reduce_only: bool = True,
@@ -404,6 +405,9 @@ cdef class BacktestEngine:
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
+        support_contingent_orders : bool, default True
+            If contingent orders will be supported/respected by the venue.
+            If False then its expected the strategy will be managing any contingent orders.
         use_position_ids : bool, default True
             If venue position IDs will be generated on order fills.
         use_random_ids : bool, default False
@@ -455,6 +459,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
+            support_contingent_orders=support_contingent_orders,
             use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
             use_reduce_only=use_reduce_only,
@@ -1232,6 +1237,16 @@ cdef class BacktestEngine:
         self._log.info("\033[36m-----------------------------------------------------------------")
 
     def _log_post_run(self):
+        if self._run_finished and self._run_started:
+            elapsed_time = self._run_finished - self._run_started
+        else:
+            elapsed_time = None
+
+        if self._backtest_end and self._backtest_start:
+            backtest_range = self._backtest_end - self._backtest_start
+        else:
+            backtest_range = None
+
         self._log.info("\033[36m=================================================================")
         self._log.info("\033[36m BACKTEST POST-RUN")
         self._log.info("\033[36m=================================================================")
@@ -1239,10 +1254,10 @@ cdef class BacktestEngine:
         self._log.info(f"Run ID:         {self._run_id}")
         self._log.info(f"Run started:    {self._run_started}")
         self._log.info(f"Run finished:   {self._run_finished}")
-        self._log.info(f"Elapsed time:   {self._run_finished - self._run_started}")
+        self._log.info(f"Elapsed time:   {elapsed_time}")
         self._log.info(f"Backtest start: {self._backtest_start}")
         self._log.info(f"Backtest end:   {self._backtest_end}")
-        self._log.info(f"Backtest range: {self._backtest_end - self._backtest_start}")
+        self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:,}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self._kernel.cache.orders_total_count():,}")

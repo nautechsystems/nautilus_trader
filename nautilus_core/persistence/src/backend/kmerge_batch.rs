@@ -46,7 +46,7 @@ impl<T> EagerStream<T> {
                 .await;
         });
 
-        EagerStream { rx, task, runtime }
+        Self { rx, task, runtime }
     }
 }
 
@@ -85,7 +85,7 @@ where
             match iter.next() {
                 Some(mut batch) => match batch.next() {
                     Some(item) => {
-                        break Some(ElementBatchIter { item, batch, iter });
+                        break Some(Self { item, batch, iter });
                     }
                     None => continue,
                 },
@@ -175,8 +175,10 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+
     use quickcheck::{empty_shrinker, Arbitrary};
     use quickcheck_macros::quickcheck;
+    use rstest::rstest;
 
     use super::*;
 
@@ -209,7 +211,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[rstest]
     fn test1() {
         let iter_a = vec![vec![1, 2, 3].into_iter(), vec![7, 8, 9].into_iter()].into_iter();
         let iter_b = vec![vec![4, 5, 6].into_iter()].into_iter();
@@ -221,7 +223,7 @@ mod tests {
         assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
     }
 
-    #[test]
+    #[rstest]
     fn test2() {
         let iter_a = vec![vec![1, 2, 6].into_iter(), vec![7, 8, 9].into_iter()].into_iter();
         let iter_b = vec![vec![3, 4, 5, 6].into_iter()].into_iter();
@@ -233,7 +235,7 @@ mod tests {
         assert_eq!(values, vec![1, 2, 3, 4, 5, 6, 6, 7, 8, 9]);
     }
 
-    #[test]
+    #[rstest]
     fn test3() {
         let iter_a = vec![vec![1, 4, 7].into_iter(), vec![24, 35, 56].into_iter()].into_iter();
         let iter_b = vec![vec![2, 4, 8].into_iter()].into_iter();
@@ -250,7 +252,7 @@ mod tests {
         );
     }
 
-    #[test]
+    #[rstest]
     fn test5() {
         let iter_a = vec![
             vec![1, 3, 5].into_iter(),
@@ -276,7 +278,7 @@ mod tests {
             let mut vec: Vec<u64> = Arbitrary::arbitrary(g);
 
             // Sort the vector
-            vec.sort();
+            vec.sort_unstable();
 
             // Recreate nested Vec structure by splitting the flattened_sorted_vec into sorted chunks
             let mut nested_sorted_vec = Vec::new();
@@ -292,7 +294,7 @@ mod tests {
             }
 
             // Wrap the sorted nested vector in the SortedNestedVecU64 struct
-            SortedNestedVec(nested_sorted_vec)
+            Self(nested_sorted_vec)
         }
 
         // Optionally, implement the `shrink` method if you want to shrink the generated data on test failures
@@ -306,18 +308,17 @@ mod tests {
         let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
 
         let copy_data = all_data.clone();
-        copy_data.into_iter().for_each(|stream| {
-            let input = stream.0.into_iter().map(|batch| batch.into_iter());
+        for stream in copy_data.into_iter() {
+            let input = stream.0.into_iter().map(std::iter::IntoIterator::into_iter);
             kmerge.push_iter(input);
-        });
+        }
         let merged_data: Vec<u64> = kmerge.collect();
 
         let mut sorted_data: Vec<u64> = all_data
             .into_iter()
-            .map(|stream| stream.0.into_iter().flatten())
-            .flatten()
+            .flat_map(|stream| stream.0.into_iter().flatten())
             .collect();
-        sorted_data.sort();
+        sorted_data.sort_unstable();
 
         merged_data.len() == sorted_data.len() && merged_data.eq(&sorted_data)
     }

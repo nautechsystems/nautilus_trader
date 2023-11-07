@@ -74,7 +74,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.msgbus.bus cimport MessageBus
 
 
-cdef tuple SUPPORTED_TRIGGERS = (TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE)
+cdef set SUPPORTED_TRIGGERS = {TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE}
 
 
 cdef class OrderEmulator(Actor):
@@ -125,8 +125,10 @@ cdef class OrderEmulator(Actor):
             msgbus=msgbus,
             cache=cache,
             component_name=type(self).__name__,
+            active_local=True,
             submit_order_handler=self._handle_submit_order,
             cancel_order_handler=self._cancel_order,
+            modify_order_handler=self._update_order,
             debug=config.debug,
         )
 
@@ -253,18 +255,7 @@ cdef class OrderEmulator(Actor):
             self._log.info(f"{RECV}{EVT} {event}.", LogColor.MAGENTA)
         self.event_count += 1
 
-        if isinstance(event, OrderRejected):
-            self._manager.handle_order_rejected(event)
-        elif isinstance(event, OrderCanceled):
-            self._manager.handle_order_canceled(event)
-        elif isinstance(event, OrderExpired):
-            self._manager.handle_order_expired(event)
-        elif isinstance(event, OrderUpdated):
-            self._manager.handle_order_updated(event)
-        elif isinstance(event, OrderFilled):
-            self._manager.handle_order_filled(event)
-        elif isinstance(event, PositionEvent):
-            self._manager.handle_position_event(event)
+        self._manager.handle_event(event)
 
         if not isinstance(event, OrderEvent):
             return
@@ -598,6 +589,57 @@ cdef class OrderEmulator(Actor):
         if matching_core is not None:
             matching_core.delete_order(order)
 
+        self.cache.update_order_pending_cancel_local(order)
+
+        # Generate event
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        cdef OrderCanceled event = OrderCanceled(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=order.venue_order_id,  # Probably None
+            account_id=order.account_id,  # Probably None
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        self._manager.send_exec_event(event)
+
+    cpdef void _update_order(self, Order order, Quantity new_quantity):
+        if order is None:
+            self._log.error(
+                f"Cannot update order: order for {repr(order.client_order_id)} not found.",
+            )
+            return
+
+        if self.debug:
+            self._log.info(
+                f"Updating order {order.client_order_id} quantity to {new_quantity}.",
+                LogColor.MAGENTA,
+            )
+
+        # Generate event
+        cdef uint64_t ts_now = self._clock.timestamp_ns()
+        cdef OrderUpdated event = OrderUpdated(
+            trader_id=order.trader_id,
+            strategy_id=order.strategy_id,
+            instrument_id=order.instrument_id,
+            client_order_id=order.client_order_id,
+            venue_order_id=None,  # Not yet assigned by any venue
+            account_id=order.account_id,  # Probably None
+            quantity=new_quantity,
+            price=None,
+            trigger_price=None,
+            event_id=UUID4(),
+            ts_event=ts_now,
+            ts_init=ts_now,
+        )
+        order.apply(event)
+        self.cache.update_order(order)
+
+        self._manager.send_risk_event(event)
+
 # -------------------------------------------------------------------------------------------------
 
     cpdef void _trigger_stop_order(self, Order order):
@@ -680,7 +722,7 @@ cdef class OrderEmulator(Actor):
         )
 
         if order.exec_algorithm_id is not None:
-            self._manager.send_algo_command(command)
+            self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
             self._manager.send_exec_command(command)
 
@@ -752,7 +794,7 @@ cdef class OrderEmulator(Actor):
         )
 
         if order.exec_algorithm_id is not None:
-            self._manager.send_algo_command(command)
+            self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
             self._manager.send_exec_command(command)
 

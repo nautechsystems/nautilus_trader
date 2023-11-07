@@ -138,7 +138,8 @@ class BetfairHttpClient:
         self._log.info("Connecting (Betfair login)")
         request = Login.with_params(username=self.username, password=self.password)
         resp: LoginResponse = await self._post(request)
-        assert resp.status == LoginStatus.SUCCESS
+        if resp.status != LoginStatus.SUCCESS:
+            raise RuntimeError(f"Login not successful: {resp.status.value}")
         self._log.info("Login success.", color=LogColor.GREEN)
         self.update_headers(login_resp=resp)
 

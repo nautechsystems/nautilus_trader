@@ -74,7 +74,7 @@ The platform is designed to be easily integrated into a larger distributed syste
 To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
 ## Common core
-The common system core is utilized by all node contexts `backtest`, `sandbox`, and `live`.
+The common system core is utilized by all node environment contexts (`backtest`, `sandbox`, and `live`).
 User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
 
 ## Backtesting
@@ -100,7 +100,7 @@ The platform features a comprehensive trading domain model that includes various
 which are used to aggregate multiple events to determine state.
 
 ### Data Types
-The following market data types can be requested historically, and also subscribed to as live streams when available from a data publisher, and implemented in an integrations adapter.
+The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
 - `OrderBookDelta` (L1/L2/L3)
 - `Ticker`
 - `QuoteTick`

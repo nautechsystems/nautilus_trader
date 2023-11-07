@@ -123,12 +123,12 @@ mod tests {
     use rstest::rstest;
 
     use super::InstrumentId;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
-    fn test_instrument_id_parse_success() {
-        let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
-        assert_eq!(instrument_id.symbol.to_string(), "ETH/USDT");
-        assert_eq!(instrument_id.venue.to_string(), "BINANCE");
+    fn test_instrument_id_parse_success(instrument_id_eth_usdt_binance: InstrumentId) {
+        assert_eq!(instrument_id_eth_usdt_binance.symbol.to_string(), "ETHUSDT");
+        assert_eq!(instrument_id_eth_usdt_binance.venue.to_string(), "BINANCE");
     }
 
     #[rstest]

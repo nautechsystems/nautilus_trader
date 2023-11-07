@@ -13,10 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport date
-from libc.stdint cimport uint64_t
-
 from decimal import Decimal
+
+import pandas as pd
+import pytz
+
+from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.model.currency cimport Currency
@@ -55,8 +57,10 @@ cdef class FuturesContract(Instrument):
         The rounded lot unit size (standard/board).
     underlying : str
         The underlying asset.
-    expiry_date : date
-        The contract expiry date.
+    activation_ns : uint64_t
+        The UNIX timestamp (nanoseconds) for contract activation.
+    expiration_ns : uint64_t
+        The UNIX timestamp (nanoseconds) for contract expiration.
     ts_event : uint64_t
         The UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
@@ -87,7 +91,8 @@ cdef class FuturesContract(Instrument):
         Quantity multiplier,
         Quantity lot_size not None,
         str underlying,
-        date expiry_date,
+        uint64_t activation_ns,
+        uint64_t expiration_ns,
         uint64_t ts_event,
         uint64_t ts_init,
         dict info = None,
@@ -120,7 +125,8 @@ cdef class FuturesContract(Instrument):
             info=info,
         )
         self.underlying = underlying
-        self.expiry_date = expiry_date
+        self.activation_ns = activation_ns
+        self.expiration_ns = expiration_ns
 
     @staticmethod
     cdef FuturesContract from_dict_c(dict values):
@@ -129,15 +135,16 @@ cdef class FuturesContract(Instrument):
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
             asset_class=asset_class_from_str(values["asset_class"]),
-            currency=Currency.from_str_c(values['currency']),
-            price_precision=values['price_precision'],
-            price_increment=Price.from_str(values['price_increment']),
-            multiplier=Quantity.from_str(values['multiplier']),
-            lot_size=Quantity.from_str(values['lot_size']),
-            underlying=values['underlying'],
-            expiry_date=date.fromisoformat(values['expiry_date']),
-            ts_event=values['ts_event'],
-            ts_init=values['ts_init'],
+            currency=Currency.from_str_c(values["currency"]),
+            price_precision=values["price_precision"],
+            price_increment=Price.from_str(values["price_increment"]),
+            multiplier=Quantity.from_str(values["multiplier"]),
+            lot_size=Quantity.from_str(values["lot_size"]),
+            underlying=values["underlying"],
+            activation_ns=values["activation_ns"],
+            expiration_ns=values["expiration_ns"],
+            ts_event=values["ts_event"],
+            ts_init=values["ts_init"],
         )
 
     @staticmethod
@@ -156,12 +163,39 @@ cdef class FuturesContract(Instrument):
             "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
             "underlying": obj.underlying,
-            "expiry_date": obj.expiry_date.isoformat(),
+            "activation_ns": obj.activation_ns,
+            "expiration_ns": obj.expiration_ns,
             "margin_init": str(obj.margin_init),
             "margin_maint": str(obj.margin_maint),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
+
+    @property
+    def activation_utc(self) -> pd.Timestamp:
+        """
+        Return the contract activation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.activation_ns, tz=pytz.utc)
+
+    @property
+    def expiration_utc(self) -> pd.Timestamp:
+        """
+        Return the contract expriation timestamp (UTC).
+
+        Returns
+        -------
+        pd.Timestamp
+            tz-aware UTC.
+
+        """
+        return pd.Timestamp(self.expiration_ns, tz=pytz.utc)
 
     @staticmethod
     def from_dict(dict values) -> FuturesContract:

@@ -65,20 +65,18 @@ def data_catalog_setup(
 def aud_usd_data_loader(catalog: ParquetDataCatalog) -> None:
     from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
-    venue = Venue("SIM")
-    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=venue)
+    instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD", venue=Venue("SIM"))
 
     clock = TestClock()
     logger = Logger(clock)
 
     instrument_provider = InstrumentProvider(
-        venue=venue,
         logger=logger,
     )
     instrument_provider.add(instrument)
 
     wrangler = QuoteTickDataWrangler(instrument)
-    ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx-audusd-ticks.csv"))
+    ticks = wrangler.process(TestDataProvider().read_csv_ticks("truefx/audusd-ticks.csv"))
     ticks.sort(key=lambda x: x.ts_init)  # CAUTION: data was not originally sorted
     catalog.write_data([instrument])
     catalog.write_data(ticks)

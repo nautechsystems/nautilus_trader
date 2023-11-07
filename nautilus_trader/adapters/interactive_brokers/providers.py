@@ -20,7 +20,6 @@ from ibapi.contract import ContractDetails
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
@@ -61,7 +60,6 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
 
         """
         super().__init__(
-            venue=IB_VENUE,
             logger=logger,
             config=config,
         )

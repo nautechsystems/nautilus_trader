@@ -13,10 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime as dt
 from decimal import Decimal
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -76,7 +76,6 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
-            venue=BINANCE_VENUE,
             logger=logger,
             config=config,
         )
@@ -153,7 +152,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+            PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
@@ -192,7 +191,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
+        PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
@@ -329,13 +328,20 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 BinanceFuturesContractType.NEXT_MONTH,
                 BinanceFuturesContractType.NEXT_QUARTER,
             ):
+                expiry_date_part = symbol_info.symbol.partition("_")[2]
+                expiration = pd.to_datetime(expiry_date_part, format="%y%m%d", utc=True)
+                expiration += pd.Timedelta(hours=8)
+
+                activation = expiration - pd.Timedelta(days=90)  # TODO: Improve accuracy
+
                 instrument = CryptoFuture(
                     instrument_id=instrument_id,
                     raw_symbol=raw_symbol,
                     underlying=base_currency,
                     quote_currency=quote_currency,
                     settlement_currency=settlement_currency,
-                    expiry_date=dt.strptime(symbol_info.symbol.partition("_")[2], "%y%m%d").date(),
+                    activation_ns=activation.value,
+                    expiration_ns=expiration.value,
                     price_precision=price_precision,
                     size_precision=size_precision,
                     price_increment=price_increment,

@@ -34,6 +34,31 @@ is not available, then the system will not submit the order and an error will be
 a clear explanatory message.
 ```
 
+### Terminology
+
+- An order is **aggressive** if the type is `MARKET` or if its executing like a `MARKET` order (taking liquidity).
+- An order is **passive** if the type is not `MARKET` (providing liquidity).
+- An order is **active local** if it is still within the local system boundary in one of the following three (non-terminal) status:
+    - `INITIALIZED`
+    - `EMULATED`
+    - `RELEASED`
+- An order is **in-flight** when in one of the following status:
+    - `SUBMITTED`
+    - `PENDING_UPDATE`
+    - `PENDING_CANCEL`
+- An order is **open** when in one of the following (non-terminal) status:
+    - `ACCEPTED`
+    - `TRIGGERED`
+    - `PENDING_UPDATE`
+    - `PENDING_CANCEL`
+    - `PARTIALLY_FILLED`
+- An order is **closed** when in one of the following (terminal) status:
+    - `DENIED`
+    - `REJECTED`
+    - `CANCELED`
+    - `EXPIRED`
+    - `FILLED`
+
 ## Execution Instructions
 
 Certain exchanges allow a trader to specify conditions and restrictions on
@@ -98,7 +123,7 @@ of the stop price based on the offset from the 'market' (bid, ask or last price 
 - `TICKS` - The offset is based on a number of ticks
 - `PRICE_TIER` - The offset is based on an exchange specific price tier
 
-### Contingency Orders
+### Contingent Orders
 More advanced relationships can be specified between orders such as assigning child order(s) which will only
 trigger when the parent order is activated or filled, or linking orders together which will cancel or reduce in quantity
 contingent on each other. More documentation for these options can be found in the [advanced order guide](advanced/advanced_orders.md).

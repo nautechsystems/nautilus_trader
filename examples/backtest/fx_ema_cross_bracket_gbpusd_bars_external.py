@@ -96,10 +96,10 @@ if __name__ == "__main__":
 
     # Add data
     bid_bars = bid_wrangler.process(
-        data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:10_000],
+        data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv")[:10_000],
     )
     ask_bars = ask_wrangler.process(
-        data=provider.read_csv_bars("fxcm-gbpusd-m1-ask-2012.csv")[:10_000],
+        data=provider.read_csv_bars("fxcm/gbpusd-m1-ask-2012.csv")[:10_000],
     )
     engine.add_data(bid_bars)
     engine.add_data(ask_bars)

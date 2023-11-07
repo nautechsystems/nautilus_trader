@@ -17,6 +17,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use anyhow::Result;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -43,19 +44,18 @@ pub struct Equity {
     pub price_precision: u8,
     pub price_increment: Price,
     pub multiplier: Quantity,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
+    pub maker_fee: Decimal,
+    pub taker_fee: Decimal,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
 }
 
 impl Equity {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -65,17 +65,17 @@ impl Equity {
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             id,
             raw_symbol,
             isin,
@@ -83,16 +83,16 @@ impl Equity {
             price_precision,
             price_increment,
             multiplier,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-        }
+        })
     }
 }
 
@@ -197,5 +197,62 @@ impl Instrument for Equity {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use std::str::FromStr;
+
+    use rstest::fixture;
+    use rust_decimal::Decimal;
+
+    use crate::{
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+        instruments::equity::Equity,
+        types::{currency::Currency, price::Price, quantity::Quantity},
+    };
+
+    #[fixture]
+    pub fn equity_aapl() -> Equity {
+        Equity::new(
+            InstrumentId::from("AAPL.NASDAQ"),
+            Symbol::from("AAPL"),
+            String::from("US0378331005"),
+            Currency::from("USD"),
+            2,
+            Price::from("0.01"),
+            Quantity::from(1),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Some(Quantity::from(1)),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::stubs::*;
+    use crate::instruments::equity::Equity;
+
+    #[rstest]
+    fn test_equality(equity_aapl: Equity) {
+        let cloned = equity_aapl.clone();
+        assert_eq!(equity_aapl, cloned)
     }
 }

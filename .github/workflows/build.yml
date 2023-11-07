@@ -89,7 +89,9 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Run pre-commit
-        run: pre-commit run --all-files
+        run: |
+          # pre-commit run --hook-stage manual gitlint-ci
+          pre-commit run --all-files
 
       - name: Install Redis (macOS)
         if: runner.os == 'macOS'

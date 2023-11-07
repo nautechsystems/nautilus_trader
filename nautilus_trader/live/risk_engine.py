@@ -15,6 +15,7 @@
 
 import asyncio
 from asyncio import Queue
+from typing import Final
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.clock import LiveClock
@@ -56,7 +57,7 @@ class LiveRiskEngine(RiskEngine):
 
     """
 
-    _sentinel = None
+    _sentinel: Final[None] = None
 
     def __init__(
         self,
@@ -173,7 +174,7 @@ class LiveRiskEngine(RiskEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._cmd_queue.put_nowait(command)
+            self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, command)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_cmd_queue.put` as queue full "
@@ -204,7 +205,7 @@ class LiveRiskEngine(RiskEngine):
         # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
-            self._evt_queue.put_nowait(event)
+            self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, event)
         except asyncio.QueueFull:
             self._log.warning(
                 f"Blocking on `_evt_queue.put` as queue full "
@@ -216,8 +217,8 @@ class LiveRiskEngine(RiskEngine):
     # -- INTERNAL -------------------------------------------------------------------------------------
 
     def _enqueue_sentinel(self) -> None:
-        self._cmd_queue.put_nowait(self._sentinel)
-        self._evt_queue.put_nowait(self._sentinel)
+        self._loop.call_soon_threadsafe(self._cmd_queue.put_nowait, self._sentinel)
+        self._loop.call_soon_threadsafe(self._evt_queue.put_nowait, self._sentinel)
         self._log.debug("Sentinel messages placed on queues.")
 
     def _on_start(self) -> None:
@@ -248,8 +249,8 @@ class LiveRiskEngine(RiskEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("Command message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -269,8 +270,8 @@ class LiveRiskEngine(RiskEngine):
                 self._handle_event(event)
         except asyncio.CancelledError:
             self._log.warning("Event message queue canceled.")
-        except RuntimeError as ex:
-            self._log.error(f"RuntimeError: {ex}.")
+        except RuntimeError as e:
+            self._log.error(f"RuntimeError: {e}.")
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():

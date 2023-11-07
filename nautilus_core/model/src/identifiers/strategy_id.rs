@@ -51,6 +51,10 @@ impl StrategyId {
             value: Ustr::from(s),
         })
     }
+
+    pub fn get_tag(&self) -> &str {
+        self.value.split('-').last().unwrap()
+    }
 }
 
 impl Default for StrategyId {
@@ -80,21 +84,6 @@ impl From<&str> for StrategyId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::strategy_id::StrategyId;
-
-    #[fixture]
-    pub fn strategy_id_ema_cross() -> StrategyId {
-        StrategyId::from("EMACross-001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -102,11 +91,16 @@ mod tests {
     use rstest::rstest;
 
     use super::StrategyId;
-    use crate::identifiers::strategy_id::stubs::strategy_id_ema_cross;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
         assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
         assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
+    }
+
+    #[rstest]
+    fn test_get_tag(strategy_id_ema_cross: StrategyId) {
+        assert_eq!(strategy_id_ema_cross.get_tag(), "001");
     }
 }

@@ -13,26 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3 import Currency
+from enum import Enum
+from enum import unique
 
 
-class TestTypesProviderPyo3:
-    @staticmethod
-    def currency_btc() -> Currency:
-        return Currency.from_str("BTC")
-
-    @staticmethod
-    def currency_usdt() -> Currency:
-        return Currency.from_str("USDT")
-
-    @staticmethod
-    def currency_aud() -> Currency:
-        return Currency.from_str("AUD")
-
-    @staticmethod
-    def currency_gbp() -> Currency:
-        return Currency.from_str("GBP")
-
-    @staticmethod
-    def currency_eth() -> Currency:
-        return Currency.from_str("ETH")
+@unique
+class DatabentoInstrumentClass(Enum):
+    BOND = "B"
+    CALL = "C"
+    FUTURE = "F"
+    STOCK = "K"
+    MIXED_SPREAD = "M"
+    PUT = "P"
+    FUTURE_SPREAD = "S"
+    OPTION_SPREAD = "T"
+    FX_SPOT = "X"

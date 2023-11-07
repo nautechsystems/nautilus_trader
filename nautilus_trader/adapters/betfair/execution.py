@@ -580,8 +580,8 @@ class BetfairExecutionClient(LiveExecutionClient):
                         continue
 
     def check_cache_against_order_image(self, order_change_message: OCM) -> None:
-        for market in order_change_message.oc:
-            for selection in market.orc:
+        for market in order_change_message.oc or []:
+            for selection in market.orc or []:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
                     selection_id=str(selection.id),
@@ -589,7 +589,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 )
                 orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}
-                for unmatched_order in selection.uo:
+                for unmatched_order in selection.uo or []:
                     # We can match on venue_order_id here
                     order = venue_orders.get(VenueOrderId(str(unmatched_order.id)))
                     if order is not None:
@@ -794,7 +794,7 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def wait_for_order(
         self,
         venue_order_id: VenueOrderId,
-        timeout_seconds=10.0,
+        timeout_seconds: float = 10.0,
     ) -> ClientOrderId | None:
         """
         We may get an order update from the socket before our submit_order response has
@@ -826,7 +826,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         )
         return None
 
-    def _handle_status_message(self, update: Status):
+    def _handle_status_message(self, update: Status) -> None:
         if update.is_error and update.connection_closed:
             self._log.warning(str(update))
             if update.error_code == StatusErrorCode.MAX_CONNECTION_LIMIT_EXCEEDED:
@@ -851,4 +851,4 @@ def create_trade_id(uo: UnmatchedOrder) -> TradeId:
             uo.sm,
         ),
     )
-    return TradeId(hashlib.sha1(data).hexdigest())  # noqa (S303 insecure SHA1)
+    return TradeId(hashlib.sha256(data).hexdigest()[:40])

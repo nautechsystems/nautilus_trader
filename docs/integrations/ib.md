@@ -9,7 +9,7 @@ or `poetry install --all-extras` inside your environment to ensure the necessary
 
 ## Overview
 
-The following integration classes are available:
+The following adapter classes are available:
 - `InteractiveBrokersInstrumentProvider` which allows querying Interactive Brokers for instruments.
 - `InteractiveBrokersDataClient` which connects to the `Gateway` and streams market data.
 - `InteractiveBrokersExecutionClient` which allows the retrieval of account information and execution of orders.

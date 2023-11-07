@@ -72,7 +72,7 @@ map_order_fields: set[tuple[str, str, Callable]] = {
     ("client_order_id", "orderRef", lambda x: x.value),
     ("display_qty", "displaySize", lambda x: x.as_double()),
     ("expire_time", "goodTillDate", lambda x: x.strftime("%Y%m%d %H:%M:%S %Z")),
-    ("limit_offset", "lmtPriceOffset", lambda x: float(x)),
+    ("limit_offset", "lmtPriceOffset", float),
     ("order_type", "orderType", lambda x: map_order_type[x]),
     ("price", "lmtPrice", lambda x: x.as_double()),
     ("quantity", "totalQuantity", lambda x: x.as_decimal()),
