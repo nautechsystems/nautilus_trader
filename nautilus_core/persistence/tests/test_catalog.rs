@@ -19,7 +19,7 @@ use nautilus_model::data::{
     trade::TradeTick, Data, HasTsInit,
 };
 use nautilus_persistence::{
-    backend::session::{DataBackendSession, QueryResult},
+    backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
@@ -27,6 +27,39 @@ use rstest::rstest;
 
 #[rstest]
 fn test_user_data() {
+    let file_path = "../../tests/test_data/user_data.parquet";
+    let mut catalog = DataBackendSession::new(2);
+    catalog
+        .add_file::<QuoteTick>("quote_005", file_path, None)
+        .unwrap();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.take(2).collect();
+
+    dbg!(ticks[0]);
+    dbg!(ticks[1]);
+    assert!(is_monotonically_increasing_by_init(&ticks));
+}
+
+#[rstest]
+fn test_user_data_raw_half() {
+    let file_path = "../../tests/test_data/user_data.parquet";
+    let mut catalog = DataBackendSession::new(2);
+    catalog
+        .add_file::<QuoteTick>("quote_005", file_path, None)
+        .unwrap();
+    let query_result: QueryResult = catalog.get_query_result();
+    let mut query_result = DataQueryResult::new(query_result, 2);
+    let chunk: CVec = query_result.next().unwrap().into();
+    let ticks: &[QuoteTick] =
+        unsafe { std::slice::from_raw_parts(chunk.ptr as *const QuoteTick, chunk.len) };
+
+    dbg!(ticks[0]);
+    dbg!(ticks[1]);
+    assert!(is_monotonically_increasing_by_init(&ticks));
+}
+
+#[rstest]
+fn test_user_data_raw_full() {
     pyo3::prepare_freethreaded_python();
 
     let file_path = "../../tests/test_data/user_data.parquet";
@@ -50,8 +83,8 @@ fn test_user_data() {
             } else {
                 let slice: &[QuoteTick] =
                     unsafe { std::slice::from_raw_parts(cvec.ptr as *const QuoteTick, cvec.len) };
-                dbg!(slice[0].get_ts_init());
-                dbg!(slice[1].get_ts_init());
+                dbg!(slice[0]);
+                dbg!(slice[1]);
                 assert!(is_monotonically_increasing_by_init(slice));
             }
         }
