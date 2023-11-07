@@ -23,6 +23,7 @@ from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.betting import make_symbol
+from nautilus_trader.model.instruments.betting import null_handicap
 
 
 def hash_market_trade(timestamp: int, price: float, volume: float):
@@ -43,7 +44,7 @@ def betfair_instrument_id(
 
     """
     PyCondition.not_empty(market_id, "market_id")
-    symbol = make_symbol(market_id, selection_id, selection_handicap)
+    symbol = make_symbol(market_id, selection_id, selection_handicap or null_handicap())
     return InstrumentId(symbol=symbol, venue=BETFAIR_VENUE)
 
 
@@ -51,7 +52,11 @@ def instrument_id_betfair_ids(
     instrument_id: InstrumentId,
 ) -> tuple[MarketId, SelectionId, Handicap]:
     parts = instrument_id.symbol.value.split("-", maxsplit=2)
-    return MarketId(parts[0]), SelectionId(parts[1]), Handicap(parts[2])
+    return (
+        MarketId(parts[0]),
+        SelectionId(parts[1]),
+        Handicap(parts[2]) if parts[2] != "None" else None,
+    )
 
 
 def chunk(list_like, n):

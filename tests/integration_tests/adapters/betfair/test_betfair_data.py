@@ -391,7 +391,7 @@ def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     assert ticker.traded_volume == 364.45
     assert (
         str(ticker)
-        == "BetfairTicker(instrument_id=1.176621195-42153-0.0.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
+        == "BetfairTicker(instrument_id=1.176621195-42153-None.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
     )
 
 

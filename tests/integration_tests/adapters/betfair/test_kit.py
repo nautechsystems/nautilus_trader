@@ -58,6 +58,7 @@ from nautilus_trader.model.data.book import OrderBookDelta
 from nautilus_trader.model.data.tick import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
@@ -128,8 +129,11 @@ class BetfairTestStubs:
             if rpc_method == "SportsAPING/v1.0/listMarketCatalogue":
                 kw = {"filter_": request.params.filter}
             if rpc_method in responses:
+                response = responses[rpc_method](**kw)  # type: ignore
+                if "id" in response:
+                    response["id"] = request.id
                 resp = MagicMock(spec=ClientResponse)
-                resp.body = msgspec.json.encode(responses[rpc_method](**kw))
+                resp.body = msgspec.json.encode(response)
                 return resp
             elif request.endpoint_type == EndpointType.NAVIGATION:
                 resp = MagicMock(spec=ClientResponse)
@@ -311,79 +315,74 @@ class BetfairRequests:
 
 class BetfairResponses:
     @staticmethod
-    def load(filename: str, request_id: int = 1):
+    def load(filename: str):
         raw = (RESOURCES_PATH / "responses" / filename).read_bytes()
         data = msgspec.json.decode(raw)
-        if "id" in data:
-            data["id"] = request_id
         return data
 
     @staticmethod
-    def account_details(request_id: int = 1):
-        return BetfairResponses.load("account_details.json", request_id=request_id)
+    def account_details():
+        return BetfairResponses.load("account_details.json")
 
     @staticmethod
-    def account_funds_no_exposure(request_id: int = 1):
-        return BetfairResponses.load("account_funds_no_exposure.json", request_id=request_id)
+    def account_funds_no_exposure():
+        return BetfairResponses.load("account_funds_no_exposure.json")
 
     @staticmethod
-    def account_funds_with_exposure(request_id: int = 1):
+    def account_funds_with_exposure():
         return BetfairResponses.load("account_funds_with_exposure.json")
 
     @staticmethod
-    def account_funds_error(request_id: int = 1):
-        return BetfairResponses.load("account_funds_error.json", request_id=request_id)
+    def account_funds_error():
+        return BetfairResponses.load("account_funds_error.json")
 
     @staticmethod
-    def betting_cancel_orders_success(request_id: int = 1):
-        return BetfairResponses.load("betting_cancel_orders_success.json", request_id=request_id)
+    def betting_cancel_orders_success():
+        return BetfairResponses.load("betting_cancel_orders_success.json")
 
     @staticmethod
-    def betting_cancel_orders_error(request_id: int = 1):
-        return BetfairResponses.load("betting_cancel_orders_error.json", request_id=request_id)
+    def betting_cancel_orders_error():
+        return BetfairResponses.load("betting_cancel_orders_error.json")
 
     @staticmethod
-    def betting_place_order_error(request_id: int = 1):
-        return BetfairResponses.load("betting_place_order_error.json", request_id=request_id)
+    def betting_place_order_error():
+        return BetfairResponses.load("betting_place_order_error.json")
 
     @staticmethod
-    def betting_place_order_success(request_id: int = 1):
-        return BetfairResponses.load("betting_place_order_success.json", request_id=request_id)
+    def betting_place_order_success():
+        return BetfairResponses.load("betting_place_order_success.json")
 
     @staticmethod
-    def betting_place_orders_old(request_id: int = 1):
-        return BetfairResponses.load("betting_place_orders_old.json", request_id=request_id)
+    def betting_place_orders_old():
+        return BetfairResponses.load("betting_place_orders_old.json")
 
     @staticmethod
-    def betting_replace_orders_success(request_id: int = 1):
-        return BetfairResponses.load("betting_replace_orders_success.json", request_id=request_id)
+    def betting_replace_orders_success():
+        return BetfairResponses.load("betting_replace_orders_success.json")
 
     @staticmethod
-    def betting_replace_orders_success_multi(request_id: int = 1):
-        return BetfairResponses.load(
-            "betting_replace_orders_success_multi.json",
-            request_id=request_id,
-        )
+    def betting_replace_orders_success_multi():
+        return BetfairResponses.load("betting_replace_orders_success_multi.json")
 
     @staticmethod
-    def cert_login(request_id: int = 1):
-        return BetfairResponses.load("cert_login.json", request_id=request_id)
+    def cert_login():
+        return BetfairResponses.load("cert_login.json")
 
     @staticmethod
-    def login_success(request_id: int = 1):
-        return BetfairResponses.load("login_success.json", request_id=request_id)
+    def login_success():
+        return BetfairResponses.load("login_success.json")
 
     @staticmethod
-    def login_failure(request_id: int = 1):
-        return BetfairResponses.load("login_failure.json", request_id=request_id)
+    def login_failure():
+        return BetfairResponses.load("login_failure.json")
 
     @staticmethod
-    def list_cleared_orders(request_id: int = 1):
-        return BetfairResponses.load("list_cleared_orders.json", request_id=request_id)
+    def list_cleared_orders():
+        return BetfairResponses.load("list_cleared_orders.json")
 
     @staticmethod
-    def list_current_orders(request_id: int = 1):
-        return BetfairResponses.load("list_current_orders.json", request_id=request_id)
+    def list_current_orders():
+        return BetfairResponses.load("list_current_orders.json")
 
     @staticmethod
     def list_current_orders_empty():
@@ -807,7 +806,7 @@ def betting_instrument(
         market_name="AFC Conference Winner",
         market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
         market_type="SPECIAL",
-        selection_handicap=selection_handicap or 0.0,
+        selection_handicap=selection_handicap or null_handicap(),
         selection_id=selection_id,
         selection_name="Kansas City Chiefs",
         currency="GBP",
@@ -821,11 +820,11 @@ def betting_instrument_handicap() -> BettingInstrument:
     return BettingInstrument.from_dict(
         {
             "venue_name": "BETFAIR",
-            "event_type_id": "61420",
+            "event_type_id": 61420,
             "event_type_name": "Australian Rules",
-            "competition_id": "11897406",
+            "competition_id": 11897406,
             "competition_name": "AFL",
-            "event_id": "30777079",
+            "event_id": 30777079,
             "event_name": "GWS v Richmond",
             "event_country_code": "AU",
             "event_open_date": "2021-08-13T09:50:00+00:00",
@@ -834,9 +833,9 @@ def betting_instrument_handicap() -> BettingInstrument:
             "market_name": "Handicap",
             "market_start_time": "2021-08-13T09:50:00+00:00",
             "market_type": "HANDICAP",
-            "selection_id": "5304641",
+            "selection_id": 5304641,
             "selection_name": "GWS",
-            "selection_handicap": "-5.5",
+            "selection_handicap": -5.5,
             "currency": "AUD",
             "ts_event": 0,
             "ts_init": 0,

@@ -585,7 +585,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
                     selection_id=selection.id,
-                    selection_handicap=selection.hc or 0.0,
+                    selection_handicap=selection.hc,
                 )
                 orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}

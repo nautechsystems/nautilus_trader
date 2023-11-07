@@ -14,9 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from cpython.datetime cimport datetime
-from libc.stdint cimport int8_t
-from libc.stdint cimport int64_t
-from libc.stdint cimport uint64_t
 
 from nautilus_trader.model.instruments.base cimport Instrument
 
@@ -44,3 +41,6 @@ cdef class BettingInstrument(Instrument):
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj)
+
+
+cpdef double null_handicap()

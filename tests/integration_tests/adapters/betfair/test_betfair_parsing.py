@@ -204,7 +204,7 @@ class TestBetfairParsingStreaming:
         assert result[0] == TradeTick.from_dict(
             {
                 "type": "TradeTick",
-                "instrument_id": "1.205822330-49808334-0.0.BETFAIR",
+                "instrument_id": "1.205822330-49808334-None.BETFAIR",
                 "price": "3.95",
                 "size": "46.950000",
                 "aggressor_side": "NO_AGGRESSOR",
@@ -216,7 +216,7 @@ class TestBetfairParsingStreaming:
         assert result[1] == BetfairTicker.from_dict(
             {
                 "type": "BetfairTicker",
-                "instrument_id": "1.205822330-49808334-0.0.BETFAIR",
+                "instrument_id": "1.205822330-49808334-None.BETFAIR",
                 "ts_event": 0,
                 "ts_init": 0,
                 "last_traded_price": 0.2531646,
@@ -351,7 +351,7 @@ class TestBetfairParsing:
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
                     selection_id=50214,
-                    handicap=0.0,
+                    handicap=None,
                     side=Side.BACK,
                     limit_order=LimitOrder(
                         price=2.5,
@@ -414,15 +414,9 @@ class TestBetfairParsing:
 
     @pytest.mark.asyncio()
     async def test_account_statement(self, betfair_client):
-        mock_betfair_request(
-            betfair_client,
-            BetfairResponses.account_details(request_id=request_id()),
-        )
+        mock_betfair_request(betfair_client, BetfairResponses.account_details())
         detail = await self.client.get_account_details()
-        mock_betfair_request(
-            betfair_client,
-            BetfairResponses.account_funds_no_exposure(request_id=request_id()),
-        )
+        mock_betfair_request(betfair_client, BetfairResponses.account_funds_no_exposure())
         funds = await self.client.get_account_funds()
         result = betfair_account_to_account_state(
             account_detail=detail,
@@ -497,7 +491,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
             selection_id=50214,
-            handicap=0.0,
+            handicap=None,
             side=Side.BACK,
             limit_order=LimitOrder(
                 size=10.0,
@@ -527,7 +521,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT_ON_CLOSE,
             selection_id=50214,
-            handicap=0.0,
+            handicap=None,
             side=Side.BACK,
             limit_order=None,
             limit_on_close_order=LimitOnCloseOrder(liability=10.0, price=3.05),
@@ -544,7 +538,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
             selection_id=50214,
-            handicap=0.0,
+            handicap=None,
             side=Side.BACK,
             limit_order=LimitOrder(
                 size=100.0,
@@ -569,7 +563,7 @@ class TestBetfairParsing:
         expected = PlaceInstruction(
             order_type=OrderType.LIMIT,
             selection_id=50214,
-            handicap=0.0,
+            handicap=None,
             side=Side.LAY,
             limit_order=LimitOrder(
                 size=100.0,
@@ -671,7 +665,7 @@ class TestBetfairParsing:
         starting_prices = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
         assert len(starting_prices) == 8
         assert starting_prices[0].instrument_id == InstrumentId.from_str(
-            "1.208011084-45967562-0.0-BSP.BETFAIR",
+            "1.208011084-45967562-None-BSP.BETFAIR",
         )
         assert starting_prices[0].bsp == 2.0008034621107256
 
@@ -683,7 +677,7 @@ class TestBetfairParsing:
             upd
             for upd in updates
             if isinstance(upd, BSPOrderBookDelta)
-            and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-0.0-BSP.BETFAIR")
+            and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-None-BSP.BETFAIR")
         ]
         assert len(single_instrument_bsp_updates) == 1
 
