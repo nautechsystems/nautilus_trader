@@ -19,6 +19,8 @@ from typing import Optional
 import pandas as pd
 
 from cpython.datetime cimport datetime
+from libc.stdint cimport int8_t
+from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
@@ -32,8 +34,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.tick_scheme.base cimport register_tick_scheme
-from nautilus_trader.model.tick_scheme.implementations.tiered cimport TieredTickScheme
 
 
 cdef class BettingInstrument(Instrument):
@@ -44,11 +44,11 @@ cdef class BettingInstrument(Instrument):
     def __init__(
         self,
         str venue_name not None,
-        str event_type_id not None,
+        int event_type_id,
         str event_type_name not None,
-        str competition_id not None,
+        int competition_id,
         str competition_name not None,
-        str event_id not None,
+        int event_id,
         str event_name not None,
         str event_country_code not None,
         datetime event_open_date not None,
@@ -57,17 +57,17 @@ cdef class BettingInstrument(Instrument):
         str market_name not None,
         datetime market_start_time not None,
         str market_type not None,
-        str selection_id not None,
+        int selection_id,
         str selection_name not None,
         str currency not None,
-        str selection_handicap,
+        float selection_handicap,
         uint64_t ts_event,
         uint64_t ts_init,
         str tick_scheme_name=None,
-        int price_precision=7,  # TODO(bm): pending refactor
+        int8_t price_precision=2,
         Price min_price = None,
         Price max_price = None,
-        dict info = {},
+        dict info = None,
     ):
         assert event_open_date.tzinfo or market_start_time.tzinfo is not None
 
@@ -125,7 +125,7 @@ cdef class BettingInstrument(Instrument):
             ts_event=ts_event,
             ts_init=ts_init,
             tick_scheme_name=tick_scheme_name,
-            info=info,
+            info=info or {},
         )
         if not min_price and tick_scheme_name:
             self.min_price = self._tick_scheme.min_price
@@ -204,13 +204,13 @@ cdef class BettingInstrument(Instrument):
 
 def make_symbol(
     market_id: str,
-    selection_id: str,
-    selection_handicap: Optional[str],
+    selection_id: int,
+    selection_handicap: float,
 ) -> Symbol:
     """
     Make symbol.
 
-    >>> make_symbol(market_id="1.201070830", selection_id="123456", selection_handicap=None)
+    >>> make_symbol(market_id="1.201070830", selection_id=123456, selection_handicap=null_handicap())
     Symbol('1.201070830-123456-None')
 
     """
@@ -218,8 +218,15 @@ def make_symbol(
     def _clean(s):
         return str(s).replace(" ", "").replace(":", "")
 
+    handicap = selection_handicap if selection_handicap != null_handicap() else None
+
     value: str = "-".join(
-        [_clean(k) for k in (market_id, selection_id, selection_handicap)],
+        [_clean(k) for k in (market_id, selection_id, handicap)],
     )
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
     return Symbol(value)
+
+
+cpdef double null_handicap():
+    cdef double NULL_HANDICAP = -9999999.0
+    return NULL_HANDICAP
