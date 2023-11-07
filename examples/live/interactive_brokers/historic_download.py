@@ -22,7 +22,6 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
 async def main():
-    # Define one or many IBContracts or instrument_ids to fetch data for
     contract = IBContract(
         secType="STK",
         symbol="AAPL",
@@ -42,24 +41,32 @@ async def main():
 
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-        end_date_time=datetime.datetime.now(),
+        end_date_time=datetime.datetime(2023, 11, 6, 16, 0),
         duration="1 D",
         contracts=[contract],
         instrument_ids=[instrument_id],
     )
 
-    ticks = await client.request_ticks(
+    trade_ticks = await client.request_ticks(
         "TRADES",
-        start_date_time=datetime.date.today() - datetime.timedelta(days=4),
-        end_date_time=datetime.date.today() - datetime.timedelta(days=3),
+        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
+        tz_name="America/New_York",
+        contracts=[contract],
+        instrument_ids=[instrument_id],
+    )
+
+    quote_ticks = await client.request_ticks(
+        "BID_ASK",
+        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
+        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
         tz_name="America/New_York",
         contracts=[contract],
         instrument_ids=[instrument_id],
     )
 
     catalog = ParquetDataCatalog("./catalog")
-    # You can write any Nautilus Data to the catalog
-    catalog.write_data(instruments + bars + ticks)
+    catalog.write_data(instruments + bars + trade_ticks + quote_ticks)
 
 
 if __name__ == "__main__":
