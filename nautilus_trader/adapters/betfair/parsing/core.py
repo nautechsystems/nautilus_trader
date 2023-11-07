@@ -67,13 +67,6 @@ class BetfairParser:
 def iter_stream(file_like: BinaryIO):
     for line in file_like:
         yield stream_decode(line)
-        # try:
-        #     data = stream_decode(line)
-        # except (msgspec.DecodeError, msgspec.ValidationError) as e:
-        #     print("ERR", e)
-        #     print(msgspec.json.decode(line))
-        #     raise e
-        # yield data
 
 
 def parse_betfair_file(
