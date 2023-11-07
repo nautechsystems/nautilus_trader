@@ -20,7 +20,7 @@ use nautilus_model::identifiers::{
     position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
 };
 
-use crate::{clock::Clock, generators::StrategyIdentifierGenerator};
+use crate::{clock::Clock, generators::IdentifierGenerator};
 
 #[repr(C)]
 pub struct PositionIdGenerator {
@@ -39,25 +39,26 @@ impl PositionIdGenerator {
     }
 }
 
-impl StrategyIdentifierGenerator<PositionId> for PositionIdGenerator {
-    fn set_count(&mut self, strategy_id: StrategyId, count: usize) {
-        self.counts.insert(strategy_id, count);
+impl IdentifierGenerator<PositionId> for PositionIdGenerator {
+    fn set_count(&mut self, count: usize, strategy_id: Option<StrategyId>) {
+        self.counts.insert(strategy_id.unwrap(), count);
     }
 
     fn reset(&mut self) {
         self.counts.clear();
     }
 
-    fn get_count(&self, strategy_id: StrategyId) -> usize {
-        *self.counts.get(&strategy_id).unwrap_or(&0)
+    fn count(&self, strategy_id: Option<StrategyId>) -> usize {
+        *self.counts.get(&strategy_id.unwrap()).unwrap_or(&0)
     }
 
-    fn generate(&mut self, strategy_id: StrategyId, flipped: Option<bool>) -> PositionId {
-        let next_count = self.get_count(strategy_id) + 1;
-        self.set_count(strategy_id, next_count);
+    fn generate(&mut self, strategy_id: Option<StrategyId>, flipped: Option<bool>) -> PositionId {
+        let strategy = strategy_id.unwrap();
+        let next_count = self.count(strategy_id) + 1;
+        self.set_count(next_count, strategy_id);
         let datetime_tag = self.get_datetime_tag();
         let trader_tag = self.trader_id.get_tag();
-        let strategy_tag = strategy_id.get_tag();
+        let strategy_tag = strategy.get_tag();
         let flipped = if flipped.unwrap_or(false) { "F" } else { "" };
         let id = format!(
             "P-{}-{}-{}-{}{}",
@@ -92,7 +93,7 @@ mod tests {
 
     use crate::{
         clock::TestClock,
-        generators::{position_id_generator::PositionIdGenerator, StrategyIdentifierGenerator},
+        generators::{position_id_generator::PositionIdGenerator, IdentifierGenerator},
     };
 
     fn get_position_id_generator() -> PositionIdGenerator {
@@ -104,8 +105,8 @@ mod tests {
     #[rstest]
     fn test_generate_position_id_one_strategy() {
         let mut generator = get_position_id_generator();
-        let result1 = generator.generate(StrategyId::from("S-001"), None);
-        let result2 = generator.generate(StrategyId::from("S-001"), None);
+        let result1 = generator.generate(Some(StrategyId::from("S-001")), None);
+        let result2 = generator.generate(Some(StrategyId::from("S-001")), None);
 
         assert_eq!(result1, PositionId::from("P-19700101-0000-001-001-1"));
         assert_eq!(result2, PositionId::from("P-19700101-0000-001-001-2"));
@@ -114,9 +115,9 @@ mod tests {
     #[rstest]
     fn test_generate_position_id_multiple_strategies() {
         let mut generator = get_position_id_generator();
-        let result1 = generator.generate(StrategyId::from("S-001"), None);
-        let result2 = generator.generate(StrategyId::from("S-002"), None);
-        let result3 = generator.generate(StrategyId::from("S-002"), None);
+        let result1 = generator.generate(Some(StrategyId::from("S-001")), None);
+        let result2 = generator.generate(Some(StrategyId::from("S-002")), None);
+        let result3 = generator.generate(Some(StrategyId::from("S-002")), None);
 
         assert_eq!(result1, PositionId::from("P-19700101-0000-001-001-1"));
         assert_eq!(result2, PositionId::from("P-19700101-0000-001-002-1"));
@@ -126,9 +127,9 @@ mod tests {
     #[rstest]
     fn test_generate_position_id_with_flipped_appends_correctly() {
         let mut generator = get_position_id_generator();
-        let result1 = generator.generate(StrategyId::from("S-001"), None);
-        let result2 = generator.generate(StrategyId::from("S-002"), Some(true));
-        let result3 = generator.generate(StrategyId::from("S-001"), Some(true));
+        let result1 = generator.generate(Some(StrategyId::from("S-001")), None);
+        let result2 = generator.generate(Some(StrategyId::from("S-002")), Some(true));
+        let result3 = generator.generate(Some(StrategyId::from("S-001")), Some(true));
 
         assert_eq!(result1, PositionId::from("P-19700101-0000-001-001-1"));
         assert_eq!(result2, PositionId::from("P-19700101-0000-001-002-1F"));
@@ -138,25 +139,25 @@ mod tests {
     #[rstest]
     fn test_get_count_when_strategy_id_has_not_been_used() {
         let generator = get_position_id_generator();
-        let result = generator.get_count(StrategyId::from("S-001"));
+        let result = generator.count(Some(StrategyId::from("S-001")));
         assert_eq!(result, 0);
     }
 
     #[rstest]
     fn set_count_with_valid_strategy() {
         let mut generator = get_position_id_generator();
-        generator.set_count(StrategyId::from("S-001"), 7);
-        let result = generator.get_count(StrategyId::from("S-001"));
+        generator.set_count(7, Some(StrategyId::from("S-001")));
+        let result = generator.count(Some(StrategyId::from("S-001")));
         assert_eq!(result, 7);
     }
 
     #[rstest]
     fn test_reset() {
         let mut generator = get_position_id_generator();
-        generator.generate(StrategyId::from("S-001"), None);
-        generator.generate(StrategyId::from("S-001"), None);
+        generator.generate(Some(StrategyId::from("S-001")), None);
+        generator.generate(Some(StrategyId::from("S-001")), None);
         generator.reset();
-        let result = generator.generate(StrategyId::from("S-001"), None);
+        let result = generator.generate(Some(StrategyId::from("S-001")), None);
         assert_eq!(result, PositionId::from("P-19700101-0000-001-001-1"));
     }
 }
