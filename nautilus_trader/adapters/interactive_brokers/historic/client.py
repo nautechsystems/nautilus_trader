@@ -169,15 +169,12 @@ class HistoricInteractiveBrokersClient:
             ],
         )
 
+        # Ensure instruments are fetched and cached
+        await self.fetch_instruments_if_not_cached(contracts)
+
         data: list[Bar] = []
 
         for contract in contracts:
-            # Request instruments if not in cache because get_historical_bars
-            # requires instruments for the make_price method to construct bars
-            if not self._client._cache.instrument(ib_contract_to_instrument_id(contract)):
-                self.log.info(f"Fetching Instrument for: {ib_contract_to_instrument_id(contract)}")
-                await self.request_instruments(contracts=[contract])
-
             for bar_spec in bar_specifications:
                 bar_type = BarType(
                     ib_contract_to_instrument_id(contract),
@@ -249,6 +246,9 @@ class HistoricInteractiveBrokersClient:
             ],
         )
 
+        # Ensure instruments are fetched and cached
+        await self.fetch_instruments_if_not_cached(contracts)
+
         data: list[TradeTick | QuoteTick] = []
         for contract in contracts:
             self.log.info(f"Requesting ticks for: {ib_contract_to_instrument_id(contract)}")
@@ -266,28 +266,41 @@ class HistoricInteractiveBrokersClient:
 
                 self.log.info(f"Number of ticks in data: {len(data)}")
 
-                timestamps = [tick.ts_event for tick in ticks]
-                min_timestamp: pd.Timestamp = unix_nanos_to_dt(min(timestamps))
-                max_timestamp: pd.Timestamp = unix_nanos_to_dt(max(timestamps))
+                start_date_time, should_continue = self.handle_timestamp_iteration(
+                    ticks,
+                    start_date_time,
+                    end_date_time,
+                )
 
-                # For very liquid products, a 1s period may contain 1000 ticks - the maximum that IB allows
-                # -- so we need to step the time forward to the next second avoid getting stuck when iterating.
-                if min_timestamp.floor("S") == max_timestamp.floor("S"):
-                    max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
-
-                if max_timestamp >= end_date_time:
-                    # Filter out any ticks after the end_date_time
-                    ticks = [
-                        tick for tick in ticks if unix_nanos_to_dt(tick.ts_event) <= end_date_time
-                    ]
-                    data.extend(ticks)
+                if not should_continue:
                     break
 
                 data.extend(ticks)
 
-                start_date_time = max_timestamp
-
         return data
+
+    def handle_timestamp_iteration(self, ticks, start_date_time, end_date_time):
+        if not ticks:
+            return start_date_time, False
+
+        timestamps = [unix_nanos_to_dt(tick.ts_event) for tick in ticks]
+        min_timestamp = min(timestamps)
+        max_timestamp = max(timestamps)
+
+        if min_timestamp.floor("S") == max_timestamp.floor("S"):
+            max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
+
+        if max_timestamp >= end_date_time:
+            return end_date_time, False
+
+        return max_timestamp, True
+
+    async def fetch_instruments_if_not_cached(self, contracts: list[IBContract]) -> None:
+        for contract in contracts:
+            instrument_id = ib_contract_to_instrument_id(contract)
+            if not self._client._cache.instrument(instrument_id):
+                self.log.info(f"Fetching Instrument for: {instrument_id}")
+                await self.request_instruments(contracts=[contract])
 
 
 async def main():
