@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use nautilus_core::{correctness::check_f64_in_range_inclusive, parsing::precision_from_str};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -279,6 +279,13 @@ impl<'de> Deserialize<'de> for Quantity {
     }
 }
 
+pub fn check_quantity_positive(value: Quantity) -> Result<()> {
+    if !value.is_positive() {
+        bail!("Condition failed: invalid `Quantity`, should be positive and was {value}")
+    }
+    Ok(())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -291,6 +298,13 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
+    fn test_check_quantity_positive() {
+        let qty = Quantity::new(0.0, 0).unwrap();
+        check_quantity_positive(qty).unwrap();
+    }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]

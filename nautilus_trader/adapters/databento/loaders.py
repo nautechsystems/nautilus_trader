@@ -27,9 +27,12 @@ from nautilus_trader.adapters.databento.common import nautilus_instrument_id_fro
 from nautilus_trader.adapters.databento.enums import DatabentoInstrumentClass
 from nautilus_trader.adapters.databento.parsing import parse_aggressor_side
 from nautilus_trader.adapters.databento.parsing import parse_book_action
+from nautilus_trader.adapters.databento.parsing import parse_min_price_increment
+from nautilus_trader.adapters.databento.parsing import parse_option_kind
 from nautilus_trader.adapters.databento.parsing import parse_order_side
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import Bar
@@ -48,6 +51,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -55,10 +59,7 @@ from nautilus_trader.model.objects import Quantity
 
 class DatabentoDataLoader:
     """
-    Provides a data loader for Databento format data.
-
-    Supported encodings:
-     - Databento Binary Encoding (DBN)
+    Provides a data loader for Databento Binary Encoding (DBN) format data.
 
     Supported schemas:
      - MBO
@@ -72,6 +73,14 @@ class DatabentoDataLoader:
      - OHLCV_1D
      - DEFINITION
 
+    For the loader to work correctly, you must first either:
+     - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
+     - Manually add Nautilus instrument objects through `add_instruments(...)`
+
+    References
+    ----------
+    https://docs.databento.com/knowledge-base/new-users/dbn-encoding
+
     """
 
     def __init__(self) -> None:
@@ -79,6 +88,36 @@ class DatabentoDataLoader:
         self._instruments: dict[InstrumentId, Instrument] = {}
 
         self.load_publishers(path=Path(__file__).resolve().parent / "publishers.json")
+
+    def publishers(self) -> dict[int, DatabentoPublisher]:
+        """
+        Return the internal Databento publishers currently held by the loader.
+
+        Returns
+        -------
+        dict[int, DatabentoPublisher]
+
+        Notes
+        -----
+        Returns a copy of the internal dictionary.
+
+        """
+        return self._publishers.copy()
+
+    def instruments(self) -> dict[InstrumentId, Instrument]:
+        """
+        Return the internal Nautilus instruments currently held by the loader.
+
+        Returns
+        -------
+        dict[InstrumentId, Instrument]
+
+        Notes
+        -----
+        Returns a copy of the internal dictionary.
+
+        """
+        return self._instruments.copy()
 
     def load_publishers(self, path: PathLike[str] | str) -> None:
         """
@@ -114,7 +153,29 @@ class DatabentoDataLoader:
         # TODO: Validate actually definitions schema
         instruments = self.from_dbn(path)
 
-        self._instruments = {i.instrument_id: i for i in instruments}
+        self._instruments = {i.id: i for i in instruments}
+
+    def add_instruments(self, instrument: Instrument | list[Instrument]) -> None:
+        """
+        Add the given `instrument`(s) for use by the loader.
+
+        Parameters
+        ----------
+        instrument : Instrument | list[Instrument]
+            The Nautilus instrument(s) to add.
+
+        Warnings
+        --------
+        Will overwrite any existing instrument(s) with the same Nautilus instrument ID(s).
+
+        """
+        if not isinstance(instrument, list):
+            instruments = [instrument]
+        else:
+            instruments = instrument
+
+        for inst in instruments:
+            self._instruments[inst.id] = inst
 
     def from_dbn(self, path: PathLike[str] | str) -> list[Data]:
         """
@@ -192,8 +253,16 @@ class DatabentoDataLoader:
         match record.instrument_class:
             case DatabentoInstrumentClass.STOCK.value:
                 return self._parse_equity(record, instrument_id)
-            case DatabentoInstrumentClass.FUTURE.value:
+            case DatabentoInstrumentClass.FUTURE.value | DatabentoInstrumentClass.FUTURE_SPREAD.value:
                 return self._parse_futures_contract(record, instrument_id)
+            case DatabentoInstrumentClass.CALL.value | DatabentoInstrumentClass.PUT.value:
+                return self._parse_options_contract(record, instrument_id)
+            case DatabentoInstrumentClass.FX_SPOT.value:
+                raise ValueError("`instrument_class` FX_SPOT not currently supported")
+            case DatabentoInstrumentClass.OPTION_SPREAD.value:
+                raise ValueError("`instrument_class` OPTION_SPREAD not currently supported")
+            case DatabentoInstrumentClass.MIXED_SPREAD.value:
+                raise ValueError("`instrument_class` MIXED_SPREAD not currently supported")
             case _:
                 raise ValueError(f"Invalid `instrument_class`, was {record.instrument_class}")
 
@@ -202,13 +271,16 @@ class DatabentoDataLoader:
         record: databento.InstrumentDefMsg,
         instrument_id: InstrumentId,
     ) -> Equity:
+        # Use USD for all US equities venues for now
+        currency = USD
+
         return Equity(
             instrument_id=instrument_id,
             raw_symbol=Symbol(record.raw_symbol),
-            currency=USD,  # All US equity venues for now
-            price_precision=USD.precision,
-            price_increment=Price(0.01, USD.precision),
-            multiplier=Quantity(1, precision=0),  # TODO: N/A?
+            currency=currency,
+            price_precision=currency.precision,
+            price_increment=parse_min_price_increment(record.min_price_increment, currency),
+            multiplier=Quantity(1, precision=0),
             lot_size=Quantity(record.min_lot_size_round_lot, precision=0),
             isin=None,  # TODO
             ts_event=record.ts_event,
@@ -220,17 +292,52 @@ class DatabentoDataLoader:
         record: databento.InstrumentDefMsg,
         instrument_id: InstrumentId,
     ) -> FuturesContract:
+        currency = Currency.from_str(record.currency)
+
         return FuturesContract(
             instrument_id=instrument_id,
             raw_symbol=Symbol(record.raw_symbol),
-            asset_class=AssetClass.EQUITY,  # TODO(proper parsing)
-            currency=Currency.from_str(record.currency.upper()),
-            price_precision=record.price_display_format,
-            multiplier=Quantity(record.contract_multiplier, precision=0),
-            lot_size=Quantity(record.min_lot_size_round_lot, precision=0),
+            asset_class=AssetClass.EQUITY,
+            currency=currency,
+            price_precision=currency.precision,
+            price_increment=parse_min_price_increment(record.min_price_increment, currency),
+            multiplier=Quantity(1, precision=0),
+            lot_size=Quantity(record.min_lot_size_round_lot or 1, precision=0),
             underlying=record.underlying,
             activation_ns=record.activation,
             expiration_ns=record.expiration,
+            ts_event=record.ts_event,
+            ts_init=record.ts_recv,
+        )
+
+    def _parse_options_contract(
+        self,
+        record: databento.InstrumentDefMsg,
+        instrument_id: InstrumentId,
+    ) -> OptionsContract:
+        currency = Currency.from_str(record.currency)
+
+        if instrument_id.venue.value == "OPRA":
+            lot_size = Quantity(1, precision=0)
+            asset_class = AssetClass.EQUITY
+        else:
+            lot_size = Quantity(record.min_lot_size_round_lot or 1, precision=0)
+            asset_class = AssetClass.EQUITY  # TODO(proper sec sub types)
+
+        return OptionsContract(
+            instrument_id=instrument_id,
+            raw_symbol=Symbol(record.raw_symbol),
+            asset_class=asset_class,
+            currency=currency,
+            price_precision=currency.precision,
+            price_increment=parse_min_price_increment(record.min_price_increment, currency),
+            multiplier=Quantity(1, precision=0),
+            lot_size=lot_size,
+            underlying=record.underlying,
+            kind=parse_option_kind(record.instrument_class),
+            activation_ns=record.activation,
+            expiration_ns=record.expiration,
+            strike_price=Price.from_raw(record.strike_price, currency.precision),
             ts_event=record.ts_event,
             ts_init=record.ts_recv,
         )
@@ -245,9 +352,9 @@ class DatabentoDataLoader:
             action=parse_book_action(record.action),
             side=parse_order_side(record.side),
             price_raw=record.price,
-            price_prec=2,  # TODO
+            price_prec=USD.precision,  # TODO(per instrument precision)
             size_raw=int(record.size * FIXED_SCALAR),
-            size_prec=0,  # TODO
+            size_prec=0,  # No fractional units
             order_id=record.order_id,
             flags=record.flags,
             sequence=record.sequence,
@@ -264,13 +371,13 @@ class DatabentoDataLoader:
         quote = QuoteTick.from_raw(
             instrument_id=instrument_id,
             bid_price_raw=top_level.bid_px,
-            bid_price_prec=2,  # TODO!
+            bid_price_prec=USD.precision,  # TODO(per instrument precision)
             ask_price_raw=top_level.ask_px,
-            ask_price_prec=2,
+            ask_price_prec=USD.precision,  # TODO(per instrument precision)
             bid_size_raw=int(top_level.bid_sz * FIXED_SCALAR),
-            bid_size_prec=0,
+            bid_size_prec=0,  # No fractional units
             ask_size_raw=int(top_level.ask_sz * FIXED_SCALAR),
-            ask_size_prec=0,
+            ask_size_prec=0,  # No fractional units
             ts_event=record.ts_event,
             ts_init=record.ts_recv,
         )
@@ -280,9 +387,9 @@ class DatabentoDataLoader:
                 trade = TradeTick.from_raw(
                     instrument_id=instrument_id,
                     price_raw=record.price,
-                    price_prec=2,  # TODO!
+                    price_prec=USD.precision,  # TODO(per instrument precision)
                     size_raw=int(record.size * FIXED_SCALAR),
-                    size_prec=0,  # TODO!
+                    size_prec=0,  # No fractional units
                     aggressor_side=parse_aggressor_side(record.side),
                     trade_id=TradeId(str(record.sequence)),
                     ts_event=record.ts_event,
@@ -300,9 +407,9 @@ class DatabentoDataLoader:
         return TradeTick.from_raw(
             instrument_id=instrument_id,
             price_raw=record.price,
-            price_prec=2,  # TODO!
+            price_prec=USD.precision,  # TODO(per instrument precision)
             size_raw=int(record.size * FIXED_SCALAR),
-            size_prec=0,  # TODO!
+            size_prec=0,  # No fractional units
             aggressor_side=parse_aggressor_side(record.side),
             trade_id=TradeId(str(record.sequence)),
             ts_event=record.ts_event,
@@ -318,25 +425,32 @@ class DatabentoDataLoader:
             case 32:  # ohlcv-1s
                 bar_spec = BarSpecification(1, BarAggregation.SECOND, PriceType.LAST)
                 bar_type = BarType(instrument_id, bar_spec, AggregationSource.EXTERNAL)
+                ts_event_adjustment = secs_to_nanos(1)
             case 33:  # ohlcv-1m
                 bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
                 bar_type = BarType(instrument_id, bar_spec, AggregationSource.EXTERNAL)
+                ts_event_adjustment = secs_to_nanos(60)
             case 34:  # ohlcv-1h
                 bar_spec = BarSpecification(1, BarAggregation.HOUR, PriceType.LAST)
                 bar_type = BarType(instrument_id, bar_spec, AggregationSource.EXTERNAL)
+                ts_event_adjustment = secs_to_nanos(60 * 60)
             case 35:  # ohlcv-1d
                 bar_spec = BarSpecification(1, BarAggregation.DAY, PriceType.LAST)
                 bar_type = BarType(instrument_id, bar_spec, AggregationSource.EXTERNAL)
+                ts_event_adjustment = secs_to_nanos(60 * 60 * 24)
             case _:
                 raise ValueError("`rtype` is not a supported bar aggregation")
 
+        # Adjust `ts_event` from open to close of bar
+        ts_event = record.ts_event + ts_event_adjustment
+
         return Bar(
             bar_type=bar_type,
-            open=Price.from_raw(record.open / 100, 2),  # TODO!
-            high=Price.from_raw(record.high / 100, 2),  # TODO
-            low=Price.from_raw(record.low / 100, 2),  # TODO
-            close=Price.from_raw(record.close / 100, 2),  # TODO
-            volume=Quantity.from_raw(record.volume, 2),  # TODO!
-            ts_event=record.ts_event,  # TODO! Adjust `ts_event`
-            ts_init=record.ts_event,
+            open=Price.from_raw(record.open / 100, 2),  # TODO(adjust for display factor)
+            high=Price.from_raw(record.high / 100, 2),  # TODO(adjust for display factor)
+            low=Price.from_raw(record.low / 100, 2),  # TODO(adjust for display factor)
+            close=Price.from_raw(record.close / 100, 2),  # TODO(adjust for display factor)
+            volume=Quantity.from_raw(record.volume, 2),  # TODO(adjust for display factor)
+            ts_event=ts_event,
+            ts_init=ts_event,
         )

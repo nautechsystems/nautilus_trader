@@ -13,9 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Price
 
 
 def parse_order_side(value: str) -> OrderSide:
@@ -54,3 +57,21 @@ def parse_book_action(value: str) -> BookAction:
             return BookAction.UPDATE
         case _:
             raise ValueError(f"Invalid `BookAction`, was {value}")
+
+
+def parse_option_kind(value: str) -> OptionKind:
+    match value:
+        case "C":
+            return OptionKind.CALL
+        case "P":
+            return OptionKind.PUT
+        case _:
+            raise ValueError(f"Invalid `OptionKind`, was {value}")
+
+
+def parse_min_price_increment(value: int, currency: Currency) -> Price:
+    match value:
+        case 0 | 9223372036854775807:  # 2**63-1 (TODO: Make limit constants)
+            return Price(10 ** (-currency.precision), currency.precision)
+        case _:
+            return Price.from_raw(value, currency.precision)

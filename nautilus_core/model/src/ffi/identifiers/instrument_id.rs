@@ -76,11 +76,7 @@ pub mod stubs {
 
     use rstest::fixture;
 
-    use crate::identifiers::{
-        instrument_id::InstrumentId,
-        symbol::{stubs::*, Symbol},
-        venue::{stubs::*, Venue},
-    };
+    use crate::identifiers::{instrument_id::InstrumentId, stubs::*, symbol::Symbol, venue::Venue};
 
     #[fixture]
     pub fn btc_usdt_perp_binance() -> InstrumentId {
@@ -88,10 +84,10 @@ pub mod stubs {
     }
 
     #[fixture]
-    pub fn audusd_sim(aud_usd: Symbol, sim: Venue) -> InstrumentId {
+    pub fn audusd_sim(symbol_aud_usd: Symbol, venue_sim: Venue) -> InstrumentId {
         InstrumentId {
-            symbol: aud_usd,
-            venue: sim,
+            symbol: symbol_aud_usd,
+            venue: venue_sim,
         }
     }
 }

@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use nautilus_core::{python::to_pyvalue_err, time::UnixNanos, uuid::UUID4};
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -79,7 +79,7 @@ impl MarketOrder {
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<String>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         MarketOrder::new(
             trader_id,
             strategy_id,
@@ -88,6 +88,8 @@ impl MarketOrder {
             order_side,
             quantity,
             time_in_force,
+            init_id,
+            ts_init,
             reduce_only,
             quote_quantity,
             contingency_type,
@@ -98,9 +100,8 @@ impl MarketOrder {
             exec_algorithm_params.map(str_hashmap_to_ustr),
             exec_spawn_id,
             tags.map(|s| Ustr::from(&s)),
-            init_id,
-            ts_init,
         )
+        .map_err(to_pyvalue_err)
     }
 
     #[staticmethod]

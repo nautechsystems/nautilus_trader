@@ -71,6 +71,7 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
 }
 
 /// # Safety
+///
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_register_default_handler(

@@ -13,7 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod logging;
-pub mod msgbus;
-pub mod timer;
+pub mod client_order_id;
+pub mod order_list_id;
+
+pub trait IdentifierGenerator<T> {
+    fn set_count(&mut self, count: usize);
+
+    fn reset(&mut self);
+
+    fn count(&self) -> usize;
+
+    fn generate(&mut self) -> T;
+
+    fn get_datetime_tag(&mut self) -> String;
+}

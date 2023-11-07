@@ -13,7 +13,41 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod logging;
-pub mod msgbus;
-pub mod timer;
+use nautilus_core::uuid::UUID4;
+
+use crate::{
+    enums::{OrderSide, TimeInForce},
+    identifiers::stubs::*,
+    orders::market::MarketOrder,
+    types::quantity::Quantity,
+};
+
+// ---- MarketOrder ----
+pub fn market_order(quantity: Quantity, time_in_force: Option<TimeInForce>) -> MarketOrder {
+    let trader = trader_id();
+    let strategy = strategy_id_ema_cross();
+    let instrument = instrument_id_eth_usdt_binance();
+    let client_order_id = client_order_id();
+    MarketOrder::new(
+        trader,
+        strategy,
+        instrument,
+        client_order_id,
+        OrderSide::Buy,
+        quantity,
+        time_in_force.unwrap_or(TimeInForce::Gtc),
+        UUID4::new(),
+        12321312321312,
+        false,
+        false,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .unwrap()
+}

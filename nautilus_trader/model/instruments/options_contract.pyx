@@ -47,9 +47,9 @@ cdef class OptionsContract(Instrument):
     raw_symbol : Symbol
         The native/local/raw symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The futures contract asset class.
+        The options contract asset class.
     currency : Currency
-        The futures contract currency.
+        The options contract currency.
     price_precision : int
         The price decimal precision.
     price_increment : Price
