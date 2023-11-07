@@ -45,6 +45,7 @@ pub struct WebSocketConfig {
     handler: PyObject,
     headers: Vec<(String, String)>,
     heartbeat: Option<u64>,
+    message: Option<String>,
 }
 
 #[pymethods]
@@ -55,12 +56,14 @@ impl WebSocketConfig {
         handler: PyObject,
         headers: Vec<(String, String)>,
         heartbeat: Option<u64>,
+        message: Option<String>,
     ) -> Self {
         Self {
             url,
             handler,
             headers,
             heartbeat,
+            message,
         }
     }
 }
@@ -95,6 +98,7 @@ impl WebSocketClientInner {
             handler,
             heartbeat,
             headers,
+            message,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
@@ -102,7 +106,8 @@ impl WebSocketClientInner {
         // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Self::spawn_read_task(reader, handler.clone());
 
-        let heartbeat_task = Self::spawn_heartbeat_task(*heartbeat, writer.clone());
+        let heartbeat_task =
+            Self::spawn_heartbeat_task(*heartbeat, message.clone(), writer.clone());
 
         Ok(Self {
             config,
@@ -133,6 +138,7 @@ impl WebSocketClientInner {
     /// Optionally spawn a hearbeat task to periodically ping the server.
     pub fn spawn_heartbeat_task(
         heartbeat: Option<u64>,
+        message: Option<String>,
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
         heartbeat.map(|duration| {
@@ -142,7 +148,11 @@ impl WebSocketClientInner {
                     sleep(duration).await;
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
-                    match guard.send(Message::Ping(vec![])).await {
+                    let guard_send_response = match message.clone() {
+                        Some(msg) => guard.send(Message::Text(msg)).await,
+                        None => guard.send(Message::Ping(vec![])).await,
+                    };
+                    match guard_send_response {
                         Ok(()) => debug!("Sent heartbeat"),
                         Err(e) => error!("Failed to send heartbeat: {e}"),
                     }
@@ -235,8 +245,11 @@ impl WebSocketClientInner {
         drop(guard);
 
         self.read_task = Self::spawn_read_task(reader, self.config.handler.clone());
-        self.heartbeat_task =
-            Self::spawn_heartbeat_task(self.config.heartbeat, self.writer.clone());
+        self.heartbeat_task = Self::spawn_heartbeat_task(
+            self.config.heartbeat,
+            self.config.message.clone(),
+            self.writer.clone(),
+        );
 
         Ok(())
     }
@@ -641,6 +654,7 @@ counter = Counter()",
             handler.clone(),
             vec![(header_key, header_value)],
             None,
+            None,
         );
         let client = WebSocketClient::connect(config, None, None, None)
             .await
@@ -695,6 +709,73 @@ counter = Counter()",
         });
         assert_eq!(count_value, success_count);
         assert_eq!(success_count, N + N);
+
+        // Shutdown client and wait for read task to terminate
+        client.disconnect().await;
+        sleep(Duration::from_secs(1)).await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn message_ping_test() {
+        prepare_freethreaded_python();
+
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
+
+        let (checker, handler) = Python::with_gil(|py| {
+            let pymod = PyModule::from_code(
+                py,
+                r"
+class Checker:
+    def __init__(self):
+        self.check = False
+
+    def handler(self, bytes):
+        if bytes.decode() == 'heartbeat message':
+            self.check = True
+
+    def get_check(self):
+        return self.check
+
+checker = Checker()",
+                "",
+                "",
+            )
+            .unwrap();
+
+            let checker = pymod.getattr("checker").unwrap().into_py(py);
+            let handler = checker.getattr(py, "handler").unwrap().into_py(py);
+
+            (checker, handler)
+        });
+
+        // Initialize test server and config
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
+        let config = WebSocketConfig::new(
+            format!("ws://127.0.0.1:{}", server.port),
+            handler.clone(),
+            vec![(header_key, header_value)],
+            Some(1),
+            Some("heartbeat message".to_string()),
+        );
+        let client = WebSocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        // Check if ping message has the correct message
+        sleep(Duration::from_secs(2)).await;
+        let check_value: bool = Python::with_gil(|py| {
+            checker
+                .getattr(py, "get_check")
+                .unwrap()
+                .call0(py)
+                .unwrap()
+                .extract(py)
+                .unwrap()
+        });
+        assert!(check_value);
 
         // Shutdown client and wait for read task to terminate
         client.disconnect().await;
