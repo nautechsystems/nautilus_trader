@@ -13,78 +13,54 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import asyncio
+import datetime
 
-import pandas as pd
-
-# fmt: off
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
-from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
-from nautilus_trader.adapters.interactive_brokers.historic.bar_data import BarDataDownloader
-from nautilus_trader.adapters.interactive_brokers.historic.bar_data import BarDataDownloaderConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import Bar
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.historic import HistoricInteractiveBrokersClient
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
-# fmt: on
+async def main():
+    # Define one or many IBContracts or instrument_ids to fetch data for
+    contract = IBContract(
+        secType="STK",
+        symbol="AAPL",
+        exchange="SMART",
+        primaryExchange="NASDAQ",
+    )
+    instrument_id = "TSLA.NASDAQ"
 
-# *** MAKE SURE YOU HAVE REQUIRED DATA SUBSCRIPTION FOR THIS WORK WORK AS INTENDED. ***
+    client = HistoricInteractiveBrokersClient(port=4002, client_id=5)
+    await client._connect()
+    await asyncio.sleep(2)
 
-df = pd.DataFrame()
+    instruments = await client.request_instruments(
+        contracts=[contract],
+        instrument_ids=[instrument_id],
+    )
+
+    bars = await client.request_bars(
+        bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
+        end_date_time=datetime.datetime.now(),
+        duration="1 D",
+        contracts=[contract],
+        instrument_ids=[instrument_id],
+    )
+
+    ticks = await client.request_ticks(
+        "TRADES",
+        start_date_time=datetime.date.today() - datetime.timedelta(days=4),
+        end_date_time=datetime.date.today() - datetime.timedelta(days=3),
+        tz_name="America/New_York",
+        contracts=[contract],
+        instrument_ids=[instrument_id],
+    )
+
+    catalog = ParquetDataCatalog("./catalog")
+    # You can write any Nautilus Data to the catalog
+    catalog.write_data(instruments + bars + ticks)
 
 
-# Data Handler for BarDataDownloader
-def do_something_with_bars(bars: list):
-    global df
-    bars_dict = [Bar.to_dict(bar) for bar in bars]
-    df = pd.concat([df, pd.DataFrame(bars_dict)])
-    df = df.sort_values(by="ts_init")
-
-
-# Configure the trading node
-config_node = TradingNodeConfig(
-    trader_id="TESTER-001",
-    logging=LoggingConfig(log_level="INFO"),
-    data_clients={
-        "InteractiveBrokers": InteractiveBrokersDataClientConfig(
-            ibg_host="127.0.0.1",
-            ibg_port=7497,
-            ibg_client_id=1,
-        ),
-    },
-    timeout_connection=90.0,
-)
-
-# Instantiate the node with a configuration
-node = TradingNode(config=config_node)
-
-# Configure your strategy
-downloader_config = BarDataDownloaderConfig(
-    start_iso_ts="2023-09-01T00:00:00+00:00",
-    end_iso_ts="2023-09-30T00:00:00+00:00",
-    bar_types=[
-        "AAPL.NASDAQ-1-MINUTE-BID-EXTERNAL",
-        "AAPL.NASDAQ-1-MINUTE-ASK-EXTERNAL",
-        "AAPL.NASDAQ-1-MINUTE-LAST-EXTERNAL",
-    ],
-    handler=do_something_with_bars,
-    freq="1W",
-)
-
-# Instantiate the downloader and add into node
-downloader = BarDataDownloader(config=downloader_config)
-node.trader.add_actor(downloader)
-
-# Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("InteractiveBrokers", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("InteractiveBrokers", InteractiveBrokersLiveExecClientFactory)
-node.build()
-
-# Stop and dispose of the node with SIGINT/CTRL+C
 if __name__ == "__main__":
-    try:
-        node.run()
-    finally:
-        node.dispose()
+    asyncio.run(main())

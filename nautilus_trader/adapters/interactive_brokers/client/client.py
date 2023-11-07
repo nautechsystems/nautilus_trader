@@ -1297,7 +1297,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         contract: IBContract,
         tick_type: str,
-        end_date_time: pd.Timestamp,
+        start_date_time: pd.Timestamp,
         use_rth: bool,
     ):
         name = (str(ib_contract_to_instrument_id(contract)), tick_type)
@@ -1310,8 +1310,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     self._client.reqHistoricalTicks,
                     reqId=req_id,
                     contract=contract,
-                    startDateTime="",
-                    endDateTime=end_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
+                    startDateTime=start_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
+                    endDateTime="",
                     numberOfTicks=1000,
                     whatToShow=tick_type,
                     useRth=use_rth,
@@ -1347,7 +1347,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
             self._end_request(req_id)
 
-    def historicalTicksLast(self, req_id: int, ticks: list, done: bool):
+    def historicalTicksLast(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         self._process_trade_ticks(req_id, ticks)
 
@@ -1356,10 +1356,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._process_trade_ticks(req_id, ticks)
 
     def _process_trade_ticks(self, req_id: int, ticks: list):
-        if request := self.requests.get(req_id=req_id):
+        # inspect self.requests and compare to req_id. sometimes
+        # req_id is one lower than self.requests. this is a bug.
+        # if request := self.requests.get(req_id=req_id):
+        if len(ticks) == 0:
+            self._end_request(req_id)
+        if request := self.requests.get(req_id=req_id + 1):
+            # if request := self.requests[0]:
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
-
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
                 trade_tick = TradeTick(

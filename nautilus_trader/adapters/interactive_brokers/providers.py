@@ -279,6 +279,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                     continue
             self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
             self.add(instrument)
+            self._client._cache.add_instrument(instrument)
             self.contract_details[instrument.id.value] = details
             self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
 
