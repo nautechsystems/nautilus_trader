@@ -45,19 +45,21 @@ impl OrderListIdGenerator {
 }
 
 impl IdentifierGenerator<OrderListId> for OrderListIdGenerator {
-    fn set_count(&mut self, count: usize) {
+    fn set_count(&mut self, count: usize, _strategy_id: Option<StrategyId>) {
         self.count = count;
     }
-
     fn reset(&mut self) {
         self.count = 0;
     }
 
-    fn count(&self) -> usize {
+    fn count(&self, _strategy_id: Option<StrategyId>) -> usize {
         self.count
     }
-
-    fn generate(&mut self) -> OrderListId {
+    fn generate(
+        &mut self,
+        _strategy_id: Option<StrategyId>,
+        _flipped: Option<bool>,
+    ) -> OrderListId {
         let datetime_tag = self.get_datetime_tag();
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
@@ -108,13 +110,13 @@ mod tests {
     #[rstest]
     fn test_init() {
         let generator = get_order_list_id_generator(None);
-        assert_eq!(generator.count(), 0);
+        assert_eq!(generator.count(None), 0);
     }
 
     #[rstest]
     fn test_init_with_initial_count() {
         let generator = get_order_list_id_generator(Some(7));
-        assert_eq!(generator.count(), 7);
+        assert_eq!(generator.count(None), 7);
     }
 
     #[rstest]
@@ -128,9 +130,9 @@ mod tests {
     #[rstest]
     fn test_generate_order_list_id_from_start() {
         let mut generator = get_order_list_id_generator(None);
-        let result1 = generator.generate();
-        let result2 = generator.generate();
-        let result3 = generator.generate();
+        let result1 = generator.generate(None, None);
+        let result2 = generator.generate(None, None);
+        let result3 = generator.generate(None, None);
         assert_eq!(
             result1,
             OrderListId::new("OL-19700101-0000-001-001-1").unwrap()
@@ -148,9 +150,9 @@ mod tests {
     #[rstest]
     fn test_generate_order_list_id_from_initial() {
         let mut generator = get_order_list_id_generator(Some(5));
-        let result1 = generator.generate();
-        let result2 = generator.generate();
-        let result3 = generator.generate();
+        let result1 = generator.generate(None, None);
+        let result2 = generator.generate(None, None);
+        let result3 = generator.generate(None, None);
         assert_eq!(
             result1,
             OrderListId::new("OL-19700101-0000-001-001-6").unwrap()
@@ -168,10 +170,10 @@ mod tests {
     #[rstest]
     fn test_reset() {
         let mut generator = get_order_list_id_generator(None);
-        generator.generate();
-        generator.generate();
+        generator.generate(None, None);
+        generator.generate(None, None);
         generator.reset();
-        let result = generator.generate();
+        let result = generator.generate(None, None);
         assert_eq!(
             result,
             OrderListId::new("OL-19700101-0000-001-001-1").unwrap()
