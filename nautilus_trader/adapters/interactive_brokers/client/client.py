@@ -1294,9 +1294,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         contract: IBContract,
         tick_type: str,
-        start_date_time: pd.Timestamp,
-        use_rth: bool,
+        start_date_time: pd.Timestamp = "",
+        end_date_time: pd.Timestamp = "",
+        use_rth: bool = True,
     ):
+        if isinstance(start_date_time, pd.Timestamp):
+            start_date_time = start_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+        if isinstance(end_date_time, pd.Timestamp):
+            end_date_time = end_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+
         name = (str(ib_contract_to_instrument_id(contract)), tick_type)
         if not (request := self.requests.get(name=name)):
             req_id = self._next_req_id()
@@ -1307,8 +1313,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     self._client.reqHistoricalTicks,
                     reqId=req_id,
                     contract=contract,
-                    startDateTime=start_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
-                    endDateTime="",
+                    startDateTime=start_date_time,
+                    endDateTime=end_date_time,
                     numberOfTicks=1000,
                     whatToShow=tick_type,
                     useRth=use_rth,
@@ -1324,7 +1330,8 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     def historicalTicksBidAsk(self, req_id: int, ticks: list, done: bool):
         self.logAnswer(current_fn_name(), vars())
-
+        if not done:
+            return
         if request := self.requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
@@ -1335,8 +1342,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     instrument_id=instrument_id,
                     bid_price=instrument.make_price(tick.priceBid),
                     ask_price=instrument.make_price(tick.priceAsk),
-                    bid_size=instrument.make_price(tick.sizeBid),
-                    ask_size=instrument.make_price(tick.sizeAsk),
+                    bid_size=instrument.make_qty(tick.sizeBid),
+                    ask_size=instrument.make_qty(tick.sizeAsk),
                     ts_event=ts_event,
                     ts_init=ts_event,
                 )
@@ -1346,22 +1353,21 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     def historicalTicksLast(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
+        if not done:
+            return
         self._process_trade_ticks(req_id, ticks)
 
     def historicalTicks(self, req_id: int, ticks: list, done: bool):
         self.logAnswer(current_fn_name(), vars())
+        if not done:
+            return
         self._process_trade_ticks(req_id, ticks)
 
     def _process_trade_ticks(self, req_id: int, ticks: list):
-        # inspect self.requests and compare to req_id. sometimes
-        # req_id is one lower than self.requests. this is a bug.
-        # if request := self.requests.get(req_id=req_id):
-        if len(ticks) == 0:
-            self._end_request(req_id)
-        if request := self.requests.get(req_id=req_id + 1):
-            # if request := self.requests[0]:
+        if request := self.requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
+
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
                 trade_tick = TradeTick(

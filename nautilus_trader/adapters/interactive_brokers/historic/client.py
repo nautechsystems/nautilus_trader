@@ -16,6 +16,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -118,6 +119,7 @@ class HistoricInteractiveBrokersClient:
         self,
         bar_specifications: list[str],
         end_date_time: datetime.datetime,
+        tz_name: str,
         duration: str,
         contracts: list[IBContract] | None = None,
         instrument_ids: list[str] | None = None,
@@ -134,6 +136,8 @@ class HistoricInteractiveBrokersClient:
             (e.g. '1-HOUR-LAST', '5-MINUTE-MID')
         end_date_time : datetime.datetime
             The end date time for the bars.
+        tz_name : str
+            The timezone to use. (e.g. 'America/New_York', 'UTC')
         duration : str
             The amount of time to go back from the end_date_time.
             Valid values follow the pattern of an integer followed by S|D|W|M|Y
@@ -159,6 +163,8 @@ class HistoricInteractiveBrokersClient:
         if not contracts and not instrument_ids:
             raise ValueError("Either contracts or instrument_ids must be provided")
 
+        end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
+
         # Convert instrument_id strings to IBContracts
         contracts.extend(
             [
@@ -176,12 +182,13 @@ class HistoricInteractiveBrokersClient:
 
         for contract in contracts:
             for bar_spec in bar_specifications:
+                instrument_id = ib_contract_to_instrument_id(contract)
                 bar_type = BarType(
-                    ib_contract_to_instrument_id(contract),
+                    instrument_id,
                     BarSpecification.from_str(bar_spec),
                     AggregationSource.EXTERNAL,
                 )
-                self.log.info(f"Requesting bars: {bar_type}")
+                self.log.info(f"{instrument_id}: Requesting bars: {bar_type}")
                 bars = await self._client.get_historical_bars(
                     bar_type,
                     contract,
@@ -189,9 +196,16 @@ class HistoricInteractiveBrokersClient:
                     end_date_time.strftime("%Y%m%d-%H:%M:%S"),
                     duration,
                 )
-                data.extend(bars)
+                if bars:
+                    self.log.info(
+                        f"{instrument_id}: Number of bars retrieved in batch: {len(bars)}",
+                    )
+                    data.extend(bars)
+                    self.log.info(f"Total number of bars in data: {len(data)}")
+                else:
+                    self.log.info(f"{instrument_id}: No bars retrieved for: {bar_type}")
 
-        return data
+        return sorted(data, key=lambda x: x.ts_init)
 
     async def request_ticks(
         self,
@@ -216,7 +230,7 @@ class HistoricInteractiveBrokersClient:
         end_date_time : datetime.date
             The end date for the ticks.
         tz_name : str
-            The timezone to use.
+            The timezone to use. (e.g. 'America/New_York', 'UTC')
         contracts : list[IBContract], default 'None'
             IBContracts defining which ticks to retrieve.
         instrument_ids : list[str], default 'None'
@@ -229,6 +243,10 @@ class HistoricInteractiveBrokersClient:
         list[TradeTick | QuoteTick]
 
         """
+        if tick_type not in ["TRADES", "BID_ASK"]:
+            raise ValueError(
+                "tick_type must be one of: 'TRADES' (for TradeTicks), 'BID_ASK' (for QuoteTicks)",
+            )
         start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
         end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
         contracts = contracts or []
@@ -251,37 +269,53 @@ class HistoricInteractiveBrokersClient:
 
         data: list[TradeTick | QuoteTick] = []
         for contract in contracts:
-            self.log.info(f"Requesting ticks for: {ib_contract_to_instrument_id(contract)}")
+            instrument_id = ib_contract_to_instrument_id(contract)
+            current_start_date_time = start_date_time
             while True:
-                self.log.info(f"Requesting ticks from: {start_date_time}")
+                self.log.info(
+                    f"{instrument_id}: Requesting {tick_type} ticks from {current_start_date_time}",
+                )
+
                 ticks = await self._client.get_historical_ticks(
                     contract=contract,
                     tick_type=tick_type,
-                    start_date_time=start_date_time,
+                    start_date_time=current_start_date_time,
                     use_rth=use_rth,
                 )
-                self.log.info(f"Number of ticks retrieved: {len(ticks)}")
+
                 if not ticks:
-                    continue
+                    break
 
-                self.log.info(f"Number of ticks in data: {len(data)}")
+                self.log.info(
+                    f"{instrument_id}: Number of {tick_type} ticks retrieved in batch: {len(ticks)}",
+                )
 
-                start_date_time, should_continue = self.handle_timestamp_iteration(
+                current_start_date_time, should_continue = self.handle_timestamp_iteration(
                     ticks,
-                    start_date_time,
                     end_date_time,
                 )
 
                 if not should_continue:
+                    # Filter out ticks that are after the end_date_time
+                    ticks = [
+                        tick for tick in ticks if tick.ts_event <= dt_to_unix_nanos(end_date_time)
+                    ]
+                    data.extend(ticks)
+                    self.log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
                     break
 
                 data.extend(ticks)
+                self.log.info(f"Total number of {tick_type} ticks in data: {len(data)}")
 
-        return data
+        return sorted(data, key=lambda x: x.ts_init)
 
-    def handle_timestamp_iteration(self, ticks, start_date_time, end_date_time):
+    def handle_timestamp_iteration(
+        self,
+        ticks: list[TradeTick | QuoteTick],
+        end_date_time: pd.Timestamp,
+    ) -> tuple[pd.Timestamp | None, bool]:
         if not ticks:
-            return start_date_time, False
+            return None, False
 
         timestamps = [unix_nanos_to_dt(tick.ts_event) for tick in ticks]
         min_timestamp = min(timestamps)
@@ -291,7 +325,7 @@ class HistoricInteractiveBrokersClient:
             max_timestamp = max_timestamp.floor("S") + pd.Timedelta(seconds=1)
 
         if max_timestamp >= end_date_time:
-            return end_date_time, False
+            return None, False
 
         return max_timestamp, True
 
@@ -323,7 +357,8 @@ async def main():
 
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-        end_date_time=datetime.datetime(2023, 11, 6, 16, 0),
+        end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
+        tz_name="America/New_York",
         duration="1 D",
         contracts=[contract],
         instrument_ids=[instrument_id],
@@ -348,7 +383,10 @@ async def main():
     )
 
     catalog = ParquetDataCatalog("./catalog")
-    catalog.write_data(instruments + bars + trade_ticks + quote_ticks)
+    catalog.write_data(instruments)
+    catalog.write_data(bars)
+    catalog.write_data(trade_ticks)
+    catalog.write_data(quote_ticks)
 
 
 if __name__ == "__main__":
