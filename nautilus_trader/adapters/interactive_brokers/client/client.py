@@ -1294,8 +1294,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         contract: IBContract,
         tick_type: str,
-        start_date_time: pd.Timestamp = "",
-        end_date_time: pd.Timestamp = "",
+        start_date_time: pd.Timestamp | str = "",
+        end_date_time: pd.Timestamp | str = "",
         use_rth: bool = True,
     ):
         if isinstance(start_date_time, pd.Timestamp):
@@ -1328,7 +1328,12 @@ class InteractiveBrokersClient(Component, EWrapper):
         else:
             self._log.info(f"Request already exist for {request}")
 
-    def historicalTicksBidAsk(self, req_id: int, ticks: list, done: bool):
+    def historicalTicksBidAsk(
+        self,
+        req_id: int,
+        ticks: list,
+        done: bool,
+    ):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if not done:
             return
@@ -1357,7 +1362,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             return
         self._process_trade_ticks(req_id, ticks)
 
-    def historicalTicks(self, req_id: int, ticks: list, done: bool):
+    def historicalTicks(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
         if not done:
             return

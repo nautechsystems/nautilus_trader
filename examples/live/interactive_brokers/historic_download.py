@@ -41,7 +41,8 @@ async def main():
 
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-        end_date_time=datetime.datetime(2023, 11, 6, 16, 0),
+        end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
+        tz_name="America/New_York",
         duration="1 D",
         contracts=[contract],
         instrument_ids=[instrument_id],
@@ -66,7 +67,10 @@ async def main():
     )
 
     catalog = ParquetDataCatalog("./catalog")
-    catalog.write_data(instruments + bars + trade_ticks + quote_ticks)
+    catalog.write_data(instruments)
+    catalog.write_data(bars)
+    catalog.write_data(trade_ticks)
+    catalog.write_data(quote_ticks)
 
 
 if __name__ == "__main__":
