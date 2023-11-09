@@ -120,7 +120,8 @@ class HistoricInteractiveBrokersClient:
         bar_specifications: list[str],
         end_date_time: datetime.datetime,
         tz_name: str,
-        duration: str,
+        start_date_time: datetime.datetime | None = None,
+        duration: str | None = None,
         contracts: list[IBContract] | None = None,
         instrument_ids: list[str] | None = None,
         use_rth: bool = True,
@@ -134,6 +135,8 @@ class HistoricInteractiveBrokersClient:
         bar_specifications : list[str]
             BarSpecifications represented as strings defining which bars to retrieve.
             (e.g. '1-HOUR-LAST', '5-MINUTE-MID')
+        start_date_time : datetime.datetime
+            The start date time for the bars. If provided, duration is derived.
         end_date_time : datetime.datetime
             The end date time for the bars.
         tz_name : str
@@ -154,16 +157,24 @@ class HistoricInteractiveBrokersClient:
         list[Bar]
 
         """
-        pattern = r"^\d+\s[SDWMY]$"
-        if not re.match(pattern, duration):
-            raise ValueError("duration must be in format: 'int S|D|W|M|Y'")
+        if start_date_time and duration:
+            raise ValueError("Either start_date_time or duration should be provided, not both.")
+
+        # Derive duration if start_date_time and end_date_time are provided
+        if start_date_time and end_date_time:
+            start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
+            end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
+            if start_date_time >= end_date_time:
+                raise ValueError("Start date must be before end date.")
+        else:
+            pattern = r"^\d+\s[SDWMY]$"
+            if not re.match(pattern, duration):
+                raise ValueError("duration must be in format: 'int S|D|W|M|Y'")
 
         contracts = contracts or []
         instrument_ids = instrument_ids or []
         if not contracts and not instrument_ids:
             raise ValueError("Either contracts or instrument_ids must be provided")
-
-        end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
 
         # Convert instrument_id strings to IBContracts
         contracts.extend(
@@ -176,7 +187,7 @@ class HistoricInteractiveBrokersClient:
         )
 
         # Ensure instruments are fetched and cached
-        await self.fetch_instruments_if_not_cached(contracts)
+        await self._fetch_instruments_if_not_cached(contracts)
 
         data: list[Bar] = []
 
@@ -188,22 +199,32 @@ class HistoricInteractiveBrokersClient:
                     BarSpecification.from_str(bar_spec),
                     AggregationSource.EXTERNAL,
                 )
-                self.log.info(f"{instrument_id}: Requesting bars: {bar_type}")
-                bars = await self._client.get_historical_bars(
-                    bar_type,
-                    contract,
-                    use_rth,
-                    end_date_time.strftime("%Y%m%d-%H:%M:%S"),
-                    duration,
-                )
-                if bars:
+                for duration_segment in self._calculate_duration_segments(
+                    start_date_time,
+                    end_date_time,
+                ):
+                    segment_end_date_time = duration_segment["date"]
+                    duration = duration_segment["duration"]
+
                     self.log.info(
-                        f"{instrument_id}: Number of bars retrieved in batch: {len(bars)}",
+                        f"{instrument_id}: Requesting historical bars: {bar_type} ending on '{end_date_time}' with duration '{duration}'",
                     )
-                    data.extend(bars)
-                    self.log.info(f"Total number of bars in data: {len(data)}")
-                else:
-                    self.log.info(f"{instrument_id}: No bars retrieved for: {bar_type}")
+
+                    bars = await self._client.get_historical_bars(
+                        bar_type,
+                        contract,
+                        use_rth,
+                        segment_end_date_time.strftime("%Y%m%d-%H:%M:%S"),
+                        duration,
+                    )
+                    if bars:
+                        self.log.info(
+                            f"{instrument_id}: Number of bars retrieved in batch: {len(bars)}",
+                        )
+                        data.extend(bars)
+                        self.log.info(f"Total number of bars in data: {len(data)}")
+                    else:
+                        self.log.info(f"{instrument_id}: No bars retrieved for: {bar_type}")
 
         return sorted(data, key=lambda x: x.ts_init)
 
@@ -247,8 +268,16 @@ class HistoricInteractiveBrokersClient:
             raise ValueError(
                 "tick_type must be one of: 'TRADES' (for TradeTicks), 'BID_ASK' (for QuoteTicks)",
             )
+        if start_date_time >= end_date_time:
+            raise ValueError("Start date must be before end date.")
         start_date_time = pd.Timestamp(start_date_time, tz=tz_name).tz_convert("UTC")
         end_date_time = pd.Timestamp(end_date_time, tz=tz_name).tz_convert("UTC")
+        if (end_date_time - start_date_time) > pd.Timedelta(days=1):
+            self.log.warning(
+                "Requesting tick data for more than 1 day may take a long time, particularly for liquid instruments. "
+                "You may want to consider sourcing tick data elsewhere.",
+            )
+
         contracts = contracts or []
         instrument_ids = instrument_ids or []
         if not contracts and not instrument_ids:
@@ -265,7 +294,7 @@ class HistoricInteractiveBrokersClient:
         )
 
         # Ensure instruments are fetched and cached
-        await self.fetch_instruments_if_not_cached(contracts)
+        await self._fetch_instruments_if_not_cached(contracts)
 
         data: list[TradeTick | QuoteTick] = []
         for contract in contracts:
@@ -290,7 +319,7 @@ class HistoricInteractiveBrokersClient:
                     f"{instrument_id}: Number of {tick_type} ticks retrieved in batch: {len(ticks)}",
                 )
 
-                current_start_date_time, should_continue = self.handle_timestamp_iteration(
+                current_start_date_time, should_continue = self._handle_timestamp_iteration(
                     ticks,
                     end_date_time,
                 )
@@ -309,11 +338,28 @@ class HistoricInteractiveBrokersClient:
 
         return sorted(data, key=lambda x: x.ts_init)
 
-    def handle_timestamp_iteration(
+    def _handle_timestamp_iteration(
         self,
         ticks: list[TradeTick | QuoteTick],
         end_date_time: pd.Timestamp,
     ) -> tuple[pd.Timestamp | None, bool]:
+        """
+        Return the max timestamp from the given ticks and whether to continue iterating.
+        If all timestamps occur in the same second, the max timestamp will be
+        incremented by 1 second.
+
+        Parameters
+        ----------
+        ticks : list[TradeTick | QuoteTick]
+            The type of ticks to retrieve.
+        end_date_time : datetime.date
+            The end date for the ticks.
+
+        Returns
+        -------
+        tuple[pd.Timestamp | None, bool]
+
+        """
         if not ticks:
             return None, False
 
@@ -329,14 +375,94 @@ class HistoricInteractiveBrokersClient:
 
         return max_timestamp, True
 
-    async def fetch_instruments_if_not_cached(self, contracts: list[IBContract]) -> None:
+    async def _fetch_instruments_if_not_cached(self, contracts: list[IBContract]) -> None:
+        """
+        Fetch and cache Instruments for the given IBContracts if they are not already
+        cached.
+
+        Parameters
+        ----------
+        contracts : list[IBContract]
+            A list of IBContracts to fetch Instruments for.
+
+        Returns
+        -------
+        None
+
+        """
         for contract in contracts:
             instrument_id = ib_contract_to_instrument_id(contract)
             if not self._client._cache.instrument(instrument_id):
                 self.log.info(f"Fetching Instrument for: {instrument_id}")
                 await self.request_instruments(contracts=[contract])
 
+    def _calculate_duration_segments(self, start_date, end_date):
+        """
+        Calculate the difference in years, days, and seconds between two dates for the
+        purpose of requesting specific date ranges for historical bars.
 
+        This function breaks down the time difference between two provided dates (start_date and end_date) into
+        separate components: years, days, and seconds. It accounts for leap years in its calculation of years and
+        considers detailed time components (hours, minutes, seconds) for precise calculation of seconds.
+
+        Each component of the time difference (years, days, seconds) is represented as a dictionary in the returned list.
+        The 'date' key in each dictionary indicates the end point of that time segment when moving from start_date to end_date.
+        For example, if the function calculates 1 year, the 'date' key for the year entry will be the end date after 1 year
+        has passed from start_date. This helps in understanding the progression of time from start_date to end_date in segmented intervals.
+
+        Parameters
+        ----------
+        start_date : pd.Timestamp
+            The starting date and time.
+        end_date : pd.Timestamp
+            The ending date and time.
+
+        Returns
+        -------
+        list: A list of dictionaries, each containing a 'date' and a 'duration' key.
+            The 'date' key represents the end point of each calculated time segment (year, day, second),
+            and the 'duration' key holds the length of the time segment as a string.
+
+        """
+        total_delta = end_date - start_date
+
+        # Calculate full years in the time delta
+        years = total_delta.days // 365
+        minus_years_date = end_date - pd.Timedelta(days=365 * years)
+
+        # Calculate remaining days after subtracting full years
+        days = (minus_years_date - start_date).days
+        minus_days_date = minus_years_date - pd.Timedelta(days=days)
+
+        # Calculate remaining time in seconds
+        delta = minus_days_date - start_date
+        subsecond = (
+            1
+            if delta.components.milliseconds > 0
+            or delta.components.microseconds > 0
+            or delta.components.nanoseconds > 0
+            else 0
+        )
+        seconds = (
+            delta.components.hours * 3600
+            + delta.components.minutes * 60
+            + delta.components.seconds
+            + subsecond
+        )
+
+        results = []
+        if years:
+            results.append({"date": end_date, "duration": f"{years} Y"})
+
+        if days:
+            results.append({"date": minus_years_date, "duration": f"{days} D"})
+
+        if seconds:
+            results.append({"date": minus_days_date, "duration": f"{seconds} S"})
+
+        return results
+
+# will remove this post testing and review
 async def main():
     contract = IBContract(
         secType="STK",
@@ -356,10 +482,10 @@ async def main():
     )
 
     bars = await client.request_bars(
-        bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
-        end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
+        bar_specifications=["1-DAY-LAST", "8-HOUR-MID"],
+        start_date_time=datetime.datetime(2022, 10, 15, 3),
+        end_date_time=datetime.datetime(2023, 11, 1),
         tz_name="America/New_York",
-        duration="1 D",
         contracts=[contract],
         instrument_ids=[instrument_id],
     )

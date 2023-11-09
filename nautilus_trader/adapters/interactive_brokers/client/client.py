@@ -1114,7 +1114,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._await_request(request, 20)
+            return await self._await_request(request, 60)
         else:
             self._log.info(f"Request already exist for {request}")
 
@@ -1324,7 +1324,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 cancel=functools.partial(self._client.cancelHistoricalData, reqId=req_id),
             )
             request.handle()
-            return await self._await_request(request, 20)
+            return await self._await_request(request, 60)
         else:
             self._log.info(f"Request already exist for {request}")
 
