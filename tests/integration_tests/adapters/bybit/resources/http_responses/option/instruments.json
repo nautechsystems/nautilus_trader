@@ -1,0 +1,53 @@
+{
+    "retCode": 0,
+    "retMsg": "success",
+    "result": {
+        "list": [
+            {
+                "symbol": "BTC-29MAR24-100000-C",
+                "status": "Trading",
+                "baseCoin": "BTC",
+                "quoteCoin": "USD",
+                "settleCoin": "USDC",
+                "optionsType": "Call",
+                "launchTime": "1693382400000",
+                "deliveryTime": "1711699200000",
+                "deliveryFeeRate": "0.00015",
+                "priceFilter": {
+                    "minPrice": "5",
+                    "maxPrice": "10000000",
+                    "tickSize": "5"
+                },
+                "lotSizeFilter": {
+                    "maxOrderQty": "10000",
+                    "minOrderQty": "0.01",
+                    "qtyStep": "0.01",
+                    "postOnlyMaxOrderQty": null
+                }
+            },
+            {
+                "symbol": "BTC-29MAR24-100000-P",
+                "status": "Trading",
+                "baseCoin": "BTC",
+                "quoteCoin": "USD",
+                "settleCoin": "USDC",
+                "optionsType": "Put",
+                "launchTime": "1693382400000",
+                "deliveryTime": "1711699200000",
+                "deliveryFeeRate": "0.00015",
+                "priceFilter": {
+                    "minPrice": "5",
+                    "maxPrice": "10000000",
+                    "tickSize": "5"
+                },
+                "lotSizeFilter": {
+                    "maxOrderQty": "10000",
+                    "minOrderQty": "0.01",
+                    "qtyStep": "0.01",
+                    "postOnlyMaxOrderQty": null
+                }
+            }
+        ]
+    },
+    "time": 1694669449037
+}

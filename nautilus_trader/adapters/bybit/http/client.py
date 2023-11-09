@@ -64,6 +64,7 @@ class BybitHttpClient:
         url_path: str,
         payload: Optional[dict[str, str]] = None,
         signature: Optional[str] = None,
+        timestamp: Optional[int] = None,
         ratelimiter_keys: list[str] | None = None,
     ):
         if payload:
@@ -73,7 +74,7 @@ class BybitHttpClient:
         if signature is not None:
             headers = {
                 **self._headers,
-                "X-BAPI-TIMESTAMP": str(self._clock.timestamp_ms()),
+                "X-BAPI-TIMESTAMP": timestamp,
                 "X-BAPI-SIGN": signature,
                 "X-BAPI-RECV-WINDOW": str(self._recv_window),
             }
@@ -112,12 +113,14 @@ class BybitHttpClient:
     ) -> Any:
         if payload is None:
             payload = {}
-        authed_signature = self._extend_params_with_authentication_info(payload)
+        # we need to get timestamp and signature
+        [timestamp,authed_signature] = self._extend_params_with_authentication_info(payload)
         return await self.send_request(
             http_method=http_method,
             url_path=url_path,
             payload=payload,
             signature=authed_signature,
+            timestamp=timestamp,
             ratelimiter_keys=ratelimiter_keys,
         )
 
@@ -126,7 +129,7 @@ class BybitHttpClient:
             f"Some exception in HTTP request status: {error.status} message:{error.message}",
         )
 
-    def _extend_params_with_authentication_info(self, payload: dict[str, Any]) -> str:
+    def _extend_params_with_authentication_info(self, payload: dict[str, Any]) -> [str,str]:
         timestamp = str(self._clock.timestamp_ms())
         payload = urllib.parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload
@@ -135,4 +138,4 @@ class BybitHttpClient:
             result.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
-        return signature
+        return [timestamp,signature]
