@@ -8,14 +8,12 @@ from nautilus_trader.config.validation import PositiveInt
 
 
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
-    api_key: Optional[str] = None
-    api_secret: Optional[str] = None
-    instrument_type: BybitInstrumentType = BybitInstrumentType.SPOT
-    base_url_http: Optional[str] = None
-    base_url_ws: Optional[str] = None
-    # us: bool = False
+    api_key: str | None = None
+    api_secret: str | None = None
+    instrument_types: list[BybitInstrumentType] = []
+    base_url_http: str | None = None
+    base_url_ws: str | None = None
     testnet: bool = False
-    # use_agg_trade_ticks: bool = False
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
