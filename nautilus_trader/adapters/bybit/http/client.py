@@ -24,8 +24,9 @@ def create_string_from_dict(data):
         property_string = f'"{key}":"{value}"'
         property_strings.append(property_string)
 
-    result_string = '{'+ ','.join(property_strings)+'}'
+    result_string = "{" + ",".join(property_strings) + "}"
     return result_string
+
 
 class ResponseCode(msgspec.Struct):
     retCode: int
@@ -91,9 +92,11 @@ class BybitHttpClient:
         else:
             headers = self._headers
         response: HttpResponse = await self._client.request(
-            http_method,url,headers,
+            http_method,
+            url,
+            headers,
             msgspec.json.encode(payload) if payload else None,
-            ratelimiter_keys
+            ratelimiter_keys,
         )
         # first check for server error
         if 400 <= response.status < 500:
@@ -124,8 +127,11 @@ class BybitHttpClient:
             payload = {}
         # we need to get timestamp and signature
 
-        [timestamp,authed_signature] = self._sign_get_request(payload) \
-            if http_method == HttpMethod.GET else self._sign_post_request(payload)
+        [timestamp, authed_signature] = (
+            self._sign_get_request(payload)
+            if http_method == HttpMethod.GET
+            else self._sign_post_request(payload)
+        )
         return await self.send_request(
             http_method=http_method,
             url_path=url_path,
@@ -140,8 +146,7 @@ class BybitHttpClient:
             f"Some exception in HTTP request status: {error.status} message:{error.message}",
         )
 
-
-    def _sign_post_request(self, payload: dict[str,Any])-> [str, str]:
+    def _sign_post_request(self, payload: dict[str, Any]) -> [str, str]:
         timestamp = str(self._clock.timestamp_ms())
         payload = create_string_from_dict(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload
@@ -150,7 +155,7 @@ class BybitHttpClient:
             result.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
-        return [timestamp,signature]
+        return [timestamp, signature]
 
     def _sign_get_request(self, payload: dict[str, Any]) -> [str, str]:
         timestamp = str(self._clock.timestamp_ms())
@@ -161,4 +166,4 @@ class BybitHttpClient:
             result.encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()
-        return [timestamp,signature]
+        return [timestamp, signature]

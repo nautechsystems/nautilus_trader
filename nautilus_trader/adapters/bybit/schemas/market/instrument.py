@@ -3,10 +3,12 @@ from typing import Union
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.schemas.common import BybitListResult, SpotLotSizeFilter, SpotPriceFilter
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.adapters.bybit.schemas.common import LeverageFilter
-from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
 from nautilus_trader.adapters.bybit.schemas.common import LinearPriceFilter
+from nautilus_trader.adapters.bybit.schemas.common import LotSizeFilter
+from nautilus_trader.adapters.bybit.schemas.common import SpotLotSizeFilter
+from nautilus_trader.adapters.bybit.schemas.common import SpotPriceFilter
 from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.model.currency import Currency
 

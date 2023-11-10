@@ -2,6 +2,7 @@ from typing import Optional
 
 import msgspec
 
+
 def BybitListResult(type):
     return msgspec.defstruct("", [("list", list[type])])
 
@@ -27,6 +28,7 @@ class LinearPriceFilter(msgspec.Struct):
     # The step to increase/reduce order price
     tickSize: str
 
+
 class SpotPriceFilter(msgspec.Struct):
     tickSize: str
 
@@ -41,6 +43,7 @@ class LotSizeFilter(msgspec.Struct):
     # Maximum order qty for PostOnly order
     postOnlyMaxOrderQty: Optional[str] = None
 
+
 class SpotLotSizeFilter(msgspec.Struct):
     basePrecision: str
     quotePrecision: str
@@ -48,7 +51,6 @@ class SpotLotSizeFilter(msgspec.Struct):
     maxOrderQty: str
     minOrderAmt: str
     maxOrderAmt: str
-
 
 
 class BybitWsSubscriptionMsg(msgspec.Struct):

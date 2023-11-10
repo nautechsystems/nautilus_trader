@@ -2,13 +2,26 @@ from enum import Enum
 from enum import unique
 
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import BarAggregation
+
+
 def raise_error(error):
     raise error
+
+
+@unique
+class BybitPositionIdx(Enum):
+    # one-way mode position
+    ONE_WAY = 0
+    # buy side of hedge-mode position
+    BUY_HEDGE = 1
+    # sell side of hedge-mode position
+    SELL_HEDGE = 2
+
 
 @unique
 class BybitKlineInterval(Enum):
@@ -25,6 +38,7 @@ class BybitKlineInterval(Enum):
     DAY_1 = "D"
     WEEK_1 = "W"
     MONTH_1 = "M"
+
 
 @unique
 class BybitOrderStatus(Enum):
@@ -53,11 +67,12 @@ class BybitOrderType(Enum):
     LIMIT = "Limit"
     UNKNOWN = "Unknown"
 
+
 @unique
 class BybitTriggerType(Enum):
-    LAST_PRICE = 'LastPrice'
-    INDEX_PRICE = 'IndexPrice'
-    MARK_PRICE = 'MarkPrice'
+    LAST_PRICE = "LastPrice"
+    INDEX_PRICE = "IndexPrice"
+    MARK_PRICE = "MarkPrice"
 
 
 @unique
@@ -89,13 +104,22 @@ class BybitInstrumentType(Enum):
         return self in [BybitInstrumentType.SPOT]
 
 
-def check_dict_keys(key,data):
+@unique
+class BybitContractType(Enum):
+    INVERSE_PERPETUAL = "InversePerpetual"
+    LINEAR_PERPETUAL = "LinearPerpetual"
+    LINEAR_FUTURE = "LinearFutures"
+    INVERSE_FUTURE = "InverseFutures"
+
+
+def check_dict_keys(key, data):
     try:
         return data[key]
     except KeyError:
         raise RuntimeError(
-            f"Unrecognized Bybit {key} not found in {data}"
+            f"Unrecognized Bybit {key} not found in {data}",
         )
+
 
 class BybitEnumParser:
     def __init__(self) -> None:
@@ -113,7 +137,6 @@ class BybitEnumParser:
         self.nautilus_to_bybit_order_type = {
             b: a for a, b in self.bybit_to_nautilus_order_type.items()
         }
-
 
         # TODO check time in force mapping
         self.bybit_to_nautilus_time_in_force = {
@@ -133,20 +156,27 @@ class BybitEnumParser:
             BybitOrderStatus.NEW: OrderStatus.ACCEPTED,
             BybitOrderStatus.FILLED: OrderStatus.FILLED,
             BybitOrderStatus.CANCELED: OrderStatus.CANCELED,
+            BybitOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
         }
         self.nautilus_to_bybit_order_status = {
             b: a for a, b in self.bybit_to_nautilus_order_status.items()
         }
 
         # klines
-        self.minute_klines_interval = [1,3,5,15,30]
-        self.hour_klines_interval = [1,2,4,6,12]
+        self.minute_klines_interval = [1, 3, 5, 15, 30]
+        self.hour_klines_interval = [1, 2, 4, 6, 12]
         self.aggregation_kline_mapping = {
             BarAggregation.MINUTE: lambda x: BybitKlineInterval(f"{x}"),
             BarAggregation.HOUR: lambda x: BybitKlineInterval(f"{x * 60}"),
-            BarAggregation.DAY: lambda x: BybitKlineInterval("D") if x == 1 else raise_error(ValueError(f"Bybit incorrect day kline interval {x}")),
-            BarAggregation.WEEK: lambda x: BybitKlineInterval("W") if x == 1 else raise_error(ValueError(f"Bybit incorrect week kline interval {x}")),
-            BarAggregation.MONTH: lambda x: BybitKlineInterval("M") if x == 1 else raise_error(ValueError(f"Bybit incorrect month kline interval {x}"))
+            BarAggregation.DAY: lambda x: BybitKlineInterval("D")
+            if x == 1
+            else raise_error(ValueError(f"Bybit incorrect day kline interval {x}")),
+            BarAggregation.WEEK: lambda x: BybitKlineInterval("W")
+            if x == 1
+            else raise_error(ValueError(f"Bybit incorrect week kline interval {x}")),
+            BarAggregation.MONTH: lambda x: BybitKlineInterval("M")
+            if x == 1
+            else raise_error(ValueError(f"Bybit incorrect month kline interval {x}")),
         }
         self.valid_order_types = {
             OrderType.MARKET,
@@ -159,28 +189,27 @@ class BybitEnumParser:
         }
 
     def parse_bybit_order_status(self, order_status: BybitOrderStatus) -> OrderStatus:
-        return check_dict_keys(order_status,self.bybit_to_nautilus_order_status)
+        return check_dict_keys(order_status, self.bybit_to_nautilus_order_status)
 
     def parse_nautilus_order_status(self, order_status: OrderStatus) -> BybitOrderStatus:
-        return check_dict_keys(order_status,self.nautilus_to_bybit_order_status)
-
+        return check_dict_keys(order_status, self.nautilus_to_bybit_order_status)
 
     def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
-        return check_dict_keys(time_in_force,self.bybit_to_nautilus_time_in_force)
+        return check_dict_keys(time_in_force, self.bybit_to_nautilus_time_in_force)
 
     def parse_bybit_order_side(self, order_side: BybitOrderSide) -> OrderSide:
-        return check_dict_keys(order_side,self.bybit_to_nautilus_order_side)
+        return check_dict_keys(order_side, self.bybit_to_nautilus_order_side)
 
     def parse_nautilus_order_side(self, order_side: OrderSide) -> BybitOrderSide:
-        return check_dict_keys(order_side,self.nautilus_to_bybit_order_side)
+        return check_dict_keys(order_side, self.nautilus_to_bybit_order_side)
 
     def parse_bybit_order_type(self, order_type: BybitOrderType) -> OrderType:
-        return check_dict_keys(order_type,self.bybit_to_nautilus_order_type)
+        return check_dict_keys(order_type, self.bybit_to_nautilus_order_type)
 
     def parse_nautilus_order_type(self, order_type: OrderType) -> BybitOrderType:
-        return check_dict_keys(order_type,self.nautilus_to_bybit_order_type)
+        return check_dict_keys(order_type, self.nautilus_to_bybit_order_type)
 
-    def parse_nautilus_time_in_force(self,time_in_force: TimeInForce) -> BybitTimeInForce:
+    def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
         try:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
         except KeyError:
@@ -188,7 +217,7 @@ class BybitEnumParser:
                 f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
             )
 
-    def parse_bybit_time_in_force(self,time_in_force: BybitTimeInForce) -> TimeInForce:
+    def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
         try:
             return self.bybit_to_nautilus_time_in_force[time_in_force]
         except KeyError:
@@ -196,7 +225,7 @@ class BybitEnumParser:
                 f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
             )
 
-    def parse_bybit_kline(self, bar_type: BarType)-> BybitKlineInterval:
+    def parse_bybit_kline(self, bar_type: BarType) -> BybitKlineInterval:
         try:
             aggregation = bar_type.spec.aggregation
             interval = int(bar_type.spec.step)

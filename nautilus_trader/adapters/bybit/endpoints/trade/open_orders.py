@@ -1,3 +1,5 @@
+from typing import Optional
+
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -7,11 +9,13 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitOpenOrdersResponse
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
-class OpenOrdersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+class BybitOpenOrdersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str = None
     symbol: str = None
-    baseCoin: str = None
-    settleCoin: str = None
+    baseCoin: Optional[str] = None
+    settleCoin: Optional[str] = None
+    orderId: Optional[str] = None
+    orderLinkId: Optional[str] = None
 
 
 class BybitOpenOrdersHttp(BybitHttpEndpoint):
@@ -28,10 +32,10 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitOpenOrdersResponseStruct)
 
-    async def get(self, parameters: OpenOrdersGetParameters) -> BybitOpenOrdersResponseStruct:
+    async def get(self, parameters: BybitOpenOrdersGetParameters) -> BybitOpenOrdersResponseStruct:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception as e:
+        except Exception:
             raise RuntimeError(f"Failed to decode response open orders response: {raw}")

@@ -2,8 +2,8 @@ from typing import Union
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsLinearResponse
@@ -36,7 +36,9 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
             BybitInstrumentsLinearResponse,
         )
         self._response_decoder_instrument_spot = msgspec.json.Decoder(BybitInstrumentsSpotResponse)
-        self._response_decoder_instrument_option = msgspec.json.Decoder(BybitInstrumentsOptionResponse)
+        self._response_decoder_instrument_option = msgspec.json.Decoder(
+            BybitInstrumentsOptionResponse
+        )
 
     async def get(
         self,

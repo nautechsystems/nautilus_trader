@@ -26,5 +26,5 @@ class BybitServerTimeEndpoint(BybitHttpEndpoint):
         raw = await self._method(method_type)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception as e:
+        except Exception:
             raise RuntimeError(f"Failed to decode response server time response: {raw}")

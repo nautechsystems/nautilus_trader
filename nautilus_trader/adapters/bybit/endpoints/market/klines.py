@@ -1,13 +1,14 @@
 import msgspec
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType, BybitEndpointType, BybitKlineInterval
+from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKlinesResponse
+from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
-class BybitKlinesGetParameters(msgspec.Struct,omit_defaults=True,frozen=False):
+class BybitKlinesGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str
     symbol: str
     interval: BybitKlineInterval
@@ -17,7 +18,6 @@ class BybitKlinesGetParameters(msgspec.Struct,omit_defaults=True,frozen=False):
 
 
 class BybitKlinesEndpoint(BybitHttpEndpoint):
-
     def __init__(
         self,
         client: BybitHttpClient,
@@ -31,9 +31,9 @@ class BybitKlinesEndpoint(BybitHttpEndpoint):
         )
         self._response_decoder = msgspec.json.Decoder(BybitKlinesResponse)
 
-
     async def get(
-        self, parameters: BybitKlinesGetParameters
+        self,
+        parameters: BybitKlinesGetParameters,
     ) -> BybitKlinesResponse:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)

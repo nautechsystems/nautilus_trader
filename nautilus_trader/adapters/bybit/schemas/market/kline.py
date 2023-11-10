@@ -1,15 +1,14 @@
-from typing import Optional
 
 import msgspec
-from pandas.core.common import maybe_iterable_to_list
 
-from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data import BarType, Bar
-from nautilus_trader.model.objects import Price, Quantity
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
-class BybitKline(msgspec.Struct,array_like=True):
+class BybitKline(msgspec.Struct, array_like=True):
     startTime: str
     openPrice: str
     highPrice: str
@@ -25,7 +24,7 @@ class BybitKline(msgspec.Struct,array_like=True):
         self,
         bar_type: BarType,
         ts_init: int,
-    )-> Bar:
+    ) -> Bar:
         return Bar(
             bar_type=bar_type,
             open=Price.from_str(self.openPrice),
@@ -33,18 +32,19 @@ class BybitKline(msgspec.Struct,array_like=True):
             low=Price.from_str(self.lowPrice),
             close=Price.from_str(self.closePrice),
             volume=Quantity.from_str(self.volume),
-            ts_event= millis_to_nanos(int(self.startTime)),
-            ts_init=ts_init
+            ts_event=millis_to_nanos(int(self.startTime)),
+            ts_init=ts_init,
         )
+
 
 class BybitKlinesList(msgspec.Struct):
     symbol: str
     category: str
     list: list[BybitKline]
 
+
 class BybitKlinesResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitKlinesList
     time: int
-

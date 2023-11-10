@@ -19,7 +19,7 @@ class BybitWebsocketClient:
         handler: Callable[[bytes], None],
         api_key: Optional[str] = None,
         api_secret: Optional[str] = None,
-        is_private: Optional[bool] = False
+        is_private: Optional[bool] = False,
     ) -> None:
         self._clock = clock
         self._logger = logger
@@ -42,13 +42,12 @@ class BybitWebsocketClient:
     def subscriptions(self) -> list[str]:
         return self._subscriptions
 
-    def has_subscriptions(self,item: str) -> bool:
+    def has_subscriptions(self, item: str) -> bool:
         return item in self._subscriptions
 
     ################################################################################
     # Public
     ################################################################################
-
 
     async def subscribe_trades(self, symbol: str) -> None:
         subscription = f"publicTrade.{symbol}"
@@ -56,18 +55,20 @@ class BybitWebsocketClient:
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.append(subscription)
 
-    async def subscribe_tickers(self,symbol: str)-> None:
+    async def subscribe_tickers(self, symbol: str) -> None:
         subscription = f"tickers.{symbol}"
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.append(subscription)
 
-
     ################################################################################
     # Private
     ################################################################################
-    async def subscribe_account_position_update(self) -> None:
-        sub = {"op": "subscribe", "args": ["position"]}
+    # async def subscribe_account_position_update(self) -> None:
+    #     subsscription = "position"
+    #     sub = {"op": "subscribe", "args": [subsscription]}
+    #     await self._client.send_text(json.dumps(sub))
+    #     self._subscriptions.append(subsscription)
 
     async def subscribe_orders_update(self) -> None:
         subscription = "order"
@@ -95,11 +96,12 @@ class BybitWebsocketClient:
             signature = self._get_signature()
             self._client.send_text(json.dumps(signature))
 
-
     def _get_signature(self):
-        timestamp = self._clock.timestamp_ms()+1000
+        timestamp = self._clock.timestamp_ms() + 1000
         sign = f"GET/realtime{timestamp}"
-        signature = hmac.new(self._api_secret.encode("utf-8"), sign.encode("utf-8"), hashlib.sha256).hexdigest()
+        signature = hmac.new(
+            self._api_secret.encode("utf-8"), sign.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
         return {
             "op": "auth",
             "args": [self._api_key, timestamp, signature],

@@ -1,3 +1,19 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+
 import asyncio
 from typing import Optional
 
@@ -5,8 +21,8 @@ import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitWsTopicCheck
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
@@ -14,7 +30,10 @@ from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderUpdateMsg, BybitWsAccountExecutionUpdateMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -24,19 +43,30 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.execution.messages import SubmitOrder, CancelOrder, CancelAllOrders
+from nautilus_trader.execution.messages import CancelAllOrders
+from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import OmsType, OrderType
-from nautilus_trader.model.identifiers import AccountId, ClientOrderId
+from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.model.orders import Order, MarketOrder, LimitOrder
+from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketOrder
+from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.msgbus.bus import MessageBus
 
@@ -68,12 +98,16 @@ class BybitExecutionClient(LiveExecutionClient):
             clock=clock,
             logger=logger,
         )
-        self._log.info(f"Account type: ${self.account_type.value}", LogColor.BLUE)
+        # Configuration
+        self._use_position_ids = config.use_position_ids
+
+        self._log.info(f"Account type: ${self.account_type}", LogColor.BLUE)
         self._bybit_instrument_type = instrument_type
         self._enum_parser = BybitEnumParser()
 
         account_id = AccountId(f"{BYBIT_VENUE.value}-{self._bybit_instrument_type}")
         self._set_account_id(account_id)
+
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
@@ -88,7 +122,6 @@ class BybitExecutionClient(LiveExecutionClient):
             api_key=config.api_key,
             api_secret=config.api_secret,
         )
-
 
         # Http API
         self._http_account = BybitAccountHttpAPI(
@@ -107,10 +140,13 @@ class BybitExecutionClient(LiveExecutionClient):
         # decoders
         self._decoder_ws_topic_check = msgspec.json.Decoder(BybitWsTopicCheck)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
-        self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderUpdateMsg)
-        self._decoder_ws_account_execution_update = msgspec.json.Decoder(BybitWsAccountExecutionUpdateMsg)
-
-
+        self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
+        self._decoder_ws_account_execution_update = msgspec.json.Decoder(
+            BybitWsAccountExecutionMsg
+        )
+        self._decoder_ws_account_position_update = msgspec.json.Decoder(
+            BybitWsAccountPositionMsg
+        )
 
     async def _connect(self) -> None:
         # Initialize instrument provider
@@ -179,15 +215,31 @@ class BybitExecutionClient(LiveExecutionClient):
         )
         try:
             if venue_order_id:
-                bybit_order = await self._http_account.query_order(
+                bybit_orders = await self._http_account.query_order(
                     symbol=instrument_id.symbol.value,
-                    order_id=int(venue_order_id.value),
+                    order_id=venue_order_id.value,
                 )
+                if len(bybit_orders) == 0:
+                    self._log.error(f"Received no order for {venue_order_id}")
+                    return None
+                targetOrder = bybit_orders[0]
+                if len(bybit_orders) > 1:
+                    self._log.warning(f"Received more than one order for {venue_order_id}")
+                    targetOrder = bybit_orders[0]
+
+                order_report = targetOrder.parse_to_order_status_report(
+                    account_id=self.account_id,
+                    instrument_id=self._get_cached_instrument_id(targetOrder.symbol),
+                    report_id=UUID4(),
+                    enum_parser=self._enum_parser,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._log.debug(f"Received {order_report}.")
+                return order_report
+
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReport: {e}")
             return None
-
-
 
     async def generate_trade_reports(
         self,
@@ -218,7 +270,6 @@ class BybitExecutionClient(LiveExecutionClient):
         for position in open_positions:
             active_symbols.add(BybitSymbol(position.instrument_id.symbol.value))
         return active_symbols
-
 
     def _get_cached_instrument_id(self, symbol: str) -> Optional[InstrumentId]:
         # parse instrument id
@@ -255,14 +306,13 @@ class BybitExecutionClient(LiveExecutionClient):
             except Exception as e:
                 self._log.error(f"Failed to generate AccountState: {e}")
 
-
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         await self._http_account.cancel_all_orders(command.instrument_id.symbol.value)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_inner(command.order)
 
-    async def _submit_order_inner(self, order: Order)-> None:
+    async def _submit_order_inner(self, order: Order) -> None:
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed.")
             return
@@ -284,26 +334,26 @@ class BybitExecutionClient(LiveExecutionClient):
                 break
             except KeyError:
                 raise RuntimeError(f"unsupported order type, was {order.order_type}")
-            except BybitError as e:
+            except BybitError:
                 print("BYBIT ERROR")
 
     def _check_order_validity(self, order: Order) -> None:
         # check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid order type {order.order_type}.Unsupported on bybit."
+                f"Cannot submit order.Order {order} has invalid order type {order.order_type}.Unsupported on bybit.",
             )
             return
         # check time in force valid
         if order.time_in_force not in self._enum_parser.valid_time_in_force:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid time in force {order.time_in_force}.Unsupported on bybit."
+                f"Cannot submit order.Order {order} has invalid time in force {order.time_in_force}.Unsupported on bybit.",
             )
             return
         # check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
-                f"Cannot submit order.Order {order} has invalid post only {order.is_post_only}.Unsupported on bybit."
+                f"Cannot submit order.Order {order} has invalid post only {order.is_post_only}.Unsupported on bybit.",
             )
             return
 
@@ -313,15 +363,16 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _submit_limit_order(self, order: LimitOrder) -> None:
         time_in_force = self._enum_parser.parse_nautilus_time_in_force(order.time_in_force)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type =self._enum_parser.parse_nautilus_order_type(order.order_type)
-        await self._http_account.place_order(
+        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        strategy_id = order.strategy_id
+        order = await self._http_account.place_order(
             symbol=order.instrument_id.symbol.value,
             side=order_side,
             order_type=order_type,
             time_in_force=time_in_force,
             quantity=str(order.quantity),
             price=str(order.price),
-            order_id=str(order.client_order_id)
+            order_id=str(order.client_order_id),
         )
 
     ################################################################################
@@ -331,37 +382,113 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             ws_message = self._decoder_ws_topic_check.decode(raw)
             self._topic_check(ws_message.topic, raw)
-        except Exception as e:
+        except Exception:
             ws_message = self._decoder_ws_subscription.decode(raw)
             if ws_message.success:
                 self._log.info("Success subscribing")
             else:
                 self._log.error("Failed to subscribe.")
-    def _topic_check(self,topic: str, raw: bytes) -> None:
+
+    def _topic_check(self, topic: str, raw: bytes) -> None:
         if "order" in topic:
             self._handle_account_order_update(raw)
         elif "execution" in topic:
             self._handle_account_execution_update(raw)
-        elif "position" in topic:
-            self._handle_account_position_update(raw)
         else:
             self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
-    def _handle_account_position_update(self,raw: bytes):
-        pass
+    # def _handle_account_position_update(self,raw: bytes):
+    #     try:
+    #         msg = self._decoder_ws_account_position_update.decode(raw)
+    #         for position in msg.data:
+    #             print(position)
+    #     except Exception as e:
+    #         print(e)
 
-    def _handle_account_execution_update(self,raw: bytes):
+    def _handle_account_execution_update(self, raw: bytes):
         try:
             msg = self._decoder_ws_account_execution_update.decode(raw)
-            print(msg)
+            for trade in msg.data:
+                print(trade)
+                self._process_execution(trade)
         except Exception as e:
+            print(f"Some errror {e}")
             print(e)
-            print(raw)
+            self._log.exception(f"Failed to handle account execution update: {e.message}", e)
 
-    def _handle_account_order_update(self,raw: bytes):
+    def _process_execution(self, execution: BybitWsAccountExecution):
+        client_order_id = (
+            ClientOrderId(execution.orderLinkId) if execution.orderLinkId is not None else None
+        )
+        ts_event = millis_to_nanos(float(execution.execTime))
+        venue_order_id = VenueOrderId(execution.orderId)
+        instrument_id = self._get_cached_instrument_id(execution.symbol)
+        strategy_id = self._cache.strategy_id_for_order(execution.symbol)
+        # check if we can find the instrument
+        if instrument_id is None:
+            raise ValueError(f"Cannot handle ws trade event: instrument {instrument_id} not found")
+        if strategy_id is None:
+            # this is a trade that was not placed by us nautilus
+            print("NOT OUR TRADE")
+            report = OrderStatusReport(
+                account_id=self.account_id,
+                instrument_id=instrument_id,
+                client_order_id=execution.orderLinkId,
+                venue_order_id=venue_order_id,
+                order_side=self._enum_parser.parse_bybit_order_side(execution.side),
+                order_type=self._enum_parser.parse_bybit_order_type(execution.orderType),
+                order_status=OrderStatus.FILLED,
+                time_in_force=self._enum_parser.parse_bybit_time_in_force(execution.timeInForce),
+                quantity=Quantity.from_str(execution.qty),
+                price=Price.from_str(execution.price),
+                report_id=UUID4(),
+            )
+            self._send_order_status_report(report)
+            return
+        instrument = self._instrument_provider.find(instrument_id=instrument_id)
+        if instrument is None:
+            raise ValueError(f"Cannot handle ws trade event: instrument {instrument_id} not found")
+
+        print("dsa")
+        commission_asset: Optional[str] = instrument.quote_currency
+        commission_amount = Money(execution.execFee, commission_asset)
+        self.generate_order_filled(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            trade_id=TradeId(execution.execId),
+            order_side=self._enum_parser.parse_bybit_order_side(execution.side),
+            order_type=self._enum_parser.parse_bybit_order_type(execution.orderType),
+            last_qty=Quantity(float(execution.lastQty), instrument.size_precision),
+            last_px=Price(float(execution.execPrice), instrument.price_precision),
+            quote_currency=instrument.quote_currency,
+            commission=commission_amount,
+            ts_event=ts_event,
+        )
+
+        if strategy_id is None:
+            self._log.error(f"Cannot find strategy for order {execution.orderLinkId}")
+            return
+
+        # get order
+        # get commission
+        commission_asset: Optional[str] = instrument.quote_currency
+        commission = Money(execution.execFee, commission_asset)
+        venue_position_id: Optional[PositionId] = None
+
+        self.generate_order_filled(
+            account_id=self.account_id,
+            instrument_id=instrument_id,
+            client_order_id=execution.orderLinkId,
+            venue_order_id=execution.orderId,
+        )
+
+    def _handle_account_order_update(self, raw: bytes):
         try:
             msg = self._decoder_ws_account_order_update.decode(raw)
             for order in msg.data:
+                print(order)
                 report = order.parse_to_order_status_report(
                     account_id=self.account_id,
                     instrument_id=self._get_cached_instrument_id(order.symbol),
@@ -370,10 +497,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._send_order_status_report(report)
         except Exception as e:
             print(e)
-            print(raw)
 
     async def _disconnect(self) -> None:
         await self._ws_client.disconnect()
-
-
-

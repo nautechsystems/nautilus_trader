@@ -1,3 +1,19 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+
 import asyncio
 from typing import Optional
 
@@ -5,29 +21,31 @@ import msgspec.json
 import pandas as pd
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
-from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade,decoder_ws_ticker
+from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
+from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
-from nautilus_trader.core.uuid import UUID4
-
 from nautilus_trader.core.datetime import secs_to_millis
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import TradeTick, BarType, Bar
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.model.enums import PriceType
 
 
 class BybitWsTopicCheck(msgspec.Struct):
@@ -75,7 +93,7 @@ class BybitDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
             handler=self._handle_ws_message,
-            base_url=base_url_ws
+            base_url=base_url_ws,
         )
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
@@ -84,7 +102,7 @@ class BybitDataClient(LiveMarketDataClient):
         # web socket decoders
         self._decoders = {
             "trade": decoder_ws_trade(),
-            "ticker": decoder_ws_ticker(instrument_type)
+            "ticker": decoder_ws_ticker(instrument_type),
         }
         self._decoder_ws_topic_check = msgspec.json.Decoder(BybitWsTopicCheck)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
@@ -135,7 +153,7 @@ class BybitDataClient(LiveMarketDataClient):
         try:
             ws_message = self._decoder_ws_topic_check.decode(raw)
             self._topic_check(ws_message.topic, raw)
-        except Exception as e:
+        except Exception:
             try:
                 ws_message = self._decoder_ws_subscription.decode(raw)
                 if ws_message.success:
@@ -158,11 +176,11 @@ class BybitDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse trade tick: {raw}", e)
 
-    def _handle_ticker(self, raw: bytes)-> None:
+    def _handle_ticker(self, raw: bytes) -> None:
         try:
             msg = self._decoders["ticker"].decode(raw)
-        except Exception as e:
-            print("failed to parse ticker ",raw)
+        except Exception:
+            print("failed to parse ticker ", raw)
 
     def _topic_check(self, topic: str, raw: bytes) -> None:
         if "publicTrade" in topic:
@@ -184,7 +202,6 @@ class BybitDataClient(LiveMarketDataClient):
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
-
 
     async def _request_bars(
         self,
@@ -234,8 +251,7 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type,bars,partial,correlation_id)
-
+        self._handle_bars(bar_type, bars, partial, correlation_id)
 
     async def _disconnect(self):
         if self._update_instruments_task:
@@ -243,5 +259,3 @@ class BybitDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
         await self._ws_client.disconnect()
-
-

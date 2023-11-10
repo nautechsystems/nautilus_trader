@@ -1,4 +1,21 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
+
 from decimal import Decimal
+from optparse import Option
 from typing import Optional
 
 import msgspec
@@ -7,7 +24,8 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument, BybitInstrumentSpot, \
+    BybitInstrumentLinear, BybitInstrumentOption
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -17,6 +35,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import PRICE_MAX
 from nautilus_trader.model.objects import PRICE_MIN
 from nautilus_trader.model.objects import QUANTITY_MAX
@@ -36,7 +55,6 @@ class BybitInstrumentProvider(InstrumentProvider):
         config: Optional[InstrumentProviderConfig] = None,
     ):
         super().__init__(
-            venue=BYBIT_VENUE,
             logger=logger,
             config=config,
         )
@@ -61,7 +79,14 @@ class BybitInstrumentProvider(InstrumentProvider):
         instruments_info = await self._http_market.fetch_instruments()
         # risk_limits = await self._http_market.get_risk_limits()
         for instrument in instruments_info:
-            self._parse_instrument(instrument)
+            if self._instrument_type == BybitInstrumentType.SPOT:
+                self._parse_spot_instrument(instrument)
+            elif self._instrument_type == BybitInstrumentType.LINEAR:
+                self._parse_linear_instrument(instrument)
+            elif self._instrument_type == BybitInstrumentType.OPTION:
+                self._parse_option_instrument(instrument)
+            else:
+                raise TypeError("Unsupported instrument type in BybitInstrumentProvider")
 
     async def load_ids_async(
         self,
@@ -76,15 +101,36 @@ class BybitInstrumentProvider(InstrumentProvider):
         PyCondition.not_none(instrument_id, "instrument_id")
         PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
 
-    def _parse_instrument(
+
+    def _parse_spot_instrument(
         self,
-        instrument: BybitInstrument,
+        instrument: BybitInstrumentSpot
+    ):
+        pass
+
+    def _parse_option_instrument(
+        self,
+        instrument: BybitInstrumentOption
     ):
         try:
             base_currency = instrument.parse_to_base_currency()
             quote_currency = instrument.parse_to_quote_currency()
             raw_symbol = Symbol(instrument.symbol)
+            instrument = OptionsContract(
+                instrument_id=instrument_id,
+            )
+        except ValueError as e:
+            if self._log_warnings:
+                self._log.warning(f"Unable to parse instrument {instrument.symbol}, {e}.")
 
+    def _parse_linear_instrument(
+        self,
+        instrument: BybitInstrumentLinear,
+    ):
+        try:
+            base_currency = instrument.parse_to_base_currency()
+            quote_currency = instrument.parse_to_quote_currency()
+            raw_symbol = Symbol(instrument.symbol)
             parsed_symbol = BybitSymbol(raw_symbol.value).parse_as_nautilus(self._instrument_type)
             nautilus_symbol = Symbol(parsed_symbol)
             instrument_id = InstrumentId(symbol=nautilus_symbol, venue=BYBIT_VENUE)
@@ -97,8 +143,8 @@ class BybitInstrumentProvider(InstrumentProvider):
 
             tick_size = instrument.priceFilter.tickSize.rstrip("0")
             step_size = instrument.lotSizeFilter.qtyStep.rstrip("0")
-            price_precision = abs(int(Decimal(instrument.priceFilter.tickSize).as_tuple().exponent))
-            size_precision = abs(int(Decimal(instrument.lotSizeFilter.qtyStep).as_tuple().exponent))
+            price_precision = abs(int(Decimal(tick_size).as_tuple().exponent))
+            size_precision = abs(int(Decimal(step_size).as_tuple().exponent))
             price_increment = Price.from_str(tick_size)
             size_increment = Quantity.from_str(step_size)
             PyCondition.in_range(float(tick_size), PRICE_MIN, PRICE_MAX, "tick_size")

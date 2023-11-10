@@ -23,7 +23,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
-class BybitOrder(msgspec.Struct,omit_defaults=True,kw_only=True):
+class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     orderId: str
     orderLinkId: str
     blockTradeId: Optional[str] = None
@@ -123,14 +123,16 @@ class BybitOpenOrdersResponseStruct(msgspec.Struct):
     result: BybitListResult(BybitOrder)
     time: int
 
+
 ################################################################################
 # Place Order
 ################################################################################
 
 
 class BybitPlaceOrder(msgspec.Struct):
-    orderId:str
-    orderLinkId:str
+    orderId: str
+    orderLinkId: str
+
 
 class BybitPlaceOrderResponse(msgspec.Struct):
     retCode: int
@@ -138,12 +140,15 @@ class BybitPlaceOrderResponse(msgspec.Struct):
     result: BybitPlaceOrder
     time: int
 
+
 ################################################################################
 # Cancel All Orders
 ################################################################################
 class BybitCancelAllOrders(msgspec.Struct):
-    orderId:str
-    orderLinkId:str
+    orderId: str
+    orderLinkId: str
+
+
 class BybitCancelAllOrdersResponse(msgspec.Struct):
     retCode: int
     retMsg: str

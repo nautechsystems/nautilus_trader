@@ -31,5 +31,5 @@ class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
         raw = await self._method(self.http_method, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception as e:
+        except Exception:
             raise RuntimeError(f"Failed to decode response wallet balance response: {raw}")

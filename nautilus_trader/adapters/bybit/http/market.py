@@ -1,9 +1,11 @@
 from typing import Optional
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType, BybitKlineInterval
-from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint, \
-    BybitInstrumentsInfoGetParameters
-from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint, BybitKlinesGetParameters
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
+from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
+from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
+from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParameters
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
@@ -14,8 +16,8 @@ from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_ty
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-
-from nautilus_trader.model.data import BarType, Bar
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
 
 
 class BybitMarketHttpAPI:
@@ -71,12 +73,9 @@ class BybitMarketHttpAPI:
                 limit=limit,
                 start=start,
                 end=end,
-            )
+            ),
         )
         return response.result.list
-
-
-
 
     async def request_bybit_bars(
         self,
@@ -96,19 +95,16 @@ class BybitMarketHttpAPI:
                 start=start,
                 end=end,
             )
-            bars: list[Bar] = [
-                kline.parse_to_bar(bar_type,ts_init) for kline in klines
-            ]
+            bars: list[Bar] = [kline.parse_to_bar(bar_type, ts_init) for kline in klines]
             all_bars.extend(bars)
             if klines:
-                next_start_time = int(klines[-1].startTime)+ 1
+                next_start_time = int(klines[-1].startTime) + 1
             else:
                 break
             if end is None or ((limit and len(klines) < limit) or next_start_time > end):
                 break
             start = next_start_time
         return all_bars
-
 
     async def get_risk_limits(self):
         params = {"category": "linear"}

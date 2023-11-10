@@ -2,8 +2,12 @@ from typing import Optional
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType, BybitOrderSide, BybitOrderType, \
-    BybitTriggerType, BybitTimeInForce, BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
@@ -17,7 +21,7 @@ class BybitPlaceOrderGetParameters(msgspec.Struct, omit_defaults=True, frozen=Fa
     qty: str
     orderType: Optional[BybitOrderType] = None
     price: Optional[str] = None
-    trigger_direction: Optional[int] = None # TODO type this
+    trigger_direction: Optional[int] = None  # TODO type this
     trigger_price: Optional[str] = None
     trigger_by: Optional[BybitTriggerType] = None
     timeInForce: Optional[BybitTimeInForce] = None
@@ -25,7 +29,6 @@ class BybitPlaceOrderGetParameters(msgspec.Struct, omit_defaults=True, frozen=Fa
 
 
 class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
-
     def __init__(
         self,
         client: BybitHttpClient,
@@ -44,6 +47,5 @@ class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
         raw = await self._method(method_type, parameters)
         try:
             return self._resp_decoder.decode(raw)
-        except Exception as e:
+        except Exception:
             raise RuntimeError(f"Failed to decode response place order response: {raw}")
-

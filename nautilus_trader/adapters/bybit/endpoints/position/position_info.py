@@ -30,10 +30,10 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitPositionResponseStruct)
 
-    async def _get(self, parameters: PositionInfoGetParameters) -> BybitPositionResponseStruct:
+    async def get(self, parameters: PositionInfoGetParameters) -> BybitPositionResponseStruct:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception as e:
+        except Exception:
             raise RuntimeError(f"Failed to decode response position info response: {raw}")
