@@ -1089,6 +1089,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         use_rth: bool,
         end_date_time: str,
         duration: str,
+        timeout: int = 60,
     ):
         name = str(bar_type)
         if not (request := self.requests.get(name=name)):
@@ -1114,7 +1115,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._await_request(request, 60)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
 

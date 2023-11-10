@@ -128,6 +128,7 @@ class HistoricInteractiveBrokersClient:
         contracts: list[IBContract] | None = None,
         instrument_ids: list[str] | None = None,
         use_rth: bool = True,
+        timeout: int = 120,
     ) -> list[Bar]:
         """
         Return Bars for one or more bar specifications for a list of IBContracts and/or
@@ -154,6 +155,8 @@ class HistoricInteractiveBrokersClient:
             Instrument IDs (e.g. AAPL.NASDAQ) defining which bars to retrieve.
         use_rth : bool, default 'True'
             Whether to use regular trading hours.
+        timeout : int, default '120'
+            The timeout in seconds for each request.
 
         Returns
         -------
@@ -202,15 +205,15 @@ class HistoricInteractiveBrokersClient:
                     BarSpecification.from_str(bar_spec),
                     AggregationSource.EXTERNAL,
                 )
-                for duration_segment in self._calculate_duration_segments(
+
+                for segment_end_date_time, segment_duration in self._calculate_duration_segments(
                     start_date_time,
                     end_date_time,
+                    duration,
                 ):
-                    segment_end_date_time = duration_segment["date"]
-                    duration = duration_segment["duration"]
-
                     self.log.info(
-                        f"{instrument_id}: Requesting historical bars: {bar_type} ending on '{end_date_time}' with duration '{duration}'",
+                        f"{instrument_id}: Requesting historical bars: {bar_type} ending on '{segment_end_date_time}' "
+                        "with duration '{segment_duration}'",
                     )
 
                     bars = await self._client.get_historical_bars(
@@ -218,7 +221,8 @@ class HistoricInteractiveBrokersClient:
                         contract,
                         use_rth,
                         segment_end_date_time.strftime("%Y%m%d-%H:%M:%S"),
-                        duration,
+                        segment_duration,
+                        timeout=timeout,
                     )
                     if bars:
                         self.log.info(
@@ -399,34 +403,50 @@ class HistoricInteractiveBrokersClient:
                 self.log.info(f"Fetching Instrument for: {instrument_id}")
                 await self.request_instruments(contracts=[contract])
 
-    def _calculate_duration_segments(self, start_date, end_date):
+    def _calculate_duration_segments(
+        self,
+        start_date: pd.Timestamp | None,
+        end_date: pd.Timestamp,
+        duration: str | None,
+    ) -> list[tuple[pd.Timestamp, str]]:
         """
         Calculate the difference in years, days, and seconds between two dates for the
         purpose of requesting specific date ranges for historical bars.
 
-        This function breaks down the time difference between two provided dates (start_date and end_date) into
-        separate components: years, days, and seconds. It accounts for leap years in its calculation of years and
-        considers detailed time components (hours, minutes, seconds) for precise calculation of seconds.
+        This function breaks down the time difference between two provided dates (start_date
+        and end_date) into separate components: years, days, and seconds. It accounts for leap
+        years in its calculation of years and considers detailed time components (hours, minutes,
+        seconds) for precise calculation of seconds.
 
-        Each component of the time difference (years, days, seconds) is represented as a dictionary in the returned list.
-        The 'date' key in each dictionary indicates the end point of that time segment when moving from start_date to end_date.
-        For example, if the function calculates 1 year, the 'date' key for the year entry will be the end date after 1 year
-        has passed from start_date. This helps in understanding the progression of time from start_date to end_date in segmented intervals.
+        Each component of the time difference (years, days, seconds) is represented as a
+        tuple in the returned list.
+        The first element is the date that indicates the end point of that time segment
+        when moving from start_date to end_date. For example, if the function calculates 1
+        year, the date for the year entry will be the end date after 1 year has passed
+        from start_date. This helps in understanding the progression of time from start_date
+        to end_date in segmented intervals.
 
         Parameters
         ----------
-        start_date : pd.Timestamp
+        start_date : pd.Timestamp | None
             The starting date and time.
         end_date : pd.Timestamp
             The ending date and time.
+        duration : str
+            The amount of time to go back from the end_date_time.
+            Valid values follow the pattern of an integer followed by S|D|W|M|Y
+            for seconds, days, weeks, months, or years respectively.
 
         Returns
         -------
-        list: A list of dictionaries, each containing a 'date' and a 'duration' key.
-            The 'date' key represents the end point of each calculated time segment (year, day, second),
-            and the 'duration' key holds the length of the time segment as a string.
+        tuple[pd.Timestamp, str]: A list of tuples, each containing a date and a duration.
+            The date represents the end point of each calculated time segment (year, day, second),
+            and the duration is the length of the time segment as a string.
 
         """
+        if duration:
+            return [(end_date, duration)]
+
         total_delta = end_date - start_date
 
         # Calculate full years in the time delta
@@ -455,13 +475,13 @@ class HistoricInteractiveBrokersClient:
 
         results = []
         if years:
-            results.append({"date": end_date, "duration": f"{years} Y"})
+            results.append((end_date, f"{years} Y"))
 
         if days:
-            results.append({"date": minus_years_date, "duration": f"{days} D"})
+            results.append((minus_years_date, f"{days} D"))
 
         if seconds:
-            results.append({"date": minus_days_date, "duration": f"{seconds} S"})
+            results.append((minus_days_date, f"{seconds} S"))
 
         return results
 
