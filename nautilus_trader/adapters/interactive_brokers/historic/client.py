@@ -6,12 +6,15 @@ from typing import Literal
 import pandas as pd
 from ibapi.common import MarketDataTypeEnum
 
+# fmt: off
 from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProviderConfig
+
+# fmt: on
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -461,6 +464,7 @@ class HistoricInteractiveBrokersClient:
             results.append({"date": minus_days_date, "duration": f"{seconds} S"})
 
         return results
+
 
 # will remove this post testing and review
 async def main():
