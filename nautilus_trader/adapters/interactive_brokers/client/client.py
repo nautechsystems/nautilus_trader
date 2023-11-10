@@ -1089,6 +1089,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         use_rth: bool,
         end_date_time: str,
         duration: str,
+        timeout: int = 60,
     ):
         name = str(bar_type)
         if not (request := self.requests.get(name=name)):
@@ -1114,7 +1115,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._await_request(request, 20)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
 
@@ -1294,9 +1295,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         contract: IBContract,
         tick_type: str,
-        end_date_time: pd.Timestamp,
-        use_rth: bool,
+        start_date_time: pd.Timestamp | str = "",
+        end_date_time: pd.Timestamp | str = "",
+        use_rth: bool = True,
     ):
+        if isinstance(start_date_time, pd.Timestamp):
+            start_date_time = start_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+        if isinstance(end_date_time, pd.Timestamp):
+            end_date_time = end_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+
         name = (str(ib_contract_to_instrument_id(contract)), tick_type)
         if not (request := self.requests.get(name=name)):
             req_id = self._next_req_id()
@@ -1307,8 +1314,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     self._client.reqHistoricalTicks,
                     reqId=req_id,
                     contract=contract,
-                    startDateTime="",
-                    endDateTime=end_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
+                    startDateTime=start_date_time,
+                    endDateTime=end_date_time,
                     numberOfTicks=1000,
                     whatToShow=tick_type,
                     useRth=use_rth,
@@ -1318,13 +1325,19 @@ class InteractiveBrokersClient(Component, EWrapper):
                 cancel=functools.partial(self._client.cancelHistoricalData, reqId=req_id),
             )
             request.handle()
-            return await self._await_request(request, 20)
+            return await self._await_request(request, 60)
         else:
             self._log.info(f"Request already exist for {request}")
 
-    def historicalTicksBidAsk(self, req_id: int, ticks: list, done: bool):
+    def historicalTicksBidAsk(
+        self,
+        req_id: int,
+        ticks: list,
+        done: bool,
+    ):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
-
+        if not done:
+            return
         if request := self.requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
@@ -1335,8 +1348,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     instrument_id=instrument_id,
                     bid_price=instrument.make_price(tick.priceBid),
                     ask_price=instrument.make_price(tick.priceAsk),
-                    bid_size=instrument.make_price(tick.sizeBid),
-                    ask_size=instrument.make_price(tick.sizeAsk),
+                    bid_size=instrument.make_qty(tick.sizeBid),
+                    ask_size=instrument.make_qty(tick.sizeAsk),
                     ts_event=ts_event,
                     ts_init=ts_event,
                 )
@@ -1344,12 +1357,16 @@ class InteractiveBrokersClient(Component, EWrapper):
 
             self._end_request(req_id)
 
-    def historicalTicksLast(self, req_id: int, ticks: list, done: bool):
+    def historicalTicksLast(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
+        if not done:
+            return
         self._process_trade_ticks(req_id, ticks)
 
-    def historicalTicks(self, req_id: int, ticks: list, done: bool):
+    def historicalTicks(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
+        if not done:
+            return
         self._process_trade_ticks(req_id, ticks)
 
     def _process_trade_ticks(self, req_id: int, ticks: list):
