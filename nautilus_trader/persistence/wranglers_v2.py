@@ -65,13 +65,6 @@ class WranglerBase(abc.ABC):
             **{k.decode(): decode(k, v) for k, v in metadata.items() if k not in cls.IGNORE_KEYS},
         )
 
-    def scale_column(
-        self,
-        column: pd.Series,
-        dtype: pd.core.arrays.integer.IntegerDtype,
-    ) -> pd.Series:
-        return (column * 1e9).round().astype(dtype())
-
 
 class OrderBookDeltaDataWrangler(WranglerBase):
     """
@@ -146,10 +139,10 @@ class OrderBookDeltaDataWrangler(WranglerBase):
         )
 
         # Scale prices and quantities
-        df["price"] = super().scale_column(df["price"], pd.Int64Dtype)
-        df["size"] = super().scale_column(df["size"], pd.UInt64Dtype)
+        df["price"] = (df["price"] * 1e9).astype(pd.Int64Dtype())
+        df["size"] = (df["size"] * 1e9).round().astype(pd.UInt64Dtype())
 
-        df["order_id"] = super().scale_column(df["order_id"], pd.UInt64Dtype)
+        df["order_id"] = df["order_id"].astype(pd.UInt64Dtype())
 
         # Process timestamps
         df["ts_event"] = (
@@ -254,17 +247,17 @@ class QuoteTickDataWrangler(WranglerBase):
         )
 
         # Scale prices and quantities
-        df["bid_price"] = super().scale_column(df["bid_price"], pd.Int64Dtype)
-        df["ask_price"] = super().scale_column(df["ask_price"], pd.Int64Dtype)
+        df["bid_price"] = (df["bid_price"] * 1e9).astype(pd.Int64Dtype())
+        df["ask_price"] = (df["ask_price"] * 1e9).astype(pd.Int64Dtype())
 
         # Create bid_size and ask_size columns
         if "bid_size" in df.columns:
-            df["bid_size"] = super().scale_column(df["bid_size"], pd.Int64Dtype)
+            df["bid_size"] = (df["bid_size"] * 1e9).astype(pd.Int64Dtype())
         else:
             df["bid_size"] = pd.Series([default_size * 1e9] * len(df), dtype=pd.UInt64Dtype())
 
         if "ask_size" in df.columns:
-            df["ask_size"] = super().scale_column(df["ask_size"], pd.Int64Dtype)
+            df["ask_size"] = (df["ask_size"] * 1e9).astype(pd.Int64Dtype())
         else:
             df["ask_size"] = pd.Series([default_size * 1e9] * len(df), dtype=pd.UInt64Dtype())
 
@@ -375,8 +368,8 @@ class TradeTickDataWrangler(WranglerBase):
         )
 
         # Scale prices and quantities
-        df["price"] = super().scale_column(df["price"], pd.Int64Dtype)
-        df["size"] = super().scale_column(df["size"], pd.UInt64Dtype)
+        df["price"] = (df["price"] * 1e9).astype(pd.Int64Dtype())
+        df["size"] = (df["size"] * 1e9).round().astype(pd.UInt64Dtype())
 
         df["aggressor_side"] = df["aggressor_side"].map(_map_aggressor_side).astype(pd.UInt8Dtype())
         df["trade_id"] = df["trade_id"].astype(str)
@@ -488,22 +481,14 @@ class BarDataWrangler(WranglerBase):
         # Rename column
         df = df.rename(columns={"timestamp": "ts_event"})
 
-        # Check required columns
-        required_columns = {"open", "high", "low", "close", "ts_event"}
-        missing_columns = required_columns - set(df.columns)
-        if missing_columns:
-            raise ValueError(f"Missing columns: {missing_columns}")
-
-        # Scale OHLC
-        df["open"] = super().scale_column(df["open"], pd.Int64Dtype)
-        df["high"] = super().scale_column(df["high"], pd.Int64Dtype)
-        df["low"] = super().scale_column(df["low"], pd.Int64Dtype)
-        df["close"] = super().scale_column(df["close"], pd.Int64Dtype)
+        # Scale prices and quantities
+        df["open"] = (df["open"] * 1e9).astype(pd.Int64Dtype())
+        df["high"] = (df["high"] * 1e9).astype(pd.Int64Dtype())
+        df["low"] = (df["low"] * 1e9).astype(pd.Int64Dtype())
+        df["clow"] = (df["close"] * 1e9).astype(pd.Int64Dtype())
 
         if "volume" not in df.columns:
             df["volume"] = pd.Series([default_volume * 1e9] * len(df), dtype=pd.UInt64Dtype())
-
-        df["volume"] = super().scale_column(df["volume"], pd.UInt64Dtype)
 
         # Process timestamps
         df["ts_event"] = (

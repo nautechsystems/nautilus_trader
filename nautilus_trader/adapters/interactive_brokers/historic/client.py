@@ -31,7 +31,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
 class HistoricInteractiveBrokersClient:
@@ -484,60 +483,3 @@ class HistoricInteractiveBrokersClient:
             results.append((minus_days_date, f"{seconds} S"))
 
         return results
-
-
-# will remove this post testing and review
-async def main():
-    contract = IBContract(
-        secType="STK",
-        symbol="AAPL",
-        exchange="SMART",
-        primaryExchange="NASDAQ",
-    )
-    instrument_id = "TSLA.NASDAQ"
-
-    client = HistoricInteractiveBrokersClient(port=4002, client_id=5)
-    await client._connect()
-    await asyncio.sleep(2)
-
-    instruments = await client.request_instruments(
-        contracts=[contract],
-        instrument_ids=[instrument_id],
-    )
-
-    bars = await client.request_bars(
-        bar_specifications=["1-DAY-LAST", "8-HOUR-MID"],
-        start_date_time=datetime.datetime(2022, 10, 15, 3),
-        end_date_time=datetime.datetime(2023, 11, 1),
-        tz_name="America/New_York",
-        contracts=[contract],
-        instrument_ids=[instrument_id],
-    )
-
-    trade_ticks = await client.request_ticks(
-        "TRADES",
-        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
-        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
-        tz_name="America/New_York",
-        contracts=[contract],
-        instrument_ids=[instrument_id],
-    )
-
-    quote_ticks = await client.request_ticks(
-        "BID_ASK",
-        start_date_time=datetime.datetime(2023, 11, 6, 10, 0),
-        end_date_time=datetime.datetime(2023, 11, 6, 10, 1),
-        tz_name="America/New_York",
-        contracts=[contract],
-        instrument_ids=[instrument_id],
-    )
-
-    catalog = ParquetDataCatalog("./catalog")
-    catalog.write_data(instruments)
-    catalog.write_data(bars)
-    catalog.write_data(trade_ticks)
-    catalog.write_data(quote_ticks)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
