@@ -71,37 +71,17 @@ impl From<&str> for Symbol {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::symbol::Symbol;
-
-    #[fixture]
-    pub fn eth_perp() -> Symbol {
-        Symbol::from("ETH-PERP")
-    }
-
-    #[fixture]
-    pub fn aud_usd() -> Symbol {
-        Symbol::from("AUDUSD")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, Symbol};
+    use crate::identifiers::{stubs::*, symbol::Symbol};
 
     #[rstest]
-    fn test_string_reprs(eth_perp: Symbol) {
-        assert_eq!(eth_perp.to_string(), "ETH-PERP");
-        assert_eq!(format!("{eth_perp}"), "ETH-PERP");
+    fn test_string_reprs(symbol_eth_perp: Symbol) {
+        assert_eq!(symbol_eth_perp.to_string(), "ETH-PERP");
+        assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
     }
 }

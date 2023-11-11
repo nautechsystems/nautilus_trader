@@ -15,4 +15,5 @@
 
 pub mod clock;
 pub mod logging;
+pub mod msgbus;
 pub mod timer;

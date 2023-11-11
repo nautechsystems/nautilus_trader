@@ -82,7 +82,7 @@ class TestIdStubs:
 
         return betfair_instrument_id(
             market_id="1.179082386",
-            selection_id="50214",
+            selection_id=50214,
             selection_handicap=None,
         )
 

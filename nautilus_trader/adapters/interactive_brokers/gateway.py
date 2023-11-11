@@ -45,7 +45,7 @@ class InteractiveBrokersGateway:
     A class to manage starting an Interactive Brokers Gateway docker container.
     """
 
-    IMAGE: ClassVar[str] = "ghcr.io/unusualalpha/ib-gateway:stable"
+    IMAGE: ClassVar[str] = "ghcr.io/unusualalpha/ib-gateway:10.19"
     CONTAINER_NAME: ClassVar[str] = "nautilus-ib-gateway"
     PORTS: ClassVar[dict[str, int]] = {"paper": 4002, "live": 4001}
 

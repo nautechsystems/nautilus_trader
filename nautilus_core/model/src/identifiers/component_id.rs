@@ -63,28 +63,14 @@ impl From<&str> for ComponentId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::component_id::ComponentId;
-
-    #[fixture]
-    pub fn component_risk_engine() -> ComponentId {
-        ComponentId::from("RiskEngine")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, ComponentId};
+    use super::ComponentId;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(component_risk_engine: ComponentId) {

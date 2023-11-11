@@ -12,3 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+# fmt: off
+from nautilus_trader.adapters.interactive_brokers.historic.client import HistoricInteractiveBrokersClient
+
+
+# fmt: on
+
+__all__ = [
+    "HistoricInteractiveBrokersClient",
+]

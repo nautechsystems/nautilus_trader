@@ -52,6 +52,7 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import SyntheticInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -524,20 +525,20 @@ class TestInstrumentProvider:
         return BettingInstrument(
             venue_name=venue or "BETFAIR",
             betting_type="ODDS",
-            competition_id="12282733",
+            competition_id=12282733,
             competition_name="NFL",
             event_country_code="GB",
-            event_id="29678534",
+            event_id=29678534,
             event_name="NFL",
             event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
+            event_type_id=6423,
             event_type_name="American Football",
             market_id="1.123456789",
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap=None,
-            selection_id="50214",
+            selection_handicap=null_handicap(),
+            selection_id=50214,
             selection_name="Kansas City Chiefs",
             currency="GBP",
             ts_event=0,

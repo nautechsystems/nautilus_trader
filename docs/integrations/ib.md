@@ -53,7 +53,7 @@ The adapter is comprised of the following major components:
 - `InteractiveBrokersClient` which uses `ibapi` to execute TWS API requests, supporting all other integration classes.
 - `HistoricInteractiveBrokersClient` which provides a straightforward way to retrieve instruments and historical bar and tick data to load into the catalog (generally for backtesting).
 - `InteractiveBrokersInstrumentProvider` which retrieves or queries instruments for trading.
-- `InteractiveBrokersDataClient` which streams market data for trading.
+- `InteractiveBrokersDataClient` which connects to the `Gateway` and streams market data for trading.
 - `InteractiveBrokersExecutionClient` which retrieves account information and executes orders for trading.
 
 ## Instruments & Contracts

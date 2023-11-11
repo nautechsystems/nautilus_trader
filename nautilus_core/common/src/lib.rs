@@ -15,15 +15,15 @@
 
 pub mod clock;
 pub mod enums;
-pub mod logging;
-pub mod msgbus;
-pub mod testing;
-pub mod timer;
-
 #[cfg(feature = "ffi")]
 pub mod ffi;
+pub mod generators;
+pub mod logging;
+pub mod msgbus;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod testing;
+pub mod timer;
 
 #[cfg(feature = "test")]
 pub mod stubs {

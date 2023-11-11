@@ -322,7 +322,7 @@ def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
 
     security_type = contract.secType
     if security_type == "STK":
-        symbol = contract.localSymbol.replace(" ", "-")
+        symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
         venue = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
     elif security_type == "OPT":
         symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")

@@ -377,8 +377,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             ticks_part = await self._client.get_historical_ticks(
                 contract,
                 tick_type,
-                end,
-                self._use_regular_trading_hours,
+                end_date_time=end,
+                use_rth=self._use_regular_trading_hours,
             )
             if not ticks_part:
                 break

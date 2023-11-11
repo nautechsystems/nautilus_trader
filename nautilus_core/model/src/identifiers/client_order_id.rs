@@ -92,21 +92,6 @@ impl From<&str> for ClientOrderId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::client_order_id::ClientOrderId;
-
-    #[fixture]
-    pub fn client_order_id() -> ClientOrderId {
-        ClientOrderId::from("O-20200814-102234-001-001-1")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -114,9 +99,12 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::{stubs::*, ClientOrderId};
-    use crate::identifiers::client_order_id::{
-        optional_ustr_to_vec_client_order_ids, optional_vec_client_order_ids_to_ustr,
+    use super::ClientOrderId;
+    use crate::identifiers::{
+        client_order_id::{
+            optional_ustr_to_vec_client_order_ids, optional_vec_client_order_ids_to_ustr,
+        },
+        stubs::*,
     };
 
     #[rstest]
