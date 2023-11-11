@@ -36,6 +36,10 @@ class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
     password : str, optional
         The Interactive Brokers account password.
         If ``None`` then will source the `TWS_PASSWORD`.
+    host : str, optional
+        The hostname or ip address for the IB Gateway or TWS.
+    port : int, optional
+        The port for the gateway server ("paper" 4002, or "live" 4001).
     trading_mode: str
         paper or live.
     start: bool, optional
@@ -49,7 +53,7 @@ class InteractiveBrokersGatewayConfig(NautilusConfig, frozen=True):
 
     username: str | None = None
     password: str | None = None
-    host: str | None = "localhost"
+    host: str | None = "127.0.0.1"
     port: Literal[4001, 4002] | None = None
     trading_mode: Literal["paper", "live"] = "paper"
     start: bool = False

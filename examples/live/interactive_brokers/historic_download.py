@@ -15,13 +15,24 @@
 # -------------------------------------------------------------------------------------------------
 import asyncio
 import datetime
+import os
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 from nautilus_trader.adapters.interactive_brokers.historic import HistoricInteractiveBrokersClient
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
 async def main():
+    gateway_config = InteractiveBrokersGatewayConfig(
+        username=os.environ["TWS_USERNAME"],
+        password=os.environ["TWS_PASSWORD"],
+        port=4002,
+    )
+    gateway = InteractiveBrokersGateway(config=gateway_config)
+    gateway.start()
+
     contract = IBContract(
         secType="STK",
         symbol="AAPL",
@@ -41,9 +52,9 @@ async def main():
 
     bars = await client.request_bars(
         bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
+        start_date_time=datetime.datetime(2023, 11, 6, 9, 30),
         end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
         tz_name="America/New_York",
-        duration="1 D",
         contracts=[contract],
         instrument_ids=[instrument_id],
     )
@@ -65,6 +76,8 @@ async def main():
         contracts=[contract],
         instrument_ids=[instrument_id],
     )
+
+    gateway.stop()
 
     catalog = ParquetDataCatalog("./catalog")
     catalog.write_data(instruments)

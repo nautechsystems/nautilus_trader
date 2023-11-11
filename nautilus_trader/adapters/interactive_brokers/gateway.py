@@ -43,7 +43,7 @@ class InteractiveBrokersGateway:
     A class to manage starting an Interactive Brokers Gateway docker container.
     """
 
-    IMAGE: ClassVar[str] = "ghcr.io/unusualalpha/ib-gateway:10.19"
+    IMAGE: ClassVar[str] = "ghcr.io/gnzsnz/ib-gateway:stable"
     CONTAINER_NAME: ClassVar[str] = "nautilus-ib-gateway"
     PORTS: ClassVar[dict[str, int]] = {"paper": 4002, "live": 4001}
 
@@ -51,7 +51,7 @@ class InteractiveBrokersGateway:
         self,
         username: str | None = None,
         password: str | None = None,
-        host: str | None = "localhost",
+        host: str | None = "127.0.0.1",
         port: int | None = None,
         trading_mode: Literal["paper", "live"] | None = "paper",
         start: bool = False,
@@ -72,9 +72,9 @@ class InteractiveBrokersGateway:
 
         self.username = username or os.getenv("TWS_USERNAME")
         self.password = password or os.getenv("TWS_PASSWORD")
-        if username is None:
+        if self.username is None:
             raise ValueError("`username` not set nor available in env `TWS_USERNAME`")
-        if password is None:
+        if self.password is None:
             raise ValueError("`password` not set nor available in env `TWS_PASSWORD`")
 
         self.trading_mode = trading_mode
@@ -158,7 +158,11 @@ class InteractiveBrokersGateway:
             name=f"{self.CONTAINER_NAME}-{self.port}",
             restart_policy={"Name": "always"},
             detach=True,
-            ports={str(self.port): self.PORTS[self.trading_mode], str(self.port + 100): "5900"},
+            ports={
+                "4003": (self.host, 4001),
+                "4004": (self.host, 4002),
+                "5900": (self.host, 5900),
+            },
             platform="amd64",
             environment={
                 "TWS_USERID": self.username,

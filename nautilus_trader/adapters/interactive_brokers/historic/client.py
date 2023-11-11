@@ -212,7 +212,7 @@ class HistoricInteractiveBrokersClient:
                 ):
                     self.log.info(
                         f"{instrument_id}: Requesting historical bars: {bar_type} ending on '{segment_end_date_time}' "
-                        "with duration '{segment_duration}'",
+                        f"with duration '{segment_duration}'",
                     )
 
                     bars = await self._client.get_historical_bars(
@@ -243,6 +243,7 @@ class HistoricInteractiveBrokersClient:
         contracts: list[IBContract] | None = None,
         instrument_ids: list[str] | None = None,
         use_rth: bool = True,
+        timeout: int = 60,
     ) -> list[TradeTick | QuoteTick]:
         """
         Return TradeTicks or QuoteTicks for one or more bar specifications for a list of
@@ -264,6 +265,8 @@ class HistoricInteractiveBrokersClient:
             Instrument IDs (e.g. AAPL.NASDAQ) defining which ticks to retrieve.
         use_rth : bool, default 'True'
             Whether to use regular trading hours.
+        timeout : int, default '60'
+            The timeout in seconds for each request.
 
         Returns
         -------
@@ -316,6 +319,7 @@ class HistoricInteractiveBrokersClient:
                     tick_type=tick_type,
                     start_date_time=current_start_date_time,
                     use_rth=use_rth,
+                    timeout=timeout,
                 )
 
                 if not ticks:
