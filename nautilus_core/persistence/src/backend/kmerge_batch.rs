@@ -308,7 +308,7 @@ mod tests {
         let mut kmerge: KMerge<_, u64, _> = KMerge::new(OrdComparator);
 
         let copy_data = all_data.clone();
-        for stream in copy_data.into_iter() {
+        for stream in copy_data {
             let input = stream.0.into_iter().map(std::iter::IntoIterator::into_iter);
             kmerge.push_iter(input);
         }
