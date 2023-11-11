@@ -72,6 +72,7 @@ redis = {version = "^5.0.1", optional = true}
 async-timeout = {version = "^4.0.3", optional = true}
 nautilus_ibapi = {version = "==10.19.1", optional = true}  # Pinned for stability
 betfair_parser = {version = "==0.9.1", optional = true}  # Pinned for stability
+web3 = "^6.11.3"
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
