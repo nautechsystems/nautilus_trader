@@ -17,7 +17,7 @@ use nautilus_model::identifiers::strategy_id::StrategyId;
 
 pub mod client_order_id;
 pub mod order_list_id;
-pub mod position_id_generator;
+pub mod position_id;
 
 pub trait IdentifierGenerator<T> {
     fn set_count(&mut self, count: usize, strategy_id: Option<StrategyId>);
