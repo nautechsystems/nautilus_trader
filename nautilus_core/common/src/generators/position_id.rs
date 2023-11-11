@@ -93,7 +93,7 @@ mod tests {
 
     use crate::{
         clock::TestClock,
-        generators::{position_id_generator::PositionIdGenerator, IdentifierGenerator},
+        generators::{position_id::PositionIdGenerator, IdentifierGenerator},
     };
 
     fn get_position_id_generator() -> PositionIdGenerator {
