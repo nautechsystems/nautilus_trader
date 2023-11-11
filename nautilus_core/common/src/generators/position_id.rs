@@ -30,6 +30,7 @@ pub struct PositionIdGenerator {
 }
 
 impl PositionIdGenerator {
+    #[must_use]
     pub fn new(trader_id: TraderId, clock: Box<dyn Clock>) -> Self {
         Self {
             trader_id,
@@ -46,6 +47,7 @@ impl PositionIdGenerator {
         self.counts.clear();
     }
 
+    #[must_use]
     pub fn count(&self, strategy_id: StrategyId) -> usize {
         *self.counts.get(&strategy_id).unwrap_or(&0)
     }
@@ -58,10 +60,7 @@ impl PositionIdGenerator {
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = strategy.get_tag();
         let flipped = if flipped { "F" } else { "" };
-        let id = format!(
-            "P-{}-{}-{}-{}{}",
-            datetime_tag, trader_tag, strategy_tag, next_count, flipped
-        );
+        let id = format!("P-{datetime_tag}-{trader_tag}-{strategy_tag}-{next_count}{flipped}");
         PositionId::from(id.as_str())
     }
 }
