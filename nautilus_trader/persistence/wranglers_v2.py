@@ -29,7 +29,6 @@ from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
 from nautilus_trader.core.nautilus_pyo3 import QuoteTickDataWrangler as RustQuoteTickDataWrangler
 from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
 from nautilus_trader.core.nautilus_pyo3 import TradeTickDataWrangler as RustTradeTickDataWrangler
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -413,8 +412,13 @@ class BarDataWrangler(WranglerBase):
 
     Parameters
     ----------
-    instrument : Instrument
-        The instrument for the data wrangler.
+    bar_type : str
+        The bar type for the data wrangler. For example,
+        "GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"
+    price_precision: int
+        The price precision for the data wrangler.
+    size_precision: int
+        The size precision for the data wrangler.
 
     Warnings
     --------
@@ -425,7 +429,7 @@ class BarDataWrangler(WranglerBase):
 
     def __init__(
         self,
-        bar_type: BarType,
+        bar_type: str,
         price_precision: int,
         size_precision: int,
     ) -> None:
@@ -471,7 +475,7 @@ class BarDataWrangler(WranglerBase):
         Returns
         -------
         list[RustBar]
-            A list of PyO3 [pyclass] `TradeTick` objects.
+            A list of PyO3 [pyclass] `Bar` objects.
 
         """
         # Rename column

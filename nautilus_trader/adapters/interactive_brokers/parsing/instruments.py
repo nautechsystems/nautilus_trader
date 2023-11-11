@@ -20,6 +20,7 @@ from decimal import Decimal
 
 import msgspec
 import pandas as pd
+from ibapi.contract import ContractDetails
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -116,6 +117,12 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "BOND": "BOND",
     }
     return asset_class_from_str(mapping.get(sec_type, sec_type))
+
+
+def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContractDetails:
+    details.contract = IBContract(**details.contract.__dict__)
+    details = IBContractDetails(**details.__dict__)
+    return details
 
 
 def parse_instrument(
