@@ -178,7 +178,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 makerCommissionRate=fee_rates.maker,
                 takerCommissionRate=fee_rates.taker,
             )
-            # fetch position risk
+            # Fetch position risk
             if symbol not in position_risk:
                 self._log.error(f"Position risk not found for {symbol}.")
                 continue

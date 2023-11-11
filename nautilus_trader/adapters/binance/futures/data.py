@@ -49,7 +49,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
