@@ -1298,6 +1298,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         start_date_time: pd.Timestamp | str = "",
         end_date_time: pd.Timestamp | str = "",
         use_rth: bool = True,
+        timeout: int = 60,
     ):
         if isinstance(start_date_time, pd.Timestamp):
             start_date_time = start_date_time.strftime("%Y%m%d %H:%M:%S %Z")
@@ -1325,7 +1326,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 cancel=functools.partial(self._client.cancelHistoricalData, reqId=req_id),
             )
             request.handle()
-            return await self._await_request(request, 60)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
 

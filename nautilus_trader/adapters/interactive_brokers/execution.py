@@ -96,7 +96,8 @@ ib_to_nautilus_order_type = dict(zip(map_order_type.values(), map_order_type.key
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for Interactive Brokers TWS API.
+    Provides an execution client for Interactive Brokers TWS API, allowing for the
+    retrieval of account information and execution of orders.
 
     Parameters
     ----------
