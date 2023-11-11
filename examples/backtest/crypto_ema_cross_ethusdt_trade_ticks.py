@@ -21,6 +21,7 @@ import pandas as pd
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
@@ -37,7 +38,13 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 if __name__ == "__main__":
     # Configure backtest engine
-    config = BacktestEngineConfig(trader_id="BACKTESTER-001")
+    config = BacktestEngineConfig(
+        trader_id="BACKTESTER-001",
+        logging=LoggingConfig(
+            log_level="INFO",
+            log_colors=True,
+        ),
+    )
 
     # Build the backtest engine
     engine = BacktestEngine(config=config)

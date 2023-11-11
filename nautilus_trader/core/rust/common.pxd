@@ -326,6 +326,7 @@ cdef extern from "../includes/common.h":
                           const char *file_name_ptr,
                           const char *file_format_ptr,
                           const char *component_levels_ptr,
+                          uint8_t is_colored,
                           uint8_t is_bypassed);
 
     void logger_drop(Logger_API logger);
@@ -335,6 +336,8 @@ cdef extern from "../includes/common.h":
     const char *logger_get_machine_id_cstr(const Logger_API *logger);
 
     UUID4_t logger_get_instance_id(const Logger_API *logger);
+
+    uint8_t logger_is_colored(const Logger_API *logger);
 
     uint8_t logger_is_bypassed(const Logger_API *logger);
 

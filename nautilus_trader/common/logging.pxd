@@ -62,6 +62,7 @@ cdef class Logger:
 cdef class LoggerAdapter:
     cdef Logger _logger
     cdef str _component
+    cdef bint _is_colored
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)

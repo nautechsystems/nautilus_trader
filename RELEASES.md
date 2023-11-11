@@ -1,3 +1,18 @@
+# NautilusTrader 1.181.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
+
+### Breaking Changes
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.180.0 Beta
 
 Released on 3rd November 2023 (UTC).

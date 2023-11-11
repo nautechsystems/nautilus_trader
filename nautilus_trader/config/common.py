@@ -673,6 +673,8 @@ class LoggingConfig(NautilusConfig, frozen=True):
         This will override automatic naming, and no daily file rotation will occur.
     log_file_format : str { 'JSON' }, optional
         The log file format. If ``None`` (default) then will log in plain text.
+    log_colors : bool, default True
+        If ANSI codes should be used to produce colored log lines.
     log_component_levels : dict[str, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
@@ -686,6 +688,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
     log_directory: str | None = None
     log_file_name: str | None = None
     log_file_format: str | None = None
+    log_colors: bool = True
     log_component_levels: dict[str, str] | None = None
     bypass_logging: bool = False
 
