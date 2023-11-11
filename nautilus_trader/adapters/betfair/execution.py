@@ -545,9 +545,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle an update from the order stream socket.
         """
+        self._log.debug(f"raw_exec: {raw.decode()}")
         update = stream_decode(raw)
-
-        self._log.debug(f"Exec update: {raw.decode()}")
 
         if isinstance(update, OCM):
             self.create_task(self._handle_order_stream_update(update))

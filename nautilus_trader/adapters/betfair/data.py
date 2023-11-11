@@ -240,6 +240,10 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
+        """
+        Handle an update from the data stream socket.
+        """
+        self._log.debug(f"raw_data: {raw.decode()}")
         update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)
