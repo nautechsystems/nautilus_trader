@@ -1,38 +1,49 @@
 # Interactive Brokers
 
-Interactive Brokers (IB) is a trading platform where you can trade stocks, options, futures, currencies, bonds, funds, and crypto. NautilusTrader provides an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://interactivebrokers.github.io/tws-api/index.html) via their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
+Interactive Brokers (IB) is a trading platform that allows trading in a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://interactivebrokers.github.io/tws-api/index.html) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
 
-The TWS API is an interface to IB's standalone trading applications, TWS and IB Gateway, which can be downloaded on IB's website. If you have not already installed TWS or IB Gateway, follow Interactive Brokers' [Initial Setup](https://interactivebrokers.github.io/tws-api/initial_setup.html) guide. You will define a connection to either of these two applications in NautilusTrader's `InteractiveBrokersClient`. 
+The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://interactivebrokers.github.io/tws-api/initial_setup.html) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
 
-Another (and perhaps easier way) to get started is to use a [dockerized version](https://github.com/unusualalpha/ib-gateway-docker/pkgs/container/ib-gateway) of IB Gateway, which is also what you would use when deploying your trading strategies on a hosted cloud platform. You will need [Docker](https://www.docker.com/) installed on your machine and the [docker](https://pypi.org/project/docker/) Python package, which is conveniently bundled with NautilusTrader as an extra package.
+Alternatively, you can start with a [dockerized version](https://github.com/unusualalpha/ib-gateway-docker/pkgs/container/ib-gateway) of the IB Gateway, particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
-**Note**: The standalone TWS and IB Gateway applications require human intervention to specify a username, password and trading mode (live or paper trading) at startup. The dockerized IB Gateway is able to do so programmatically.
+**Note**: The standalone TWS and IB Gateway applications necessitate manual input of username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
 
 ## Installation
 
-To install the latest nautilus-trader package with the `ibapi` and optional `docker` extra dependencies using pip, run:
+To install the latest nautilus-trader package along with the `ibapi` and optional `docker` dependencies using pip, execute:
 
 ```
 pip install -U "nautilus_trader[ib,docker]"
 ```
 
-To install using poetry, run:
+For installation via poetry, use:
 
 ```
 poetry add "nautilus_trader[ib,docker]"
 ```
 
-**Note**: IB does not provide wheels for `ibapi`, so Nautilus [repackages]( https://pypi.org/project/nautilus-ibapi/) and releases it to PyPI.
+**Note**: Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages]( https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
+
 
 ## Getting Started
 
-Before writing strategies, TWS / IB Gateway needs to be running. Launch either of the two standalone applications and enter your credentials, or start the dockerized IB Gateway using `InteractiveBrokersGateway` (make sure Docker is running in the background already!):
+Before deploying strategies, ensure that TWS / IB Gateway is running. Launch one of the standalone applications and log in with your credentials, or start the dockerized IB Gateway using `InteractiveBrokersGateway`:
 
-```
+```python
 from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
 
+
+gateway_config = InteractiveBrokersGatewayConfig(
+    username="test",
+    password="test",
+    trading_mode="paper",
+    start=True
+)
+
 # This may take a short while to start up, especially the first time
-gateway = InteractiveBrokersGateway(username="test", password="test", start=True)
+gateway = InteractiveBrokersGateway(
+    config=gateway_config
+)
 
 # Confirm you are logged in
 print(gateway.is_logged_in(gateway.container))
@@ -41,31 +52,29 @@ print(gateway.is_logged_in(gateway.container))
 print(gateway.container.logs())
 ```
 
-**Note**: There are two options for supplying your credentials to the Interactive Brokers Gateway, Exec and Data clients.
-Either pass the corresponding `username` and `password` values to the config dictionaries, or
-set the following environment variables: 
+**Note**: To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the config dictionaries, or set the following environment variables:
 - `TWS_USERNAME`
 - `TWS_PASSWORD`
 
 ## Overview
 
-The adapter is comprised of the following major components:
-- `InteractiveBrokersClient` which uses `ibapi` to execute TWS API requests, supporting all other integration classes.
-- `HistoricInteractiveBrokersClient` which provides a straightforward way to retrieve instruments and historical bar and tick data to load into the catalog (generally for backtesting).
-- `InteractiveBrokersInstrumentProvider` which retrieves or queries instruments for trading.
-- `InteractiveBrokersDataClient` which connects to the `Gateway` and streams market data for trading.
-- `InteractiveBrokersExecutionClient` which retrieves account information and executes orders for trading.
+The adapter includes several major components:
+- `InteractiveBrokersClient`: Executes TWS API requests using `ibapi`.
+- `HistoricInteractiveBrokersClient`: Provides methods for retrieving instruments and historical data, useful for backtesting.
+- `InteractiveBrokersInstrumentProvider`: Retrieves or queries instruments for trading.
+- `InteractiveBrokersDataClient`: Connects to the Gateway for streaming market data.
+- `InteractiveBrokersExecutionClient`: Handles account information and executes trades.
 
 ## Instruments & Contracts
 
-In Interactive Brokers, the concept of a NautilusTrader `Instrument` is called a [Contract](https://interactivebrokers.github.io/tws-api/contracts.html). A Contract can be represented in two ways: a [basic contract](https://interactivebrokers.github.io/tws-api/classIBApi_1_1Contract.html) or a [detailed contract](https://interactivebrokers.github.io/tws-api/classIBApi_1_1ContractDetails.html), which are defined in the adapter using the classes `IBContract` and `IBContractDetails`, respectively. Contract details include important information like supported order types and trading hours, which aren't found in the basic contract. As a result, `IBContractDetails` can be converted to an `Instrument` but `IBContract` cannot.
+In IB, a NautilusTrader `Instrument` is equivalent to a Contract](https://interactivebrokers.github.io/tws-api/contracts.html). Contracts can be either a [basic contract](https://interactivebrokers.github.io/tws-api/classIBApi_1_1Contract.html) or a more [detailed](https://interactivebrokers.github.io/tws-api/classIBApi_1_1ContractDetails.html) version (ContractDetails). The adapter models these using `IBContract` and `IBContractDetails` classes. The latter includes critical data like order types and trading hours, which are absent in the basic contract, making `IBContractDetails` convertible to an `Instrument`, unlike IBContract.
 
-To find basic contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/). 
+To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
 Examples of `IBContracts`:
 ```
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
- 
+
 # Stock
 IBContract(secType='STK', exchange='SMART', primaryExchange='ARCA', symbol='SPY')
 
@@ -90,13 +99,16 @@ IBContract(secType='CRYPTO', symbol='ETH', exchange='PAXOS', currency='USD')
 
 ## Historical Data & Backtesting
 
-The first step in developing strategies using the IB adapter typically involves fetching historical data that can be used for backtesting. The `HistoricInteractiveBrokersClient` provides a number of convenience methods to request data and save it to the catalog.
+When developing strategies with the IB adapter, the first step usually involves acquiring historical data for backtesting. The `HistoricInteractiveBrokersClient` offers methods to request and save this data.
 
-The following example illustrates retrieving and saving instrument, bar, quote tick, and trade tick data. Read more about using the data for backtesting [here].
+Here's an example of retrieving and saving instrument and bar data. A more comprehensive example is available [here](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/historic_download.py).
 
-```
-# Define path to existing catalog or desired new catalog path
-CATALOG_PATH = "./catalog"
+```python
+import datetime
+
+from nautilus_trader.adapters.interactive_brokers.historic import HistoricInteractiveBrokersClient
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
+
 
 async def main():
     contract = IBContract(
@@ -105,52 +117,42 @@ async def main():
         exchange="SMART",
         primaryExchange="NASDAQ",
     )
-    client = HistoricInteractiveBrokersClient(
-        catalog=ParquetDataCatalog(CATALOG_PATH)
-    )
-    # By default, data is written to the catalog
-    await client.get_instruments(contract=contract)
+    client = HistoricInteractiveBrokersClient()
 
-    # All the methods also return the retrieved objects
-    # so you can introspect them or explicitly write them
-    # to the catalog
-    bars = await client.get_historical_bars(
-        contract=contract,
-        bar_type=...
-        write_to_catalog=False
-    )
-    print(bars)
-    client.catalog.write_data(bars)
-    
-    await client.get_historical_ticks(
-        contract=contract,
-        bar_type..
+    instruments = await client.request_instruments(
+        contracts=[contract],
     )
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    bars = await client.request_bars(
+        bar_specifications=["1-HOUR-LAST", "30-MINUTE-MID"],
+        end_date_time=datetime.datetime(2023, 11, 6, 16, 30),
+        tz_name="America/New_York",
+        duration="1 D",
+        contracts=[contract],
+    )
+
+    catalog = ParquetDataCatalog("./catalog")
+    catalog.write_data(instruments)
+    catalog.write_data(bars)
 ```
 
 ## Live Trading
 
-To live trade or paper trade, a `TradingNode` needs to be built and run with a `InteractiveBrokersDataClient` and a `InteractiveBrokersExecutionClient`, which both rely on a `InteractiveBrokersInstrumentProvider`.
+Engaging in live or paper trading requires constructing and running a `TradingNode`. This node incorporates both `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient`, which depend on the `InteractiveBrokersInstrumentProvider` to operate.
 
 ### InstrumentProvider
 
-To retrieve instruments, you will need to use the `InteractiveBrokersInstrumentProvider`. This provider is also used under the hood in the `HistoricInteractiveBrokersClient` to retrieve instruments for data collection.
+The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB. Configurable through `InteractiveBrokersInstrumentProviderConfig`, it allows for the customization of various instrument type parameters. Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains for given underlying securities.
 
 ```
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 
-gateway_config = InteractiveBrokersGatewayConfig(username="test", password="test")
 
-# Specify instruments to retrieve in load_ids and / or load_contracts
-# The following parameters should only be specified if retrieving futures or options: build_futures_chain, build_options_chain, min_expiry_days, max_expiry_days
-instrument_provider = InteractiveBrokersInstrumentProviderConfig(
-    build_futures_chain=False,  # optional, only if fetching futures
-    build_options_chain=False,  # optional, only if fetching futures
-    min_expiry_days=10,  # optional, only if fetching futures / options
-    max_expiry_days=60,  # optional, only if fetching futures / options
+instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
+    build_futures_chain=False,  # Set to True if fetching futures
+    build_options_chain=False,  # Set to True if fetching options
+    min_expiry_days=10,         # Relevant for futures/options with expiration
+    max_expiry_days=60,         # Relevant for futures/options with expiration
     load_ids=frozenset(
         [
             "EUR/USD.IDEALPRO",
@@ -162,121 +164,97 @@ instrument_provider = InteractiveBrokersInstrumentProviderConfig(
             "ESZ27.CME",
         ],
     ),
-    load_contracts=frozenset(ib_contracts),
-)
-
-# Configure the trading node
-config_node = TradingNodeConfig(
-    trader_id="IB-001",
-    logging=LoggingConfig(log_level="INFO"),
-    data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
-            ibg_host="127.0.0.1",
-            ibg_port=4002,
-            ibg_client_id=1,
-            handle_revised_bars=False,
-            use_regular_trading_hours=True,
-            market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # https://interactivebrokers.github.io/tws-api/market_data_type.html
-            instrument_provider=instrument_provider,
-            gateway=gateway,
-        ),
-    },
-    timeout_connection=90.0,
-)
-
-node = TradingNode(config=config_node)
-
-node.trader.add_actor(downloader)
-
-# Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("InteractiveBrokers", InteractiveBrokersLiveDataClientFactory)
-node.add_exec_client_factory("InteractiveBrokers", InteractiveBrokersLiveExecClientFactory)
-node.build()
-
-# Stop and dispose of the node with SIGINT/CTRL+C
-if __name__ == "__main__":
-    try:
-        node.run()
-    finally:
-        node.dispose()
-
-```
-
-Interactive Brokers allows searching for instruments via the `reqMatchingSymbols` API ([docs](https://interactivebrokers.github.io/tws-api/matching_symbols.html)), which, if given enough information
-can usually resolve a filter into an actual contract(s). A node can request instruments to be loaded by passing 
-configuration to the `InstrumentProviderConfig` when initialising a `TradingNodeConfig` (note that while `filters`
-is a dict, it must be converted to a tuple when passed to `InstrumentProviderConfig`).
-
-At a minimum, you must specify the `secType` (security type) and `symbol` (equities etc) or `pair` (FX). See examples 
-queries below for common use cases 
-
-Example config: 
-
-```python
-from nautilus_trader.adapters.interactive_brokers.common import IBContract
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
-from nautilus_trader.config import TradingNodeConfig
-
-config_node = TradingNodeConfig(
-    data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
-            instrument_provider=InteractiveBrokersInstrumentProviderConfig(
-                load_ids={"EUR/USD.IDEALPRO", "AAPL.NASDAQ"},
-                load_contracts={IBContract(secType="CONTFUT", exchange="CME", symbol="MES")},
-            )
+    load_contracts=frozenset(
+        [
+            IBContract(secType='STK', symbol='SPY', exchange='SMART', primaryExchange='ARCA'),
+            IBContract(secType='STK', symbol='AAPL', exchange='SMART', primaryExchange='NASDAQ')
+        ]
     ),
-    ...
 )
 ```
 
 ### Data Client
-- `InteractiveBrokersDataClient` which streams market data.
 
-### Execution Client
-- `InteractiveBrokersExecutionClient` which retrieves account information and executes orders.
+`InteractiveBrokersDataClient` interfaces with Interactive Brokers for streaming and retrieving market data. Upon connection, it configures the [market data type](https://interactivebrokers.github.io/tws-api/market_data_type.html) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
 
-### Full Configuration
-The most common use case is to configure a live `TradingNode` to include Interactive Brokers
-data and execution clients. To achieve this, add an `IB` section to your client
-configuration(s) and set the environment variables to your TWS (Traders Workstation) credentials:
+Configurable through `InteractiveBrokersDataClientConfig`, it allows adjustments for handling revised bars, trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
 
 ```python
-import os
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
-from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 
 
-config = TradingNodeConfig(
-    data_clients={
-        "IB": InteractiveBrokersDataClientConfig(
-            username=os.getenv("TWS_USERNAME"),
-            password=os.getenv("TWS_PASSWORD"),
-            ...  # Omitted
-    },
-    exec_clients = {
-        "IB": InteractiveBrokersExecClientConfig(
-            username=os.getenv("TWS_USERNAME"),
-            password=os.getenv("TWS_PASSWORD"),
-            ...  # Omitted
-    },
-    ...  # Omitted
+data_client_config = InteractiveBrokersDataClientConfig(
+    ibg_port=4002,
+    handle_revised_bars=False,
+    use_regular_trading_hours=True,
+    market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # Default is REALTIME if not set
+    instrument_provider=instrument_provider_config,
+    gateway=gateway_config,
 )
 ```
 
-Then, create a `TradingNode` and add the client factories:
+### Execution Client
+
+The `InteractiveBrokersExecutionClient` facilitates executing trades, accessing account information, and processing order and trade-related details. It encompasses a range of methods for order management, including reporting order statuses, placing new orders, and modifying or canceling existing ones. Additionally, it generates position reports, although trade reports are not yet implemented.
 
 ```python
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.config import RoutingConfig
+
+
+exec_client_config = InteractiveBrokersExecClientConfig(
+    ibg_port=4002,
+    account_id="DU123456",  # Must match the connected IB Gateway/TWS
+    gateway=gateway_config,
+    instrument_provider=instrument_provider_config,
+    routing=RoutingConfig(
+        default=True,
+    )
+)
+```
+
+### Full Configuration
+
+Setting up a complete trading environment typically involves configuring a `TradingNodeConfig`, which includes data and execution client configurations. Additional configurations are specified in `LiveDataEngineConfig` to accommodate IB-specific requirements. A `TradingNode` is then instantiated from these configurations, and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added. Finally, the node is built and run.
+
+For a comprehensive example, refer to this [guide](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/interactive_brokers_example.py).
+
+
+```python
+from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
+from nautilus_trader.config import LiveDataEngineConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.live.node import TradingNode
 
-# Instantiate the live trading node with a configuration
-node = TradingNode(config=config)
 
-# Register the client factories with the node
+# ... [continuing from prior example code] ...
+
+# Configure the trading node
+config_node = TradingNodeConfig(
+    trader_id="TESTER-001",
+    logging=LoggingConfig(log_level="INFO"),
+    data_clients={"IB": data_client_config},
+    exec_clients={"IB": exec_client_config},
+    data_engine=LiveDataEngineConfig(
+        time_bars_timestamp_on_close=False,  # Use opening time as `ts_event`, as per IB standard
+        validate_data_sequence=True,         # Discards bars received out of sequence
+    ),
+)
+
+node = TradingNode(config=config_node)
 node.add_data_client_factory("IB", InteractiveBrokersLiveDataClientFactory)
 node.add_exec_client_factory("IB", InteractiveBrokersLiveExecClientFactory)
-
-# Finally build the node
 node.build()
+node.portfolio.set_specific_venue(IB_VENUE)
+
+if __name__ == "__main__":
+    try:
+        node.run()
+    finally:
+        # Stop and dispose of the node with SIGINT/CTRL+C
+        node.dispose()
 ```

@@ -15,19 +15,17 @@
 
 import logging
 import os
-import warnings
 from enum import IntEnum
 from time import sleep
-from typing import ClassVar
+from typing import ClassVar, Literal
+
+from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
 
 
 try:
     import docker
 except ImportError as e:
-    warnings.warn(
-        f"Docker required for Gateway, install manually via `pip install docker` ({e})",
-    )
-    docker = None
+    raise RuntimeError("Docker required for Gateway, install via `pip install docker`") from e
 
 
 class ContainerStatus(IntEnum):
@@ -55,24 +53,34 @@ class InteractiveBrokersGateway:
         password: str | None = None,
         host: str | None = "localhost",
         port: int | None = None,
-        trading_mode: str | None = "paper",
+        trading_mode: Literal["paper", "live"] | None = "paper",
         start: bool = False,
         read_only_api: bool = True,
         timeout: int = 90,
         logger: logging.Logger | None = None,
+        config: InteractiveBrokersGatewayConfig | None = None,
     ):
-        username = username if username is not None else os.environ["TWS_USERNAME"]
-        password = password if password is not None else os.environ["TWS_PASSWORD"]
-        assert username is not None, "`username` not set nor available in env `TWS_USERNAME`"
-        assert password is not None, "`password` not set nor available in env `TWS_PASSWORD`"
-        self.username = username
-        self.password = password
+        if config:
+            username = config.username
+            password = config.password
+            host = config.host
+            port = config.port
+            trading_mode = config.trading_mode
+            start = config.start
+            read_only_api = config.read_only_api
+            timeout = config.timeout
+
+        self.username = username or os.getenv("TWS_USERNAME")
+        self.password = password or os.getenv("TWS_PASSWORD")
+        if username is None:
+            raise ValueError("`username` not set nor available in env `TWS_USERNAME`")
+        if password is None:
+            raise ValueError("`password` not set nor available in env `TWS_PASSWORD`")
+
         self.trading_mode = trading_mode
         self.read_only_api = read_only_api
         self.host = host
         self.port = port or self.PORTS[trading_mode]
-        if docker is None:
-            raise RuntimeError("Docker not installed")
         self._docker = docker.from_env()
         self._container = None
         self.log = logger or logging.getLogger("nautilus_trader")
@@ -165,11 +173,10 @@ class InteractiveBrokersGateway:
             for _ in range(wait):
                 if self.is_logged_in(container=self._container):
                     break
-                else:
-                    self.log.debug("Waiting for IB Gateway to start ..")
-                    sleep(1)
+                self.log.debug("Waiting for IB Gateway to start ..")
+                sleep(1)
             else:
-                raise GatewayLoginFailure
+                raise RuntimeError(f"Gateway `{self.CONTAINER_NAME}-{self.port}` not ready")
 
         self.log.info(
             f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port+100}",
@@ -178,8 +185,8 @@ class InteractiveBrokersGateway:
     def safe_start(self, wait: int = 90):
         try:
             self.start(wait=wait)
-        except ContainerExists:
-            return
+        except docker.errors.APIError as e:
+            raise RuntimeError("Container already exists") from e
 
     def stop(self):
         if self.container:
@@ -189,8 +196,11 @@ class InteractiveBrokersGateway:
     def __enter__(self):
         self.start()
 
-    def __exit__(self, type, value, traceback):
-        self.stop()
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            self.stop()
+        except Exception as e:
+            logging.error("Error stopping container: %s", e)
 
 
 # -- Exceptions -----------------------------------------------------------------------------------
