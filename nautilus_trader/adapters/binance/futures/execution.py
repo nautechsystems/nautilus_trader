@@ -62,7 +62,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -135,7 +135,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
         }
 
-        # Websocket futures schema decoders
+        # WebSocket futures schema decoders
         self._decoder_futures_user_msg_wrapper = msgspec.json.Decoder(BinanceFuturesUserMsgWrapper)
         self._decoder_futures_order_update_wrapper = msgspec.json.Decoder(
             BinanceFuturesOrderUpdateWrapper,
