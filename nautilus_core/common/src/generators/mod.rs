@@ -13,20 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_model::identifiers::strategy_id::StrategyId;
-
 pub mod client_order_id;
 pub mod order_list_id;
 pub mod position_id;
 
-pub trait IdentifierGenerator<T> {
-    fn set_count(&mut self, count: usize, strategy_id: Option<StrategyId>);
+use chrono::{Datelike, NaiveDateTime, Timelike};
 
-    fn reset(&mut self);
-
-    fn count(&self, strategy_id: Option<StrategyId>) -> usize;
-
-    fn generate(&mut self, strategy_id: Option<StrategyId>, flipped: Option<bool>) -> T;
-
-    fn get_datetime_tag(&mut self) -> String;
+fn get_datetime_tag(unix_ms: u64) -> String {
+    let now_utc = NaiveDateTime::from_timestamp_millis(unix_ms as i64).unwrap();
+    format!(
+        "{}{:02}{:02}-{:02}{:02}",
+        now_utc.year(),
+        now_utc.month(),
+        now_utc.day(),
+        now_utc.hour(),
+        now_utc.minute()
+    )
 }

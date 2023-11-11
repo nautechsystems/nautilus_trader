@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use chrono::{Datelike, NaiveDateTime, Timelike};
 use nautilus_model::identifiers::{
     client_order_id::ClientOrderId, strategy_id::StrategyId, trader_id::TraderId,
 };
 
-use crate::{clock::Clock, generators::IdentifierGenerator};
+use super::get_datetime_tag;
+use crate::clock::Clock;
 
 #[repr(C)]
 pub struct ClientOrderIdGenerator {
@@ -42,27 +42,25 @@ impl ClientOrderIdGenerator {
             count: initial_count.unwrap_or(0),
         }
     }
-}
 
-impl IdentifierGenerator<ClientOrderId> for ClientOrderIdGenerator {
-    fn set_count(&mut self, count: usize, _strategy_id: Option<StrategyId>) {
+    pub fn set_count(&mut self, count: usize, _strategy_id: Option<StrategyId>) {
         self.count = count;
     }
 
-    fn reset(&mut self) {
+    pub fn reset(&mut self) {
         self.count = 0;
     }
 
-    fn count(&self, _strategy_id: Option<StrategyId>) -> usize {
+    pub fn count(&self, _strategy_id: Option<StrategyId>) -> usize {
         self.count
     }
 
-    fn generate(
+    pub fn generate(
         &mut self,
         _strategy_id: Option<StrategyId>,
         _flipped: Option<bool>,
     ) -> ClientOrderId {
-        let datetime_tag = self.get_datetime_tag();
+        let datetime_tag = get_datetime_tag(self.clock.timestamp_ms());
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
         self.count += 1;
@@ -70,20 +68,7 @@ impl IdentifierGenerator<ClientOrderId> for ClientOrderIdGenerator {
             "O-{}-{}-{}-{}",
             datetime_tag, trader_tag, strategy_tag, self.count
         );
-        ClientOrderId::new(&id).unwrap()
-    }
-
-    fn get_datetime_tag(&mut self) -> String {
-        let millis = self.clock.timestamp_ms() as i64;
-        let now_utc = NaiveDateTime::from_timestamp_millis(millis).unwrap();
-        format!(
-            "{}{:02}{:02}-{:02}{:02}",
-            now_utc.year(),
-            now_utc.month(),
-            now_utc.day(),
-            now_utc.hour(),
-            now_utc.minute()
-        )
+        ClientOrderId::from(id.as_str())
     }
 }
 
@@ -97,10 +82,7 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{
-        clock::TestClock,
-        generators::{client_order_id::ClientOrderIdGenerator, IdentifierGenerator},
-    };
+    use crate::{clock::TestClock, generators::client_order_id::ClientOrderIdGenerator};
 
     fn get_client_order_id_generator(initial_count: Option<usize>) -> ClientOrderIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
@@ -119,14 +101,6 @@ mod tests {
     fn test_init_with_initial_count() {
         let generator = get_client_order_id_generator(Some(7));
         assert_eq!(generator.count(None), 7);
-    }
-
-    #[rstest]
-    fn test_datetime_tag() {
-        let mut generator = get_client_order_id_generator(None);
-        let tag = generator.get_datetime_tag();
-        let result = "19700101-0000";
-        assert_eq!(tag, result);
     }
 
     #[rstest]
