@@ -31,6 +31,7 @@ use pyo3::{
 
 use crate::{
     clock::{Clock, LiveClock, TestClock},
+    handlers::EventHandler,
     timer::{TimeEvent, TimeEventHandler},
 };
 
@@ -82,7 +83,9 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(ffi::Py_None() != callback_ptr);
 
     let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    clock.register_default_handler_py(callback_py);
+    let handler = EventHandler::new(Some(callback_py), None);
+
+    clock.register_default_handler(handler);
 }
 
 #[no_mangle]
@@ -146,7 +149,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
         ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
         _ => None,
     });
-    clock.set_time_alert_ns_py(name, alert_time_ns, callback_py);
+    let handler = EventHandler::new(callback_py.clone(), None);
+
+    clock.set_time_alert_ns(name, alert_time_ns, callback_py.map(|_| handler));
 }
 
 /// # Safety
@@ -173,7 +178,16 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
         ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
         _ => None,
     });
-    clock.set_timer_ns_py(name, interval_ns, start_time_ns, stop_time_ns, callback_py);
+
+    let handler = EventHandler::new(callback_py.clone(), None);
+
+    clock.set_timer_ns(
+        name,
+        interval_ns,
+        start_time_ns,
+        stop_time_ns,
+        callback_py.map(|_| handler),
+    );
 }
 
 /// # Safety
@@ -186,7 +200,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
     set_time: u8,
 ) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
-    clock.match_handlers_py(events).into()
+    clock.match_handlers(events).into()
 }
 
 // TODO: This struct implementation potentially leaks memory
