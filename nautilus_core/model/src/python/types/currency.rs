@@ -149,7 +149,7 @@ impl Currency {
                 if strict {
                     Err(to_pyvalue_err(e))
                 } else {
-                    // SAFETY: Safe default arguments for the unwrap
+                    // SAFETY: Unwrap safe as using known values
                     let new_crypto =
                         Currency::new(value, 8, 0, value, CurrencyType::Crypto).unwrap();
                     Ok(new_crypto)

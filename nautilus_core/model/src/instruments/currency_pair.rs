@@ -162,7 +162,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn multiplier(&self) -> Quantity {
-        // SAFETY: Constant value
+        // SAFETY: Unwrap safe as using known values
         Quantity::new(1.0, 0).unwrap()
     }
 
