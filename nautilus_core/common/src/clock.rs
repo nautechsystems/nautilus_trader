@@ -148,6 +148,7 @@ pub struct TestClock {
 }
 
 impl TestClock {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             time_ns: 0,
@@ -343,6 +344,7 @@ pub struct LiveClock {
 }
 
 impl LiveClock {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             internal: MonotonicClock::default(),

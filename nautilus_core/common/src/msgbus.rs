@@ -146,6 +146,7 @@ where
     T: Clone,
 {
     /// Initializes a new instance of the [`MessageBus<T>`].
+    #[must_use]
     pub fn new(trader_id: TraderId, name: Option<String>) -> Self {
         Self {
             trader_id,
@@ -158,11 +159,13 @@ where
     }
 
     /// Returns the registered endpoint addresses.
+    #[must_use]
     pub fn endpoints(&self) -> Vec<&str> {
-        self.endpoints.keys().map(|k| k.as_str()).collect()
+        self.endpoints.keys().map(Ustr::as_str).collect()
     }
 
     /// Returns the topics for active subscriptions.
+    #[must_use]
     pub fn topics(&self) -> Vec<&str> {
         self.subscriptions
             .keys()
@@ -193,7 +196,7 @@ where
 
         // Find existing patterns which match this topic
         let mut matches = Vec::new();
-        for (pattern, subs) in self.patterns.iter_mut() {
+        for (pattern, subs) in &mut self.patterns {
             if is_matching(&Ustr::from(topic), pattern) {
                 subs.push(sub.clone());
                 subs.sort(); // Sort in priority order
@@ -212,11 +215,13 @@ where
     }
 
     /// Returns the handler for the given `endpoint`.
+    #[must_use]
     pub fn get_endpoint(&self, endpoint: &str) -> Option<&T> {
         self.endpoints.get(&Ustr::from(endpoint))
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
     pub fn has_subscribers(&self, pattern: &str) -> bool {
         self.matching_handlers(&Ustr::from(pattern))
             .next()
@@ -378,7 +383,7 @@ mod tests {
         let msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
 
         assert!(msgbus.topics().is_empty());
-        assert!(!msgbus.has_subscribers(&"my-topic".to_string()));
+        assert!(!msgbus.has_subscribers("my-topic"));
     }
 
     #[rstest]
@@ -388,7 +393,7 @@ mod tests {
 
         // Useless handler for testing
         let handler = Rc::new(|m: &_| {
-            format!("{:?}", m);
+            format!("{m:?}");
         });
 
         msgbus.register(endpoint.clone(), handler.clone());
@@ -404,7 +409,7 @@ mod tests {
 
         // Useless handler for testing
         let handler = Rc::new(|m: &_| {
-            format!("{:?}", m);
+            format!("{m:?}");
         });
 
         msgbus.register(endpoint.clone(), handler.clone());
@@ -420,7 +425,7 @@ mod tests {
 
         // Useless handler for testing
         let handler = Rc::new(|m: &_| {
-            format!("{:?}", m);
+            format!("{m:?}");
         });
 
         msgbus.subscribe(&topic, handler.clone(), "a", Some(1));
@@ -436,7 +441,7 @@ mod tests {
 
         // Useless handler for testing
         let handler = Rc::new(|m: &_| {
-            format!("{:?}", m);
+            format!("{m:?}");
         });
 
         msgbus.subscribe(&topic, handler.clone(), "a", None);
