@@ -67,12 +67,12 @@ The adapter includes several major components:
 
 ## Instruments & Contracts
 
-In IB, a NautilusTrader `Instrument` is equivalent to a Contract](https://interactivebrokers.github.io/tws-api/contracts.html). Contracts can be either a [basic contract](https://interactivebrokers.github.io/tws-api/classIBApi_1_1Contract.html) or a more [detailed](https://interactivebrokers.github.io/tws-api/classIBApi_1_1ContractDetails.html) version (ContractDetails). The adapter models these using `IBContract` and `IBContractDetails` classes. The latter includes critical data like order types and trading hours, which are absent in the basic contract, making `IBContractDetails` convertible to an `Instrument`, unlike IBContract.
+In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://interactivebrokers.github.io/tws-api/contracts.html). Contracts can be either a [basic contract](https://interactivebrokers.github.io/tws-api/classIBApi_1_1Contract.html) or a more [detailed](https://interactivebrokers.github.io/tws-api/classIBApi_1_1ContractDetails.html) version (ContractDetails). The adapter models these using `IBContract` and `IBContractDetails` classes. The latter includes critical data like order types and trading hours, which are absent in the basic contract. As a result, `IBContractDetails` can be converted to an `Instrument` while `IBContract` cannot.
 
 To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
 Examples of `IBContracts`:
-```
+```python
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
 # Stock
@@ -105,7 +105,7 @@ Here's an example of retrieving and saving instrument and bar data. A more compr
 
 ```python
 import datetime
-
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.historic import HistoricInteractiveBrokersClient
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
@@ -142,9 +142,9 @@ Engaging in live or paper trading requires constructing and running a `TradingNo
 
 ### InstrumentProvider
 
-The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB. Configurable through `InteractiveBrokersInstrumentProviderConfig`, it allows for the customization of various instrument type parameters. Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains for given underlying securities.
+The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB. Configurable through `InteractiveBrokersInstrumentProviderConfig`, it allows for the customization of various instrument type parameters. Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains.
 
-```
+```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 
 
@@ -175,7 +175,7 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 
 ### Data Client
 
-`InteractiveBrokersDataClient` interfaces with Interactive Brokers for streaming and retrieving market data. Upon connection, it configures the [market data type](https://interactivebrokers.github.io/tws-api/market_data_type.html) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
+`InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon connection, it configures the [market data type](https://interactivebrokers.github.io/tws-api/market_data_type.html) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
 
 Configurable through `InteractiveBrokersDataClientConfig`, it allows adjustments for handling revised bars, trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
 
@@ -218,7 +218,7 @@ exec_client_config = InteractiveBrokersExecClientConfig(
 
 Setting up a complete trading environment typically involves configuring a `TradingNodeConfig`, which includes data and execution client configurations. Additional configurations are specified in `LiveDataEngineConfig` to accommodate IB-specific requirements. A `TradingNode` is then instantiated from these configurations, and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added. Finally, the node is built and run.
 
-For a comprehensive example, refer to this [guide](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/interactive_brokers_example.py).
+For a comprehensive example, refer to this [script](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/interactive_brokers_example.py).
 
 
 ```python
