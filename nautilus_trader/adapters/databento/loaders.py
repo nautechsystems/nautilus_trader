@@ -18,20 +18,10 @@ from pathlib import Path
 
 import databento
 import msgspec
-import pandas as pd
-import pytz
 from databento.common.symbology import InstrumentMap
 
 from nautilus_trader.adapters.databento.common import check_file_path
-from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
-from nautilus_trader.adapters.databento.enums import DatabentoInstrumentClass
-from nautilus_trader.adapters.databento.parsing import parse_equity
-from nautilus_trader.adapters.databento.parsing import parse_futures_contract
-from nautilus_trader.adapters.databento.parsing import parse_mbo_msg
-from nautilus_trader.adapters.databento.parsing import parse_mbp_or_tbbo_msg
-from nautilus_trader.adapters.databento.parsing import parse_ohlcv_msg
-from nautilus_trader.adapters.databento.parsing import parse_options_contract
-from nautilus_trader.adapters.databento.parsing import parse_trade_msg
+from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.identifiers import InstrumentId
@@ -186,63 +176,10 @@ class DatabentoDataLoader:
         output: list[Data] = []
 
         for record in store:
-            data = self._parse_record(record, instrument_map)
+            data = parse_record(record, instrument_map, self._publishers)
             if isinstance(data, tuple):
                 output.extend(data)
             else:
                 output.append(data)
 
         return output
-
-    def _parse_record(self, record: databento.DBNRecord, instrument_map: InstrumentMap) -> Data:
-        if isinstance(record, databento.InstrumentDefMsg):
-            return self._parse_instrument_def(record)
-
-        record_date = pd.Timestamp(record.ts_event, tz=pytz.utc).date()
-        raw_symbol = instrument_map.resolve(record.instrument_id, date=record_date)
-        if raw_symbol is None:
-            raise ValueError(
-                f"Cannot resolve instrument_id {record.instrument_id} on {record_date}",
-            )
-
-        publisher = self._publishers[record.publisher_id]
-        instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
-            raw_symbol=raw_symbol,
-            publisher=publisher,
-        )
-
-        if isinstance(record, databento.MBOMsg):
-            return parse_mbo_msg(record, instrument_id)
-        elif isinstance(record, databento.MBP1Msg | databento.MBP10Msg):
-            return parse_mbp_or_tbbo_msg(record, instrument_id)
-        elif isinstance(record, databento.TradeMsg):
-            return parse_trade_msg(record, instrument_id)
-        elif isinstance(record, databento.OHLCVMsg):
-            return parse_ohlcv_msg(record, instrument_id)
-        else:
-            raise ValueError(
-                f"Schema {type(record).__name__} is currently unsupported by NautilusTrader",
-            )
-
-    def _parse_instrument_def(self, record: databento.InstrumentDefMsg) -> Instrument:
-        publisher = self._publishers[record.publisher_id]
-        instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
-            raw_symbol=record.raw_symbol,
-            publisher=publisher,
-        )
-
-        match record.instrument_class:
-            case DatabentoInstrumentClass.STOCK.value:
-                return parse_equity(record, instrument_id)
-            case DatabentoInstrumentClass.FUTURE.value | DatabentoInstrumentClass.FUTURE_SPREAD.value:
-                return parse_futures_contract(record, instrument_id)
-            case DatabentoInstrumentClass.CALL.value | DatabentoInstrumentClass.PUT.value:
-                return parse_options_contract(record, instrument_id)
-            case DatabentoInstrumentClass.FX_SPOT.value:
-                raise ValueError("`instrument_class` FX_SPOT not currently supported")
-            case DatabentoInstrumentClass.OPTION_SPREAD.value:
-                raise ValueError("`instrument_class` OPTION_SPREAD not currently supported")
-            case DatabentoInstrumentClass.MIXED_SPREAD.value:
-                raise ValueError("`instrument_class` MIXED_SPREAD not currently supported")
-            case _:
-                raise ValueError(f"Invalid `instrument_class`, was {record.instrument_class}")
