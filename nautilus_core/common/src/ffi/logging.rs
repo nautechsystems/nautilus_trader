@@ -81,6 +81,7 @@ pub unsafe extern "C" fn logger_new(
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
+    is_colored: u8,
     is_bypassed: u8,
 ) -> Logger_API {
     Logger_API(Box::new(Logger::new(
@@ -97,6 +98,7 @@ pub unsafe extern "C" fn logger_new(
         optional_cstr_to_string(file_name_ptr),
         optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
+        is_colored != 0,
         is_bypassed != 0,
     )))
 }
@@ -119,6 +121,11 @@ pub extern "C" fn logger_get_machine_id_cstr(logger: &Logger_API) -> *const c_ch
 #[no_mangle]
 pub extern "C" fn logger_get_instance_id(logger: &Logger_API) -> UUID4 {
     logger.instance_id
+}
+
+#[no_mangle]
+pub extern "C" fn logger_is_colored(logger: &Logger_API) -> u8 {
+    u8::from(logger.is_colored)
 }
 
 #[no_mangle]

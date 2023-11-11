@@ -47,6 +47,8 @@ pub struct Logger {
     pub level_stdout: LogLevel,
     /// The minimum log level to write to a log file.
     pub level_file: Option<LogLevel>,
+    /// If logger is using ANSI color codes.
+    pub is_colored: bool,
     /// If logging is bypassed.
     pub is_bypassed: bool,
 }
@@ -89,6 +91,7 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         component_levels: Option<HashMap<String, Value>>,
+        is_colored: bool,
         is_bypassed: bool,
     ) -> Self {
         let (tx, rx) = channel::<LogEvent>();
@@ -121,6 +124,7 @@ impl Logger {
                 file_name,
                 file_format,
                 level_filters,
+                is_colored,
                 rx,
             );
         });
@@ -132,10 +136,12 @@ impl Logger {
             instance_id,
             level_stdout,
             level_file,
+            is_colored,
             is_bypassed,
         }
     }
 
+    #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
@@ -145,6 +151,7 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
+        is_colored: bool,
         rx: Receiver<LogEvent>,
     ) {
         // Setup std I/O buffers
@@ -187,9 +194,11 @@ impl Logger {
         let mut file_buf = file.map(BufWriter::new);
 
         // Setup templates for formatting
-        let template_console = String::from(
-            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {message}\x1b[0m\n",
-        );
+        let template_console = match is_colored {
+            true => format!("\x1b[1m{{ts}}\x1b[0m {{color}}[{{level}}] {{trader_id}}.{{component}}: {{message}}\x1b[0m\n"),
+            false => format!("{{ts}} [{{level}}] {{trader_id}}.{{component}}: {{message}}\n")
+        };
+
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {message}\n");
 
         // Continue to receive and handle log events until channel is hung up
@@ -449,6 +458,7 @@ pub mod stubs {
             None,
             None,
             None,
+            true,
             false,
         )
     }
@@ -550,6 +560,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             false,
         );
 
@@ -610,6 +621,7 @@ mod tests {
                 String::from("RiskEngine"),
                 Value::from("ERROR"), // <-- This should be filtered
             )))),
+            true,
             false,
         );
 
@@ -661,6 +673,7 @@ mod tests {
             None,
             Some("json".to_string()),
             None,
+            true,
             false,
         );
 

@@ -471,6 +471,7 @@ struct Logger_API logger_new(const char *trader_id_ptr,
                              const char *file_name_ptr,
                              const char *file_format_ptr,
                              const char *component_levels_ptr,
+                             uint8_t is_colored,
                              uint8_t is_bypassed);
 
 void logger_drop(struct Logger_API logger);
@@ -480,6 +481,8 @@ const char *logger_get_trader_id_cstr(const struct Logger_API *logger);
 const char *logger_get_machine_id_cstr(const struct Logger_API *logger);
 
 UUID4_t logger_get_instance_id(const struct Logger_API *logger);
+
+uint8_t logger_is_colored(const struct Logger_API *logger);
 
 uint8_t logger_is_bypassed(const struct Logger_API *logger);
 

@@ -45,6 +45,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
         # log_file_format="json",
+        log_colors=True,
     ),
     # tracing=TracingConfig(stdout_level="DEBUG"),
     exec_engine=LiveExecEngineConfig(
