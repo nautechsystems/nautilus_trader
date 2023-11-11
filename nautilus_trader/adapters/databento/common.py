@@ -55,11 +55,6 @@ def nautilus_instrument_id_from_databento(
     Return the Nautilus `InstrumentId` parsed from the given `symbol` and `publisher`
     details.
 
-    Notes
-    -----
-    The Databento `instrument_id` is an integer, where as a Nautilus `InstrumentId` is a
-    symbol and venue combination.
-
     Parameters
     ----------
     raw_symbol : str
@@ -70,6 +65,11 @@ def nautilus_instrument_id_from_databento(
     Returns
     -------
     InstrumentId
+
+    Notes
+    -----
+    The Databento `instrument_id` is an integer, where as a Nautilus `InstrumentId` is a
+    symbol and venue combination.
 
     """
     return InstrumentId(Symbol(raw_symbol), Venue(publisher.venue))

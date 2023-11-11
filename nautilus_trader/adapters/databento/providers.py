@@ -13,6 +13,9 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import databento
+
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -26,8 +29,8 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    client : HistoricalClient
-        The historical client for the provider.
+    client : databento.Historical
+        The Databento historical data client for the provider.
     logger : Logger
         The logger for the provider.
     clock : LiveClock
@@ -39,6 +42,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
+        client: databento.Historical,
         logger: Logger,
         clock: LiveClock,
         config: InstrumentProviderConfig | None = None,
@@ -49,9 +53,19 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
 
         self._clock = clock
+        self._config = config
+
+        self._loader = DatabentoDataLoader()
+
+        # HTTP API
+        self._http_client = client
 
     async def load_all_async(self, filters: dict | None = None) -> None:
-        pass
+        raise RuntimeError(
+            "requesting all instrument definitions is not currently supported, "
+            "as this would mean every instrument definition for every dataset "
+            "(potentially millions)",
+        )
 
     async def load_ids_async(
         self,

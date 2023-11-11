@@ -14,7 +14,14 @@
 # -------------------------------------------------------------------------------------------------
 
 import databento
+import pandas as pd
+import pytz
+from databento.common.symbology import InstrumentMap
 
+from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
+from nautilus_trader.adapters.databento.enums import DatabentoInstrumentClass
+from nautilus_trader.adapters.databento.types import DatabentoPublisher
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currency import Currency
@@ -37,6 +44,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
+from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import FIXED_SCALAR
 from nautilus_trader.model.objects import Price
@@ -286,3 +294,65 @@ def parse_ohlcv_msg(
         ts_event=ts_event,
         ts_init=ts_event,
     )
+
+
+def parse_record(
+    record: databento.DBNRecord,
+    instrument_map: InstrumentMap,
+    publishers: dict[int, DatabentoPublisher],
+) -> Data:
+    if isinstance(record, databento.InstrumentDefMsg):
+        return parse_instrument_def(record, publishers)
+
+    record_date = pd.Timestamp(record.ts_event, tz=pytz.utc).date()
+    raw_symbol = instrument_map.resolve(record.instrument_id, date=record_date)
+    if raw_symbol is None:
+        raise ValueError(
+            f"Cannot resolve instrument_id {record.instrument_id} on {record_date}",
+        )
+
+    publisher: DatabentoPublisher = publishers[record.publisher_id]
+    instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
+        raw_symbol=raw_symbol,
+        publisher=publisher,
+    )
+
+    if isinstance(record, databento.MBOMsg):
+        return parse_mbo_msg(record, instrument_id)
+    elif isinstance(record, databento.MBP1Msg | databento.MBP10Msg):
+        return parse_mbp_or_tbbo_msg(record, instrument_id)
+    elif isinstance(record, databento.TradeMsg):
+        return parse_trade_msg(record, instrument_id)
+    elif isinstance(record, databento.OHLCVMsg):
+        return parse_ohlcv_msg(record, instrument_id)
+    else:
+        raise ValueError(
+            f"Schema {type(record).__name__} is currently unsupported by NautilusTrader",
+        )
+
+
+def parse_instrument_def(
+    record: databento.InstrumentDefMsg,
+    publishers: dict[int, DatabentoPublisher],
+) -> Instrument:
+    publisher: DatabentoPublisher = publishers[record.publisher_id]
+    instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
+        raw_symbol=record.raw_symbol,
+        publisher=publisher,
+    )
+
+    match record.instrument_class:
+        case DatabentoInstrumentClass.STOCK.value:
+            return parse_equity(record, instrument_id)
+        case DatabentoInstrumentClass.FUTURE.value | DatabentoInstrumentClass.FUTURE_SPREAD.value:
+            return parse_futures_contract(record, instrument_id)
+        case DatabentoInstrumentClass.CALL.value | DatabentoInstrumentClass.PUT.value:
+            return parse_options_contract(record, instrument_id)
+        case DatabentoInstrumentClass.FX_SPOT.value:
+            raise ValueError("`instrument_class` FX_SPOT not currently supported")
+        case DatabentoInstrumentClass.OPTION_SPREAD.value:
+            raise ValueError("`instrument_class` OPTION_SPREAD not currently supported")
+        case DatabentoInstrumentClass.MIXED_SPREAD.value:
+            raise ValueError("`instrument_class` MIXED_SPREAD not currently supported")
+        case _:
+            raise ValueError(f"Invalid `instrument_class`, was {record.instrument_class}")
