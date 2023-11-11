@@ -652,13 +652,13 @@ files = [
 
 [[package]]
 name = "databento"
-version = "0.23.0"
+version = "0.23.1"
 description = "Official Python client library for Databento"
 optional = true
 python-versions = ">=3.8,<4.0"
 files = [
-    {file = "databento-0.23.0-py3-none-any.whl", hash = "sha256:e47458fd46b0b54f5d5293baf07966c419c5a9e009cb1f85cd2da4452e54e226"},
-    {file = "databento-0.23.0.tar.gz", hash = "sha256:0e02570349a1b1af1cf2de5ab08b1139bc344b138917de31f204777932f34fcf"},
+    {file = "databento-0.23.1-py3-none-any.whl", hash = "sha256:31e0e27589197055731e9ea3491dc2650704ed81f0dbf2224eeeed5ca2b2fe11"},
+    {file = "databento-0.23.1.tar.gz", hash = "sha256:fd07c8edf8b110d21734126e15a559fbefe5639802101b6cd9b87213065f4be8"},
 ]
 
 [package.dependencies]
@@ -2062,13 +2062,13 @@ dev = ["pre-commit", "pytest-asyncio", "tox"]
 
 [[package]]
 name = "pytest-xdist"
-version = "3.3.1"
+version = "3.4.0"
 description = "pytest xdist plugin for distributed testing, most importantly across multiple CPUs"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "pytest-xdist-3.3.1.tar.gz", hash = "sha256:d5ee0520eb1b7bcca50a60a518ab7a7707992812c578198f8b44fdfac78e8c93"},
-    {file = "pytest_xdist-3.3.1-py3-none-any.whl", hash = "sha256:ff9daa7793569e6a68544850fd3927cd257cc03a7ef76c95e86915355e82b5f2"},
+    {file = "pytest-xdist-3.4.0.tar.gz", hash = "sha256:3a94a931dd9e268e0b871a877d09fe2efb6175c2c23d60d56a6001359002b832"},
+    {file = "pytest_xdist-3.4.0-py3-none-any.whl", hash = "sha256:e513118bf787677a427e025606f55e95937565e06dfaac8d87f55301e57ae607"},
 ]
 
 [package.dependencies]
@@ -3020,4 +3020,4 @@ redis = ["hiredis", "redis"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.12"
-content-hash = "54d2906419d278d69cf2f186fd8dd413e405deaf504dc658814deb472b739717"
+content-hash = "f45ff6e464612146f66092dc4e0c5bc54b1657e0b20bae2cfe5a90e9928544a5"
