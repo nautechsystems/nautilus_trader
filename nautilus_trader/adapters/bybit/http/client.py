@@ -16,7 +16,7 @@
 import hashlib
 import hmac
 import urllib
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
 import msgspec
@@ -55,8 +55,8 @@ class BybitHttpClient:
         api_key: str,
         api_secret: str,
         base_url: str,
-        ratelimiter_quotas: Optional[list[tuple[str, Quota]]] = None,
-        ratelimiter_default_quota: Optional[Quota] = None,
+        ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
+        ratelimiter_default_quota: Quota | None = None,
     ) -> None:
         self._clock: LiveClock = clock
         self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
@@ -88,9 +88,9 @@ class BybitHttpClient:
         self,
         http_method: HttpMethod,
         url_path: str,
-        payload: Optional[dict[str, str]] = None,
-        signature: Optional[str] = None,
-        timestamp: Optional[int] = None,
+        payload: dict[str, str] | None = None,
+        signature: str | None = None,
+        timestamp: str | None = None,
         ratelimiter_keys: list[str] | None = None,
     ):
         if payload and http_method == HttpMethod.GET:
@@ -161,10 +161,10 @@ class BybitHttpClient:
             f"Some exception in HTTP request status: {error.status} message:{error.message}",
         )
 
-    def _sign_post_request(self, payload: dict[str, Any]) -> [str, str]:
+    def _sign_post_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
-        payload = create_string_from_dict(payload)
-        result = timestamp + self._api_key + str(self._recv_window) + payload
+        payload_str = create_string_from_dict(payload)
+        result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
             self._api_secret.encode("utf-8"),
             result.encode("utf-8"),
@@ -172,10 +172,10 @@ class BybitHttpClient:
         ).hexdigest()
         return [timestamp, signature]
 
-    def _sign_get_request(self, payload: dict[str, Any]) -> [str, str]:
+    def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
-        payload = urllib.parse.urlencode(payload)
-        result = timestamp + self._api_key + str(self._recv_window) + payload
+        payload_str = urllib.parse.urlencode(payload)
+        result = timestamp + self._api_key + str(self._recv_window) + payload_str
         signature = hmac.new(
             self._api_secret.encode("utf-8"),
             result.encode("utf-8"),

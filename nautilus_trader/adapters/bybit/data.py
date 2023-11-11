@@ -15,7 +15,6 @@
 
 
 import asyncio
-from typing import Optional
 
 import msgspec.json
 import pandas as pd
@@ -62,11 +61,11 @@ class BybitDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        instrument_type: BybitInstrumentType,
-        base_url_ws: str,
+        instrument_types: list[BybitInstrumentType],
+        ws_urls: dict[BybitInstrumentType, str],
         config: BybitDataClientConfig,
     ) -> None:
-        self._instrument_type = instrument_type
+        self._instrument_types = instrument_types
         self._enum_parser = BybitEnumParser()
         super().__init__(
             loop=loop,
@@ -85,19 +84,20 @@ class BybitDataClient(LiveMarketDataClient):
         self._http_market = BybitMarketHttpAPI(
             client=client,
             clock=clock,
-            instrument_type=instrument_type,
         )
 
         # websocket API
-        self._ws_client = BybitWebsocketClient(
-            clock=clock,
-            logger=logger,
-            handler=self._handle_ws_message,
-            base_url=base_url_ws,
-        )
+        self._ws_clients: dict[BybitInstrumentType, BybitWebsocketClient] = {}
+        for instrument_type in instrument_types:
+            self._ws_clients[instrument_type] = BybitWebsocketClient(
+                clock=clock,
+                logger=logger,
+                handler=self._handle_ws_message,
+                base_url=ws_urls[instrument_type],
+            )
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
-        self._update_instruments_task: Optional[asyncio.Task] = None
+        self._update_instruments_task: asyncio.Task | None = None
 
         # web socket decoders
         self._decoders = {
@@ -106,8 +106,6 @@ class BybitDataClient(LiveMarketDataClient):
         }
         self._decoder_ws_topic_check = msgspec.json.Decoder(BybitWsTopicCheck)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
-        # self._decoder_ws_trade = msgspec.json.Decoder(BybitWsTradeMessage)
-        # self._decoder_ws_ticker = de
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
@@ -115,8 +113,9 @@ class BybitDataClient(LiveMarketDataClient):
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
-        self._log.info("Initializing websocket connection.")
-        await self._ws_client.connect()
+        self._log.info("Initializing websocket connections.")
+        for instrument_type, ws_client in self._ws_clients.items():
+            await ws_client.connect()
         self._log.info("Data client connected.")
 
     def _send_all_instruments_to_data_engine(self) -> None:
@@ -155,13 +154,14 @@ class BybitDataClient(LiveMarketDataClient):
             self._topic_check(ws_message.topic, raw)
         except Exception:
             try:
-                ws_message = self._decoder_ws_subscription.decode(raw)
-                if ws_message.success:
+                ws_message_subscription = self._decoder_ws_subscription.decode(raw)
+                if ws_message_subscription.success:
                     self._log.info("Success subscribing")
                 else:
                     self._log.error("Failed to subscribe.")
             except Exception as e:
-                raise RuntimeError(f"Unknown websocket message type: {raw}", e)
+                decoded_raw = raw.decode("utf-8")
+                raise RuntimeError(f"Unknown websocket message type: {decoded_raw}") from e
 
     def _handle_trade(self, raw: bytes) -> None:
         try:
@@ -173,12 +173,13 @@ class BybitDataClient(LiveMarketDataClient):
                     self._clock.timestamp_ns(),
                 )
                 self._handle_data(trade_tick)
-        except Exception as e:
-            self._log.error(f"Failed to parse trade tick: {raw}", e)
+        except Exception:
+            decoded_raw = raw.decode("utf-8")
+            self._log.error(f"Failed to parse trade tick: {decoded_raw}")
 
     def _handle_ticker(self, raw: bytes) -> None:
         try:
-            msg = self._decoders["ticker"].decode(raw)
+            self._decoders["ticker"].decode(raw)
         except Exception:
             print("failed to parse ticker ", raw)
 
@@ -197,7 +198,7 @@ class BybitDataClient(LiveMarketDataClient):
         nautilus_symbol: str = binance_symbol.parse_as_nautilus(
             self._instrument_type,
         )
-        instrument_id: Optional[InstrumentId] = self._instrument_ids.get(nautilus_symbol)
+        instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
             self._instrument_ids[nautilus_symbol] = instrument_id
@@ -258,4 +259,5 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Cancelling `update_instruments` task.")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
-        await self._ws_client.disconnect()
+        for instrument_type, ws_client in self._ws_clients.items():
+            await ws_client.disconnect()

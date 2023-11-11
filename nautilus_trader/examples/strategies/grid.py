@@ -4,8 +4,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
 
-class GridConfig(StrategyConfig):
-    instrument_id: str
+class GridConfig(StrategyConfig, frozen=True):
+    instrument_id: str = None
     value: str = "madin"
 
 

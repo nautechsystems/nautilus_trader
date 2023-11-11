@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -27,7 +26,7 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 class PositionInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str = None
-    symbol: Optional[BybitSymbol] = None
+    symbol: BybitSymbol | None = None
     settleCoin: str = None
 
 
@@ -50,5 +49,8 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
         raw = await self._method(method_type, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception:
-            raise RuntimeError(f"Failed to decode response position info response: {raw}")
+        except Exception as e:
+            decoded_raw = raw.decode("utf-8")
+            raise RuntimeError(
+                f"Failed to decode response position info response: {decoded_raw}",
+            ) from e

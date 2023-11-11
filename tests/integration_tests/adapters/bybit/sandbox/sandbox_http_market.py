@@ -19,12 +19,17 @@ import os
 import pytest
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
+
+# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import BybitInstrumentsInfoGetParameters
+
+# fmt: on
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParameters
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
-from nautilus_trader.adapters.bybit.factories import get_cached_bybit_http_client
+from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -40,7 +45,7 @@ base_endpoint = "/v5/market/"
 def client() -> BybitHttpClient:
     clock = LiveClock()
 
-    client = get_cached_bybit_http_client(
+    client = get_bybit_http_client(
         clock=clock,
         logger=Logger(clock=clock),
         is_testnet=True,
@@ -59,43 +64,48 @@ async def test_sandbox_get_server_time(client: BybitHttpClient):
 async def test_sandbox_get_instruments(client: BybitHttpClient):
     # --- Spot ---
     instruments_spot_endpoint = BybitInstrumentsInfoEndpoint(
-        client, base_endpoint, BybitInstrumentType.SPOT
+        client,
+        base_endpoint,
     )
     instruments_spot = await instruments_spot_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category="spot")
+        BybitInstrumentsInfoGetParameters(category=BybitInstrumentType.SPOT),
     )
-    # extract only BTCUSDT and ETHUSDT
-    instruments_spot.result.list = [
+    result_list_spot = [
         item for item in instruments_spot.result.list if item.symbol in ["BTCUSDT", "ETHUSDT"]
     ]
-    save_struct_to_file(base_path + "spot/" + "instruments.json", instruments_spot, force_create)
+    save_struct_to_file(base_path + "spot/" + "instruments.json", result_list_spot, force_create)
 
     # --- Linear ---
     instruments_linear_endpoint = BybitInstrumentsInfoEndpoint(
-        client, base_endpoint, BybitInstrumentType.LINEAR
+        client,
+        base_endpoint,
     )
     instruments_linear = await instruments_linear_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category="linear")
+        BybitInstrumentsInfoGetParameters(category=BybitInstrumentType.LINEAR),
     )
-    # extract only BTCUSDT and ETHUSDT
-    instruments_linear.result.list = [
+    result_list_linear = [
         item for item in instruments_linear.result.list if item.symbol in ["BTCUSDT", "ETHUSDT"]
     ]
     save_struct_to_file(
-        base_path + "linear/" + "instruments.json", instruments_linear, force_create
+        base_path + "linear/" + "instruments.json",
+        result_list_linear,
+        force_create,
     )
 
     # --- Option ---
     instruments_option_endpoint = BybitInstrumentsInfoEndpoint(
-        client, base_endpoint, BybitInstrumentType.OPTION
+        client,
+        base_endpoint,
     )
     instruments_options = await instruments_option_endpoint.get(
-        BybitInstrumentsInfoGetParameters(category="option")
+        BybitInstrumentsInfoGetParameters(category=BybitInstrumentType.OPTION),
     )
     # take first few items
     instruments_options.result.list = instruments_options.result.list[:2]
     save_struct_to_file(
-        base_path + "option/" + "instruments.json", instruments_options, force_create
+        base_path + "option/" + "instruments.json",
+        instruments_options,
+        force_create,
     )
 
 
@@ -106,7 +116,7 @@ async def test_sandbox_get_klines(client: BybitHttpClient):
         BybitKlinesGetParameters(
             category="spot",
             symbol="BTCUSDT",
-            interval="D",
+            interval=BybitKlineInterval.DAY_1,
             limit=3,
         ),
     )
@@ -114,7 +124,7 @@ async def test_sandbox_get_klines(client: BybitHttpClient):
         BybitKlinesGetParameters(
             category="linear",
             symbol="BTCUSDT",
-            interval="D",
+            interval=BybitKlineInterval.DAY_1,
             limit=3,
         ),
     )

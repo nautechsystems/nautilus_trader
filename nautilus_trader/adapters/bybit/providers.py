@@ -15,8 +15,6 @@
 
 
 from decimal import Decimal
-from optparse import Option
-from typing import Optional
 
 import msgspec
 
@@ -24,8 +22,9 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument, BybitInstrumentSpot, \
-    BybitInstrumentLinear, BybitInstrumentOption
+from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentLinear
+from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentOption
+from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentSpot
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -35,7 +34,6 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import CryptoPerpetual
-from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import PRICE_MAX
 from nautilus_trader.model.objects import PRICE_MIN
 from nautilus_trader.model.objects import QUANTITY_MAX
@@ -50,9 +48,9 @@ class BybitInstrumentProvider(InstrumentProvider):
         client: BybitHttpClient,
         logger: Logger,
         clock: LiveClock,
-        instrument_type: BybitInstrumentType,
+        instrument_types: list[BybitInstrumentType],
         is_testnet: bool = False,
-        config: Optional[InstrumentProviderConfig] = None,
+        config: InstrumentProviderConfig | None = None,
     ):
         super().__init__(
             logger=logger,
@@ -60,30 +58,29 @@ class BybitInstrumentProvider(InstrumentProvider):
         )
         self._clock = clock
         self._client = client
-        self._instrument_type = instrument_type
+        self._instrument_types = instrument_types
 
         self._http_market = BybitMarketHttpAPI(
             client=client,
             clock=clock,
-            instrument_type=instrument_type,
         )
 
         self._log_warnings = config.log_warnings if config else True
         self._decoder = msgspec.json.Decoder()
         self._encoder = msgspec.json.Encoder()
 
-    async def load_all_async(self, filters: Optional[dict] = None) -> None:
+    async def load_all_async(self, filters: dict | None = None) -> None:
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading all instruments{filters_str}")
 
-        instruments_info = await self._http_market.fetch_instruments()
+        instruments_info = await self._http_market.fetch_instruments(self._instrument_types)
         # risk_limits = await self._http_market.get_risk_limits()
         for instrument in instruments_info:
-            if self._instrument_type == BybitInstrumentType.SPOT:
+            if isinstance(instrument, BybitInstrumentSpot):
                 self._parse_spot_instrument(instrument)
-            elif self._instrument_type == BybitInstrumentType.LINEAR:
+            elif isinstance(instrument, BybitInstrumentLinear):
                 self._parse_linear_instrument(instrument)
-            elif self._instrument_type == BybitInstrumentType.OPTION:
+            elif isinstance(instrument, BybitInstrumentOption):
                 self._parse_option_instrument(instrument)
             else:
                 raise TypeError("Unsupported instrument type in BybitInstrumentProvider")
@@ -91,37 +88,26 @@ class BybitInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
             self._log.info("No instrument IDs given for loading.")
             return
 
-    async def load_async(self, instrument_id: InstrumentId, filters: Optional[dict] = None) -> None:
+    async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, self.venue, "instrument_id.venue", "self.venue")
-
 
     def _parse_spot_instrument(
         self,
-        instrument: BybitInstrumentSpot
+        instrument: BybitInstrumentSpot,
     ):
         pass
 
     def _parse_option_instrument(
         self,
-        instrument: BybitInstrumentOption
+        instrument: BybitInstrumentOption,
     ):
-        try:
-            base_currency = instrument.parse_to_base_currency()
-            quote_currency = instrument.parse_to_quote_currency()
-            raw_symbol = Symbol(instrument.symbol)
-            instrument = OptionsContract(
-                instrument_id=instrument_id,
-            )
-        except ValueError as e:
-            if self._log_warnings:
-                self._log.warning(f"Unable to parse instrument {instrument.symbol}, {e}.")
+        pass
 
     def _parse_linear_instrument(
         self,
@@ -131,7 +117,9 @@ class BybitInstrumentProvider(InstrumentProvider):
             base_currency = instrument.parse_to_base_currency()
             quote_currency = instrument.parse_to_quote_currency()
             raw_symbol = Symbol(instrument.symbol)
-            parsed_symbol = BybitSymbol(raw_symbol.value).parse_as_nautilus(self._instrument_type)
+            parsed_symbol = BybitSymbol(raw_symbol.value).parse_as_nautilus(
+                BybitInstrumentType.LINEAR,
+            )
             nautilus_symbol = Symbol(parsed_symbol)
             instrument_id = InstrumentId(symbol=nautilus_symbol, venue=BYBIT_VENUE)
             if instrument.settleCoin == instrument.baseCoin:
@@ -192,7 +180,6 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add_currency(base_currency)
             self.add_currency(quote_currency)
             self.add(instrument=instrument)
-            self._log.debug(f"Added instrument {instrument.id}.")
         except ValueError as e:
             if self._log_warnings:
                 self._log.warning(f"Unable to parse instrument {instrument.symbol}, {e}.")

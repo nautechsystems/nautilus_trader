@@ -30,7 +30,6 @@ from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServe
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.nautilus_pyo3.network import HttpClient
-
 from tests.integration_tests.adapters.bybit.utils.get_mock import get_mock
 
 

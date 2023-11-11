@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from typing import Optional
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
@@ -141,20 +139,20 @@ class BybitWsOrderbookSnapshotMsg(msgspec.Struct):
 
 class BybitWsTickerLinear(msgspec.Struct, omit_defaults=True, kw_only=True):
     symbol: str
-    tickDirection: Optional[str] = None
+    tickDirection: str | None = None
     price24hPcnt: str
-    lastPrice: Optional[str] = None
-    prevPrice24h: Optional[str] = None
-    highPrice24h: Optional[str] = None
-    lowPrice24h: Optional[str] = None
-    prevPrice1h: Optional[str] = None
-    markPrice: Optional[str] = None
-    indexPrice: Optional[str] = None
-    openInterest: Optional[str] = None
-    openInterestValue: Optional[str] = None
-    turnover24h: Optional[str] = None
-    volume24h: Optional[str] = None
-    nextFundingTime: Optional[str] = None
+    lastPrice: str | None = None
+    prevPrice24h: str | None = None
+    highPrice24h: str | None = None
+    lowPrice24h: str | None = None
+    prevPrice1h: str | None = None
+    markPrice: str | None = None
+    indexPrice: str | None = None
+    openInterest: str | None = None
+    openInterestValue: str | None = None
+    turnover24h: str | None = None
+    volume24h: str | None = None
+    nextFundingTime: str | None = None
     fundingRate: str
     bid1Price: str
     bid1Size: str
@@ -453,9 +451,9 @@ class BybitWsAccountExecution(msgspec.Struct):
     orderLinkId: str
     orderPrice: str
     orderQty: str
-    orderType: str
+    orderType: BybitOrderType
     stopOrderType: str
-    side: str
+    side: BybitOrderSide
     execTime: str
     isLeverage: str
     closedSize: str
@@ -472,6 +470,7 @@ class BybitWsAccountExecutionMsg(msgspec.Struct):
 ################################################################################
 # Private - Account Wallet
 ################################################################################
+
 
 class BybitWsAccountWalletCoin(msgspec.Struct):
     coin: str
@@ -506,6 +505,7 @@ class BybitWsAccountWallet(msgspec.Struct):
     coin: list[BybitWsAccountWalletCoin]
     accountLTV: str
     accountType: str
+
 
 class BybitWsAccountWalletMsg(msgspec.Struct):
     topic: str

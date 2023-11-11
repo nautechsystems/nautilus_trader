@@ -12,19 +12,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
-from typing import Optional
+from typing import Any, Generic, TypeVar
 
 import msgspec
 
 
-def BybitListResult(type):
-    return msgspec.defstruct("", [("list", list[type])])
+T = TypeVar("T")
 
 
-def BybitCoinResult(type):
-    return msgspec.defstruct("", [("coin", list[type])])
+class BybitListResult(Generic[T], msgspec.Struct):
+    list: list[T]
+
+
+def bybit_coin_result(object_type: Any):
+    return msgspec.defstruct("", [("coin", list[object_type])])
 
 
 class LeverageFilter(msgspec.Struct):
@@ -57,7 +58,7 @@ class LotSizeFilter(msgspec.Struct):
     # The step to increase/reduce order quantity
     qtyStep: str
     # Maximum order qty for PostOnly order
-    postOnlyMaxOrderQty: Optional[str] = None
+    postOnlyMaxOrderQty: str | None = None
 
 
 class SpotLotSizeFilter(msgspec.Struct):

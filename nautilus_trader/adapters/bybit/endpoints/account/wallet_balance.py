@@ -43,9 +43,12 @@ class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
         )
         self._get_resp_decoder = msgspec.json.Decoder(BybitWalletBalanceResponse)
 
-    async def _get(self, parameters: WalletBalanceGetParameters) -> BybitWalletBalanceResponse:
+    async def get(self, parameters: WalletBalanceGetParameters) -> BybitWalletBalanceResponse:
         raw = await self._method(self.http_method, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
-        except Exception:
-            raise RuntimeError(f"Failed to decode response wallet balance response: {raw}")
+        except Exception as e:
+            decoded_raw = raw.decode("utf-8")
+            raise RuntimeError(
+                f"Failed to decode response wallet balance response: {decoded_raw}",
+            ) from e

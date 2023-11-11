@@ -15,8 +15,6 @@
 
 
 import asyncio
-from functools import lru_cache
-from typing import Optional
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
@@ -39,13 +37,12 @@ from nautilus_trader.utils.env import get_env_key
 HTTP_CLIENTS: dict[str, BybitHttpClient] = {}
 
 
-@lru_cache(1)
-def get_cached_bybit_http_client(
+def get_bybit_http_client(
     clock: LiveClock,
     logger: Logger,
-    key: Optional[str] = None,
-    secret: Optional[str] = None,
-    base_url: Optional[str] = None,
+    key: str | None = None,
+    secret: str | None = None,
+    base_url: str | None = None,
     is_testnet: bool = False,
 ):
     """
@@ -79,12 +76,11 @@ def get_cached_bybit_http_client(
     return HTTP_CLIENTS[client_key]
 
 
-@lru_cache(1)
-def get_cached_bybit_instrument_provider(
+def get_bybit_instrument_provider(
     client: BybitHttpClient,
     logger: Logger,
     clock: LiveClock,
-    instrument_type: BybitInstrumentType,
+    instrument_types: list[BybitInstrumentType],
     is_testnet: bool,
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
@@ -93,14 +89,14 @@ def get_cached_bybit_instrument_provider(
         logger=logger,
         config=config,
         clock=clock,
-        instrument_type=instrument_type,
+        instrument_types=instrument_types,
         is_testnet=is_testnet,
     )
 
 
 class BybitLiveDataClientFactory(LiveDataClientFactory):
     @staticmethod
-    def create(
+    def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
         name: str,
         config: BybitDataClientConfig,
@@ -109,7 +105,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         clock: LiveClock,
         logger: Logger,
     ) -> BybitDataClient:
-        client: BybitHttpClient = get_cached_bybit_http_client(
+        client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             logger=logger,
             key=config.api_key,
@@ -117,19 +113,20 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             base_url=config.base_url_http,
             is_testnet=config.testnet,
         )
-        provider = get_cached_bybit_instrument_provider(
+        provider = get_bybit_instrument_provider(
             client=client,
             logger=logger,
             clock=clock,
-            instrument_type=config.instrument_type,
+            instrument_types=config.instrument_types,
             is_testnet=config.testnet,
             config=config.instrument_provider,
         )
-        default_base_url_ws: str = _get_ws_base_url_public(
-            instrument_type=config.instrument_type,
-            is_testnet=config.testnet,
-        )
-
+        ws_base_urls: dict[BybitInstrumentType, str] = {}
+        for instrument_type in config.instrument_types:
+            ws_base_urls[instrument_type] = _get_ws_base_url_public(
+                instrument_type=instrument_type,
+                is_testnet=config.testnet,
+            )
         return BybitDataClient(
             loop=loop,
             client=client,
@@ -138,8 +135,8 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            instrument_type=config.instrument_type,
-            base_url_ws=config.base_url_ws or default_base_url_ws,
+            instrument_types=config.instrument_types,
+            ws_urls=ws_base_urls,
             config=config,
         )
 
@@ -155,7 +152,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         clock: LiveClock,
         logger: Logger,
     ) -> BybitExecutionClient:
-        client: BybitHttpClient = get_cached_bybit_http_client(
+        client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             logger=logger,
             key=config.api_key,
@@ -163,11 +160,11 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             base_url=config.base_url_http,
             is_testnet=config.testnet,
         )
-        provider = get_cached_bybit_instrument_provider(
+        provider = get_bybit_instrument_provider(
             client=client,
             logger=logger,
             clock=clock,
-            instrument_type=config.instrument_type,
+            instrument_types=config.instrument_types,
             is_testnet=config.testnet,
             config=config.instrument_provider,
         )
@@ -180,7 +177,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            instrument_type=config.instrument_type,
+            instrument_types=config.instrument_types,
             base_url_ws=config.base_url_ws or default_base_url_ws,
             config=config,
         )
@@ -207,7 +204,10 @@ def _get_http_base_url(is_testnet: bool):
         return "https://api.bytick.com"
 
 
-def _get_ws_base_url_public(instrument_type: BybitInstrumentType, is_testnet: bool):
+def _get_ws_base_url_public(
+    instrument_type: BybitInstrumentType,
+    is_testnet: bool,
+) -> str:
     if not is_testnet:
         if instrument_type == BybitInstrumentType.SPOT:
             return "wss://stream.bybit.com/v5/public/spot"
@@ -227,9 +227,7 @@ def _get_ws_base_url_public(instrument_type: BybitInstrumentType, is_testnet: bo
         elif instrument_type == BybitInstrumentType.INVERSE:
             return "wss://stream-testnet.bybit.com/v5/public/inverse"
         else:
-            raise RuntimeError(
-                f"invalid `BybitAccountType`, was {instrument_type}",  # pragma: no cover
-            )
+            raise RuntimeError(f"invalid `BybitAccountType`, was {instrument_type}")
 
 
 def _get_ws_base_url_private(is_testnet: bool) -> str:

@@ -14,12 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from typing import Optional
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
-from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
@@ -31,17 +28,17 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BybitPlaceOrderGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType
+    category: str
     symbol: str
     side: BybitOrderSide
     qty: str
-    orderType: Optional[BybitOrderType] = None
-    price: Optional[str] = None
-    trigger_direction: Optional[int] = None  # TODO type this
-    trigger_price: Optional[str] = None
-    trigger_by: Optional[BybitTriggerType] = None
-    timeInForce: Optional[BybitTimeInForce] = None
-    orderLinkId: Optional[str] = None
+    orderType: BybitOrderType | None = None
+    price: str | None = None
+    trigger_direction: int | None = None  # TODO type this
+    trigger_price: str | None = None
+    trigger_by: BybitTriggerType | None = None
+    timeInForce: BybitTimeInForce | None = None
+    orderLinkId: str | None = None
 
 
 class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
@@ -64,4 +61,4 @@ class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
         try:
             return self._resp_decoder.decode(raw)
         except Exception:
-            raise RuntimeError(f"Failed to decode response place order response: {raw}")
+            raise RuntimeError("Failed to decode response place order response.")

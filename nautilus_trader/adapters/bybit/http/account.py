@@ -13,18 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
-
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+
+# fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import WalletBalanceGetParameters
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import PositionInfoGetParameters
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParameters
+
+# fmt: on
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersGetParameters
 from nautilus_trader.adapters.bybit.endpoints.trade.open_orders import BybitOpenOrdersHttp
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
@@ -45,12 +47,10 @@ class BybitAccountHttpAPI:
         self,
         client: BybitHttpClient,
         clock: LiveClock,
-        instrument_type: BybitInstrumentType,
     ):
         PyCondition.not_none(client, "client")
         self.client = client
         self._clock = clock
-        self.instrument_type = instrument_type
         self.base_endpoint = "/v5/"
         self.default_settle_coin = "USDT"
 
@@ -63,14 +63,15 @@ class BybitAccountHttpAPI:
 
     async def query_position_info(
         self,
-        symbol: Optional[str] = None,
+        instrument_type: BybitInstrumentType,
+        symbol: str | None = None,
     ) -> list[BybitPositionStruct]:
         # symbol = 'USD'
         response = await self._endpoint_position_info.get(
             PositionInfoGetParameters(
                 symbol=BybitSymbol(symbol) if symbol else None,
                 settleCoin=self.default_settle_coin if symbol is None else None,
-                category=get_category_from_instrument_type(self.instrument_type),
+                category=get_category_from_instrument_type(instrument_type),
             ),
         )
         return response.result.list
@@ -82,11 +83,12 @@ class BybitAccountHttpAPI:
 
     async def query_open_orders(
         self,
-        symbol: Optional[str] = None,
+        instrument_type: BybitInstrumentType,
+        symbol: str | None = None,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
-                category=get_category_from_instrument_type(self.instrument_type),
+                category=get_category_from_instrument_type(instrument_type),
                 symbol=BybitSymbol(symbol) if symbol else None,
                 settleCoin=self.default_settle_coin if symbol is None else None,
             ),
@@ -95,12 +97,13 @@ class BybitAccountHttpAPI:
 
     async def query_order(
         self,
+        instrument_type: BybitInstrumentType,
         symbol: str,
         order_id: str,
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
-                category=get_category_from_instrument_type(self.instrument_type),
+                category=get_category_from_instrument_type(instrument_type),
                 symbol=BybitSymbol(symbol) if symbol else None,
                 orderId=order_id,
             ),
@@ -109,11 +112,12 @@ class BybitAccountHttpAPI:
 
     async def cancel_all_orders(
         self,
+        instrument_type: BybitInstrumentType,
         symbol: str,
     ):
         response = await self._endpoint_cancel_all_orders.post(
             BybitCancelAllOrdersPostParameters(
-                category=get_category_from_instrument_type(self.instrument_type),
+                category=get_category_from_instrument_type(instrument_type),
                 symbol=BybitSymbol(symbol),
             ),
         )
@@ -121,32 +125,32 @@ class BybitAccountHttpAPI:
 
     async def query_wallet_balance(
         self,
-        coin: Optional[str] = None,
-    ) -> [list[BybitWalletBalance], int]:
-        response = await self._endpoint_wallet_balance._get(
+        coin: str | None = None,
+    ) -> tuple[list[BybitWalletBalance], int]:
+        response = await self._endpoint_wallet_balance.get(
             WalletBalanceGetParameters(
                 accountType="UNIFIED",
             ),
         )
-        return [response.result.list, response.time]
+        return response.result.list, response.time
 
     async def place_order(
         self,
+        instrument_type: BybitInstrumentType,
         symbol: str,
         side: BybitOrderSide,
         order_type: BybitOrderType,
-        time_in_force: Optional[BybitTimeInForce] = None,
-        quantity: Optional[str] = None,
-        price: Optional[str] = None,
-        order_id: Optional[str] = None,
+        time_in_force: BybitTimeInForce | None = None,
+        quantity: str | None = None,
+        price: str | None = None,
+        order_id: str | None = None,
     ) -> BybitPlaceOrder:
         result = await self._endpoint_order.post(
             parameters=BybitPlaceOrderGetParameters(
-                category=get_category_from_instrument_type(self.instrument_type),
+                category=get_category_from_instrument_type(instrument_type),
                 symbol=BybitSymbol(symbol),
                 side=side,
                 orderType=order_type,
-                # timeInForce=time_in_force,
                 qty=quantity,
                 price=price,
                 orderLinkId=order_id,

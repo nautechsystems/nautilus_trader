@@ -17,23 +17,44 @@ import pkgutil
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval, BybitOrderSide, BybitOrderType, \
-    BybitTimeInForce, BybitOrderStatus, BybitPositionIdx
-from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKlineMsg, BybitWsKline, BybitWsLiquidationMsg, \
-    BybitWsLiquidation, BybitWsOrderbookDeltaData, BybitWsOrderbookDeltaMsg, BybitWsOrderbookSnapshotMsg, \
-    BybitWsOrderbookSnapshot, BybitWsTickerLinearMsg, BybitWsTickerLinear, BybitWsTickerSpotMsg, BybitWsTickerSpot, \
-    BybitWsTickerOptionMsg, BybitWsTickerOption, BybitWsTradeMsg, BybitWsTrade, BybitWsAccountExecution, \
-    BybitWsAccountExecutionMsg, BybitWsAccountOrderMsg, BybitWsAccountOrder, \
-    BybitWsAccountPositionMsg, BybitWsAccountPosition, BybitWsAccountWalletMsg, BybitWsAccountWalletCoin, \
-    BybitWsAccountWallet
+from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
+from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrder
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPosition
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWallet
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletCoin
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKline
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsKlineMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsLiquidation
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsLiquidationMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDeltaData
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookDeltaMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookSnapshot
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsOrderbookSnapshotMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinear
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOption
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerOptionMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTrade
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMsg
 
 
 class TestBybitWsDecoders:
-
     def test_ws_public_kline(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_kline.json"
+            "ws_kline.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsKlineMsg)
@@ -48,7 +69,7 @@ class TestBybitWsDecoders:
             volume="2.081",
             turnover="34666.4005",
             confirm=False,
-            timestamp=1672324988882
+            timestamp=1672324988882,
         )
         result = decoder.decode(item)
         assert result.data == [target_kline]
@@ -56,11 +77,10 @@ class TestBybitWsDecoders:
         assert result.ts == 1672324988882
         assert result.type == "snapshot"
 
-
     def test_ws_public_liquidation(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_liquidation.json"
+            "ws_liquidation.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsLiquidationMsg)
@@ -70,7 +90,7 @@ class TestBybitWsDecoders:
             side=BybitOrderSide.BUY,
             size="1637",
             symbol="GALAUSDT",
-            updatedTime=1673251091822
+            updatedTime=1673251091822,
         )
         assert result.data == target_liquidation
         assert result.topic == "liquidation.GALAUSDT"
@@ -80,7 +100,7 @@ class TestBybitWsDecoders:
     def test_ws_public_orderbook_delta(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_orderbook_delta.json"
+            "ws_orderbook_delta.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsOrderbookDeltaMsg)
@@ -88,31 +108,31 @@ class TestBybitWsDecoders:
         target_data = BybitWsOrderbookDeltaData(
             s="BTCUSDT",
             b=[
-                ["30247.20","30.028"],
-                ["30245.40","0.224"],
-                ["30242.10","1.593"],
-                ["30240.30","1.305"],
-                ["30240.00","0"]
+                ["30247.20", "30.028"],
+                ["30245.40", "0.224"],
+                ["30242.10", "1.593"],
+                ["30240.30", "1.305"],
+                ["30240.00", "0"],
             ],
             a=[
-                ["30248.70","0"],
-                ["30249.30","0.892"],
-                ["30249.50","1.778"],
-                ["30249.60","0"],
-                ["30251.90","2.947"],
-                ["30252.20","0.659"],
-                ["30252.50","4.591"]
-            ]
+                ["30248.70", "0"],
+                ["30249.30", "0.892"],
+                ["30249.50", "1.778"],
+                ["30249.60", "0"],
+                ["30251.90", "2.947"],
+                ["30252.20", "0.659"],
+                ["30252.50", "4.591"],
+            ],
         )
         assert result.data == target_data
-        assert result.topic == 'orderbook.50.BTCUSDT'
+        assert result.topic == "orderbook.50.BTCUSDT"
         assert result.ts == 1687940967466
-        assert result.type == 'delta'
+        assert result.type == "delta"
 
     def test_ws_public_orderbook_snapshot(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_orderbook_snapshot.json"
+            "ws_orderbook_snapshot.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsOrderbookSnapshotMsg)
@@ -120,12 +140,12 @@ class TestBybitWsDecoders:
         target_data = BybitWsOrderbookSnapshot(
             s="BTCUSDT",
             b=[
-                ["16493.50","0.006"],
-                ["16493.00","0.100"]
+                ["16493.50", "0.006"],
+                ["16493.00", "0.100"],
             ],
             a=[
-                ["16611.00","0.029"],
-                ["16612.00","0.213"]
+                ["16611.00", "0.029"],
+                ["16612.00", "0.213"],
             ],
             u=18521288,
             seq=7961638724,
@@ -138,7 +158,7 @@ class TestBybitWsDecoders:
     def test_ws_public_ticker_linear(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_ticker_linear.json"
+            "ws_ticker_linear.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsTickerLinearMsg)
@@ -163,7 +183,7 @@ class TestBybitWsDecoders:
             bid1Price="17215.50",
             bid1Size="84.489",
             ask1Price="17216.00",
-            ask1Size="83.020"
+            ask1Size="83.020",
         )
         assert result.data == target_data
         assert result.topic == "tickers.BTCUSDT"
@@ -171,11 +191,10 @@ class TestBybitWsDecoders:
         assert result.ts == 1673272861686
         assert result.cs == 24987956059
 
-
     def test_ws_public_ticker_option(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_ticker_option.json"
+            "ws_ticker_option.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsTickerOptionMsg)
@@ -205,7 +224,7 @@ class TestBybitWsDecoders:
             vega="0.81351067",
             theta="-19.9115368",
             predictedDeliveryPrice="0",
-            change24h="-0.33333334"
+            change24h="-0.33333334",
         )
         assert result.data == target_data
         assert result.topic == "tickers.BTC-6JAN23-17500-C"
@@ -215,7 +234,7 @@ class TestBybitWsDecoders:
     def test_ws_public_ticker_spot(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_ticker_spot.json"
+            "ws_ticker_spot.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsTickerSpotMsg)
@@ -229,19 +248,18 @@ class TestBybitWsDecoders:
             volume24h="6780.866843",
             turnover24h="141946527.22907118",
             price24hPcnt="0.0196",
-            usdIndexPrice="21120.2400136"
+            usdIndexPrice="21120.2400136",
         )
         assert result.data == target_data
         assert result.topic == "tickers.BTCUSDT"
         assert result.type == "snapshot"
-        assert result.ts ==  1673853746003
+        assert result.ts == 1673853746003
         assert result.cs == 2588407389
-
 
     def test_ws_public_trade(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
-            "ws_trade.json"
+            "ws_trade.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsTradeMsg)
@@ -254,7 +272,7 @@ class TestBybitWsDecoders:
             p="16578.50",
             L="PlusTick",
             i="20f43950-d8dd-5b31-9112-a178eb6023af",
-            BT=False
+            BT=False,
         )
         assert result.data == [target_trade]
         assert result.topic == "publicTrade.BTCUSDT"
@@ -264,7 +282,7 @@ class TestBybitWsDecoders:
     def test_ws_private_execution(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.private",
-            "ws_execution.json"
+            "ws_execution.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsAccountExecutionMsg)
@@ -297,7 +315,7 @@ class TestBybitWsDecoders:
             execTime="1672364174443",
             isLeverage="0",
             closedSize="",
-            seq=4688002127
+            seq=4688002127,
         )
         assert result.data == [target_data]
         assert result.topic == "execution"
@@ -307,7 +325,7 @@ class TestBybitWsDecoders:
     def test_ws_private_order(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.private",
-            "ws_order.json"
+            "ws_order.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsAccountOrderMsg)
@@ -354,18 +372,17 @@ class TestBybitWsDecoders:
             smpType="None",
             smpGroup=0,
             smpOrderId="",
-            feeCurrency=""
+            feeCurrency="",
         )
         assert result.data == [target_data]
         assert result.topic == "order"
         assert result.id == "5923240c6880ab-c59f-420b-9adb-3639adc9dd90"
         assert result.creationTime == 1672364262474
 
-
     def test_ws_private_position(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.private",
-            "ws_position.json"
+            "ws_position.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsAccountPositionMsg)
@@ -398,19 +415,17 @@ class TestBybitWsDecoders:
             category="linear",
             positionStatus="Normal",
             adlRankIndicator=2,
-            seq=4688002127
+            seq=4688002127,
         )
         assert result.data == [target_data]
         assert result.topic == "position"
         assert result.id == "59232430b58efe-5fc5-4470-9337-4ce293b68edd"
         assert result.creationTime == 1672364174455
 
-
-
     def test_ws_private_wallet(self):
         item = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.ws_messages.private",
-            "ws_wallet.json"
+            "ws_wallet.json",
         )
         assert item is not None
         decoder = msgspec.json.Decoder(BybitWsAccountWalletMsg)
@@ -432,7 +447,7 @@ class TestBybitWsDecoders:
             bonus="0",
             collateralSwitch=True,
             marginCollateral=True,
-            locked="0"
+            locked="0",
         )
         coin_btc = BybitWsAccountWalletCoin(
             coin="BTC",
@@ -451,7 +466,7 @@ class TestBybitWsDecoders:
             bonus="0",
             collateralSwitch=False,
             marginCollateral=True,
-            locked="0"
+            locked="0",
         )
         coin_usdt = BybitWsAccountWalletCoin(
             coin="USDT",
@@ -470,7 +485,7 @@ class TestBybitWsDecoders:
             bonus="0",
             collateralSwitch=True,
             marginCollateral=True,
-            locked="0"
+            locked="0",
         )
         wallet_data = BybitWsAccountWallet(
             accountIMRate="0.4782",
@@ -484,7 +499,7 @@ class TestBybitWsDecoders:
             totalMaintenanceMargin="277.05763376",
             coin=[coin_usdc, coin_btc, coin_usdt],
             accountLTV="0",
-            accountType="UNIFIED"
+            accountType="UNIFIED",
         )
         assert result.data == [wallet_data]
         assert result.topic == "wallet"

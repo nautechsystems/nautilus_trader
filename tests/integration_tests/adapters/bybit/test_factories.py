@@ -98,7 +98,7 @@ class TestBybitFactories:
             config=BybitDataClientConfig(
                 api_key="SOME_BYBIT_API_KEY",
                 api_secret="SOME_BYBIT_API_SECRET",
-                instrument_type=BybitInstrumentType.LINEAR,
+                instrument_types=[BybitInstrumentType.LINEAR],
             ),
             msgbus=self.msgbus,
             cache=self.cache,
@@ -114,7 +114,7 @@ class TestBybitFactories:
             config=BybitExecClientConfig(
                 api_key="SOME_BYBIT_API_KEY",
                 api_secret="SOME_BYBIT_API_SECRET",
-                instrument_type=BybitInstrumentType.LINEAR,
+                instrument_types=[BybitInstrumentType.LINEAR],
             ),
             msgbus=self.msgbus,
             cache=self.cache,

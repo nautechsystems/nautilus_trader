@@ -17,7 +17,7 @@
 import hashlib
 import hmac
 import json
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
@@ -33,14 +33,14 @@ class BybitWebsocketClient:
         logger: Logger,
         base_url: str,
         handler: Callable[[bytes], None],
-        api_key: Optional[str] = None,
-        api_secret: Optional[str] = None,
-        is_private: Optional[bool] = False,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        is_private: bool | None = False,
     ) -> None:
         self._clock = clock
         self._logger = logger
         self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
-        self._base_url: str = base_url
+        self._url: str = base_url
         self._handler: Callable[[bytes], None] = handler
         self._client: WebSocketClient = None
         self._is_private = is_private
@@ -49,10 +49,6 @@ class BybitWebsocketClient:
 
         self._streams_connecting: set[str] = set()
         self._subscriptions: list[str] = []
-
-    @property
-    def url(self) -> str:
-        return self._base_url
 
     @property
     def subscriptions(self) -> list[str]:
@@ -99,14 +95,14 @@ class BybitWebsocketClient:
         self._subscriptions.append(subscription)
 
     async def connect(self) -> None:
-        self._log.debug(f"Connecting to {self.url} websocket stream")
+        self._log.debug(f"Connecting to {self._url} websocket stream")
         client = await WebSocketClient.connect(
-            url=self.url,
+            url=self._url,
             handler=self._handler,
             heartbeat=15,
         )
         self._client = client
-        self._log.info(f"Connected to {self.url}.", LogColor.BLUE)
+        self._log.info(f"Connected to {self._url}.", LogColor.BLUE)
         ## authenticate
         if self._is_private:
             signature = self._get_signature()
@@ -116,7 +112,9 @@ class BybitWebsocketClient:
         timestamp = self._clock.timestamp_ms() + 1000
         sign = f"GET/realtime{timestamp}"
         signature = hmac.new(
-            self._api_secret.encode("utf-8"), sign.encode("utf-8"), hashlib.sha256
+            self._api_secret.encode("utf-8"),
+            sign.encode("utf-8"),
+            hashlib.sha256,
         ).hexdigest()
         return {
             "op": "auth",
@@ -126,4 +124,4 @@ class BybitWebsocketClient:
     async def disconnect(self) -> None:
         await self._client.send_text(json.dumps({"op": "unsubscribe", "args": self._subscriptions}))
         await self._client.disconnect()
-        self._log.info(f"Disconnected from {self.url}.", LogColor.BLUE)
+        self._log.info(f"Disconnected from {self._url}.", LogColor.BLUE)

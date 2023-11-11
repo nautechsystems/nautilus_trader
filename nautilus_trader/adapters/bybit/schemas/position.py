@@ -52,5 +52,5 @@ class BybitPositionStruct(msgspec.Struct):
 class BybitPositionResponseStruct(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult(BybitPositionStruct)
+    result: BybitListResult[BybitPositionStruct]
     time: int

@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from typing import Union
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -29,7 +27,7 @@ from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
 class BybitInstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: str = None
+    category: BybitInstrumentType = None
     symbol: str = None
     status: str = None
 
@@ -39,9 +37,7 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-        instrument_type: BybitInstrumentType,
     ):
-        self.instrument_type = instrument_type
         url_path = base_endpoint + "instruments-info"
         super().__init__(
             client=client,
@@ -53,24 +49,22 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
         )
         self._response_decoder_instrument_spot = msgspec.json.Decoder(BybitInstrumentsSpotResponse)
         self._response_decoder_instrument_option = msgspec.json.Decoder(
-            BybitInstrumentsOptionResponse
+            BybitInstrumentsOptionResponse,
         )
 
     async def get(
         self,
         parameters: BybitInstrumentsInfoGetParameters,
-    ) -> Union[
-        BybitInstrumentsLinearResponse,
-        BybitInstrumentsSpotResponse,
-        BybitInstrumentsOptionResponse,
-    ]:
+    ) -> BybitInstrumentsLinearResponse | (
+        BybitInstrumentsSpotResponse | BybitInstrumentsOptionResponse
+    ):
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
-        if self.instrument_type == BybitInstrumentType.LINEAR:
+        if parameters.category == BybitInstrumentType.LINEAR:
             return self._response_decoder_instrument_linear.decode(raw)
-        elif self.instrument_type == BybitInstrumentType.SPOT:
+        elif parameters.category == BybitInstrumentType.SPOT:
             return self._response_decoder_instrument_spot.decode(raw)
-        elif self.instrument_type == BybitInstrumentType.OPTION:
+        elif parameters.category == BybitInstrumentType.OPTION:
             return self._response_decoder_instrument_option.decode(raw)
         else:
             raise ValueError("Invalid account type")

@@ -15,7 +15,6 @@
 
 
 import asyncio
-from typing import Optional
 
 import msgspec
 import pandas as pd
@@ -42,6 +41,7 @@ from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.rust.common import LogColor
+from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import SubmitOrder
@@ -57,7 +57,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -81,7 +80,7 @@ class BybitExecutionClient(LiveExecutionClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: InstrumentProvider,
-        instrument_type: BybitInstrumentType,
+        instrument_types: list[BybitInstrumentType],
         base_url_ws: str,
         config: BybitExecClientConfig,
     ) -> None:
@@ -91,7 +90,7 @@ class BybitExecutionClient(LiveExecutionClient):
             venue=BYBIT_VENUE,
             oms_type=OmsType.NETTING,
             instrument_provider=instrument_provider,
-            account_type=AccountType.CASH if instrument_type.is_spot else AccountType.MARGIN,
+            account_type=AccountType.CASH,
             base_currency=None,
             msgbus=msgbus,
             cache=cache,
@@ -102,10 +101,10 @@ class BybitExecutionClient(LiveExecutionClient):
         self._use_position_ids = config.use_position_ids
 
         self._log.info(f"Account type: ${self.account_type}", LogColor.BLUE)
-        self._bybit_instrument_type = instrument_type
+        self._instrument_types = instrument_types
         self._enum_parser = BybitEnumParser()
 
-        account_id = AccountId(f"{BYBIT_VENUE.value}-{self._bybit_instrument_type}")
+        account_id = AccountId(f"{BYBIT_VENUE.value}-UNIFIED")
         self._set_account_id(account_id)
 
         # Hot caches
@@ -127,7 +126,6 @@ class BybitExecutionClient(LiveExecutionClient):
         self._http_account = BybitAccountHttpAPI(
             client=client,
             clock=clock,
-            instrument_type=instrument_type,
         )
 
         # Order submission
@@ -142,10 +140,10 @@ class BybitExecutionClient(LiveExecutionClient):
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
         self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
         self._decoder_ws_account_execution_update = msgspec.json.Decoder(
-            BybitWsAccountExecutionMsg
+            BybitWsAccountExecutionMsg,
         )
         self._decoder_ws_account_position_update = msgspec.json.Decoder(
-            BybitWsAccountPositionMsg
+            BybitWsAccountPositionMsg,
         )
 
     async def _connect(self) -> None:
@@ -161,9 +159,9 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def generate_order_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         self._log.info("Requesting OrderStatusReports...")
@@ -193,9 +191,9 @@ class BybitExecutionClient(LiveExecutionClient):
     async def generate_order_status_report(
         self,
         instrument_id: InstrumentId,
-        client_order_id: Optional[ClientOrderId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-    ) -> Optional[OrderStatusReport]:
+        client_order_id: ClientOrderId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> OrderStatusReport | None:
         PyCondition.false(
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
@@ -216,6 +214,7 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             if venue_order_id:
                 bybit_orders = await self._http_account.query_order(
+                    instrument_type=BybitInstrumentType.LINEAR,
                     symbol=instrument_id.symbol.value,
                     order_id=venue_order_id.value,
                 )
@@ -236,26 +235,25 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
                 self._log.debug(f"Received {order_report}.")
                 return order_report
-
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReport: {e}")
-            return None
+        return None
 
     async def generate_trade_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        venue_order_id: Optional[VenueOrderId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        venue_order_id: VenueOrderId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[TradeReport]:
         self._log.info("Requesting TradeReports...")
         return []
 
     async def generate_position_status_reports(
         self,
-        instrument_id: Optional[InstrumentId] = None,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        instrument_id: InstrumentId | None = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         self._log.info("Requesting PositionStatusReports...")
         return []
@@ -271,7 +269,7 @@ class BybitExecutionClient(LiveExecutionClient):
             active_symbols.add(BybitSymbol(position.instrument_id.symbol.value))
         return active_symbols
 
-    def _get_cached_instrument_id(self, symbol: str) -> Optional[InstrumentId]:
+    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId | None:
         # parse instrument id
         nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus(self._bybit_instrument_type)
         instrument_id: InstrumentId = self._instrument_ids.get(nautilus_symbol)
@@ -280,9 +278,12 @@ class BybitExecutionClient(LiveExecutionClient):
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
 
-    async def _get_active_position_symbols(self, symbol: Optional[str]) -> set[str]:
+    async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
-        bybit_positions = await self._http_account.query_position_info(symbol)
+        bybit_positions = await self._http_account.query_position_info(
+            BybitInstrumentType.LINEAR,
+            symbol,
+        )
         for position in bybit_positions:
             active_symbols.add(position.symbol)
         return active_symbols
@@ -307,7 +308,10 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._log.error(f"Failed to generate AccountState: {e}")
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        await self._http_account.cancel_all_orders(command.instrument_id.symbol.value)
+        await self._http_account.cancel_all_orders(
+            BybitInstrumentType.LINEAR,
+            command.instrument_id.symbol.value,
+        )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_inner(command.order)
@@ -364,8 +368,8 @@ class BybitExecutionClient(LiveExecutionClient):
         time_in_force = self._enum_parser.parse_nautilus_time_in_force(order.time_in_force)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
         order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
-        strategy_id = order.strategy_id
         order = await self._http_account.place_order(
+            instrument_type=BybitInstrumentType.LINEAR,
             symbol=order.instrument_id.symbol.value,
             side=order_side,
             order_type=order_type,
@@ -383,8 +387,8 @@ class BybitExecutionClient(LiveExecutionClient):
             ws_message = self._decoder_ws_topic_check.decode(raw)
             self._topic_check(ws_message.topic, raw)
         except Exception:
-            ws_message = self._decoder_ws_subscription.decode(raw)
-            if ws_message.success:
+            ws_message_sub = self._decoder_ws_subscription.decode(raw)
+            if ws_message_sub.success:
                 self._log.info("Success subscribing")
             else:
                 self._log.error("Failed to subscribe.")
@@ -412,9 +416,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 print(trade)
                 self._process_execution(trade)
         except Exception as e:
-            print(f"Some errror {e}")
             print(e)
-            self._log.exception(f"Failed to handle account execution update: {e.message}", e)
+            self._log.exception(f"Failed to handle account execution update: {e}", e)
 
     def _process_execution(self, execution: BybitWsAccountExecution):
         client_order_id = (
@@ -438,9 +441,13 @@ class BybitExecutionClient(LiveExecutionClient):
                 order_side=self._enum_parser.parse_bybit_order_side(execution.side),
                 order_type=self._enum_parser.parse_bybit_order_type(execution.orderType),
                 order_status=OrderStatus.FILLED,
-                time_in_force=self._enum_parser.parse_bybit_time_in_force(execution.timeInForce),
-                quantity=Quantity.from_str(execution.qty),
-                price=Price.from_str(execution.price),
+                time_in_force=TimeInForce.GTC,
+                quantity=Quantity.from_str(execution.execQty),
+                price=Price.from_str(execution.execPrice),
+                filled_qty=Quantity.from_str(execution.execQty),
+                ts_accepted=123,
+                ts_init=123,
+                ts_last=123,
                 report_id=UUID4(),
             )
             self._send_order_status_report(report)
@@ -449,8 +456,7 @@ class BybitExecutionClient(LiveExecutionClient):
         if instrument is None:
             raise ValueError(f"Cannot handle ws trade event: instrument {instrument_id} not found")
 
-        print("dsa")
-        commission_asset: Optional[str] = instrument.quote_currency
+        commission_asset: str | None = instrument.quote_currency
         commission_amount = Money(execution.execFee, commission_asset)
         self.generate_order_filled(
             strategy_id=strategy_id,
@@ -460,7 +466,7 @@ class BybitExecutionClient(LiveExecutionClient):
             trade_id=TradeId(execution.execId),
             order_side=self._enum_parser.parse_bybit_order_side(execution.side),
             order_type=self._enum_parser.parse_bybit_order_type(execution.orderType),
-            last_qty=Quantity(float(execution.lastQty), instrument.size_precision),
+            last_qty=Quantity(float(execution.leavesQty), instrument.size_precision),
             last_px=Price(float(execution.execPrice), instrument.price_precision),
             quote_currency=instrument.quote_currency,
             commission=commission_amount,
@@ -473,9 +479,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # get order
         # get commission
-        commission_asset: Optional[str] = instrument.quote_currency
-        commission = Money(execution.execFee, commission_asset)
-        venue_position_id: Optional[PositionId] = None
+        # commission_asset: str | None = instrument.quote_currency or Money(execution.execFee, commission_asset)
 
         self.generate_order_filled(
             account_id=self.account_id,

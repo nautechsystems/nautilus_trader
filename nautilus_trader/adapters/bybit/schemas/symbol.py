@@ -14,18 +14,26 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from typing import Optional
-
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 
 
 class BybitSymbol(str):
-    def __new__(cls, symbol: Optional[str]):
+    def __new__(cls, symbol: str | None):
         if symbol is not None:
             return super().__new__(
                 cls,
                 symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
             )
+
+    def get_instrument_type(self) -> BybitInstrumentType:
+        if self.endswith("_PERP"):
+            return BybitInstrumentType.LINEAR
+        elif self.endswith("_USDT"):
+            return BybitInstrumentType.SPOT
+        elif self.index("CALL") or self.index("PUT"):
+            return BybitInstrumentType.OPTION
+        else:
+            raise ValueError(f"Unknown instrument type for symbol {self}")
 
     def parse_as_nautilus(self, instrument_type: BybitInstrumentType) -> str:
         if instrument_type.is_spot_or_margin:

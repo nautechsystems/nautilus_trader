@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Union
 
 import msgspec
 
@@ -95,25 +94,25 @@ class BybitInstrumentLinear(msgspec.Struct):
         return Decimal(0.0006)
 
 
-BybitInstrument = Union[BybitInstrumentLinear, BybitInstrumentSpot, BybitInstrumentOption]
+BybitInstrument = BybitInstrumentLinear | BybitInstrumentSpot | BybitInstrumentOption
 
 
 class BybitInstrumentsLinearResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult(BybitInstrumentLinear)
+    result: BybitListResult[BybitInstrumentLinear]
     time: int
 
 
 class BybitInstrumentsSpotResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult(BybitInstrumentSpot)
+    result: BybitListResult[BybitInstrumentSpot]
     time: int
 
 
 class BybitInstrumentsOptionResponse(msgspec.Struct):
     retCode: int
     retMsg: str
-    result: BybitListResult(BybitInstrumentOption)
+    result: BybitListResult[BybitInstrumentOption]
     time: int

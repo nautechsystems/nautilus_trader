@@ -59,28 +59,28 @@ class TestBybitParsing:
         # MINUTE
         with pytest.raises(ValueError):
             self._enum_parser.parse_bybit_kline(
-                BarType.from_str("ETHUSDT.BYBIT-2-MINUTE-LAST-EXTERNAL")
+                BarType.from_str("ETHUSDT.BYBIT-2-MINUTE-LAST-EXTERNAL"),
             )
         # HOUR
         with pytest.raises(ValueError):
             self._enum_parser.parse_bybit_kline(
-                BarType.from_str("ETHUSDT.BYBIT-3-HOUR-LAST-EXTERNAL")
+                BarType.from_str("ETHUSDT.BYBIT-3-HOUR-LAST-EXTERNAL"),
             )
         # DAY
         with pytest.raises(ValueError):
             result = self._enum_parser.parse_bybit_kline(
-                BarType.from_str("ETHUSDT.BYBIT-3-DAY-LAST-EXTERNAL")
+                BarType.from_str("ETHUSDT.BYBIT-3-DAY-LAST-EXTERNAL"),
             )
             print(result)
         # WEEK
         with pytest.raises(ValueError):
             self._enum_parser.parse_bybit_kline(
-                BarType.from_str("ETHUSDT.BYBIT-2-WEEK-LAST-EXTERNAL")
+                BarType.from_str("ETHUSDT.BYBIT-2-WEEK-LAST-EXTERNAL"),
             )
         # MONTH
         with pytest.raises(ValueError):
             self._enum_parser.parse_bybit_kline(
-                BarType.from_str("ETHUSDT.BYBIT-4-MONTH-LAST-EXTERNAL")
+                BarType.from_str("ETHUSDT.BYBIT-4-MONTH-LAST-EXTERNAL"),
             )
 
     @pytest.mark.parametrize(
@@ -111,7 +111,7 @@ class TestBybitParsing:
             [BybitOrderStatus.CREATED, OrderStatus.SUBMITTED],
             [BybitOrderStatus.NEW, OrderStatus.ACCEPTED],
             [BybitOrderStatus.FILLED, OrderStatus.FILLED],
-            [BybitOrderStatus.CANCELLED, OrderStatus.CANCELLED],
+            [BybitOrderStatus.CANCELED, OrderStatus.CANCELED],
         ],
     )
     def test_parse_bybit_order_status(self, bybit_order_status, order_status):
@@ -124,7 +124,7 @@ class TestBybitParsing:
             [OrderStatus.SUBMITTED, BybitOrderStatus.CREATED],
             [OrderStatus.ACCEPTED, BybitOrderStatus.NEW],
             [OrderStatus.FILLED, BybitOrderStatus.FILLED],
-            [OrderStatus.CANCELLED, BybitOrderStatus.CANCELLED],
+            [OrderStatus.CANCELED, BybitOrderStatus.CANCELED],
         ],
     )
     def test_parse_nautilus_order_status(self, order_status, bybit_order_status):

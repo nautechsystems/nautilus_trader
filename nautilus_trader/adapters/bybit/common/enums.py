@@ -105,10 +105,10 @@ class BybitAccountType(Enum):
 
 @unique
 class BybitInstrumentType(Enum):
-    SPOT = "SPOT"
-    LINEAR = "LINEAR"
-    INVERSE = "INVERSE"
-    OPTION = "OPTION"
+    SPOT = "spot"
+    LINEAR = "linear"
+    INVERSE = "inverse"
+    OPTION = "option"
 
     @property
     def is_spot_or_margin(self) -> bool:
@@ -227,14 +227,6 @@ class BybitEnumParser:
     def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
         try:
             return self.nautilus_to_bybit_time_in_force[time_in_force]
-        except KeyError:
-            raise RuntimeError(
-                f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover
-            )
-
-    def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
-        try:
-            return self.bybit_to_nautilus_time_in_force[time_in_force]
         except KeyError:
             raise RuntimeError(
                 f"unrecognized Bybit time in force, was {time_in_force}",  # pragma: no cover

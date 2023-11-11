@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import msgspec
 
@@ -46,7 +46,7 @@ class BybitHttpEndpoint:
         self.decoder = msgspec.json.Decoder()
         self.encoder = msgspec.json.Encoder(enc_hook=enc_hook)
 
-        self._method_request = {
+        self._method_request: dict[BybitEndpointType, Any] = {
             BybitEndpointType.NONE: self.client.send_request,
             BybitEndpointType.MARKET: self.client.send_request,
             BybitEndpointType.ACCOUNT: self.client.sign_request,
@@ -56,11 +56,12 @@ class BybitHttpEndpoint:
     async def _method(
         self,
         method_type: Any,
-        parameters: Optional[Any] = None,
-        ratelimiter_keys: Optional[Any] = None,
+        parameters: Any | None = None,
+        ratelimiter_keys: Any | None = None,
     ) -> bytes:
         payload: dict = self.decoder.decode(self.encoder.encode(parameters))
-        raw: bytes = await self._method_request[self.endpoint_type](
+        method_call = self._method_request[self.endpoint_type]
+        raw: bytes = await method_call(
             http_method=method_type,
             url_path=self.url_path,
             payload=payload,

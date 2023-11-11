@@ -26,7 +26,10 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 def msgspec_bybit_item_save(filename, obj):
     item = msgspec.to_builtins(obj)
     timestamp = round(time.time() * 1000)
-    item_json = json.dumps(dict(retCode=0, retMsg="success", time=timestamp, result=item), indent=4)
+    item_json = json.dumps(
+        {"retCode": 0, "retMsg": "success", "time": timestamp, "result": item},
+        indent=4,
+    )
     # check if the file already exists, if exists, do not overwrite
     if os.path.isfile(filename):
         return

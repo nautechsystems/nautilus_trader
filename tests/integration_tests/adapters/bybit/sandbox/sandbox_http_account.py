@@ -20,7 +20,7 @@ import msgspec
 import pytest
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
-from nautilus_trader.adapters.bybit.factories import get_cached_bybit_http_client
+from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -30,7 +30,7 @@ from nautilus_trader.common.logging import Logger
 async def test_bybit_account_http_client():
     clock = LiveClock()
 
-    client = get_cached_bybit_http_client(
+    client = get_bybit_http_client(
         clock=clock,
         logger=Logger(clock=clock),
         is_testnet=True,
