@@ -29,7 +29,7 @@ from nautilus_trader.backtest.node import BacktestNode, BacktestVenueConfig, Bac
 from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
-from nautilus_trader.persistence.loaders import CSVDataLoader
+from nautilus_trader.test_kit.providers import CSVTickDataLoader
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 ```
 
@@ -64,7 +64,7 @@ Then we can create Nautilus `QuoteTick` objects by processing the DataFrame with
 
 ```python
 # Here we just take the first data file found and load into a pandas DataFrame
-df = CSVDataLoader.load(raw_files[0], timestamp_column=0, format="%Y%m%d %H%M%S%f")
+df = CSVTickDataLoader.load(raw_files[0], index_col=0, format="%Y%m%d %H%M%S%f")
 df.columns = ["bid_price", "ask_price"]
 
 # Process quote ticks using a wrangler
