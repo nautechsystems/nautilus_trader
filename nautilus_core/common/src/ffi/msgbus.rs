@@ -149,7 +149,7 @@ mod tests {
     use rstest::*;
 
     use super::*;
-    use crate::msgbus::Handler;
+    use crate::handlers::MessageHandler;
 
     #[rstest]
     fn test_subscribe_python_callable() {
@@ -157,9 +157,9 @@ mod tests {
         let topic = "my-topic".to_string();
 
         // TODO: Create a Python list and pass the message in a closure to the `append` method
-        let handler: Handler = Rc::new(|_m: &_| Python::with_gil(|_| {}));
+        let handler: MessageHandler = Rc::new(|_m: &_| Python::with_gil(|_| {}));
 
-        let mut msgbus = MessageBus::<Handler>::new(trader_id, None);
+        let mut msgbus = MessageBus::<MessageHandler>::new(trader_id, None);
         msgbus.subscribe(&topic, handler.clone(), "id_of_method", None);
 
         assert_eq!(msgbus.topics(), vec![topic]);

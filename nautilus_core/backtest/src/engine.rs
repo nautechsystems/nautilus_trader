@@ -35,7 +35,7 @@ impl TimeEventAccumulator {
     /// Advance the given clock to the `to_time_ns`.
     pub fn advance_clock(&mut self, clock: &mut TestClock, to_time_ns: UnixNanos, set_time: bool) {
         let events = clock.advance_time(to_time_ns, set_time);
-        let handlers = clock.match_handlers_py(events);
+        let handlers = clock.match_handlers(events);
         self.event_handlers.extend(handlers);
     }
 

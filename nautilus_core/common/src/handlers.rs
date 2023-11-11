@@ -13,20 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-#[cfg(feature = "ffi")]
-pub mod ffi;
-pub mod generators;
-pub mod handlers;
-pub mod logging;
-pub mod msgbus;
-#[cfg(feature = "python")]
-pub mod python;
-pub mod testing;
-pub mod timer;
+use std::rc::Rc;
 
-#[cfg(feature = "test")]
-pub mod stubs {
-    use crate::{clock::stubs::*, logging::stubs::*};
+use nautilus_core::message::Message;
+use pyo3::{prelude::*, AsPyPointer};
+
+use crate::timer::TimeEvent;
+
+/// Defines a handler which can take a `Message`.
+pub type MessageHandler = Rc<dyn Fn(&Message)>;
+
+// TODO: Make this more generic
+#[derive(Clone)]
+pub struct EventHandler {
+    callback_py: Option<PyObject>,
+    _callback: Option<Rc<dyn Fn(TimeEvent)>>,
+}
+
+impl EventHandler {
+    // TODO: Validate exactly one of these is `Some`
+    pub fn new(callback_py: Option<PyObject>, callback: Option<Rc<dyn Fn(TimeEvent)>>) -> Self {
+        Self {
+            callback_py,
+            _callback: callback,
+        }
+    }
+
+    pub fn as_ptr(self) -> *mut pyo3::ffi::PyObject {
+        self.callback_py.unwrap().as_ptr()
+    }
 }

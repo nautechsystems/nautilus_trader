@@ -16,16 +16,11 @@
 use std::{
     collections::HashMap,
     hash::{Hash, Hasher},
-    rc::Rc,
 };
 
 use nautilus_core::{message::Message, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use ustr::Ustr;
-
-/// Defines a handler which can take a `Message`.
-#[allow(dead_code)]
-pub type Handler = Rc<dyn Fn(&Message)>;
 
 // Represents a subscription to a particular topic.
 //
@@ -358,14 +353,17 @@ fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::rc::Rc;
+
     use rstest::*;
 
     use super::*;
+    use crate::handlers::MessageHandler;
 
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::<Handler>::new(trader_id, None);
+        let msgbus = MessageBus::<MessageHandler>::new(trader_id, None);
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));
@@ -373,14 +371,14 @@ mod tests {
 
     #[rstest]
     fn test_endpoints_when_no_endpoints() {
-        let msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
 
         assert!(msgbus.endpoints().is_empty());
     }
 
     #[rstest]
     fn test_topics_when_no_subscriptions() {
-        let msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
 
         assert!(msgbus.topics().is_empty());
         assert!(!msgbus.has_subscribers("my-topic"));
@@ -388,7 +386,7 @@ mod tests {
 
     #[rstest]
     fn test_regsiter_endpoint() {
-        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
         let endpoint = "MyEndpoint".to_string();
 
         // Useless handler for testing
@@ -404,7 +402,7 @@ mod tests {
 
     #[rstest]
     fn test_deregsiter_endpoint() {
-        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
         let endpoint = "MyEndpoint".to_string();
 
         // Useless handler for testing
@@ -420,7 +418,7 @@ mod tests {
 
     #[rstest]
     fn test_subscribe() {
-        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
         let topic = "my-topic".to_string();
 
         // Useless handler for testing
@@ -436,7 +434,7 @@ mod tests {
 
     #[rstest]
     fn test_unsubscribe() {
-        let mut msgbus = MessageBus::<Handler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
         let topic = "my-topic".to_string();
 
         // Useless handler for testing
