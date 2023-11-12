@@ -95,7 +95,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BetfairHttpClient
         The Betfair HttpClient.
-    base_currency : Currency
+    account_currency : Currency
         The account base currency for the client.
     msgbus : MessageBus
         The message bus for the client.
@@ -114,7 +114,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BetfairHttpClient,
-        base_currency: Currency,
+        account_currency: Currency,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -127,7 +127,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             venue=BETFAIR_VENUE,
             oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
-            base_currency=base_currency,
+            base_currency=account_currency,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,

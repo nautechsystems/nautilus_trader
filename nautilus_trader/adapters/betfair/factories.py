@@ -190,7 +190,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            account_currency=config.account_currency,
+            account_currency=Currency.from_str(config.account_currency),
         )
         return data_client
 
@@ -251,7 +251,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            base_currency=Currency.from_str(config.account_currency),
+            account_currency=Currency.from_str(config.account_currency),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
