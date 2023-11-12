@@ -516,6 +516,17 @@ const PyObject *msgbus_topics(struct MessageBus_API bus);
 /**
  * # Safety
  *
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ */
+void msgbus_subscribe(struct MessageBus_API bus,
+                      const char *topic_ptr,
+                      const char *handler_id_ptr,
+                      PyObject *py_callable_ptr,
+                      uint8_t priority);
+
+/**
+ * # Safety
+ *
  * - Assumes `endpoint_ptr` is a valid C string pointer.
  */
 const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpoint_ptr);
@@ -527,6 +538,12 @@ const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpo
  */
 CVec msgbus_get_matching_handlers(struct MessageBus_API bus, const char *pattern_ptr);
 
+/**
+ * # Safety
+ *
+ * - Assumes any registered handler has a Python callable.
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ */
 void vec_msgbus_handlers_drop(CVec v);
 
 void vec_pycallable_drop(CVec v);

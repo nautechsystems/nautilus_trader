@@ -17,6 +17,7 @@ use std::rc::Rc;
 
 use nautilus_core::message::Message;
 use pyo3::{ffi, prelude::*, AsPyPointer};
+use ustr::Ustr;
 
 use crate::timer::TimeEvent;
 
@@ -29,47 +30,49 @@ pub struct PyCallableWrapper {
 // TODO: Make this more generic
 #[derive(Clone)]
 pub struct MessageHandler {
-    pub callback_py: Option<PyCallableWrapper>,
+    pub handler_id: Ustr,
+    pub py_callback: Option<PyCallableWrapper>,
     _callback: Option<Rc<dyn Fn(Message)>>,
 }
 
 impl MessageHandler {
     // TODO: Validate exactly one of these is `Some`
-    pub fn new(callback_py: Option<PyObject>, callback: Option<Rc<dyn Fn(Message)>>) -> Self {
-        let callback_py = callback_py.map(|callable| PyCallableWrapper {
-            ptr: callable.as_ptr(),
-        });
-
+    pub fn new(
+        handler_id: Ustr,
+        py_callback: Option<PyCallableWrapper>,
+        callback: Option<Rc<dyn Fn(Message)>>,
+    ) -> Self {
         Self {
-            callback_py,
+            handler_id,
+            py_callback,
             _callback: callback,
         }
     }
 
-    pub fn as_ptr(self) -> *mut pyo3::ffi::PyObject {
+    pub fn as_ptr(self) -> *const ffi::PyObject {
         // SAFETY: Will panic if `unwrap` is called on None
-        self.callback_py.unwrap().ptr
+        self.py_callback.unwrap().ptr
     }
 }
 
 // TODO: Make this more generic
 #[derive(Clone)]
 pub struct EventHandler {
-    callback_py: Option<PyObject>,
+    py_callback: Option<PyObject>,
     _callback: Option<Rc<dyn Fn(TimeEvent)>>,
 }
 
 impl EventHandler {
     // TODO: Validate exactly one of these is `Some`
-    pub fn new(callback_py: Option<PyObject>, callback: Option<Rc<dyn Fn(TimeEvent)>>) -> Self {
+    pub fn new(py_callback: Option<PyObject>, callback: Option<Rc<dyn Fn(TimeEvent)>>) -> Self {
         Self {
-            callback_py,
+            py_callback,
             _callback: callback,
         }
     }
 
-    pub fn as_ptr(self) -> *mut pyo3::ffi::PyObject {
+    pub fn as_ptr(self) -> *mut ffi::PyObject {
         // SAFETY: Will panic if `unwrap` is called on None
-        self.callback_py.unwrap().as_ptr()
+        self.py_callback.unwrap().as_ptr()
     }
 }

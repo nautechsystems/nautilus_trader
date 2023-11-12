@@ -32,21 +32,14 @@ use crate::handlers::MessageHandler;
 pub struct Subscription {
     pub handler: MessageHandler,
     topic: Ustr,
-    handler_id: Ustr,
     priority: u8,
 }
 
 impl Subscription {
-    pub fn new(
-        topic: Ustr,
-        handler: MessageHandler,
-        handler_id: Ustr,
-        priority: Option<u8>,
-    ) -> Self {
+    pub fn new(topic: Ustr, handler: MessageHandler, priority: Option<u8>) -> Self {
         Self {
             topic,
             handler,
-            handler_id,
             priority: priority.unwrap_or(0),
         }
     }
@@ -54,7 +47,7 @@ impl Subscription {
 
 impl PartialEq<Self> for Subscription {
     fn eq(&self, other: &Self) -> bool {
-        self.topic == other.topic && self.handler_id == other.handler_id
+        self.topic == other.topic && self.handler.handler_id == other.handler.handler_id
     }
 }
 
@@ -75,7 +68,7 @@ impl Ord for Subscription {
 impl Hash for Subscription {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.topic.hash(state);
-        self.handler_id.hash(state);
+        self.handler.handler_id.hash(state);
     }
 }
 
@@ -164,14 +157,8 @@ impl MessageBus {
     }
 
     /// Subscribes the given `handler` to the `topic`.
-    pub fn subscribe(
-        &mut self,
-        topic: &str,
-        handler: MessageHandler,
-        handler_id: &str,
-        priority: Option<u8>,
-    ) {
-        let sub = Subscription::new(Ustr::from(topic), handler, Ustr::from(handler_id), priority);
+    pub fn subscribe(&mut self, topic: &str, handler: MessageHandler, priority: Option<u8>) {
+        let sub = Subscription::new(Ustr::from(topic), handler, priority);
 
         if self.subscriptions.contains_key(&sub) {
             // TODO: log
@@ -192,15 +179,15 @@ impl MessageBus {
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe(&mut self, topic: &str, handler: MessageHandler, handler_id: &str) {
-        let sub = Subscription::new(Ustr::from(topic), handler, Ustr::from(handler_id), None);
+    pub fn unsubscribe(&mut self, topic: &str, handler: MessageHandler) {
+        let sub = Subscription::new(Ustr::from(topic), handler, None);
 
         self.subscriptions.remove(&sub);
     }
 
     /// Returns the handler for the given `endpoint`.
     #[must_use]
-    pub fn get_endpoint(&self, endpoint: &str) -> Option<&MessageHandler> {
+    pub fn get_endpoint(&self, endpoint: &Ustr) -> Option<&MessageHandler> {
         self.endpoints.get(&Ustr::from(endpoint))
     }
 
@@ -212,9 +199,11 @@ impl MessageBus {
             .is_some()
     }
 
-    // fn send(&self, endpoint: &String, msg: &Message) {
+    // fn send(&self, endpoint: &Ustr, msg: &Message) {
     //     if let Some(handler) = self.endpoints.get(endpoint) {
-    //         handler(msg);
+    //         if let Some(py_callable) = handler.py_callback {
+    //             Python::with_gil(|| msg)
+    //         }
     //     }
     // }
 
@@ -350,6 +339,16 @@ mod tests {
     use super::*;
     use crate::handlers::MessageHandler;
 
+    fn stub_msgbus() -> MessageBus {
+        MessageBus::new(TraderId::from("trader-001"), None)
+    }
+
+    fn stub_rust_callback() -> Rc<dyn Fn(Message)> {
+        Rc::new(|m: Message| {
+            format!("{m:?}");
+        })
+    }
+
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
@@ -361,14 +360,14 @@ mod tests {
 
     #[rstest]
     fn test_endpoints_when_no_endpoints() {
-        let msgbus = MessageBus::new(TraderId::from("trader-001"), None);
+        let msgbus = stub_msgbus();
 
         assert!(msgbus.endpoints().is_empty());
     }
 
     #[rstest]
     fn test_topics_when_no_subscriptions() {
-        let msgbus = MessageBus::new(TraderId::from("trader-001"), None);
+        let msgbus = stub_msgbus();
 
         assert!(msgbus.topics().is_empty());
         assert!(!msgbus.has_subscribers("my-topic"));
@@ -376,33 +375,27 @@ mod tests {
 
     #[rstest]
     fn test_regsiter_endpoint() {
-        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
+        let mut msgbus = stub_msgbus();
         let endpoint = "MyEndpoint".to_string();
 
-        // Useless callback for testing
-        let callback = Rc::new(|m: Message| {
-            format!("{m:?}");
-        });
-
-        let handler = MessageHandler::new(None, Some(callback));
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
 
         msgbus.register(endpoint.clone(), handler.clone());
 
         assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
-        assert!(msgbus.get_endpoint(&endpoint).is_some());
+        assert!(msgbus.get_endpoint(&Ustr::from(&endpoint)).is_some());
     }
 
     #[rstest]
     fn test_deregsiter_endpoint() {
-        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
+        let mut msgbus = stub_msgbus();
         let endpoint = "MyEndpoint".to_string();
 
-        // Useless callback for testing
-        let callback = Rc::new(|m: Message| {
-            format!("{m:?}");
-        });
-
-        let handler = MessageHandler::new(None, Some(callback));
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
 
         msgbus.register(endpoint.clone(), handler.clone());
         msgbus.deregister(&endpoint);
@@ -412,17 +405,14 @@ mod tests {
 
     #[rstest]
     fn test_subscribe() {
-        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
+        let mut msgbus = stub_msgbus();
         let topic = "my-topic".to_string();
 
-        // Useless callback for testing
-        let callback = Rc::new(|m: Message| {
-            format!("{m:?}");
-        });
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
 
-        let handler = MessageHandler::new(None, Some(callback));
-
-        msgbus.subscribe(&topic, handler.clone(), "a", Some(1));
+        msgbus.subscribe(&topic, handler.clone(), Some(1));
 
         assert!(msgbus.has_subscribers(&topic));
         assert_eq!(msgbus.topics(), vec![topic]);
@@ -430,19 +420,34 @@ mod tests {
 
     #[rstest]
     fn test_unsubscribe() {
-        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
+        let mut msgbus = stub_msgbus();
         let topic = "my-topic".to_string();
 
-        // Useless callback for testing
-        let callback = Rc::new(|m: Message| {
-            format!("{m:?}");
-        });
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
 
-        let handler = MessageHandler::new(None, Some(callback));
+        msgbus.subscribe(&topic, handler.clone(), None);
+        msgbus.unsubscribe(&topic, handler.clone());
 
-        msgbus.subscribe(&topic, handler.clone(), "a", None);
-        msgbus.unsubscribe(&topic, handler.clone(), "a");
-
+        assert!(!msgbus.has_subscribers(&topic));
         assert!(msgbus.topics().is_empty());
+    }
+
+    #[rstest]
+    #[case("*", "*", true)]
+    #[case("a", "*", true)]
+    #[case("a", "a", true)]
+    #[case("a", "b", false)]
+    #[case("data.quotes.BINANCE", "data.*", true)]
+    #[case("data.quotes.BINANCE", "data.quotes*", true)]
+    #[case("data.quotes.BINANCE", "data.*.BINANCE", true)]
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", true)]
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", true)]
+    fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected: bool) {
+        assert_eq!(
+            is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
+            expected
+        );
     }
 }
