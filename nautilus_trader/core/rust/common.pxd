@@ -130,7 +130,7 @@ cdef extern from "../includes/common.h":
     # A question mark matches a single character once. For example, `c?mp` matches
     # `camp` and `comp`. The question mark can also be used more than once.
     # For example, `c??p` would match both of the above examples and `coop`.
-    cdef struct MessageBus:
+    cdef struct MessageBus_t:
         pass
 
     cdef struct TestClock:
@@ -179,7 +179,7 @@ cdef extern from "../includes/common.h":
     # dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
     # having to manually access the underlying `MessageBus` instance.
     cdef struct MessageBus_API:
-        MessageBus *_0;
+        MessageBus_t *_0;
 
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:
@@ -375,6 +375,14 @@ cdef extern from "../includes/common.h":
     CVec msgbus_get_matching_handlers(MessageBus_API bus, const char *pattern_ptr);
 
     void vec_msgbus_handlers_drop(CVec v);
+
+    void vec_pycallable_drop(CVec v);
+
+    # # Safety
+    #
+    # - Assumes `topic_ptr` is a valid C string pointer.
+    # - Assumes `pattern_ptr` is a valid C string pointer.
+    uint8_t msgbus_is_matching(const char *topic_ptr, const char *pattern_ptr);
 
     # # Safety
     #

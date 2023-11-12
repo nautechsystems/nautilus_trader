@@ -21,7 +21,7 @@ use std::{
 
 use nautilus_core::ffi::{
     cvec::CVec,
-    string::{cstr_to_string, optional_cstr_to_string},
+    string::{cstr_to_string, cstr_to_ustr, optional_cstr_to_string},
 };
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::{
@@ -30,9 +30,11 @@ use pyo3::{
     types::{PyList, PyString},
     AsPyPointer, Python,
 };
-use ustr::Ustr;
 
-use crate::msgbus::MessageBus;
+use crate::{
+    handlers::PyCallableWrapper,
+    msgbus::{is_matching, MessageBus, Subscription},
+};
 
 /// Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
 ///
@@ -110,7 +112,7 @@ pub unsafe extern "C" fn msgbus_get_endpoint(
 ) -> *const ffi::PyObject {
     let endpoint = cstr_to_string(endpoint_ptr);
     match bus.get_endpoint(&endpoint) {
-        Some(handler) => handler.clone().as_ptr(),
+        Some(handler) => handler.callback_py.unwrap().ptr,
         None => ffi::Py_None(),
     }
 }
@@ -123,10 +125,12 @@ pub unsafe extern "C" fn msgbus_get_matching_handlers(
     mut bus: MessageBus_API,
     pattern_ptr: *const c_char,
 ) -> CVec {
-    let pattern = cstr_to_string(pattern_ptr);
-    // TODO: Avoid clone and take direct pointer
-    (*bus.get_matching_handlers(&Ustr::from(&pattern)))
-        .clone()
+    let pattern = cstr_to_ustr(pattern_ptr);
+    let subs: Vec<&Subscription> = bus.get_matching_handlers(&pattern);
+
+    subs.iter()
+        .map(|s| s.handler.callback_py.unwrap())
+        .collect::<Vec<PyCallableWrapper>>()
         .into()
 }
 
@@ -137,6 +141,30 @@ pub extern "C" fn vec_msgbus_handlers_drop(v: CVec) {
     let data: Vec<ffi::PyObject> =
         unsafe { Vec::from_raw_parts(ptr.cast::<ffi::PyObject>(), len, cap) };
     drop(data); // Memory freed here
+}
+
+#[allow(clippy::drop_non_drop)]
+#[no_mangle]
+pub extern "C" fn vec_pycallable_drop(v: CVec) {
+    let CVec { ptr, len, cap } = v;
+    let data: Vec<PyCallableWrapper> =
+        unsafe { Vec::from_raw_parts(ptr.cast::<PyCallableWrapper>(), len, cap) };
+    drop(data); // Memory freed here
+}
+
+/// # Safety
+///
+/// - Assumes `topic_ptr` is a valid C string pointer.
+/// - Assumes `pattern_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_is_matching(
+    topic_ptr: *const c_char,
+    pattern_ptr: *const c_char,
+) -> u8 {
+    let topic = cstr_to_ustr(topic_ptr);
+    let pattern = cstr_to_ustr(pattern_ptr);
+
+    is_matching(&topic, &pattern) as u8
 }
 
 ////////////////////////////////////////////////////////////////////////////////
