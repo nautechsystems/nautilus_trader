@@ -145,7 +145,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 
 /// Return a `bool` value from the given `u8`.
 #[must_use]
-pub fn u8_to_bool(value: u8) -> bool {
+pub fn u8_as_bool(value: u8) -> bool {
     value != 0
 }
 

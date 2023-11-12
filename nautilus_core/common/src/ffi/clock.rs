@@ -19,7 +19,7 @@ use std::{
 };
 
 use nautilus_core::{
-    ffi::{cvec::CVec, string::cstr_to_string},
+    ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_to_string},
     time::UnixNanos,
 };
 use pyo3::{
@@ -199,7 +199,7 @@ pub unsafe extern "C" fn test_clock_advance_time(
     to_time_ns: u64,
     set_time: u8,
 ) -> CVec {
-    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
+    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, u8_as_bool(set_time));
     clock.match_handlers(events).into()
 }
 
