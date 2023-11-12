@@ -16,20 +16,30 @@
 use std::rc::Rc;
 
 use nautilus_core::message::Message;
-use pyo3::{prelude::*, AsPyPointer};
+use pyo3::{ffi, prelude::*, AsPyPointer};
 
 use crate::timer::TimeEvent;
+
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct PyCallableWrapper {
+    pub ptr: *mut ffi::PyObject,
+}
 
 // TODO: Make this more generic
 #[derive(Clone)]
 pub struct MessageHandler {
-    callback_py: Option<PyObject>,
+    pub callback_py: Option<PyCallableWrapper>,
     _callback: Option<Rc<dyn Fn(Message)>>,
 }
 
 impl MessageHandler {
     // TODO: Validate exactly one of these is `Some`
     pub fn new(callback_py: Option<PyObject>, callback: Option<Rc<dyn Fn(Message)>>) -> Self {
+        let callback_py = callback_py.map(|callable| PyCallableWrapper {
+            ptr: callable.as_ptr(),
+        });
+
         Self {
             callback_py,
             _callback: callback,
@@ -37,7 +47,8 @@ impl MessageHandler {
     }
 
     pub fn as_ptr(self) -> *mut pyo3::ffi::PyObject {
-        self.callback_py.unwrap().as_ptr()
+        // SAFETY: Will panic if `unwrap` is called on None
+        self.callback_py.unwrap().ptr
     }
 }
 
@@ -58,6 +69,7 @@ impl EventHandler {
     }
 
     pub fn as_ptr(self) -> *mut pyo3::ffi::PyObject {
+        // SAFETY: Will panic if `unwrap` is called on None
         self.callback_py.unwrap().as_ptr()
     }
 }

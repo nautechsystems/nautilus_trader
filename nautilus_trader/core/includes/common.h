@@ -225,7 +225,7 @@ typedef struct Logger_t Logger_t;
  * `camp` and `comp`. The question mark can also be used more than once.
  * For example, `c??p` would match both of the above examples and `coop`.
  */
-typedef struct MessageBus MessageBus;
+typedef struct MessageBus_t MessageBus_t;
 
 typedef struct TestClock TestClock;
 
@@ -283,7 +283,7 @@ typedef struct Logger_API {
  * having to manually access the underlying `MessageBus` instance.
  */
 typedef struct MessageBus_API {
-    struct MessageBus *_0;
+    struct MessageBus_t *_0;
 } MessageBus_API;
 
 /**
@@ -528,6 +528,16 @@ const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpo
 CVec msgbus_get_matching_handlers(struct MessageBus_API bus, const char *pattern_ptr);
 
 void vec_msgbus_handlers_drop(CVec v);
+
+void vec_pycallable_drop(CVec v);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_is_matching(const char *topic_ptr, const char *pattern_ptr);
 
 /**
  * # Safety

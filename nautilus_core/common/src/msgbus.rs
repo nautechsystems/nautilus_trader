@@ -30,8 +30,8 @@ use crate::handlers::MessageHandler;
 // topics and their subscribers.
 #[derive(Clone)]
 pub struct Subscription {
+    pub handler: MessageHandler,
     topic: Ustr,
-    handler: MessageHandler,
     handler_id: Ustr,
     priority: u8,
 }
@@ -278,23 +278,25 @@ impl MessageBus {
     }
 
     // TODO: Need to improve the efficiency of this
-    pub fn get_matching_handlers<'a>(&'a mut self, pattern: &'a Ustr) -> &'a mut Vec<Subscription> {
+    pub fn get_matching_handlers<'a>(&'a mut self, pattern: &'a Ustr) -> Vec<&'a Subscription> {
         let matching_handlers = || {
             self.subscriptions
                 .iter()
                 .filter_map(|(sub, _)| {
                     if is_matching(&sub.topic, pattern) {
-                        Some(sub.clone())
+                        Some(sub)
                     } else {
                         None
                     }
                 })
-                .collect::<Vec<Subscription>>()
+                .collect::<Vec<&'a Subscription>>()
         };
 
-        self.patterns
-            .entry(*pattern)
-            .or_insert_with(matching_handlers)
+        matching_handlers()
+
+        // self.patterns
+        //     .entry(*pattern)
+        //     .or_insert_with(matching_handlers)
     }
 
     pub fn publish(&mut self, pattern: Ustr, _msg: &Message) {
@@ -310,7 +312,7 @@ impl MessageBus {
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
-fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
+pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     let mut table = [[false; 256]; 256];
     table[0][0] = true;
 
