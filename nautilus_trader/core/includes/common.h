@@ -322,46 +322,6 @@ typedef struct TimeEventHandler_t {
     PyObject *callback_ptr;
 } TimeEventHandler_t;
 
-const char *component_state_to_cstr(enum ComponentState value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum ComponentState component_state_from_cstr(const char *ptr);
-
-const char *component_trigger_to_cstr(enum ComponentTrigger value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
-
-const char *log_level_to_cstr(enum LogLevel value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum LogLevel log_level_from_cstr(const char *ptr);
-
-const char *log_color_to_cstr(enum LogColor value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum LogColor log_color_from_cstr(const char *ptr);
-
 struct TestClock_API test_clock_new(void);
 
 void test_clock_drop(struct TestClock_API clock);
@@ -447,6 +407,46 @@ uint64_t live_clock_timestamp_ms(struct LiveClock_API *clock);
 uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
 
 uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
+
+const char *component_state_to_cstr(enum ComponentState value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum ComponentState component_state_from_cstr(const char *ptr);
+
+const char *component_trigger_to_cstr(enum ComponentTrigger value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+const char *log_level_to_cstr(enum LogLevel value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogLevel log_level_from_cstr(const char *ptr);
+
+const char *log_color_to_cstr(enum LogColor value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogColor log_color_from_cstr(const char *ptr);
 
 /**
  * Creates a new logger.

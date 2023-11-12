@@ -199,38 +199,6 @@ cdef extern from "../includes/common.h":
         # The event ID.
         PyObject *callback_ptr;
 
-    const char *component_state_to_cstr(ComponentState value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    ComponentState component_state_from_cstr(const char *ptr);
-
-    const char *component_trigger_to_cstr(ComponentTrigger value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    ComponentTrigger component_trigger_from_cstr(const char *ptr);
-
-    const char *log_level_to_cstr(LogLevel value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    LogLevel log_level_from_cstr(const char *ptr);
-
-    const char *log_color_to_cstr(LogColor value);
-
-    # Returns an enum from a Python string.
-    #
-    # # Safety
-    # - Assumes `ptr` is a valid C string pointer.
-    LogColor log_color_from_cstr(const char *ptr);
-
     TestClock_API test_clock_new();
 
     void test_clock_drop(TestClock_API clock);
@@ -304,6 +272,38 @@ cdef extern from "../includes/common.h":
     uint64_t live_clock_timestamp_us(LiveClock_API *clock);
 
     uint64_t live_clock_timestamp_ns(LiveClock_API *clock);
+
+    const char *component_state_to_cstr(ComponentState value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentState component_state_from_cstr(const char *ptr);
+
+    const char *component_trigger_to_cstr(ComponentTrigger value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+    const char *log_level_to_cstr(LogLevel value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogLevel log_level_from_cstr(const char *ptr);
+
+    const char *log_color_to_cstr(LogColor value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    # - Assumes `ptr` is a valid C string pointer.
+    LogColor log_color_from_cstr(const char *ptr);
 
     # Creates a new logger.
     #

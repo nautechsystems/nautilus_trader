@@ -13,9 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{ffi::c_char, fmt::Debug, str::FromStr};
+use std::fmt::Debug;
 
-use nautilus_core::ffi::string::{cstr_to_string, str_to_cstr};
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -252,76 +251,4 @@ pub enum LogFormat {
     /// Underline log format. This ANSI escape code is used to underline the text in the log output.
     #[strum(serialize = "\x1b[4m")]
     Underline,
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ComponentState {
-    let value = cstr_to_string(ptr);
-    ComponentState::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `ComponentState` enum string value, was '{value}'"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ComponentTrigger {
-    let value = cstr_to_string(ptr);
-    ComponentTrigger::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `ComponentTrigger` enum string value, was '{value}'"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn log_level_from_cstr(ptr: *const c_char) -> LogLevel {
-    let value = cstr_to_string(ptr);
-    LogLevel::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `LogLevel` enum string value, was '{value}'"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn log_color_from_cstr(ptr: *const c_char) -> LogColor {
-    let value = cstr_to_string(ptr);
-    LogColor::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `LogColor` enum string value, was '{value}'"))
 }
