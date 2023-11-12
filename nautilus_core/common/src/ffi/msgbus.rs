@@ -32,7 +32,7 @@ use pyo3::{
 };
 
 use crate::{
-    handlers::PyCallableWrapper,
+    handlers::{MessageHandler, PyCallableWrapper},
     msgbus::{is_matching, MessageBus, Subscription},
 };
 
@@ -104,15 +104,35 @@ pub extern "C" fn msgbus_topics(bus: MessageBus_API) -> *const ffi::PyObject {
 
 /// # Safety
 ///
+/// - Assumes `handler_id_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_subscribe(
+    mut bus: MessageBus_API,
+    topic_ptr: *const c_char,
+    handler_id_ptr: *const c_char,
+    py_callable_ptr: *mut ffi::PyObject,
+    priority: u8,
+) {
+    let topic = cstr_to_ustr(topic_ptr);
+    let handler_id = cstr_to_ustr(handler_id_ptr);
+    let py_callable = PyCallableWrapper {
+        ptr: py_callable_ptr,
+    };
+    let handler = MessageHandler::new(handler_id, Some(py_callable), None);
+    bus.subscribe(&topic, handler, Some(priority));
+}
+
+/// # Safety
+///
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn msgbus_get_endpoint(
     bus: MessageBus_API,
     endpoint_ptr: *const c_char,
 ) -> *const ffi::PyObject {
-    let endpoint = cstr_to_string(endpoint_ptr);
+    let endpoint = cstr_to_ustr(endpoint_ptr);
     match bus.get_endpoint(&endpoint) {
-        Some(handler) => handler.callback_py.unwrap().ptr,
+        Some(handler) => handler.py_callback.unwrap().ptr,
         None => ffi::Py_None(),
     }
 }
@@ -129,10 +149,31 @@ pub unsafe extern "C" fn msgbus_get_matching_handlers(
     let subs: Vec<&Subscription> = bus.get_matching_handlers(&pattern);
 
     subs.iter()
-        .map(|s| s.handler.callback_py.unwrap())
+        .map(|s| s.handler.py_callback.unwrap())
         .collect::<Vec<PyCallableWrapper>>()
         .into()
 }
+
+/// # Safety
+///
+/// - Assumes any registered handler has a Python callable.
+/// - Assumes `endpoint_ptr` is a valid C string pointer.
+// pub unsafe extern "C" fn msgbus_send(
+//     bus: MessageBus_API,
+//     endpoint_ptr: *const c_char,
+//     msg: *mut ffi::PyObject,
+// ) {
+//     let endpoint = cstr_to_ustr(endpoint_ptr);
+//
+//     if let Some(handler) = bus.get_endpoint(&endpoint) {
+//         let callable_ptr = handler.py_callback.unwrap().ptr;
+//         Python::with_gil(|py| {
+//             let callable = PyObject::from_borrowed_ptr(py, callable_ptr);
+//             let msg = PyObject::from_borrowed_ptr(py, msg);
+//             callable.call1(py, msg.into_py(py));
+//         });
+//     }
+// }
 
 #[allow(clippy::drop_non_drop)]
 #[no_mangle]
@@ -176,22 +217,25 @@ mod tests {
 
     use nautilus_core::message::Message;
     use rstest::*;
+    use ustr::Ustr;
 
     use super::*;
     use crate::handlers::MessageHandler;
 
     #[rstest]
-    fn test_subscribe_python_callable() {
+    fn test_subscribe_rust_handler() {
         let trader_id = TraderId::from("trader-001");
         let topic = "my-topic".to_string();
 
         // TODO: Create a Python list and pass the message in a closure to the `append` method
         let callback = Rc::new(|_m: Message| Python::with_gil(|_| {}));
-        let handler = MessageHandler::new(None, Some(callback));
+        let handler_id = Ustr::from("id_of_method");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
 
         let mut msgbus = MessageBus::new(trader_id, None);
-        msgbus.subscribe(&topic, handler.clone(), "id_of_method", None);
+        msgbus.subscribe(&topic, handler, None);
 
+        assert!(msgbus.has_subscribers(&topic));
         assert_eq!(msgbus.topics(), vec![topic]);
     }
 }

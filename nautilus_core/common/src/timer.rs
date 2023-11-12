@@ -24,7 +24,7 @@ use nautilus_core::{
     time::{TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
-use pyo3;
+use pyo3::ffi;
 use ustr::Ustr;
 
 #[repr(C)]
@@ -87,7 +87,7 @@ pub struct TimeEventHandler {
     /// The event.
     pub event: TimeEvent,
     /// The event ID.
-    pub callback_ptr: *mut pyo3::ffi::PyObject,
+    pub callback_ptr: *mut ffi::PyObject,
 }
 
 impl PartialOrd for TimeEventHandler {
