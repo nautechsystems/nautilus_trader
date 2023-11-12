@@ -130,7 +130,7 @@ cdef extern from "../includes/common.h":
     # A question mark matches a single character once. For example, `c?mp` matches
     # `camp` and `comp`. The question mark can also be used more than once.
     # For example, `c??p` would match both of the above examples and `coop`.
-    cdef struct MessageBus_PyObject:
+    cdef struct MessageBus:
         pass
 
     cdef struct TestClock:
@@ -179,7 +179,7 @@ cdef extern from "../includes/common.h":
     # dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
     # having to manually access the underlying `MessageBus` instance.
     cdef struct MessageBus_API:
-        MessageBus_PyObject *_0;
+        MessageBus *_0;
 
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:

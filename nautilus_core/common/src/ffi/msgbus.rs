@@ -44,10 +44,10 @@ use crate::msgbus::MessageBus;
 /// having to manually access the underlying `MessageBus` instance.
 #[allow(non_camel_case_types)]
 #[repr(C)]
-pub struct MessageBus_API(Box<MessageBus<ffi::PyObject>>);
+pub struct MessageBus_API(Box<MessageBus>);
 
 impl Deref for MessageBus_API {
-    type Target = MessageBus<ffi::PyObject>;
+    type Target = MessageBus;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn msgbus_get_endpoint(
 ) -> *const ffi::PyObject {
     let endpoint = cstr_to_string(endpoint_ptr);
     match bus.get_endpoint(&endpoint) {
-        Some(handler) => handler,
+        Some(handler) => handler.clone().as_ptr(),
         None => ffi::Py_None(),
     }
 }
@@ -146,6 +146,7 @@ pub extern "C" fn vec_msgbus_handlers_drop(v: CVec) {
 mod tests {
     use std::rc::Rc;
 
+    use nautilus_core::message::Message;
     use rstest::*;
 
     use super::*;
@@ -157,9 +158,10 @@ mod tests {
         let topic = "my-topic".to_string();
 
         // TODO: Create a Python list and pass the message in a closure to the `append` method
-        let handler: MessageHandler = Rc::new(|_m: &_| Python::with_gil(|_| {}));
+        let callback = Rc::new(|_m: Message| Python::with_gil(|_| {}));
+        let handler = MessageHandler::new(None, Some(callback));
 
-        let mut msgbus = MessageBus::<MessageHandler>::new(trader_id, None);
+        let mut msgbus = MessageBus::new(trader_id, None);
         msgbus.subscribe(&topic, handler.clone(), "id_of_method", None);
 
         assert_eq!(msgbus.topics(), vec![topic]);
