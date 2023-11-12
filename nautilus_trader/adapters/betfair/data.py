@@ -37,6 +37,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import BookType
@@ -80,7 +81,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
-        account_currency: str,
+        account_currency: Currency,
         strict_handling: bool = False,
     ):
         super().__init__(
@@ -101,7 +102,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-        self.parser = BetfairParser(currency=account_currency)
+        self.parser = BetfairParser(currency=account_currency.code)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
