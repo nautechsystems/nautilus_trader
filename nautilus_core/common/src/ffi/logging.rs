@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::{
     ffi::{
-        parsing::optional_bytes_to_json,
+        parsing::{optional_bytes_to_json, u8_as_bool},
         string::{cstr_to_string, optional_cstr_to_string, str_to_cstr},
     },
     uuid::UUID4,
@@ -89,7 +89,7 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
-        if file_logging != 0 {
+        if u8_as_bool(file_logging) {
             Some(level_file)
         } else {
             None
@@ -98,8 +98,8 @@ pub unsafe extern "C" fn logger_new(
         optional_cstr_to_string(file_name_ptr),
         optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
-        is_colored != 0,
-        is_bypassed != 0,
+        u8_as_bool(is_colored),
+        u8_as_bool(is_bypassed),
     )))
 }
 
