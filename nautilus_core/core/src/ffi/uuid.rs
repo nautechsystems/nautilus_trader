@@ -75,7 +75,7 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_uuid4_new() {
+    fn test_new() {
         let uuid = uuid4_new();
         let uuid_string = uuid.to_string();
         let uuid_parsed = Uuid::parse_str(&uuid_string).expect("Uuid::parse_str failed");
@@ -83,7 +83,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_from_cstr() {
+    fn test_from_cstr() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid_cstring = CString::new(uuid_string).expect("CString::new failed");
         let uuid_ptr = uuid_cstring.as_ptr();
@@ -92,7 +92,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_to_cstr() {
+    fn test_to_cstr() {
         let uuid_string = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let uuid = UUID4::from(uuid_string);
         let uuid_ptr = uuid4_to_cstr(&uuid);
@@ -102,7 +102,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_eq() {
+    fn test_eq() {
         let uuid1 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         let uuid2 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         let uuid3 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c9");
@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_uuid4_hash() {
+    fn test_hash() {
         let uuid1 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         let uuid2 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
         let uuid3 = UUID4::from("6ba7b810-9dad-11d1-80b4-00c04fd430c9");
