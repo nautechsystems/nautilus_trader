@@ -225,7 +225,7 @@ typedef struct Logger_t Logger_t;
  * `camp` and `comp`. The question mark can also be used more than once.
  * For example, `c??p` would match both of the above examples and `coop`.
  */
-typedef struct MessageBus_PyObject MessageBus_PyObject;
+typedef struct MessageBus MessageBus;
 
 typedef struct TestClock TestClock;
 
@@ -283,7 +283,7 @@ typedef struct Logger_API {
  * having to manually access the underlying `MessageBus` instance.
  */
 typedef struct MessageBus_API {
-    struct MessageBus_PyObject *_0;
+    struct MessageBus *_0;
 } MessageBus_API;
 
 /**

@@ -22,26 +22,27 @@ use nautilus_core::{message::Message, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use ustr::Ustr;
 
+use crate::handlers::MessageHandler;
+
 // Represents a subscription to a particular topic.
 //
 // This is an internal class intended to be used by the message bus to organize
 // topics and their subscribers.
-#[derive(Copy, Clone, Debug)]
-pub struct Subscription<T>
-where
-    T: Clone,
-{
+#[derive(Clone)]
+pub struct Subscription {
     topic: Ustr,
-    handler: T,
+    handler: MessageHandler,
     handler_id: Ustr,
     priority: u8,
 }
 
-impl<T> Subscription<T>
-where
-    T: Clone,
-{
-    pub fn new(topic: Ustr, handler: T, handler_id: Ustr, priority: Option<u8>) -> Self {
+impl Subscription {
+    pub fn new(
+        topic: Ustr,
+        handler: MessageHandler,
+        handler_id: Ustr,
+        priority: Option<u8>,
+    ) -> Self {
         Self {
             topic,
             handler,
@@ -51,39 +52,27 @@ where
     }
 }
 
-impl<T> PartialEq<Self> for Subscription<T>
-where
-    T: Clone,
-{
+impl PartialEq<Self> for Subscription {
     fn eq(&self, other: &Self) -> bool {
         self.topic == other.topic && self.handler_id == other.handler_id
     }
 }
 
-impl<T> Eq for Subscription<T> where T: Clone {}
+impl Eq for Subscription {}
 
-impl<T> PartialOrd for Subscription<T>
-where
-    T: Clone,
-{
+impl PartialOrd for Subscription {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T> Ord for Subscription<T>
-where
-    T: Clone,
-{
+impl Ord for Subscription {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.priority.cmp(&other.priority)
     }
 }
 
-impl<T> Hash for Subscription<T>
-where
-    T: Clone,
-{
+impl Hash for Subscription {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.topic.hash(state);
         self.handler_id.hash(state);
@@ -111,10 +100,7 @@ where
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[allow(dead_code)]
-pub struct MessageBus<T>
-where
-    T: Clone,
-{
+pub struct MessageBus {
     /// The trader ID for the message bus.
     pub trader_id: TraderId,
     /// The name for the message bus.
@@ -123,24 +109,21 @@ where
     /// a topic can be a string with wildcards
     /// * '?' - any character
     /// * '*' - any number of any characters
-    subscriptions: HashMap<Subscription<T>, Vec<Ustr>>,
+    subscriptions: HashMap<Subscription, Vec<Ustr>>,
     /// maps a pattern to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
-    patterns: HashMap<Ustr, Vec<Subscription<T>>>,
+    patterns: HashMap<Ustr, Vec<Subscription>>,
     /// handles a message or a request destined for a specific endpoint.
-    endpoints: HashMap<Ustr, T>,
+    endpoints: HashMap<Ustr, MessageHandler>,
     /// Relates a request with a response
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
-    correlation_index: HashMap<UUID4, T>,
+    correlation_index: HashMap<UUID4, MessageHandler>,
 }
 
 #[allow(dead_code)]
-impl<T> MessageBus<T>
-where
-    T: Clone,
-{
-    /// Initializes a new instance of the [`MessageBus<T>`].
+impl MessageBus {
+    /// Initializes a new instance of the [`MessageBus`].
     #[must_use]
     pub fn new(trader_id: TraderId, name: Option<String>) -> Self {
         Self {
@@ -169,7 +152,7 @@ where
     }
 
     /// Registers the given `handler` for the `endpoint` address.
-    pub fn register(&mut self, endpoint: String, handler: T) {
+    pub fn register(&mut self, endpoint: String, handler: MessageHandler) {
         // updates value if key already exists
         self.endpoints.insert(Ustr::from(&endpoint), handler);
     }
@@ -181,7 +164,13 @@ where
     }
 
     /// Subscribes the given `handler` to the `topic`.
-    pub fn subscribe(&mut self, topic: &str, handler: T, handler_id: &str, priority: Option<u8>) {
+    pub fn subscribe(
+        &mut self,
+        topic: &str,
+        handler: MessageHandler,
+        handler_id: &str,
+        priority: Option<u8>,
+    ) {
         let sub = Subscription::new(Ustr::from(topic), handler, Ustr::from(handler_id), priority);
 
         if self.subscriptions.contains_key(&sub) {
@@ -203,7 +192,7 @@ where
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe(&mut self, topic: &str, handler: T, handler_id: &str) {
+    pub fn unsubscribe(&mut self, topic: &str, handler: MessageHandler, handler_id: &str) {
         let sub = Subscription::new(Ustr::from(topic), handler, Ustr::from(handler_id), None);
 
         self.subscriptions.remove(&sub);
@@ -211,7 +200,7 @@ where
 
     /// Returns the handler for the given `endpoint`.
     #[must_use]
-    pub fn get_endpoint(&self, endpoint: &str) -> Option<&T> {
+    pub fn get_endpoint(&self, endpoint: &str) -> Option<&MessageHandler> {
         self.endpoints.get(&Ustr::from(endpoint))
     }
 
@@ -275,7 +264,10 @@ where
     // one of those fields or reconstruct the subscription as a tuple and
     // return that.
     // Depends on on how the output of this function is meant to be used
-    fn matching_handlers<'a>(&'a self, pattern: &'a Ustr) -> impl Iterator<Item = &'a T> {
+    fn matching_handlers<'a>(
+        &'a self,
+        pattern: &'a Ustr,
+    ) -> impl Iterator<Item = &'a MessageHandler> {
         self.subscriptions.iter().filter_map(move |(sub, _)| {
             if is_matching(&sub.topic, pattern) {
                 Some(&sub.handler)
@@ -286,11 +278,7 @@ where
     }
 
     // TODO: Need to improve the efficiency of this
-    pub fn get_matching_handlers<'a>(
-        &'a mut self,
-        pattern: &'a Ustr,
-    ) -> &'a mut Vec<Subscription<T>> {
-        // The closure must return Vec<Subscription<T>>, not Vec<T>
+    pub fn get_matching_handlers<'a>(&'a mut self, pattern: &'a Ustr) -> &'a mut Vec<Subscription> {
         let matching_handlers = || {
             self.subscriptions
                 .iter()
@@ -301,7 +289,7 @@ where
                         None
                     }
                 })
-                .collect::<Vec<Subscription<T>>>()
+                .collect::<Vec<Subscription>>()
         };
 
         self.patterns
@@ -363,7 +351,7 @@ mod tests {
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::<MessageHandler>::new(trader_id, None);
+        let msgbus = MessageBus::new(trader_id, None);
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));
@@ -371,14 +359,14 @@ mod tests {
 
     #[rstest]
     fn test_endpoints_when_no_endpoints() {
-        let msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
+        let msgbus = MessageBus::new(TraderId::from("trader-001"), None);
 
         assert!(msgbus.endpoints().is_empty());
     }
 
     #[rstest]
     fn test_topics_when_no_subscriptions() {
-        let msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
+        let msgbus = MessageBus::new(TraderId::from("trader-001"), None);
 
         assert!(msgbus.topics().is_empty());
         assert!(!msgbus.has_subscribers("my-topic"));
@@ -386,13 +374,15 @@ mod tests {
 
     #[rstest]
     fn test_regsiter_endpoint() {
-        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
         let endpoint = "MyEndpoint".to_string();
 
-        // Useless handler for testing
-        let handler = Rc::new(|m: &_| {
+        // Useless callback for testing
+        let callback = Rc::new(|m: Message| {
             format!("{m:?}");
         });
+
+        let handler = MessageHandler::new(None, Some(callback));
 
         msgbus.register(endpoint.clone(), handler.clone());
 
@@ -402,13 +392,15 @@ mod tests {
 
     #[rstest]
     fn test_deregsiter_endpoint() {
-        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
         let endpoint = "MyEndpoint".to_string();
 
-        // Useless handler for testing
-        let handler = Rc::new(|m: &_| {
+        // Useless callback for testing
+        let callback = Rc::new(|m: Message| {
             format!("{m:?}");
         });
+
+        let handler = MessageHandler::new(None, Some(callback));
 
         msgbus.register(endpoint.clone(), handler.clone());
         msgbus.deregister(&endpoint);
@@ -418,13 +410,15 @@ mod tests {
 
     #[rstest]
     fn test_subscribe() {
-        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
         let topic = "my-topic".to_string();
 
-        // Useless handler for testing
-        let handler = Rc::new(|m: &_| {
+        // Useless callback for testing
+        let callback = Rc::new(|m: Message| {
             format!("{m:?}");
         });
+
+        let handler = MessageHandler::new(None, Some(callback));
 
         msgbus.subscribe(&topic, handler.clone(), "a", Some(1));
 
@@ -434,13 +428,15 @@ mod tests {
 
     #[rstest]
     fn test_unsubscribe() {
-        let mut msgbus = MessageBus::<MessageHandler>::new(TraderId::from("trader-001"), None);
+        let mut msgbus = MessageBus::new(TraderId::from("trader-001"), None);
         let topic = "my-topic".to_string();
 
-        // Useless handler for testing
-        let handler = Rc::new(|m: &_| {
+        // Useless callback for testing
+        let callback = Rc::new(|m: Message| {
             format!("{m:?}");
         });
+
+        let handler = MessageHandler::new(None, Some(callback));
 
         msgbus.subscribe(&topic, handler.clone(), "a", None);
         msgbus.unsubscribe(&topic, handler.clone(), "a");
