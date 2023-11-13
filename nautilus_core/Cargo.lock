@@ -2127,6 +2127,7 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.12.0"
 dependencies = [
+ "nautilus-common",
  "nautilus-core",
  "nautilus-indicators",
  "nautilus-model",

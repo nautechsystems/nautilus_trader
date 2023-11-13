@@ -15,6 +15,7 @@
 
 use std::fmt::Debug;
 
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -38,7 +39,10 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum ComponentState {
     /// When a component is instantiated, but not yet ready to fulfill its specification.
     PreInitialized = 0,
@@ -90,7 +94,10 @@ pub enum ComponentState {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum ComponentTrigger {
     /// A trigger for the component to initialize.
     Initialize = 1,
@@ -143,7 +150,10 @@ pub enum ComponentTrigger {
 )]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum LogLevel {
     /// The **DBG** debug log level.
     #[strum(serialize = "DBG", serialize = "DEBUG")]
@@ -201,7 +211,10 @@ impl std::fmt::Display for LogLevel {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum LogColor {
     /// The default/normal log color.
     #[strum(serialize = "")]
@@ -232,7 +245,10 @@ pub enum LogColor {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum LogFormat {
     /// Header log format. This ANSI escape code is used for magenta text color,
     /// often used for headers or titles in the log output.
