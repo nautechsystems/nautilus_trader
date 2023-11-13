@@ -489,6 +489,23 @@ mod tests {
     }
 
     #[rstest]
+    fn test_matching_subscriptions() {
+        let mut msgbus = stub_msgbus();
+        let topic = "my-topic";
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
+
+        msgbus.subscribe(&topic, handler, Some(1));
+        let topic_ustr = Ustr::from(topic);
+        let subs = msgbus.matching_subscriptions(&topic_ustr);
+
+        assert_eq!(subs.len(), 1);
+        assert_eq!(subs.first().unwrap().handler.handler_id, handler_id);
+    }
+
+    #[rstest]
     #[case("*", "*", true)]
     #[case("a", "*", true)]
     #[case("a", "a", true)]

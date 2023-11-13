@@ -552,7 +552,9 @@ uint64_t msgbus_pub_count(struct MessageBus_API bus);
 /**
  * # Safety
  *
+ * - Assumes `topic_ptr` is a valid C string pointer.
  * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
  */
 void msgbus_subscribe(struct MessageBus_API bus,
                       const char *topic_ptr,
@@ -563,7 +565,9 @@ void msgbus_subscribe(struct MessageBus_API bus,
 /**
  * # Safety
  *
+ * - Assumes `topic_ptr` is a valid C string pointer.
  * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
  */
 void msgbus_unsubscribe(struct MessageBus_API bus,
                         const char *topic_ptr,
@@ -595,6 +599,7 @@ void msgbus_deregister(struct MessageBus_API bus, const char *endpoint_ptr);
  * # Safety
  *
  * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Potentially returns a pointer to `Py_None`.
  */
 PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpoint_ptr);
 
@@ -610,7 +615,8 @@ void vec_pycallable_drop(CVec v);
 /**
  * # Safety
  *
- * - Assumes `pattern_ptr` is a valid C string pointer.
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Potentially returns a pointer to `Py_None`.
  */
 PyObject *msgbus_request_handler(struct MessageBus_API bus,
                                  const char *endpoint_ptr,
@@ -619,7 +625,7 @@ PyObject *msgbus_request_handler(struct MessageBus_API bus,
 /**
  * # Safety
  *
- * - Assumes `pattern_ptr` is a valid C string pointer.
+ * - Potentially returns a pointer to `Py_None`.
  */
 PyObject *msgbus_response_handler(struct MessageBus_API bus, const UUID4_t *correlation_id);
 
