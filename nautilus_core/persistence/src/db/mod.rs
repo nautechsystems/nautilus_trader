@@ -13,9 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod arrow;
-pub mod backend;
-pub mod db;
-
-#[cfg(feature = "python")]
-pub mod python;
+pub mod database;
