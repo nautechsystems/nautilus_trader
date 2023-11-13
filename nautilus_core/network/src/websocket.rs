@@ -51,7 +51,7 @@ pub struct WebSocketConfig {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
-    fn new(
+    fn py_new(
         url: String,
         handler: PyObject,
         headers: Vec<(String, String)>,
@@ -409,6 +409,21 @@ impl WebSocketClient {
 
 #[pymethods]
 impl WebSocketClient {
+    /// Check if the client is still alive.
+    ///
+    /// Even if the connection is disconnected the client will still be alive
+    /// and trying to reconnect. Only when reconnect fails the client will
+    /// terminate.
+    ///
+    /// This is particularly useful for checking why a `send` failed. It could
+    /// because the connection disconnected and the client is still alive
+    /// and reconnecting. In such cases the send can be retried after some
+    /// delay.
+    #[getter]
+    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+        !slf.controller_task.is_finished()
+    }
+
     /// Create a websocket client.
     ///
     /// # Safety
@@ -458,22 +473,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Check if the client is still alive.
-    ///
-    /// Even if the connection is disconnected the client will still be alive
-    /// and try to reconnect. Only when reconnect fails the client will
-    /// terminate.
-    ///
-    /// This is particularly useful for check why a `send` failed. It could
-    /// because the connection disconnected and the client is still alive
-    /// and reconnecting. In such cases the send can be retried after some
-    /// delay.
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
-        !slf.controller_task.is_finished()
-    }
-
-    /// Send text data to the connection.
+    /// Send text data to the server.
     ///
     /// # Safety
     ///
@@ -494,7 +494,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Send bytes data to the connection.
+    /// Send bytes data to the server.
     ///
     /// # Safety
     ///
@@ -649,7 +649,7 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let config = WebSocketConfig::new(
+        let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
             vec![(header_key, header_value)],
@@ -753,7 +753,7 @@ checker = Checker()",
 
         // Initialize test server and config
         let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
-        let config = WebSocketConfig::new(
+        let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
             vec![(header_key, header_value)],
