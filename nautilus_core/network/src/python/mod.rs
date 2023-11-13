@@ -13,11 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod http;
-#[allow(dead_code)]
-mod ratelimiter;
-pub mod socket;
-pub mod websocket;
+use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-pub mod python;
+use crate::{http, ratelimiter, socket, websocket};
+
+/// Loaded as nautilus_pyo3.network
+#[pymodule]
+pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<http::HttpClient>()?;
+    m.add_class::<http::HttpMethod>()?;
+    m.add_class::<http::HttpResponse>()?;
+    m.add_class::<ratelimiter::quota::Quota>()?;
+    m.add_class::<websocket::WebSocketClient>()?;
+    m.add_class::<websocket::WebSocketConfig>()?;
+    m.add_class::<socket::SocketClient>()?;
+    m.add_class::<socket::SocketConfig>()?;
+    Ok(())
+}
