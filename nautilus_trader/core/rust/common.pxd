@@ -396,7 +396,9 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
+    # - Assumes `topic_ptr` is a valid C string pointer.
     # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
     void msgbus_subscribe(MessageBus_API bus,
                           const char *topic_ptr,
                           const char *handler_id_ptr,
@@ -405,7 +407,9 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
+    # - Assumes `topic_ptr` is a valid C string pointer.
     # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
     void msgbus_unsubscribe(MessageBus_API bus,
                             const char *topic_ptr,
                             const char *handler_id_ptr,
@@ -431,6 +435,7 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
+    # - Potentially returns a pointer to `Py_None`.
     PyObject *msgbus_get_endpoint(MessageBus_API bus, const char *endpoint_ptr);
 
     # # Safety
@@ -442,14 +447,15 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
-    # - Assumes `pattern_ptr` is a valid C string pointer.
+    # - Assumes `endpoint_ptr` is a valid C string pointer.
+    # - Potentially returns a pointer to `Py_None`.
     PyObject *msgbus_request_handler(MessageBus_API bus,
                                      const char *endpoint_ptr,
                                      UUID4_t request_id);
 
     # # Safety
     #
-    # - Assumes `pattern_ptr` is a valid C string pointer.
+    # - Potentially returns a pointer to `Py_None`.
     PyObject *msgbus_response_handler(MessageBus_API bus, const UUID4_t *correlation_id);
 
     # # Safety
