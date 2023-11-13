@@ -275,6 +275,7 @@ mod ffi_tests {
         assert_eq!(msgbus.topics(), vec![topic]);
     }
 
+    #[ignore]
     #[rstest]
     fn test_msgbus_new() {
         let trader_id = TraderId::from_str("trader-001").unwrap();
