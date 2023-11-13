@@ -509,9 +509,16 @@ void logger_log(struct Logger_API *logger,
  */
 struct MessageBus_API msgbus_new(const char *trader_id_ptr, const char *name_ptr);
 
-const PyObject *msgbus_endpoints(struct MessageBus_API bus);
+PyObject *msgbus_endpoints(struct MessageBus_API bus);
 
-const PyObject *msgbus_topics(struct MessageBus_API bus);
+PyObject *msgbus_topics(struct MessageBus_API bus);
+
+/**
+ * # Safety
+ *
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_has_subscribers(struct MessageBus_API bus, const char *pattern_ptr);
 
 /**
  * # Safety
@@ -529,7 +536,7 @@ void msgbus_subscribe(struct MessageBus_API bus,
  *
  * - Assumes `endpoint_ptr` is a valid C string pointer.
  */
-const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpoint_ptr);
+PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpoint_ptr);
 
 /**
  * # Safety
@@ -539,6 +546,22 @@ const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpo
 CVec msgbus_get_matching_callables(struct MessageBus_API bus, const char *pattern_ptr);
 
 void vec_pycallable_drop(CVec v);
+
+/**
+ * # Safety
+ *
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+PyObject *msgbus_request_handler(struct MessageBus_API bus,
+                                 const char *endpoint_ptr,
+                                 UUID4_t request_id);
+
+/**
+ * # Safety
+ *
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+PyObject *msgbus_response_handler(struct MessageBus_API bus, const UUID4_t *correlation_id);
 
 /**
  * # Safety

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::rc::Rc;
+use std::{fmt, rc::Rc};
 
 use nautilus_core::message::Message;
 use pyo3::{ffi, prelude::*, AsPyPointer};
@@ -22,7 +22,7 @@ use ustr::Ustr;
 use crate::timer::TimeEvent;
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct PyCallableWrapper {
     pub ptr: *mut ffi::PyObject,
 }
@@ -52,6 +52,21 @@ impl MessageHandler {
     pub fn as_ptr(self) -> *mut ffi::PyObject {
         // SAFETY: Will panic if `unwrap` is called on None
         self.py_callback.unwrap().ptr
+    }
+}
+
+impl PartialEq for MessageHandler {
+    fn eq(&self, other: &Self) -> bool {
+        self.handler_id == other.handler_id
+    }
+}
+
+impl fmt::Debug for MessageHandler {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(stringify!(MessageHandler))
+            .field("handler_id", &self.handler_id)
+            .field("py_callback", &self.py_callback)
+            .finish()
     }
 }
 
