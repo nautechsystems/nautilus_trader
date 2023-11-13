@@ -523,6 +523,27 @@ uint8_t msgbus_has_subscribers(struct MessageBus_API bus, const char *pattern_pt
 /**
  * # Safety
  *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+uint8_t msgbus_is_subscribed(struct MessageBus_API bus,
+                             const char *topic_ptr,
+                             const char *handler_id_ptr,
+                             PyObject *py_callable_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_is_regsitered(struct MessageBus_API bus, const char *endpoint_ptr);
+
+uint8_t msgbus_is_pending_request(struct MessageBus_API bus, const UUID4_t *request_id);
+
+/**
+ * # Safety
+ *
  * - Assumes `handler_id_ptr` is a valid C string pointer.
  */
 void msgbus_subscribe(struct MessageBus_API bus,
@@ -530,6 +551,37 @@ void msgbus_subscribe(struct MessageBus_API bus,
                       const char *handler_id_ptr,
                       PyObject *py_callable_ptr,
                       uint8_t priority);
+
+/**
+ * # Safety
+ *
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ */
+void msgbus_unsubscribe(struct MessageBus_API bus,
+                        const char *topic_ptr,
+                        const char *handler_id_ptr,
+                        PyObject *py_callable_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+void msgbus_register(struct MessageBus_API bus,
+                     const char *endpoint_ptr,
+                     const char *handler_id_ptr,
+                     PyObject *py_callable_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+void msgbus_deregister(struct MessageBus_API bus, const char *endpoint_ptr);
 
 /**
  * # Safety
