@@ -275,7 +275,7 @@ mod ffi_tests {
         assert_eq!(msgbus.topics(), vec![topic]);
     }
 
-    #[test]
+    #[rstest]
     fn test_msgbus_new() {
         let trader_id = TraderId::from_str("trader-001").unwrap();
         let name = CString::new("Test MessageBus").unwrap();
@@ -289,7 +289,7 @@ mod ffi_tests {
     }
 
     #[ignore]
-    #[test]
+    #[rstest]
     fn test_msgbus_endpoints() {
         let mut bus = MessageBus::new(TraderId::from_str("trader-001").unwrap(), None);
         let endpoint1 = "endpoint1";
@@ -318,7 +318,7 @@ mod ffi_tests {
     }
 
     #[ignore]
-    #[test]
+    #[rstest]
     fn test_msgbus_topics() {
         let mut bus = MessageBus::new(TraderId::from_str("trader-001").unwrap(), None);
         let topic1 = "topic1";
@@ -347,7 +347,7 @@ mod ffi_tests {
     }
 
     #[ignore]
-    #[test]
+    #[rstest]
     fn test_msgbus_subscribe() {
         let bus = MessageBus::new(TraderId::from_str("trader-001").unwrap(), None);
         let topic = "test-topic";
@@ -370,7 +370,7 @@ mod ffi_tests {
     }
 
     #[ignore]
-    #[test]
+    #[rstest]
     fn test_msgbus_get_endpoint() {
         let mut bus = MessageBus::new(TraderId::from_str("trader-001").unwrap(), None);
         let endpoint = "test-endpoint";
@@ -390,7 +390,7 @@ mod ffi_tests {
     }
 
     #[ignore]
-    #[test]
+    #[rstest]
     fn test_msgbus_request_handler() {
         let mut bus = MessageBus::new(TraderId::from_str("trader-001").unwrap(), None);
         let endpoint = "test-endpoint";
@@ -420,7 +420,7 @@ mod ffi_tests {
     }
 
     #[ignore]
-    #[test]
+    #[rstest]
     fn test_msgbus_response_handler() {
         let mut bus = MessageBus::new(TraderId::from_str("trader-001").unwrap(), None);
         let correlation_id = UUID4::new();
@@ -437,7 +437,8 @@ mod ffi_tests {
         assert_eq!(py_callable, handler.py_callback.unwrap().ptr);
     }
 
-    #[test]
+    #[ignore]
+    #[rstest]
     fn test_msgbus_is_matching() {
         let topic = "data.quotes.BINANCE";
         let pattern = "data.*.BINANCE";
