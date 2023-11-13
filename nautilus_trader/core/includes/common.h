@@ -537,9 +537,17 @@ uint8_t msgbus_is_subscribed(struct MessageBus_API bus,
  *
  * - Assumes `endpoint_ptr` is a valid C string pointer.
  */
-uint8_t msgbus_is_regsitered(struct MessageBus_API bus, const char *endpoint_ptr);
+uint8_t msgbus_is_registered(struct MessageBus_API bus, const char *endpoint_ptr);
 
 uint8_t msgbus_is_pending_request(struct MessageBus_API bus, const UUID4_t *request_id);
+
+uint64_t msgbus_sent_count(struct MessageBus_API bus);
+
+uint64_t msgbus_req_count(struct MessageBus_API bus);
+
+uint64_t msgbus_res_count(struct MessageBus_API bus);
+
+uint64_t msgbus_pub_count(struct MessageBus_API bus);
 
 /**
  * # Safety
