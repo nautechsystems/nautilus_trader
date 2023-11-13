@@ -49,7 +49,7 @@ impl MessageHandler {
         }
     }
 
-    pub fn as_ptr(self) -> *const ffi::PyObject {
+    pub fn as_ptr(self) -> *mut ffi::PyObject {
         // SAFETY: Will panic if `unwrap` is called on None
         self.py_callback.unwrap().ptr
     }

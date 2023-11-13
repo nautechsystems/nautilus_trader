@@ -119,6 +119,7 @@ pub unsafe extern "C" fn msgbus_subscribe(
         ptr: py_callable_ptr,
     };
     let handler = MessageHandler::new(handler_id, Some(py_callable), None);
+
     bus.subscribe(&topic, handler, Some(priority));
 }
 
@@ -131,6 +132,7 @@ pub unsafe extern "C" fn msgbus_get_endpoint(
     endpoint_ptr: *const c_char,
 ) -> *const ffi::PyObject {
     let endpoint = cstr_to_ustr(endpoint_ptr);
+
     match bus.get_endpoint(&endpoint) {
         Some(handler) => handler.py_callback.unwrap().ptr,
         None => ffi::Py_None(),
@@ -141,47 +143,17 @@ pub unsafe extern "C" fn msgbus_get_endpoint(
 ///
 /// - Assumes `pattern_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_get_matching_handlers(
+pub unsafe extern "C" fn msgbus_get_matching_callables(
     mut bus: MessageBus_API,
     pattern_ptr: *const c_char,
 ) -> CVec {
     let pattern = cstr_to_ustr(pattern_ptr);
-    let subs: Vec<&Subscription> = bus.get_matching_handlers(&pattern);
+    let subs: Vec<&Subscription> = bus.get_matching_subscriptions(&pattern);
 
     subs.iter()
         .map(|s| s.handler.py_callback.unwrap())
         .collect::<Vec<PyCallableWrapper>>()
         .into()
-}
-
-/// # Safety
-///
-/// - Assumes any registered handler has a Python callable.
-/// - Assumes `endpoint_ptr` is a valid C string pointer.
-// pub unsafe extern "C" fn msgbus_send(
-//     bus: MessageBus_API,
-//     endpoint_ptr: *const c_char,
-//     msg: *mut ffi::PyObject,
-// ) {
-//     let endpoint = cstr_to_ustr(endpoint_ptr);
-//
-//     if let Some(handler) = bus.get_endpoint(&endpoint) {
-//         let callable_ptr = handler.py_callback.unwrap().ptr;
-//         Python::with_gil(|py| {
-//             let callable = PyObject::from_borrowed_ptr(py, callable_ptr);
-//             let msg = PyObject::from_borrowed_ptr(py, msg);
-//             callable.call1(py, msg.into_py(py));
-//         });
-//     }
-// }
-
-#[allow(clippy::drop_non_drop)]
-#[no_mangle]
-pub extern "C" fn vec_msgbus_handlers_drop(v: CVec) {
-    let CVec { ptr, len, cap } = v;
-    let data: Vec<ffi::PyObject> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<ffi::PyObject>(), len, cap) };
-    drop(data); // Memory freed here
 }
 
 #[allow(clippy::drop_non_drop)]

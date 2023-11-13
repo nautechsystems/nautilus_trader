@@ -536,15 +536,7 @@ const PyObject *msgbus_get_endpoint(struct MessageBus_API bus, const char *endpo
  *
  * - Assumes `pattern_ptr` is a valid C string pointer.
  */
-CVec msgbus_get_matching_handlers(struct MessageBus_API bus, const char *pattern_ptr);
-
-/**
- * # Safety
- *
- * - Assumes any registered handler has a Python callable.
- * - Assumes `endpoint_ptr` is a valid C string pointer.
- */
-void vec_msgbus_handlers_drop(CVec v);
+CVec msgbus_get_matching_callables(struct MessageBus_API bus, const char *pattern_ptr);
 
 void vec_pycallable_drop(CVec v);
 
