@@ -93,6 +93,7 @@ impl Hash for Subscription {
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[allow(dead_code)]
+#[derive(Clone)]
 pub struct MessageBus {
     /// The trader ID for the message bus.
     pub trader_id: TraderId,
@@ -107,11 +108,11 @@ pub struct MessageBus {
     /// this is updated whenever a new subscription is created.
     patterns: HashMap<Ustr, Vec<Subscription>>,
     /// handles a message or a request destined for a specific endpoint.
-    endpoints: HashMap<Ustr, MessageHandler>,
+    pub endpoints: HashMap<Ustr, MessageHandler>,
     /// Relates a request with a response
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
-    correlation_index: HashMap<UUID4, MessageHandler>,
+    pub correlation_index: HashMap<UUID4, MessageHandler>,
 }
 
 #[allow(dead_code)]
@@ -199,46 +200,49 @@ impl MessageBus {
             .is_some()
     }
 
-    // #[allow(unused_variables)]
-    // fn request(&mut self, endpoint: &String, request: &Message, callback: T) {
-    //     match request {
-    //         Message::Request { id, ts_init } => {
-    //             if self.correlation_index.contains_key(id) {
-    //                 todo!()
-    //             } else {
-    //                 self.correlation_index.insert(*id, callback);
-    //                 if let Some(handler) = self.endpoints.get(endpoint) {
-    //                     handler(request);
-    //                 } else {
-    //                     // TODO: log error
-    //                 }
-    //             }
-    //         }
-    //         _ => unreachable!(
-    //             "message bus request should only be called with Message::Request variant"
-    //         ),
-    //     }
-    // }
-    //
-    // #[allow(unused_variables)]
-    // fn response(&mut self, response: &Message) {
-    //     match response {
-    //         Message::Response {
-    //             id,
-    //             ts_init,
-    //             correlation_id,
-    //         } => {
-    //             if let Some(callback) = self.correlation_index.get(correlation_id) {
-    //                 callback(response);
-    //             } else {
-    //                 // TODO: log error
-    //             }
-    //         }
-    //         _ => unreachable!(
-    //             "message bus response should only be called with Message::Response variant"
-    //         ),
-    //     }
-    // }
+    #[must_use]
+    pub fn request_handler(
+        &mut self,
+        endpoint: &Ustr,
+        request_id: UUID4,
+    ) -> Option<&MessageHandler> {
+        if let Some(handler) = self.endpoints.get(endpoint) {
+            self.correlation_index.insert(request_id, handler.clone());
+            Some(handler)
+        } else {
+            None
+        }
+    }
+
+    #[must_use]
+    pub fn response_handler(&mut self, correlation_id: &UUID4) -> Option<MessageHandler> {
+        self.correlation_index.remove(correlation_id)
+    }
+
+    #[must_use]
+    pub fn matching_subscriptions<'a>(&'a mut self, pattern: &'a Ustr) -> Vec<&'a Subscription> {
+        let mut unique_subs = std::collections::HashSet::new();
+
+        // Collect matching subscriptions from direct subscriptions
+        unique_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
+            if is_matching(&sub.topic, pattern) {
+                Some(sub)
+            } else {
+                None
+            }
+        }));
+
+        // Collect matching subscriptions from pattern-based subscriptions
+        for subs in self.patterns.values() {
+            unique_subs.extend(subs.iter().filter(|sub| is_matching(&sub.topic, pattern)));
+        }
+
+        // Sort into priority order
+        let mut matching_subs = unique_subs.into_iter().collect::<Vec<_>>();
+        matching_subs.sort();
+
+        matching_subs
+    }
 
     fn matching_handlers<'a>(
         &'a self,
@@ -251,32 +255,6 @@ impl MessageBus {
                 None
             }
         })
-    }
-
-    pub fn get_matching_subscriptions<'a>(
-        &'a mut self,
-        pattern: &'a Ustr,
-    ) -> Vec<&'a Subscription> {
-        let mut matching_subs = self
-            .subscriptions
-            .iter()
-            .filter_map(|(sub, _)| {
-                if is_matching(&sub.topic, pattern) {
-                    Some(sub)
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<&'a Subscription>>();
-
-        for (p, subs) in &self.patterns {
-            if is_matching(p, pattern) {
-                matching_subs.extend(subs.iter());
-            }
-        }
-
-        matching_subs.sort();
-        matching_subs
     }
 }
 
@@ -417,6 +395,40 @@ mod tests {
 
         assert!(!msgbus.has_subscribers(&topic));
         assert!(msgbus.topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_request_handler() {
+        let mut msgbus = stub_msgbus();
+        let endpoint = "MyEndpoint";
+        let request_id = UUID4::new();
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id.clone(), None, Some(callback));
+
+        msgbus.register(&endpoint, handler.clone());
+
+        assert_eq!(
+            msgbus.request_handler(&Ustr::from(endpoint), request_id.clone()),
+            Some(&handler)
+        );
+    }
+
+    #[rstest]
+    fn test_response_handler() {
+        let mut msgbus = stub_msgbus();
+        let correlation_id = UUID4::new();
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id.clone(), None, Some(callback));
+
+        msgbus
+            .correlation_index
+            .insert(correlation_id.clone(), handler.clone());
+
+        assert_eq!(msgbus.response_handler(&correlation_id), Some(handler));
     }
 
     #[rstest]
