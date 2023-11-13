@@ -18,7 +18,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use nautilus_core::{message::Message, uuid::UUID4};
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use ustr::Ustr;
 
@@ -145,9 +145,9 @@ impl MessageBus {
     }
 
     /// Registers the given `handler` for the `endpoint` address.
-    pub fn register(&mut self, endpoint: String, handler: MessageHandler) {
-        // updates value if key already exists
-        self.endpoints.insert(Ustr::from(&endpoint), handler);
+    pub fn register(&mut self, endpoint: &str, handler: MessageHandler) {
+        // Updates value if key already exists
+        self.endpoints.insert(Ustr::from(endpoint), handler);
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
@@ -199,14 +199,6 @@ impl MessageBus {
             .is_some()
     }
 
-    // fn send(&self, endpoint: &Ustr, msg: &Message) {
-    //     if let Some(handler) = self.endpoints.get(endpoint) {
-    //         if let Some(py_callable) = handler.py_callback {
-    //             Python::with_gil(|| msg)
-    //         }
-    //     }
-    // }
-
     // #[allow(unused_variables)]
     // fn request(&mut self, endpoint: &String, request: &Message, callback: T) {
     //     match request {
@@ -248,11 +240,6 @@ impl MessageBus {
     //     }
     // }
 
-    // TODO: This is the modified version of matching_subscriptions
-    // Since we've separated subscription and handler we can choose to return
-    // one of those fields or reconstruct the subscription as a tuple and
-    // return that.
-    // Depends on on how the output of this function is meant to be used
     fn matching_handlers<'a>(
         &'a self,
         pattern: &'a Ustr,
@@ -266,37 +253,34 @@ impl MessageBus {
         })
     }
 
-    // TODO: Need to improve the efficiency of this
-    pub fn get_matching_handlers<'a>(&'a mut self, pattern: &'a Ustr) -> Vec<&'a Subscription> {
-        let matching_handlers = || {
-            self.subscriptions
-                .iter()
-                .filter_map(|(sub, _)| {
-                    if is_matching(&sub.topic, pattern) {
-                        Some(sub)
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<&'a Subscription>>()
-        };
+    pub fn get_matching_subscriptions<'a>(
+        &'a mut self,
+        pattern: &'a Ustr,
+    ) -> Vec<&'a Subscription> {
+        let mut matching_subs = self
+            .subscriptions
+            .iter()
+            .filter_map(|(sub, _)| {
+                if is_matching(&sub.topic, pattern) {
+                    Some(sub)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<&'a Subscription>>();
 
-        matching_handlers()
+        for (p, subs) in &self.patterns {
+            if is_matching(p, pattern) {
+                matching_subs.extend(subs.iter());
+            }
+        }
 
-        // self.patterns
-        //     .entry(*pattern)
-        //     .or_insert_with(matching_handlers)
-    }
-
-    pub fn publish(&mut self, pattern: Ustr, _msg: &Message) {
-        let _handlers = self.get_matching_handlers(&pattern);
-
-        // call matched handlers
-        // handlers.iter().for_each(|handler| handler(msg));
+        matching_subs.sort();
+        matching_subs
     }
 }
 
-/// match a topic and a string pattern
+/// Match a topic and a string pattern
 /// pattern can contains -
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
@@ -334,6 +318,7 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 mod tests {
     use std::rc::Rc;
 
+    use nautilus_core::message::Message;
     use rstest::*;
 
     use super::*;
@@ -376,13 +361,13 @@ mod tests {
     #[rstest]
     fn test_regsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint".to_string();
+        let endpoint = "MyEndpoint";
 
         let callback = stub_rust_callback();
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, None, Some(callback));
 
-        msgbus.register(endpoint.clone(), handler.clone());
+        msgbus.register(&endpoint, handler);
 
         assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
         assert!(msgbus.get_endpoint(&Ustr::from(&endpoint)).is_some());
@@ -391,13 +376,13 @@ mod tests {
     #[rstest]
     fn test_deregsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint".to_string();
+        let endpoint = "MyEndpoint";
 
         let callback = stub_rust_callback();
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, None, Some(callback));
 
-        msgbus.register(endpoint.clone(), handler.clone());
+        msgbus.register(&endpoint, handler);
         msgbus.deregister(&endpoint);
 
         assert!(msgbus.endpoints().is_empty());
@@ -406,13 +391,13 @@ mod tests {
     #[rstest]
     fn test_subscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic".to_string();
+        let topic = "my-topic";
 
         let callback = stub_rust_callback();
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, None, Some(callback));
 
-        msgbus.subscribe(&topic, handler.clone(), Some(1));
+        msgbus.subscribe(&topic, handler, Some(1));
 
         assert!(msgbus.has_subscribers(&topic));
         assert_eq!(msgbus.topics(), vec![topic]);
@@ -421,14 +406,14 @@ mod tests {
     #[rstest]
     fn test_unsubscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic".to_string();
+        let topic = "my-topic";
 
         let callback = stub_rust_callback();
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, None, Some(callback));
 
         msgbus.subscribe(&topic, handler.clone(), None);
-        msgbus.unsubscribe(&topic, handler.clone());
+        msgbus.unsubscribe(&topic, handler);
 
         assert!(!msgbus.has_subscribers(&topic));
         assert!(msgbus.topics().is_empty());
