@@ -145,6 +145,33 @@ impl MessageBus {
             .collect()
     }
 
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn has_subscribers(&self, pattern: &str) -> bool {
+        self.matching_handlers(&Ustr::from(pattern))
+            .next()
+            .is_some()
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn is_subscribed(&self, topic: &str, handler: MessageHandler) -> bool {
+        let sub = Subscription::new(Ustr::from(topic), handler, None);
+        self.subscriptions.contains_key(&sub)
+    }
+
+    /// Returns whether there is a pending request for the given `request_id`.
+    #[must_use]
+    pub fn is_pending_response(&self, request_id: &UUID4) -> bool {
+        self.correlation_index.contains_key(request_id)
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn is_registered(&self, endpoint: &str) -> bool {
+        self.endpoints.contains_key(&Ustr::from(endpoint))
+    }
+
     /// Registers the given `handler` for the `endpoint` address.
     pub fn register(&mut self, endpoint: &str, handler: MessageHandler) {
         // Updates value if key already exists
@@ -153,7 +180,7 @@ impl MessageBus {
 
     /// Deregisters the given `handler` for the `endpoint` address.
     pub fn deregister(&mut self, endpoint: &str) {
-        // removes entry if it exists for endpoint
+        // Removes entry if it exists for endpoint
         self.endpoints.remove(&Ustr::from(endpoint));
     }
 
@@ -182,7 +209,6 @@ impl MessageBus {
     /// Unsubscribes the given `handler` from the `topic`.
     pub fn unsubscribe(&mut self, topic: &str, handler: MessageHandler) {
         let sub = Subscription::new(Ustr::from(topic), handler, None);
-
         self.subscriptions.remove(&sub);
     }
 
@@ -192,14 +218,8 @@ impl MessageBus {
         self.endpoints.get(&Ustr::from(endpoint))
     }
 
-    /// Returns whether there are subscribers for the given `pattern`.
-    #[must_use]
-    pub fn has_subscribers(&self, pattern: &str) -> bool {
-        self.matching_handlers(&Ustr::from(pattern))
-            .next()
-            .is_some()
-    }
-
+    /// Returns the handler for the request `endpoint` and adds the request ID to the internal
+    /// correlation index to match with the expected response.
     #[must_use]
     pub fn request_handler(
         &mut self,
@@ -214,6 +234,8 @@ impl MessageBus {
         }
     }
 
+    /// Returns the handler for the matching response `endpoint` based on the internal correlation
+    /// index.
     #[must_use]
     pub fn response_handler(&mut self, correlation_id: &UUID4) -> Option<MessageHandler> {
         self.correlation_index.remove(correlation_id)
@@ -334,6 +356,31 @@ mod tests {
 
         assert!(msgbus.topics().is_empty());
         assert!(!msgbus.has_subscribers("my-topic"));
+    }
+
+    #[rstest]
+    fn test_is_subscribed_when_no_subscriptions() {
+        let msgbus = stub_msgbus();
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, None, Some(callback));
+
+        assert!(!msgbus.is_subscribed("my-topic", handler));
+    }
+
+    #[rstest]
+    fn test_is_registered_when_no_registrations() {
+        let msgbus = stub_msgbus();
+
+        assert!(!msgbus.is_registered("MyEndpoint"));
+    }
+
+    #[rstest]
+    fn test_is_pending_response_when_no_requests() {
+        let msgbus = stub_msgbus();
+
+        assert!(!msgbus.is_pending_response(&UUID4::default()));
     }
 
     #[rstest]

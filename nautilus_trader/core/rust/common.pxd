@@ -371,12 +371,54 @@ cdef extern from "../includes/common.h":
 
     # # Safety
     #
+    # - Assumes `topic_ptr` is a valid C string pointer.
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
+    uint8_t msgbus_is_subscribed(MessageBus_API bus,
+                                 const char *topic_ptr,
+                                 const char *handler_id_ptr,
+                                 PyObject *py_callable_ptr);
+
+    # # Safety
+    #
+    # - Assumes `endpoint_ptr` is a valid C string pointer.
+    uint8_t msgbus_is_regsitered(MessageBus_API bus, const char *endpoint_ptr);
+
+    uint8_t msgbus_is_pending_request(MessageBus_API bus, const UUID4_t *request_id);
+
+    # # Safety
+    #
     # - Assumes `handler_id_ptr` is a valid C string pointer.
     void msgbus_subscribe(MessageBus_API bus,
                           const char *topic_ptr,
                           const char *handler_id_ptr,
                           PyObject *py_callable_ptr,
                           uint8_t priority);
+
+    # # Safety
+    #
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    void msgbus_unsubscribe(MessageBus_API bus,
+                            const char *topic_ptr,
+                            const char *handler_id_ptr,
+                            PyObject *py_callable_ptr);
+
+    # # Safety
+    #
+    # - Assumes `endpoint_ptr` is a valid C string pointer.
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
+    void msgbus_register(MessageBus_API bus,
+                         const char *endpoint_ptr,
+                         const char *handler_id_ptr,
+                         PyObject *py_callable_ptr);
+
+    # # Safety
+    #
+    # - Assumes `endpoint_ptr` is a valid C string pointer.
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
+    void msgbus_deregister(MessageBus_API bus, const char *endpoint_ptr);
 
     # # Safety
     #
