@@ -136,6 +136,7 @@ class TestPosition:
         # Assert
         assert result == {
             "position_id": "P-123456",
+            "trader_id": "TESTER-000",
             "strategy_id": "S-001",
             "instrument_id": "AUD/USD.SIM",
             "account_id": "SIM-000",
@@ -184,6 +185,7 @@ class TestPosition:
         # Assert
         assert result == {
             "position_id": "P-123456",
+            "trader_id": "TESTER-000",
             "strategy_id": "S-001",
             "instrument_id": "AAPL.NASDAQ",
             "account_id": "SIM-000",
@@ -232,6 +234,7 @@ class TestPosition:
         # Assert
         assert result == {
             "position_id": "P-123456",
+            "trader_id": "TESTER-000",
             "strategy_id": "S-001",
             "instrument_id": "AAPL.NASDAQ",
             "account_id": "SIM-000",

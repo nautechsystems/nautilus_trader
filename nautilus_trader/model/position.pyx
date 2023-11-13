@@ -133,6 +133,7 @@ cdef class Position:
         """
         return {
             "position_id": self.id.to_str(),
+            "trader_id": self.trader_id.to_str(),
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
             "account_id": self.account_id.to_str(),
