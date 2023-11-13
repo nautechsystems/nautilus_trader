@@ -142,7 +142,7 @@ pub unsafe extern "C" fn msgbus_is_subscribed(
 ///
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_is_regsitered(
+pub unsafe extern "C" fn msgbus_is_registered(
     bus: MessageBus_API,
     endpoint_ptr: *const c_char,
 ) -> u8 {
@@ -153,6 +153,26 @@ pub unsafe extern "C" fn msgbus_is_regsitered(
 #[no_mangle]
 pub extern "C" fn msgbus_is_pending_request(bus: MessageBus_API, request_id: &UUID4) -> u8 {
     bus.is_pending_response(request_id) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_sent_count(bus: MessageBus_API) -> u64 {
+    bus.sent_count
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_req_count(bus: MessageBus_API) -> u64 {
+    bus.req_count
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_res_count(bus: MessageBus_API) -> u64 {
+    bus.res_count
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_pub_count(bus: MessageBus_API) -> u64 {
+    bus.pub_count
 }
 
 /// # Safety

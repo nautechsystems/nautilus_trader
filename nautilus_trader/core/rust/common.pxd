@@ -382,9 +382,17 @@ cdef extern from "../includes/common.h":
     # # Safety
     #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
-    uint8_t msgbus_is_regsitered(MessageBus_API bus, const char *endpoint_ptr);
+    uint8_t msgbus_is_registered(MessageBus_API bus, const char *endpoint_ptr);
 
     uint8_t msgbus_is_pending_request(MessageBus_API bus, const UUID4_t *request_id);
+
+    uint64_t msgbus_sent_count(MessageBus_API bus);
+
+    uint64_t msgbus_req_count(MessageBus_API bus);
+
+    uint64_t msgbus_res_count(MessageBus_API bus);
+
+    uint64_t msgbus_pub_count(MessageBus_API bus);
 
     # # Safety
     #

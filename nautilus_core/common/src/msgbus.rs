@@ -92,13 +92,20 @@ impl Hash for Subscription {
 /// A question mark matches a single character once. For example, `c?mp` matches
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
-#[allow(dead_code)]
 #[derive(Clone)]
 pub struct MessageBus {
-    /// The trader ID for the message bus.
+    /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
     /// The name for the message bus.
     pub name: String,
+    // The count of messages sent through the bus.
+    pub sent_count: u64,
+    // The count of requests processed by the bus.
+    pub req_count: u64,
+    // The count of responses processed by the bus.
+    pub res_count: u64,
+    /// The count of messages published by the bus.
+    pub pub_count: u64,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -108,14 +115,13 @@ pub struct MessageBus {
     /// this is updated whenever a new subscription is created.
     patterns: HashMap<Ustr, Vec<Subscription>>,
     /// handles a message or a request destined for a specific endpoint.
-    pub endpoints: HashMap<Ustr, MessageHandler>,
+    endpoints: HashMap<Ustr, MessageHandler>,
     /// Relates a request with a response
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
-    pub correlation_index: HashMap<UUID4, MessageHandler>,
+    correlation_index: HashMap<UUID4, MessageHandler>,
 }
 
-#[allow(dead_code)]
 impl MessageBus {
     /// Initializes a new instance of the [`MessageBus`].
     #[must_use]
@@ -123,6 +129,10 @@ impl MessageBus {
         Self {
             trader_id,
             name: name.unwrap_or_else(|| stringify!(MessageBus).to_owned()),
+            sent_count: 0,
+            req_count: 0,
+            res_count: 0,
+            pub_count: 0,
             subscriptions: HashMap::new(),
             patterns: HashMap::new(),
             endpoints: HashMap::new(),
