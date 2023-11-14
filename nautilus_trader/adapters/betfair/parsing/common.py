@@ -26,7 +26,7 @@ from nautilus_trader.model.instruments.betting import make_symbol
 from nautilus_trader.model.instruments.betting import null_handicap
 
 
-def hash_market_trade(timestamp: int, price: float, volume: float):
+def hash_market_trade(timestamp: int, price: float, volume: float) -> str:
     return f"{str(timestamp)[:-6]}{price}{volume!s}"
 
 
@@ -50,7 +50,7 @@ def betfair_instrument_id(
 
 def instrument_id_betfair_ids(
     instrument_id: InstrumentId,
-) -> tuple[MarketId, SelectionId, Handicap]:
+) -> tuple[MarketId, SelectionId, Handicap | None]:
     parts = instrument_id.symbol.value.split("-", maxsplit=2)
     return (
         MarketId(parts[0]),
