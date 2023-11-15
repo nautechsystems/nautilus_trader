@@ -3,13 +3,18 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Rewrote Interactive Brokers integration documentation, many thanks @benjaminsingleton
+- Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
 - Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
+- Added `WilderMovingAverage` in Rust, thanks @ayush-sb
+- Added all common identifier generators in Rust, thanks @filipmacek
 
 ### Breaking Changes
-None
+- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (not handles both JSON and MsgPack)
+- Moved `MsgSpecSerializer` module from `serialization.msgpack.serializer` to `serialization.serializer`
 
 ### Fixes
-None
+- Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek
 
 ---
 
