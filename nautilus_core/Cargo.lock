@@ -2008,6 +2008,7 @@ dependencies = [
  "anyhow",
  "cbindgen",
  "chrono",
+ "indexmap 2.1.0",
  "nautilus-core",
  "nautilus-model",
  "pyo3",

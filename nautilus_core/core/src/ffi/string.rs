@@ -46,7 +46,8 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 ///
 /// - If `ptr` is null.
 #[must_use]
-pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
+#[no_mangle]
+pub unsafe extern "C" fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
 }
