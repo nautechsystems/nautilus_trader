@@ -13,11 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::HashMap,
+    fmt,
+    hash::{Hash, Hasher},
+    sync::mpsc::{channel, Receiver, SendError, Sender},
+    thread,
+};
 
 use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use ustr::Ustr;
 
 use crate::handlers::MessageHandler;
@@ -80,6 +88,26 @@ impl Hash for Subscription {
     }
 }
 
+/// Represents a bus message including a topic and payload.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BusMessage {
+    /// The topic to publish on.
+    topic: String,
+    /// The serialized payload for the message.
+    payload: Vec<u8>,
+}
+
+impl fmt::Display for BusMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {}",
+            self.topic,
+            String::from_utf8_lossy(&self.payload)
+        )
+    }
+}
+
 /// Provides a generic message bus to facilitate various messaging patterns.
 ///
 /// The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
@@ -102,18 +130,7 @@ impl Hash for Subscription {
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[derive(Clone)]
 pub struct MessageBus {
-    /// The trader ID associated with the message bus.
-    pub trader_id: TraderId,
-    /// The name for the message bus.
-    pub name: String,
-    // The count of messages sent through the bus.
-    pub sent_count: u64,
-    // The count of requests processed by the bus.
-    pub req_count: u64,
-    // The count of responses processed by the bus.
-    pub res_count: u64,
-    /// The count of messages published by the bus.
-    pub pub_count: u64,
+    tx: Sender<BusMessage>,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -128,13 +145,40 @@ pub struct MessageBus {
     /// a request maps it's id to a handler so that a response
     /// with the same id can later be handled.
     correlation_index: IndexMap<UUID4, MessageHandler>,
+    /// The trader ID associated with the message bus.
+    pub trader_id: TraderId,
+    /// The name for the message bus.
+    pub name: String,
+    // The count of messages sent through the bus.
+    pub sent_count: u64,
+    // The count of requests processed by the bus.
+    pub req_count: u64,
+    // The count of responses processed by the bus.
+    pub res_count: u64,
+    /// The count of messages published by the bus.
+    pub pub_count: u64,
+    /// If the message bus is backed by a database.
+    pub has_backing: bool,
 }
 
 impl MessageBus {
     /// Initializes a new instance of the [`MessageBus`].
     #[must_use]
-    pub fn new(trader_id: TraderId, name: Option<String>) -> Self {
+    pub fn new(
+        trader_id: TraderId,
+        name: Option<String>,
+        config: Option<HashMap<String, Value>>,
+    ) -> Self {
+        let (tx, rx) = channel::<BusMessage>();
+        let config = config.unwrap_or_default();
+        let has_backing = config.get("database").is_some();
+
+        thread::spawn(move || {
+            Self::handle_messages(trader_id.value.as_ref(), config, rx);
+        });
+
         Self {
+            tx,
             trader_id,
             name: name.unwrap_or_else(|| stringify!(MessageBus).to_owned()),
             sent_count: 0,
@@ -145,6 +189,7 @@ impl MessageBus {
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
             correlation_index: IndexMap::new(),
+            has_backing,
         }
     }
 
@@ -334,6 +379,26 @@ impl MessageBus {
             }
         })
     }
+
+    pub fn publish_external(&self, topic: String, payload: Vec<u8>) {
+        let msg = BusMessage { topic, payload };
+        if let Err(SendError(e)) = self.tx.send(msg) {
+            eprintln!("Error publishing external message: {e}");
+        }
+    }
+
+    fn handle_messages(
+        _trader_id: &str,
+        _config: HashMap<String, Value>,
+        rx: Receiver<BusMessage>,
+    ) {
+        // Continue to receive and handle bus messages until channel is hung up
+        while let Ok(msg) = rx.recv() {
+            println!("{}", msg);
+        }
+
+        // TODO: WIP
+    }
 }
 
 /// Match a topic and a string pattern
@@ -381,7 +446,7 @@ mod tests {
     use crate::handlers::MessageHandler;
 
     fn stub_msgbus() -> MessageBus {
-        MessageBus::new(TraderId::from("trader-001"), None)
+        MessageBus::new(TraderId::from("trader-001"), None, None)
     }
 
     fn stub_rust_callback() -> Rc<dyn Fn(Message)> {
@@ -393,7 +458,7 @@ mod tests {
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::new(trader_id, None);
+        let msgbus = MessageBus::new(trader_id, None, None);
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));

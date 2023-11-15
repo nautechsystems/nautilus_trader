@@ -15,6 +15,7 @@
 
 cdef dict _OBJECT_TO_DICT_MAP
 cdef dict _OBJECT_FROM_DICT_MAP
+cdef tuple[type] OBJECTS_FOR_EXTERNAL_PUBLISH
 
 
 cdef class Serializer:

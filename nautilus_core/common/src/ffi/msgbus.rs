@@ -22,7 +22,8 @@ use std::{
 use nautilus_core::{
     ffi::{
         cvec::CVec,
-        string::{cstr_to_string, cstr_to_ustr, optional_cstr_to_string},
+        parsing::optional_bytes_to_json,
+        string::{cstr_to_string, cstr_to_ustr, cstr_to_vec, optional_cstr_to_string},
     },
     uuid::UUID4,
 };
@@ -73,10 +74,12 @@ impl DerefMut for MessageBus_API {
 pub unsafe extern "C" fn msgbus_new(
     trader_id_ptr: *const c_char,
     name_ptr: *const c_char,
+    config_ptr: *const c_char,
 ) -> MessageBus_API {
     let trader_id = TraderId::from_str(&cstr_to_string(trader_id_ptr)).unwrap();
     let name = optional_cstr_to_string(name_ptr);
-    MessageBus_API(Box::new(MessageBus::new(trader_id, name)))
+    let config = optional_bytes_to_json(config_ptr);
+    MessageBus_API(Box::new(MessageBus::new(trader_id, name, config)))
 }
 
 #[no_mangle]
@@ -390,4 +393,20 @@ pub unsafe extern "C" fn msgbus_is_matching(
     let topic = cstr_to_ustr(topic_ptr);
     let pattern = cstr_to_ustr(pattern_ptr);
     is_matching(&topic, &pattern) as u8
+}
+
+/// # Safety
+///
+/// - Assumes `topic_ptr` is a valid C string pointer.
+/// - Assumes `handler_id_ptr` is a valid C string pointer.
+/// - Assumes `py_callable_ptr` points to a valid Python callable.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_publish_external(
+    bus: &mut MessageBus_API,
+    topic_ptr: *const c_char,
+    payload_ptr: *const c_char,
+) {
+    let topic = cstr_to_string(topic_ptr);
+    let payload = cstr_to_vec(payload_ptr);
+    bus.publish_external(topic, payload);
 }

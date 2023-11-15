@@ -115,19 +115,6 @@ const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
 uint8_t precision_from_cstr(const char *ptr);
 
 /**
- * Convert a C string pointer into an owned `String`.
- *
- * # Safety
- *
- * - Assumes `ptr` is a valid C string pointer.
- *
- * # Panics
- *
- * - If `ptr` is null.
- */
-char* cstr_to_ustr(const char *ptr);
-
-/**
  * Drops the C string memory at the pointer.
  *
  * # Safety

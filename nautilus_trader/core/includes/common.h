@@ -511,7 +511,9 @@ void logger_log(struct Logger_API *logger,
  * - Assumes `trader_id_ptr` is a valid C string pointer.
  * - Assumes `name_ptr` is a valid C string pointer.
  */
-struct MessageBus_API msgbus_new(const char *trader_id_ptr, const char *name_ptr);
+struct MessageBus_API msgbus_new(const char *trader_id_ptr,
+                                 const char *name_ptr,
+                                 const char *config_ptr);
 
 void msgbus_drop(struct MessageBus_API bus);
 
@@ -658,6 +660,17 @@ const char *msgbus_correlation_id_handler(struct MessageBus_API *bus,
  * - Assumes `pattern_ptr` is a valid C string pointer.
  */
 uint8_t msgbus_is_matching(const char *topic_ptr, const char *pattern_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+void msgbus_publish_external(struct MessageBus_API *bus,
+                             const char *topic_ptr,
+                             const char *payload_ptr);
 
 /**
  * # Safety

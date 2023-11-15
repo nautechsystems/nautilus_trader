@@ -161,6 +161,8 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should use an SSL enabled connection.
     flush_on_start : bool, default False
         If database should be flushed on start.
+    encoding : str, {'msgpack', 'json'}, default 'msgpack'
+        The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
         If `False` then will persit as UNIX nanoseconds.
@@ -174,6 +176,57 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     password: str | None = None
     ssl: bool = False
     flush_on_start: bool = False
+    encoding: str = "msgpack"
+    timestamps_as_iso8601: bool = False
+
+
+class DatabaseConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for database connections.
+
+    Parameters
+    ----------
+    type : str, {'redis'}, default 'redis'
+        The database type.
+    host : str, default 'localhost'
+        The database host address.
+    port : int, optional
+        The database port.
+    username : str, optional
+        The account username for the database connection.
+    password : str, optional
+        The account password for the database connection.
+    ssl : bool, default False
+        If database should use an SSL enabled connection.
+
+    """
+
+    type: str = "redis"
+    host: str = "localhost"
+    port: int | None = None
+    username: str | None = None
+    password: str | None = None
+    ssl: bool = False
+
+
+class MessageBusConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for ``MessageBus`` instances.
+
+    Parameters
+    ----------
+    database : DatabaseConfig, optional
+        The configuration for the message bus backing database.
+    encoding : str, {'msgpack', 'json'}, default 'msgpack'
+        The encoding for database operations, controls the type of serializer used.
+    timestamps_as_iso8601, default False
+        If timestamps should be persisted as ISO 8601 strings.
+        If `False` then will persit as UNIX nanoseconds.
+
+    """
+
+    database: DatabaseConfig | None = None
+    encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
 
 
@@ -707,6 +760,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The cache configuration.
     cache_database : CacheDatabaseConfig, optional
         The cache database configuration.
+    message_bus : MessageBusConfig, optional
+        The message bus configuration.
     data_engine : DataEngineConfig, optional
         The live data engine configuration.
     risk_engine : RiskEngineConfig, optional
@@ -751,6 +806,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     instance_id: str | None = None
     cache: CacheConfig | None = None
     cache_database: CacheDatabaseConfig | None = None
+    message_bus: MessageBusConfig | None = None
     data_engine: DataEngineConfig | None = None
     risk_engine: RiskEngineConfig | None = None
     exec_engine: ExecEngineConfig | None = None
