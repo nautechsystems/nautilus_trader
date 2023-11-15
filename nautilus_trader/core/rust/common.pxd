@@ -3,6 +3,7 @@
 from cpython.object cimport PyObject
 from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 from nautilus_trader.core.rust.core cimport CVec, UUID4_t
+from nautilus_trader.core.rust.model cimport TraderId_t
 
 cdef extern from "../includes/common.h":
 
@@ -130,7 +131,7 @@ cdef extern from "../includes/common.h":
     # A question mark matches a single character once. For example, `c?mp` matches
     # `camp` and `comp`. The question mark can also be used more than once.
     # For example, `c??p` would match both of the above examples and `coop`.
-    cdef struct MessageBus_t:
+    cdef struct MessageBus:
         pass
 
     cdef struct TestClock:
@@ -179,7 +180,7 @@ cdef extern from "../includes/common.h":
     # dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
     # having to manually access the underlying `MessageBus` instance.
     cdef struct MessageBus_API:
-        MessageBus_t *_0;
+        MessageBus *_0;
 
     # Represents a time event occurring at the event timestamp.
     cdef struct TimeEvent_t:
@@ -196,8 +197,11 @@ cdef extern from "../includes/common.h":
     cdef struct TimeEventHandler_t:
         # The event.
         TimeEvent_t event;
-        # The event ID.
+        # The Python callable pointer.
         PyObject *callback_ptr;
+
+    cdef struct PyCallableWrapper_t:
+        PyObject *ptr;
 
     TestClock_API test_clock_new();
 
@@ -360,88 +364,93 @@ cdef extern from "../includes/common.h":
     # - Assumes `name_ptr` is a valid C string pointer.
     MessageBus_API msgbus_new(const char *trader_id_ptr, const char *name_ptr);
 
-    PyObject *msgbus_endpoints(MessageBus_API bus);
+    void msgbus_drop(MessageBus_API bus);
 
-    PyObject *msgbus_topics(MessageBus_API bus);
+    TraderId_t msgbus_trader_id(const MessageBus_API *bus);
+
+    PyObject *msgbus_endpoints(const MessageBus_API *bus);
+
+    PyObject *msgbus_topics(const MessageBus_API *bus);
+
+    PyObject *msgbus_correlation_ids(const MessageBus_API *bus);
 
     # # Safety
     #
     # - Assumes `pattern_ptr` is a valid C string pointer.
-    uint8_t msgbus_has_subscribers(MessageBus_API bus, const char *pattern_ptr);
+    uint8_t msgbus_has_subscribers(const MessageBus_API *bus, const char *pattern_ptr);
+
+    PyObject *msgbus_subscription_handler_ids(const MessageBus_API *bus);
+
+    PyObject *msgbus_subscriptions(const MessageBus_API *bus);
+
+    # # Safety
+    #
+    # - Assumes `endpoint_ptr` is a valid C string pointer.
+    uint8_t msgbus_is_registered(const MessageBus_API *bus, const char *endpoint_ptr);
 
     # # Safety
     #
     # - Assumes `topic_ptr` is a valid C string pointer.
     # - Assumes `handler_id_ptr` is a valid C string pointer.
     # - Assumes `py_callable_ptr` points to a valid Python callable.
-    uint8_t msgbus_is_subscribed(MessageBus_API bus,
+    uint8_t msgbus_is_subscribed(const MessageBus_API *bus,
                                  const char *topic_ptr,
-                                 const char *handler_id_ptr,
-                                 PyObject *py_callable_ptr);
+                                 const char *handler_id_ptr);
 
     # # Safety
     #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
-    uint8_t msgbus_is_registered(MessageBus_API bus, const char *endpoint_ptr);
+    uint8_t msgbus_is_pending_response(const MessageBus_API *bus, const UUID4_t *request_id);
 
-    uint8_t msgbus_is_pending_request(MessageBus_API bus, const UUID4_t *request_id);
+    uint64_t msgbus_sent_count(const MessageBus_API *bus);
 
-    uint64_t msgbus_sent_count(MessageBus_API bus);
+    uint64_t msgbus_req_count(const MessageBus_API *bus);
 
-    uint64_t msgbus_req_count(MessageBus_API bus);
+    uint64_t msgbus_res_count(const MessageBus_API *bus);
 
-    uint64_t msgbus_res_count(MessageBus_API bus);
-
-    uint64_t msgbus_pub_count(MessageBus_API bus);
-
-    # # Safety
-    #
-    # - Assumes `topic_ptr` is a valid C string pointer.
-    # - Assumes `handler_id_ptr` is a valid C string pointer.
-    # - Assumes `py_callable_ptr` points to a valid Python callable.
-    void msgbus_subscribe(MessageBus_API bus,
-                          const char *topic_ptr,
-                          const char *handler_id_ptr,
-                          PyObject *py_callable_ptr,
-                          uint8_t priority);
-
-    # # Safety
-    #
-    # - Assumes `topic_ptr` is a valid C string pointer.
-    # - Assumes `handler_id_ptr` is a valid C string pointer.
-    # - Assumes `py_callable_ptr` points to a valid Python callable.
-    void msgbus_unsubscribe(MessageBus_API bus,
-                            const char *topic_ptr,
-                            const char *handler_id_ptr,
-                            PyObject *py_callable_ptr);
+    uint64_t msgbus_pub_count(const MessageBus_API *bus);
 
     # # Safety
     #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
     # - Assumes `handler_id_ptr` is a valid C string pointer.
     # - Assumes `py_callable_ptr` points to a valid Python callable.
-    void msgbus_register(MessageBus_API bus,
-                         const char *endpoint_ptr,
-                         const char *handler_id_ptr,
-                         PyObject *py_callable_ptr);
+    const char *msgbus_register(MessageBus_API *bus,
+                                const char *endpoint_ptr,
+                                const char *handler_id_ptr);
 
     # # Safety
     #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
-    # - Assumes `handler_id_ptr` is a valid C string pointer.
-    # - Assumes `py_callable_ptr` points to a valid Python callable.
     void msgbus_deregister(MessageBus_API bus, const char *endpoint_ptr);
 
     # # Safety
     #
+    # - Assumes `topic_ptr` is a valid C string pointer.
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
+    const char *msgbus_subscribe(MessageBus_API *bus,
+                                 const char *topic_ptr,
+                                 const char *handler_id_ptr,
+                                 uint8_t priority);
+
+    # # Safety
+    #
+    # - Assumes `topic_ptr` is a valid C string pointer.
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
+    void msgbus_unsubscribe(MessageBus_API *bus, const char *topic_ptr, const char *handler_id_ptr);
+
+    # # Safety
+    #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
-    # - Potentially returns a pointer to `Py_None`.
-    PyObject *msgbus_get_endpoint(MessageBus_API bus, const char *endpoint_ptr);
+    # - Returns a NULL pointer if endpoint is not registered.
+    const char *msgbus_endpoint_callback(const MessageBus_API *bus, const char *endpoint_ptr);
 
     # # Safety
     #
     # - Assumes `pattern_ptr` is a valid C string pointer.
-    CVec msgbus_get_matching_callables(MessageBus_API bus, const char *pattern_ptr);
+    CVec msgbus_matching_callbacks(MessageBus_API *bus, const char *pattern_ptr);
 
     void vec_pycallable_drop(CVec v);
 
@@ -449,14 +458,20 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `endpoint_ptr` is a valid C string pointer.
     # - Potentially returns a pointer to `Py_None`.
-    PyObject *msgbus_request_handler(MessageBus_API bus,
-                                     const char *endpoint_ptr,
-                                     UUID4_t request_id);
+    const char *msgbus_request_callback(MessageBus_API *bus,
+                                        const char *endpoint_ptr,
+                                        UUID4_t request_id,
+                                        const char *handler_id_ptr);
 
     # # Safety
     #
     # - Potentially returns a pointer to `Py_None`.
-    PyObject *msgbus_response_handler(MessageBus_API bus, const UUID4_t *correlation_id);
+    const char *msgbus_response_callback(MessageBus_API *bus, const UUID4_t *correlation_id);
+
+    # # Safety
+    #
+    # - Potentially returns a pointer to `Py_None`.
+    const char *msgbus_correlation_id_handler(MessageBus_API *bus, const UUID4_t *correlation_id);
 
     # # Safety
     #
@@ -476,3 +491,5 @@ cdef extern from "../includes/common.h":
     const char *time_event_to_cstr(const TimeEvent_t *event);
 
     TimeEventHandler_t dummy(TimeEventHandler_t v);
+
+    PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);

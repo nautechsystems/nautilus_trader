@@ -75,6 +75,17 @@ cdef extern from "../includes/core.h":
     # - If `ptr` is null.
     uint8_t precision_from_cstr(const char *ptr);
 
+    # Convert a C string pointer into an owned `String`.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    #
+    # # Panics
+    #
+    # - If `ptr` is null.
+    char* cstr_to_ustr(const char *ptr);
+
     # Drops the C string memory at the pointer.
     #
     # # Safety
