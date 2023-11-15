@@ -73,7 +73,7 @@ from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 from nautilus_trader.trading.controller import Controller
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
@@ -207,10 +207,12 @@ class NautilusKernel:
         if config.cache_database is None or config.cache_database.type == "in-memory":
             cache_db = None
         elif config.cache_database.type == "redis":
+            encoding = config.cache_database.encoding.lower()
             cache_db = RedisCacheDatabase(
                 trader_id=self._trader_id,
                 logger=self._logger,
-                serializer=MsgPackSerializer(
+                serializer=MsgSpecSerializer(
+                    encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                     timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
                 ),
@@ -225,10 +227,20 @@ class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
+        msgbus_serializer = None
+        if config.message_bus:
+            encoding = config.message_bus.encoding.lower()
+            msgbus_serializer = MsgSpecSerializer(
+                encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
+                timestamps_as_str=True,  # Hardcoded for now
+                timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
+            )
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
             clock=self._clock,
             logger=self._logger,
+            serializer=msgbus_serializer,
+            config=config.message_bus,
         )
 
         self._cache = Cache(

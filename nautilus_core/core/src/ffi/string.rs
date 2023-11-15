@@ -46,10 +46,24 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 ///
 /// - If `ptr` is null.
 #[must_use]
-#[no_mangle]
-pub unsafe extern "C" fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
+pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     Ustr::from(CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed"))
+}
+
+/// Convert a C string pointer into an owned `String`.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+///
+/// # Panics
+///
+/// - If `ptr` is null.
+#[must_use]
+pub unsafe fn cstr_to_vec(ptr: *const c_char) -> Vec<u8> {
+    assert!(!ptr.is_null(), "`ptr` was NULL");
+    CStr::from_ptr(ptr).to_bytes().to_vec()
 }
 
 /// Convert a C string pointer into an owned `Option<Ustr>`.
@@ -189,6 +203,26 @@ mod tests {
         let ptr: *const c_char = std::ptr::null();
         unsafe {
             let _ = cstr_to_string(ptr);
+        };
+    }
+
+    #[rstest]
+    fn test_cstr_to_vec() {
+        // Create a valid C string pointer
+        let sample_c_string = CString::new("Hello, world!").expect("CString::new failed");
+        let cstr_ptr = sample_c_string.as_ptr();
+        let result = unsafe { cstr_to_vec(cstr_ptr) };
+        assert_eq!(result, b"Hello, world!");
+        assert_eq!(result.len(), 13);
+    }
+
+    #[rstest]
+    #[should_panic]
+    fn test_cstr_to_vec_with_null_ptr() {
+        // Create a null C string pointer
+        let ptr: *const c_char = std::ptr::null();
+        unsafe {
+            let _ = cstr_to_vec(ptr);
         };
     }
 

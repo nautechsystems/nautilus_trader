@@ -162,6 +162,40 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
 }
 
 
+OBJECTS_FOR_EXTERNAL_PUBLISH = (
+    str,
+    int,
+    float,
+    SubmitOrder,
+    SubmitOrderList,
+    ModifyOrder,
+    CancelOrder,
+    ComponentStateChanged,
+    TradingStateChanged,
+    AccountState,
+    OrderAccepted,
+    OrderCancelRejected,
+    OrderCanceled,
+    OrderDenied,
+    OrderEmulated,
+    OrderExpired,
+    OrderFilled,
+    OrderInitialized,
+    OrderPendingCancel,
+    OrderPendingUpdate,
+    OrderReleased,
+    OrderRejected,
+    OrderSubmitted,
+    OrderTriggered,
+    OrderModifyRejected,
+    OrderUpdated,
+    PositionOpened,
+    PositionChanged,
+    PositionClosed,
+    SyntheticInstrument,
+)
+
+
 cpdef void register_serializable_object(
     obj,
     to_dict: Callable[[Any], dict[str, Any]],

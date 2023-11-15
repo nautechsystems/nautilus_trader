@@ -16,6 +16,7 @@
 import sys
 from decimal import Decimal
 
+import msgspec
 import pytest
 import redis
 
@@ -51,7 +52,7 @@ from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -137,7 +138,7 @@ class TestRedisCacheDatabase:
         self.database = RedisCacheDatabase(
             trader_id=self.trader_id,
             logger=self.logger,
-            serializer=MsgPackSerializer(timestamps_as_str=True),
+            serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
         )
 
         self.test_redis = redis.Redis(host="localhost", port=6379, db=0)

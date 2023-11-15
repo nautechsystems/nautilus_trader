@@ -362,7 +362,9 @@ cdef extern from "../includes/common.h":
     #
     # - Assumes `trader_id_ptr` is a valid C string pointer.
     # - Assumes `name_ptr` is a valid C string pointer.
-    MessageBus_API msgbus_new(const char *trader_id_ptr, const char *name_ptr);
+    MessageBus_API msgbus_new(const char *trader_id_ptr,
+                              const char *name_ptr,
+                              const char *config_ptr);
 
     void msgbus_drop(MessageBus_API bus);
 
@@ -478,6 +480,15 @@ cdef extern from "../includes/common.h":
     # - Assumes `topic_ptr` is a valid C string pointer.
     # - Assumes `pattern_ptr` is a valid C string pointer.
     uint8_t msgbus_is_matching(const char *topic_ptr, const char *pattern_ptr);
+
+    # # Safety
+    #
+    # - Assumes `topic_ptr` is a valid C string pointer.
+    # - Assumes `handler_id_ptr` is a valid C string pointer.
+    # - Assumes `py_callable_ptr` points to a valid Python callable.
+    void msgbus_publish_external(MessageBus_API *bus,
+                                 const char *topic_ptr,
+                                 const char *payload_ptr);
 
     # # Safety
     #

@@ -126,7 +126,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
     precision when persisted. One way to solve this is to ensure the serializer
     converts timestamp int64's to strings on the way into Redis, and converts
     timestamp strings back to int64's on the way out. One way to achieve this is
-    to set the `timestamps_as_str` flag to true for the `MsgPackSerializer`, as
+    to set the `timestamps_as_str` flag to true for the `MsgSpecSerializer`, as
     per the default implementations for both `TradingNode` and `BacktestEngine`.
     """
 
@@ -173,7 +173,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"
         self._key_heartbeat = f"{self._key_trader}:{_HEARTBEAT}"
 
-        # Serializers
         self._serializer = serializer
 
         # Redis client

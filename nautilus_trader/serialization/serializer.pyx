@@ -28,12 +28,14 @@ from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 from nautilus_trader.serialization.base cimport Serializer
 
 
-cdef class MsgPackSerializer(Serializer):
+cdef class MsgSpecSerializer(Serializer):
     """
-    Provides a serializer for the `MessagePack` specification.
+    Provides a serializer for either the 'MessagePack' or 'JSON' specifications.
 
     Parameters
     ----------
+    encoding : Callable
+        The msgspec encoding type.
     timestamps_as_str : bool, default False
         If the serializer converts `uint64_t` timestamps to integer strings on serialization,
         and back to `uint64_t` on deserialization.
@@ -44,9 +46,12 @@ cdef class MsgPackSerializer(Serializer):
 
     def __init__(
         self,
+        encoding,
         bint timestamps_as_str = False,
         bint timestamps_as_iso8601 = False,
     ):
+        self._encode = encoding.encode
+        self._decode = encoding.decode
         self.timestamps_as_str = timestamps_as_str
         self.timestamps_as_iso8601 = timestamps_as_iso8601
 
@@ -77,7 +82,7 @@ cdef class MsgPackSerializer(Serializer):
         else:
             delegate = _OBJECT_TO_DICT_MAP.get(type(obj).__name__)
             if delegate is None:
-                raise RuntimeError("cannot serialize object: unrecognized type")
+                raise RuntimeError(f"cannot serialize object: unrecognized type {type(obj)}")
             obj_dict = delegate(obj)
 
         cdef dict timestamp_kvs = {
@@ -96,7 +101,7 @@ cdef class MsgPackSerializer(Serializer):
                 if value is not None:
                     obj_dict[key] = str(value)
 
-        return msgpack.encode(obj_dict)
+        return self._encode(obj_dict)
 
     cpdef object deserialize(self, bytes obj_bytes):
         """
@@ -119,7 +124,7 @@ cdef class MsgPackSerializer(Serializer):
         """
         Condition.not_none(obj_bytes, "obj_bytes")
 
-        cdef dict obj_dict = msgpack.decode(obj_bytes)  # type: dict[str, Any]
+        cdef dict obj_dict = self._decode(obj_bytes)  # type: dict[str, Any]
         cdef dict timestamp_kvs = {
             k: v for k, v in obj_dict.items() if k in ("expire_time_ns") or re.match(r"^ts_", k)
         }

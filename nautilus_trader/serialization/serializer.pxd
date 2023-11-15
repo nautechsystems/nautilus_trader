@@ -16,7 +16,10 @@
 from nautilus_trader.serialization.base cimport Serializer
 
 
-cdef class MsgPackSerializer(Serializer):
+cdef class MsgSpecSerializer(Serializer):
+    cdef object _encode
+    cdef object _decode
+
     cdef readonly bint timestamps_as_str
     """If the serializer converts timestamp `int64_t` to integer strings.\n\n:returns: `bool`"""
     cdef readonly bint timestamps_as_iso8601
