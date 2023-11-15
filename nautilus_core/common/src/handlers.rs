@@ -27,31 +27,26 @@ pub struct PyCallableWrapper {
     pub ptr: *mut ffi::PyObject,
 }
 
+// This function only exists so that `PyCallableWrapper` is included in the definitions
+#[no_mangle]
+pub extern "C" fn dummy_callable(c: PyCallableWrapper) -> PyCallableWrapper {
+    c
+}
+
 // TODO: Make this more generic
 #[derive(Clone)]
 pub struct MessageHandler {
     pub handler_id: Ustr,
-    pub py_callback: Option<PyCallableWrapper>,
     _callback: Option<Rc<dyn Fn(Message)>>,
 }
 
 impl MessageHandler {
     // TODO: Validate exactly one of these is `Some`
-    pub fn new(
-        handler_id: Ustr,
-        py_callback: Option<PyCallableWrapper>,
-        callback: Option<Rc<dyn Fn(Message)>>,
-    ) -> Self {
+    pub fn new(handler_id: Ustr, callback: Option<Rc<dyn Fn(Message)>>) -> Self {
         Self {
             handler_id,
-            py_callback,
             _callback: callback,
         }
-    }
-
-    pub fn as_ptr(self) -> *mut ffi::PyObject {
-        // SAFETY: Will panic if `unwrap` is called on None
-        self.py_callback.unwrap().ptr
     }
 }
 
@@ -65,7 +60,6 @@ impl fmt::Debug for MessageHandler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(stringify!(MessageHandler))
             .field("handler_id", &self.handler_id)
-            .field("py_callback", &self.py_callback)
             .finish()
     }
 }

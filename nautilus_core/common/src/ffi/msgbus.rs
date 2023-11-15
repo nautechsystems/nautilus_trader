@@ -80,7 +80,17 @@ pub unsafe extern "C" fn msgbus_new(
 }
 
 #[no_mangle]
-pub extern "C" fn msgbus_endpoints(bus: MessageBus_API) -> *mut ffi::PyObject {
+pub extern "C" fn msgbus_drop(bus: MessageBus_API) {
+    drop(bus); // Memory freed here
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_trader_id(bus: &MessageBus_API) -> TraderId {
+    bus.trader_id
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_endpoints(bus: &MessageBus_API) -> *mut ffi::PyObject {
     Python::with_gil(|py| -> Py<PyList> {
         let endpoints: Vec<Py<PyString>> = bus
             .endpoints()
@@ -93,14 +103,27 @@ pub extern "C" fn msgbus_endpoints(bus: MessageBus_API) -> *mut ffi::PyObject {
 }
 
 #[no_mangle]
-pub extern "C" fn msgbus_topics(bus: MessageBus_API) -> *mut ffi::PyObject {
+pub extern "C" fn msgbus_topics(bus: &MessageBus_API) -> *mut ffi::PyObject {
     Python::with_gil(|py| -> Py<PyList> {
         let topics: Vec<Py<PyString>> = bus
-            .endpoints()
+            .subscriptions()
             .into_iter()
-            .map(|k| PyString::new(py, k).into())
+            .map(|s| PyString::new(py, s.topic.as_str()).into())
             .collect();
         PyList::new(py, topics).into()
+    })
+    .as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_correlation_ids(bus: &MessageBus_API) -> *mut ffi::PyObject {
+    Python::with_gil(|py| -> Py<PyList> {
+        let correlation_ids: Vec<Py<PyString>> = bus
+            .correlation_ids()
+            .into_iter()
+            .map(|id| PyString::new(py, &id.to_string()).into())
+            .collect();
+        PyList::new(py, correlation_ids).into()
     })
     .as_ptr()
 }
@@ -110,11 +133,49 @@ pub extern "C" fn msgbus_topics(bus: MessageBus_API) -> *mut ffi::PyObject {
 /// - Assumes `pattern_ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn msgbus_has_subscribers(
-    bus: MessageBus_API,
+    bus: &MessageBus_API,
     pattern_ptr: *const c_char,
 ) -> u8 {
     let pattern = cstr_to_ustr(pattern_ptr);
     bus.has_subscribers(pattern.as_str()) as u8
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_subscription_handler_ids(bus: &MessageBus_API) -> *mut ffi::PyObject {
+    Python::with_gil(|py| -> Py<PyList> {
+        let handler_ids: Vec<Py<PyString>> = bus
+            .subscription_handler_ids()
+            .iter()
+            .map(|k| PyString::new(py, k).into())
+            .collect();
+        PyList::new(py, handler_ids).into()
+    })
+    .as_ptr()
+}
+
+#[no_mangle]
+pub extern "C" fn msgbus_subscriptions(bus: &MessageBus_API) -> *mut ffi::PyObject {
+    Python::with_gil(|py| -> Py<PyList> {
+        let subs_info: Vec<Py<PyString>> = bus
+            .subscriptions()
+            .iter()
+            .map(|s| PyString::new(py, &format!("{:?}", s)).into())
+            .collect();
+        PyList::new(py, subs_info).into()
+    })
+    .as_ptr()
+}
+
+/// # Safety
+///
+/// - Assumes `endpoint_ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_is_registered(
+    bus: &MessageBus_API,
+    endpoint_ptr: *const c_char,
+) -> u8 {
+    let endpoint = cstr_to_string(endpoint_ptr);
+    bus.is_registered(&endpoint) as u8
 }
 
 /// # Safety
@@ -124,17 +185,13 @@ pub unsafe extern "C" fn msgbus_has_subscribers(
 /// - Assumes `py_callable_ptr` points to a valid Python callable.
 #[no_mangle]
 pub unsafe extern "C" fn msgbus_is_subscribed(
-    bus: MessageBus_API,
+    bus: &MessageBus_API,
     topic_ptr: *const c_char,
     handler_id_ptr: *const c_char,
-    py_callable_ptr: *mut ffi::PyObject,
 ) -> u8 {
     let topic = cstr_to_ustr(topic_ptr);
     let handler_id = cstr_to_ustr(handler_id_ptr);
-    let py_callable = PyCallableWrapper {
-        ptr: py_callable_ptr,
-    };
-    let handler = MessageHandler::new(handler_id, Some(py_callable), None);
+    let handler = MessageHandler::new(handler_id, None);
     bus.is_subscribed(topic.as_str(), handler) as u8
 }
 
@@ -142,80 +199,31 @@ pub unsafe extern "C" fn msgbus_is_subscribed(
 ///
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_is_registered(
-    bus: MessageBus_API,
-    endpoint_ptr: *const c_char,
+pub unsafe extern "C" fn msgbus_is_pending_response(
+    bus: &MessageBus_API,
+    request_id: &UUID4,
 ) -> u8 {
-    let endpoint = cstr_to_string(endpoint_ptr);
-    bus.is_registered(&endpoint) as u8
-}
-
-#[no_mangle]
-pub extern "C" fn msgbus_is_pending_request(bus: MessageBus_API, request_id: &UUID4) -> u8 {
     bus.is_pending_response(request_id) as u8
 }
 
 #[no_mangle]
-pub extern "C" fn msgbus_sent_count(bus: MessageBus_API) -> u64 {
+pub extern "C" fn msgbus_sent_count(bus: &MessageBus_API) -> u64 {
     bus.sent_count
 }
 
 #[no_mangle]
-pub extern "C" fn msgbus_req_count(bus: MessageBus_API) -> u64 {
+pub extern "C" fn msgbus_req_count(bus: &MessageBus_API) -> u64 {
     bus.req_count
 }
 
 #[no_mangle]
-pub extern "C" fn msgbus_res_count(bus: MessageBus_API) -> u64 {
+pub extern "C" fn msgbus_res_count(bus: &MessageBus_API) -> u64 {
     bus.res_count
 }
 
 #[no_mangle]
-pub extern "C" fn msgbus_pub_count(bus: MessageBus_API) -> u64 {
+pub extern "C" fn msgbus_pub_count(bus: &MessageBus_API) -> u64 {
     bus.pub_count
-}
-
-/// # Safety
-///
-/// - Assumes `topic_ptr` is a valid C string pointer.
-/// - Assumes `handler_id_ptr` is a valid C string pointer.
-/// - Assumes `py_callable_ptr` points to a valid Python callable.
-#[no_mangle]
-pub unsafe extern "C" fn msgbus_subscribe(
-    mut bus: MessageBus_API,
-    topic_ptr: *const c_char,
-    handler_id_ptr: *const c_char,
-    py_callable_ptr: *mut ffi::PyObject,
-    priority: u8,
-) {
-    let topic = cstr_to_ustr(topic_ptr);
-    let handler_id = cstr_to_ustr(handler_id_ptr);
-    let py_callable = PyCallableWrapper {
-        ptr: py_callable_ptr,
-    };
-    let handler = MessageHandler::new(handler_id, Some(py_callable), None);
-    bus.subscribe(&topic, handler, Some(priority));
-}
-
-/// # Safety
-///
-/// - Assumes `topic_ptr` is a valid C string pointer.
-/// - Assumes `handler_id_ptr` is a valid C string pointer.
-/// - Assumes `py_callable_ptr` points to a valid Python callable.
-#[no_mangle]
-pub unsafe extern "C" fn msgbus_unsubscribe(
-    mut bus: MessageBus_API,
-    topic_ptr: *const c_char,
-    handler_id_ptr: *const c_char,
-    py_callable_ptr: *mut ffi::PyObject,
-) {
-    let topic = cstr_to_ustr(topic_ptr);
-    let handler_id = cstr_to_ustr(handler_id_ptr);
-    let py_callable = PyCallableWrapper {
-        ptr: py_callable_ptr,
-    };
-    let handler = MessageHandler::new(handler_id, Some(py_callable), None);
-    bus.unsubscribe(&topic, handler);
 }
 
 /// # Safety
@@ -225,44 +233,75 @@ pub unsafe extern "C" fn msgbus_unsubscribe(
 /// - Assumes `py_callable_ptr` points to a valid Python callable.
 #[no_mangle]
 pub unsafe extern "C" fn msgbus_register(
-    mut bus: MessageBus_API,
+    bus: &mut MessageBus_API,
     endpoint_ptr: *const c_char,
     handler_id_ptr: *const c_char,
-    py_callable_ptr: *mut ffi::PyObject,
-) {
+) -> *const c_char {
     let endpoint = cstr_to_string(endpoint_ptr);
     let handler_id = cstr_to_ustr(handler_id_ptr);
-    let wrapper = PyCallableWrapper {
-        ptr: py_callable_ptr,
-    };
-    let handler = MessageHandler::new(handler_id, Some(wrapper), None);
-    bus.register(&endpoint, handler)
+    let handler = MessageHandler::new(handler_id, None);
+    bus.register(&endpoint, handler);
+    handler_id.as_ptr() as *const c_char
 }
 
 /// # Safety
 ///
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
-/// - Assumes `handler_id_ptr` is a valid C string pointer.
-/// - Assumes `py_callable_ptr` points to a valid Python callable.
 #[no_mangle]
 pub unsafe extern "C" fn msgbus_deregister(mut bus: MessageBus_API, endpoint_ptr: *const c_char) {
     let endpoint = cstr_to_string(endpoint_ptr);
-    bus.deregister(&endpoint)
+    bus.deregister(&endpoint);
+}
+
+/// # Safety
+///
+/// - Assumes `topic_ptr` is a valid C string pointer.
+/// - Assumes `handler_id_ptr` is a valid C string pointer.
+/// - Assumes `py_callable_ptr` points to a valid Python callable.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_subscribe(
+    bus: &mut MessageBus_API,
+    topic_ptr: *const c_char,
+    handler_id_ptr: *const c_char,
+    priority: u8,
+) -> *const c_char {
+    let topic = cstr_to_ustr(topic_ptr);
+    let handler_id = cstr_to_ustr(handler_id_ptr);
+    let handler = MessageHandler::new(handler_id, None);
+    bus.subscribe(&topic, handler, Some(priority));
+    handler_id.as_ptr() as *const c_char
+}
+
+/// # Safety
+///
+/// - Assumes `topic_ptr` is a valid C string pointer.
+/// - Assumes `handler_id_ptr` is a valid C string pointer.
+/// - Assumes `py_callable_ptr` points to a valid Python callable.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_unsubscribe(
+    bus: &mut MessageBus_API,
+    topic_ptr: *const c_char,
+    handler_id_ptr: *const c_char,
+) {
+    let topic = cstr_to_ustr(topic_ptr);
+    let handler_id = cstr_to_ustr(handler_id_ptr);
+    let handler = MessageHandler::new(handler_id, None);
+    bus.unsubscribe(&topic, handler);
 }
 
 /// # Safety
 ///
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
-/// - Potentially returns a pointer to `Py_None`.
+/// - Returns a NULL pointer if endpoint is not registered.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_get_endpoint(
-    bus: MessageBus_API,
+pub unsafe extern "C" fn msgbus_endpoint_callback(
+    bus: &MessageBus_API,
     endpoint_ptr: *const c_char,
-) -> *mut ffi::PyObject {
+) -> *const c_char {
     let endpoint = cstr_to_ustr(endpoint_ptr);
     match bus.get_endpoint(&endpoint) {
-        Some(handler) => handler.py_callback.unwrap().ptr,
-        None => ffi::Py_None(),
+        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        None => std::ptr::null(),
     }
 }
 
@@ -270,15 +309,15 @@ pub unsafe extern "C" fn msgbus_get_endpoint(
 ///
 /// - Assumes `pattern_ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_get_matching_callables(
-    mut bus: MessageBus_API,
+pub unsafe extern "C" fn msgbus_matching_callbacks(
+    bus: &mut MessageBus_API,
     pattern_ptr: *const c_char,
 ) -> CVec {
     let pattern = cstr_to_ustr(pattern_ptr);
     let subs: Vec<&Subscription> = bus.matching_subscriptions(&pattern);
     subs.iter()
-        .map(|s| s.handler.py_callback.unwrap())
-        .collect::<Vec<PyCallableWrapper>>()
+        .map(|s| s.handler.handler_id.as_ptr() as *const c_char)
+        .collect::<Vec<*const c_char>>()
         .into()
 }
 
@@ -296,15 +335,18 @@ pub extern "C" fn vec_pycallable_drop(v: CVec) {
 /// - Assumes `endpoint_ptr` is a valid C string pointer.
 /// - Potentially returns a pointer to `Py_None`.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_request_handler(
-    mut bus: MessageBus_API,
+pub unsafe extern "C" fn msgbus_request_callback(
+    bus: &mut MessageBus_API,
     endpoint_ptr: *const c_char,
     request_id: UUID4,
-) -> *mut ffi::PyObject {
+    handler_id_ptr: *const c_char,
+) -> *const c_char {
     let endpoint = cstr_to_ustr(endpoint_ptr);
-    match bus.request_handler(&endpoint, request_id) {
-        Some(handler) => handler.py_callback.unwrap().ptr,
-        None => ffi::Py_None(),
+    let handler_id = cstr_to_ustr(handler_id_ptr);
+    let handler = MessageHandler::new(handler_id, None);
+    match bus.request_handler(&endpoint, request_id, handler) {
+        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        None => std::ptr::null(),
     }
 }
 
@@ -312,13 +354,27 @@ pub unsafe extern "C" fn msgbus_request_handler(
 ///
 /// - Potentially returns a pointer to `Py_None`.
 #[no_mangle]
-pub unsafe extern "C" fn msgbus_response_handler(
-    mut bus: MessageBus_API,
+pub unsafe extern "C" fn msgbus_response_callback(
+    bus: &mut MessageBus_API,
     correlation_id: &UUID4,
-) -> *mut ffi::PyObject {
+) -> *const c_char {
     match bus.response_handler(correlation_id) {
-        Some(handler) => handler.py_callback.unwrap().ptr,
-        None => ffi::Py_None(),
+        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        None => std::ptr::null(),
+    }
+}
+
+/// # Safety
+///
+/// - Potentially returns a pointer to `Py_None`.
+#[no_mangle]
+pub unsafe extern "C" fn msgbus_correlation_id_handler(
+    bus: &mut MessageBus_API,
+    correlation_id: &UUID4,
+) -> *const c_char {
+    match bus.correlation_id_handler(correlation_id) {
+        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        None => std::ptr::null(),
     }
 }
 
