@@ -19,7 +19,7 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use crate::{
     average::{
         dema::DoubleExponentialMovingAverage, ema::ExponentialMovingAverage,
-        rma::WilderMovingAverage, sma::SimpleMovingAverage,
+        hma::HullMovingAverage, rma::WilderMovingAverage, sma::SimpleMovingAverage,
     },
     indicator::MovingAverage,
 };
@@ -51,6 +51,7 @@ pub enum MovingAverageType {
     Exponential,
     DoubleExponential,
     Wilder,
+    Hull,
 }
 
 pub struct MovingAverageFactory;
@@ -76,6 +77,9 @@ impl MovingAverageFactory {
             MovingAverageType::Wilder => {
                 Box::new(WilderMovingAverage::new(period, price_type).unwrap())
             }
+            MovingAverageType::Hull => {
+                Box::new(HullMovingAverage::new(period, price_type).unwrap())
+            }
         }
     }
 }
@@ -83,6 +87,7 @@ impl MovingAverageFactory {
 pub mod ama;
 pub mod dema;
 pub mod ema;
+pub mod hma;
 pub mod rma;
 pub mod sma;
 pub mod wma;
