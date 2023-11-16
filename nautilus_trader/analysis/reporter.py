@@ -13,15 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import msgspec
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 
@@ -58,6 +56,8 @@ class ReportProvider:
         """
         Generate an order fills report.
 
+        This report provides a row per order.
+
         Parameters
         ----------
         orders : list[Order]
@@ -71,13 +71,46 @@ class ReportProvider:
         if not orders:
             return pd.DataFrame()
 
-        filled_orders = [o.to_dict() for o in orders if o.status == OrderStatus.FILLED]
+        filled_orders = [o.to_dict() for o in orders if o.filled_qty > 0]
         if not filled_orders:
             return pd.DataFrame()
 
         report = pd.DataFrame(data=filled_orders).set_index("client_order_id").sort_index()
         report["ts_last"] = [unix_nanos_to_dt(ts_last or 0) for ts_last in report["ts_last"]]
         report["ts_init"] = [unix_nanos_to_dt(ts_init) for ts_init in report["ts_init"]]
+
+        return report
+
+    @staticmethod
+    def generate_fills_report(orders: list[Order]) -> pd.DataFrame:
+        """
+        Generate a fills report.
+
+        This report provides a row per individual fill event.
+
+        Parameters
+        ----------
+        orders : list[Order]
+            The orders for the report.
+
+        Returns
+        -------
+        pd.DataFrame
+
+        """
+        if not orders:
+            return pd.DataFrame()
+
+        fills = [
+            OrderFilled.to_dict(e) for o in orders for e in o.events if isinstance(e, OrderFilled)
+        ]
+        if not fills:
+            return pd.DataFrame()
+
+        report = pd.DataFrame(data=fills).set_index("client_order_id").sort_index()
+        report["ts_event"] = [unix_nanos_to_dt(ts_last or 0) for ts_last in report["ts_event"]]
+        report["ts_init"] = [unix_nanos_to_dt(ts_init) for ts_init in report["ts_init"]]
+        del report["type"]
 
         return report
 

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar
@@ -40,7 +39,7 @@ class SubscribeStrategyConfig(StrategyConfig, frozen=True):
     """
 
     instrument_id: str
-    book_type: Optional[BookType] = None
+    book_type: BookType | None = None
     snapshots: bool = False
     trade_ticks: bool = False
     quote_ticks: bool = False
@@ -62,7 +61,7 @@ class SubscribeStrategy(Strategy):
     def __init__(self, config: SubscribeStrategyConfig) -> None:
         super().__init__(config)
         self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
-        self.book: Optional[OrderBook] = None
+        self.book: OrderBook | None = None
 
     def on_start(self) -> None:
         """

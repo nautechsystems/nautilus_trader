@@ -25,8 +25,8 @@ Log level (`LogLevel`) values include:
 - 'WARNING' or 'WRN'
 - 'ERROR' or 'ERR'
 
-```{tip}
-See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
+```{note}
+See the `LoggingConfig` [API Reference](../api_reference/config.md#LoggingConfig) for further details.
 ```
 
 Logging can be configured in the following ways:
@@ -68,6 +68,9 @@ The input value should be a dictionary of component ID strings to log level stri
 Below is an example of a trading node logging configuration that includes some of the options mentioned above:
 
 ```python
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import TradingNodeConfig
+
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
     logging=LoggingConfig(
@@ -81,3 +84,14 @@ config_node = TradingNodeConfig(
 ```
 
 For backtesting, the `BacktestEngineConfig` class can be used instead of `TradingNodeConfig`, as the same options are available.
+
+### Log Colors
+
+ANSI color codes are utilized to enhance the readability of logs when viewed in a terminal.
+These color codes can make it easier to distinguish different parts of log messages.
+However, in environments that do not support ANSI color rendering (such as some cloud environments or text editors),
+these color codes may not be appropriate as they can appear as raw text.
+
+To accommodate for such scenarios, the `LoggingConfig.log_colors` option can be set to `false`.
+Disabling `log_colors` will prevent the addition of ANSI color codes to the log messages, ensuring
+compatibility across different environments where color rendering is not supported.

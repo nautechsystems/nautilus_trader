@@ -15,7 +15,7 @@
 
 import asyncio
 from operator import attrgetter
-from typing import Any, Optional, Union
+from typing import Any
 
 import pandas as pd
 
@@ -49,7 +49,8 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the InteractiveBrokers exchange.
+    Provides a data client for the InteractiveBrokers exchange by using the `Gateway` to
+    stream market data.
     """
 
     def __init__(
@@ -149,8 +150,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict[str, Any]] = None,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -160,8 +161,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict[str, Any]] = None,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
@@ -301,8 +302,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
@@ -328,8 +329,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
@@ -361,8 +362,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         contract: IBContract,
         tick_type: str,
         limit: int,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ):
         if not start:
             limit = self._cache.tick_capacity
@@ -370,14 +371,14 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         if not end:
             end = pd.Timestamp.utcnow()
 
-        ticks: list[Union[QuoteTick, TradeTick]] = []
+        ticks: list[QuoteTick | TradeTick] = []
         while (start and end > start) or (len(ticks) < limit > 0):
             await self._client.is_running_async()
             ticks_part = await self._client.get_historical_ticks(
                 contract,
                 tick_type,
-                end,
-                self._use_regular_trading_hours,
+                end_date_time=end,
+                use_rth=self._use_regular_trading_hours,
             )
             if not ticks_part:
                 break
@@ -392,8 +393,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         bar_type: BarType,
         limit: int,
         correlation_id: UUID4,
-        start: Optional[pd.Timestamp] = None,
-        end: Optional[pd.Timestamp] = None,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         if not (instrument := self._cache.instrument(bar_type.instrument_id)):
             self._log.error(

@@ -5,7 +5,7 @@ Exchange Streaming API.
 
 ## Overview
 
-The following integration classes are available:
+The following adapter classes are available:
 - `BetfairInstrumentProvider` which allows querying the Betfair market catalogue for betting markets, which are then converted into Nautilus "instruments".
 - `BetfairDataClient` which connects to the Exchange Stream API and streams market data.
 - `BetfairExecutionClient` which allows the retrieval of account information and execution and updates for orders (or bets).
@@ -16,6 +16,8 @@ data and execution clients. To achieve this, add a `BETFAIR` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.config import TradingNodeConfig
+
 config = TradingNodeConfig(
     ...,  # Omitted 
     data_clients={
@@ -41,6 +43,10 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
+from nautilus_trader.adapters.betfair.factories import BetfairLiveDataClientFactory
+from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFactory
+from nautilus_trader.live.node import TradingNode
+
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 

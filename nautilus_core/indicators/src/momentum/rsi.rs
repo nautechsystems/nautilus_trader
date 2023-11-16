@@ -16,7 +16,6 @@
 use std::fmt::{Debug, Display};
 
 use anyhow::Result;
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -37,13 +36,12 @@ pub struct RelativeStrengthIndex {
     pub ma_type: MovingAverageType,
     pub value: f64,
     pub count: usize,
-    // pub inputs: Vec<f64>,
+    pub is_initialized: bool,
     _has_inputs: bool,
     _last_value: f64,
     _average_gain: Box<dyn MovingAverage + Send + 'static>,
     _average_loss: Box<dyn MovingAverage + Send + 'static>,
     _rsi_max: f64,
-    is_initialized: bool,
 }
 
 impl Display for RelativeStrengthIndex {
@@ -106,7 +104,7 @@ impl RelativeStrengthIndex {
     pub fn update_raw(&mut self, value: f64) {
         if !self._has_inputs {
             self._last_value = value;
-            self._has_inputs = true
+            self._has_inputs = true;
         }
         let gain = value - self._last_value;
         if gain > 0.0 {
@@ -143,69 +141,6 @@ impl RelativeStrengthIndex {
     }
 }
 
-#[cfg(feature = "python")]
-#[pymethods]
-impl RelativeStrengthIndex {
-    #[new]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
-        Self::new(period, ma_type).map_err(to_pyvalue_err)
-    }
-
-    #[getter]
-    #[pyo3(name = "name")]
-    fn py_name(&self) -> String {
-        self.name()
-    }
-
-    #[getter]
-    #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
-        self.period
-    }
-
-    #[getter]
-    #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
-        self.count
-    }
-
-    #[getter]
-    #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
-        self.value
-    }
-
-    #[getter]
-    #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
-        self.is_initialized
-    }
-
-    #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, value: f64) {
-        self.update_raw(value);
-    }
-
-    #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.py_update_raw(tick.extract_price(PriceType::Mid).into());
-    }
-
-    #[pyo3(name = "handle_bar")]
-    fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
-    }
-
-    #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
-    }
-
-    fn __repr__(&self) -> String {
-        format!("ExponentialMovingAverage({})", self.period)
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -218,40 +153,40 @@ mod tests {
 
     #[rstest]
     fn test_rsi_initialized(rsi_10: RelativeStrengthIndex) {
-        let display_str = format!("{}", rsi_10);
+        let display_str = format!("{rsi_10}");
         assert_eq!(display_str, "RelativeStrengthIndex(10,EXPONENTIAL)");
         assert_eq!(rsi_10.period, 10);
-        assert_eq!(rsi_10.is_initialized, false)
+        assert!(!rsi_10.is_initialized);
     }
 
     #[rstest]
     fn test_initialized_with_required_inputs_returns_true(mut rsi_10: RelativeStrengthIndex) {
         for i in 0..12 {
-            rsi_10.update_raw(i as f64);
+            rsi_10.update_raw(f64::from(i));
         }
-        assert_eq!(rsi_10.is_initialized, true)
+        assert!(rsi_10.is_initialized);
     }
 
     #[rstest]
     fn test_value_with_one_input_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         rsi_10.update_raw(1.0);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_value_all_higher_inputs_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         for i in 1..4 {
-            rsi_10.update_raw(i as f64);
+            rsi_10.update_raw(f64::from(i));
         }
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_value_with_all_lower_inputs_returns_expected_value(mut rsi_10: RelativeStrengthIndex) {
         for i in (1..4).rev() {
-            rsi_10.update_raw(i as f64);
+            rsi_10.update_raw(f64::from(i));
         }
-        assert_eq!(rsi_10.value, 0.0)
+        assert_eq!(rsi_10.value, 0.0);
     }
 
     #[rstest]
@@ -263,7 +198,7 @@ mod tests {
         rsi_10.update_raw(7.0);
         rsi_10.update_raw(6.0);
 
-        assert_eq!(rsi_10.value, 0.6837363325825265)
+        assert_eq!(rsi_10.value, 0.683_736_332_582_526_5);
     }
 
     #[rstest]
@@ -277,7 +212,7 @@ mod tests {
         rsi_10.update_raw(6.0);
         rsi_10.update_raw(7.0);
 
-        assert_eq!(rsi_10.value, 0.7615344667662725);
+        assert_eq!(rsi_10.value, 0.761_534_466_766_272_5);
     }
 
     #[rstest]
@@ -285,28 +220,28 @@ mod tests {
         rsi_10.update_raw(1.0);
         rsi_10.update_raw(2.0);
         rsi_10.reset();
-        assert_eq!(rsi_10.is_initialized(), false);
-        assert_eq!(rsi_10.count, 0)
+        assert!(!rsi_10.is_initialized());
+        assert_eq!(rsi_10.count, 0);
     }
 
     #[rstest]
     fn test_handle_quote_tick(mut rsi_10: RelativeStrengthIndex, quote_tick: QuoteTick) {
         rsi_10.handle_quote_tick(&quote_tick);
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_handle_trade_tick(mut rsi_10: RelativeStrengthIndex, trade_tick: TradeTick) {
         rsi_10.handle_trade_tick(&trade_tick);
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 
     #[rstest]
     fn test_handle_bar(mut rsi_10: RelativeStrengthIndex, bar_ethusdt_binance_minute_bid: Bar) {
         rsi_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(rsi_10.count, 1);
-        assert_eq!(rsi_10.value, 1.0)
+        assert_eq!(rsi_10.value, 1.0);
     }
 }

@@ -1,10 +1,14 @@
-# Custom/Generic data
+# Custom/Generic Data
 Due to the modular nature of the Nautilus design, it is possible to set up systems 
 with very flexible data streams, including custom user defined data types. This
 guide covers some possible use cases for this functionality.
 
 It's possible to create custom data types within the Nautilus system. First you
 will need to define your data by subclassing from `Data`.
+
+```{note}
+As `Data` holds no state, it is not strictly necessary to call `super().__init__()`.
+```
 
 ```python
 from nautilus_trader.core.data import Data
@@ -66,10 +70,6 @@ for when the event occurred and when the object was initialized, respectively.
 The recommended approach to satisfy the contract is to assign `ts_event` and `ts_init` 
 to backing fields, and then implement the `@property` for each as shown above 
 (for completeness, the docstrings are copied from the `Data` base class).
-
-```{note}
-As `Data` holds no state, it is not strictly necessary to call `super().__init__()`. 
-```
 
 ```{note}
 These timestamps are what allow Nautilus to correctly order data streams for backtests 

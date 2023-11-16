@@ -13,16 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    fmt::{Debug, Display, Formatter},
-};
+use std::fmt::{Debug, Display, Formatter};
 
 use anyhow::Result;
-use nautilus_core::{
-    correctness::{check_string_contains, check_valid_string},
-    string::cstr_to_str,
-};
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid trader ID.
@@ -55,6 +49,11 @@ impl TraderId {
             value: Ustr::from(s),
         })
     }
+
+    pub fn get_tag(&self) -> &str {
+        // SAFETY: Unwrap safe as value previously validated
+        self.value.split('-').last().unwrap()
+    }
 }
 
 impl Default for TraderId {
@@ -84,52 +83,22 @@ impl From<&str> for TraderId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn trader_id_new(ptr: *const c_char) -> TraderId {
-    TraderId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn trader_id_hash(id: &TraderId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::trader_id::TraderId;
-
-    #[fixture]
-    pub fn test_trader() -> TraderId {
-        TraderId::from("TRADER-001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, TraderId};
+    use crate::identifiers::{stubs::*, trader_id::TraderId};
 
     #[rstest]
-    fn test_string_reprs(test_trader: TraderId) {
-        assert_eq!(test_trader.to_string(), "TRADER-001");
-        assert_eq!(format!("{test_trader}"), "TRADER-001");
+    fn test_string_reprs(trader_id: TraderId) {
+        assert_eq!(trader_id.to_string(), "TRADER-001");
+        assert_eq!(format!("{trader_id}"), "TRADER-001");
+    }
+
+    #[rstest]
+    fn test_get_tag(trader_id: TraderId) {
+        assert_eq!(trader_id.get_tag(), "001");
     }
 }

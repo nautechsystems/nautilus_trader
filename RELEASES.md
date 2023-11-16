@@ -1,6 +1,70 @@
-# NautilusTrader 1.179.0 Beta
+# NautilusTrader 1.181.0 Beta
 
 Released on TBD (UTC).
+
+### Enhancements
+- Rewrote Interactive Brokers integration documentation, many thanks @benjaminsingleton
+- Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
+- Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
+- Added `WilderMovingAverage` in Rust, thanks @ayush-sb
+- Added all common identifier generators in Rust, thanks @filipmacek
+
+### Breaking Changes
+- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (not handles both JSON and MsgPack)
+- Moved `MsgSpecSerializer` module from `serialization.msgpack.serializer` to `serialization.serializer`
+
+### Fixes
+- Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek
+
+---
+
+# NautilusTrader 1.180.0 Beta
+
+Released on 3rd November 2023 (UTC).
+
+### Enhancements
+- Improved internal latency for live engines by using `loop.call_soon_threadsafe(...)`
+- Improved `RedisCacheDatabase` client connection error handling with retries
+- Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
+- Added `support_contingent_orders` option for venues (to simulate venues which do not support contingent orders)
+- Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingent orders)
+- Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `FuturesContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `OptionsContract.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+- Added `CryptoFuture.expiration_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
+
+### Breaking Changes
+- Renamed `FuturesContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Renamed `OptionsContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Renamed `CryptoFuture.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
+- Changed `FuturesContract` Arrow schema
+- Changed `OptionsContract` Arrow schema
+- Changed `CryptoFuture` Arrow schema
+- Transformed orders will now retain the original `ts_init` timestamp
+- Removed unimplemented `batch_more` option for `Strategy.modify_order`
+- Removed `InstrumentProvider.venue` property (redundant as a provider may have many venues)
+- Dropped support for Python 3.9
+
+### Fixes
+- Fixed `ParquetDataCatalog` file writing template, thanks @limx0
+- Fixed `Binance` all orders requests which would omit order reports when using a `start` param
+- Fixed managed GTD orders past expiry cancellation on restart (orders were not being canceled)
+- Fixed managed GTD orders cancel timer on order cancel (timers were not being canceled)
+- Fixed `BacktestEngine` logging error with immediate stop (caused by certain timestamps being `None`)
+- Fixed `BacktestNode` exceptions during backtest runs preventing next sequential run, thanks for reporting @cavan-black
+- Fixed `BinanceSpotPersmission` value error by relaxing typing for `BinanceSpotSymbolInfo.permissions`
+- Interactive Brokers adapter various fixes, thanks @rsmb7z
+
+---
+
+# NautilusTrader 1.179.0 Beta
+
+Released on 22nd October 2023 (UTC).
+
+A major feature of this release is the `ParquetDataCatalog` version 2, which represents months of
+collective effort thanks to contributions from Brad @limx0, @twitu, @ghill2 and @davidsblom.
 
 This will be the final release with support for Python 3.9.
 
@@ -11,12 +75,15 @@ This will be the final release with support for Python 3.9.
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
 - Added Binance Futures support for GTD orders
+- Added Binance internal bar aggregation inference from aggregated trade ticks or 1-MINUTE bars (depending on lookback window)
 - Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
 - Added `Controller` for dynamically controlling actor and strategy instances for a `Trader`
+- Added `ReportProvider.generate_fills_report(...)` which provides a row per individual fill event, thanks @r3k4mn14r
 - Moved indicator registration and data handling down to `Actor` (now available for `Actor`)
 - Implemented Binance `WebSocketClient` live subscribe and unsubscribe
+- Implemented `BinanceCommonDataClient` retries for `update_instruments`
 - Decythonized `Trader`
 
 ### Breaking Changes
@@ -39,8 +106,12 @@ This will be the final release with support for Python 3.9.
 - Fixed `OrderBook` pickling (did not include all attributes), thanks @limx0
 - Fixed open position snapshots race condition (added `open_only` flag)
 - Fixed `Strategy.cancel_order` for orders in `INITIALIZED` state and with an `emulation_trigger` (was not sending command to `OrderEmulator`)
+- Fixed `BinanceWebSocketClient` reconnect behavior (reconnect handler was not being called due event loop issue from Rust)
 - Fixed Binance instruments missing max notional values, thanks for reporting @AnthonyVince and thanks for fixing @filipmacek
 - Fixed Binance Futures fee rates for backtesting
+- Fixed `Timer` missing condition check for non-positive intervals
+- Fixed `Condition` checks involving integers, was previously defaulting to 32-bit and overflowing
+- Fixed `ReportProvider.generate_order_fills_report(...)` which was missing partial fills for orders not in a final `FILLED` status, thanks @r3k4mn14r
 
 ---
 
@@ -143,7 +214,7 @@ Released on 31st July 2023 (UTC).
 - Fixed dictionary representation of orders for `venue_order_id` (for three order types)
 - Fixed `Currency` registration with core global map on creation
 - Fixed serialization of `OrderInitialized.exec_algorithm_params` to spec (bytes rather than string)
-- Fixed assignment of position IDs for contingency orders (when parent filled)
+- Fixed assignment of position IDs for contingent orders (when parent filled)
 - Fixed `PENDING_CANCEL` -> `EXPIRED` as valid state transition (real world possibility)
 - Fixed fill handling of `reduce_only` orders when partially filled
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
@@ -221,10 +292,10 @@ Released on 19th May 2023 (UTC).
 - Fixed handling of emulated order contingencies (not based on status of spawned algorithm orders)
 - Fixed sending execution algorithm commands from strategy
 - Fixed `OrderEmulator` releasing of already closed orders
-- Fixed `MatchingEngine` processing of reduce only for child contingency orders
-- Fixed `MatchingEngine` position ID assignment for child contingency orders
+- Fixed `MatchingEngine` processing of reduce only for child contingent orders
+- Fixed `MatchingEngine` position ID assignment for child contingent orders
 - Fixed `Actor` handling of historical data from requests (will now call `on_historical_data` regardless of state), thanks for reporting @miller-moore
-- Fixed pyarrow schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
+- Fixed `pyarrow` schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
 
 ---
 
@@ -269,7 +340,7 @@ Released on 30th April 2023 (UTC).
 - Added `TWAPExecAlgorithm` and `TWAPExecAlgorithmConfig` to examples
 - Build out `ExecAlgorithm` base class for implementing 'first class' execution algorithms
 - Rewired execution for improved flow flexibility between emulated orders, execution algorithms and the `RiskEngine`
-- Improved handling for `OrderEmulator` updating of contingency orders from execution algorithms
+- Improved handling for `OrderEmulator` updating of contingent orders from execution algorithms
 - Defined public API for instruments, can now import directly from `nautilus_trader.model.instruments` (denest namespace)
 - Defined public API for orders, can now import directly from `nautilus_trader.model.orders` (denest namespace)
 - Defined public API for order book, can now import directly from `nautilus_trader.model.orderbook` (denest namespace)
@@ -277,7 +348,7 @@ Released on 30th April 2023 (UTC).
 - Refined build and added additional `debug` Makefile convenience targets
 
 ### Fixes
-- Fixed processing of contingency orders when in a pending update state
+- Fixed processing of contingent orders when in a pending update state
 - Fixed calculation of PnL for flipped positions (only book realized PnL against open position)
 - Fixed `WebSocketClient` session disconnect, thanks for reporting @miller-moore
 - Added missing `BinanceSymbolFilterType.NOTIONAL`
@@ -586,7 +657,7 @@ Released on 28th November 2022 (UTC).
 - Renamed `Instrument.get_cost_currency(...)` to `Instrument.get_settlement_currency(...)` (more accurate terminology)
 
 ### Enhancements
-- Added emulated contingency orders capability to `OrderEmulator`
+- Added emulated contingent orders capability to `OrderEmulator`
 - Moved `test_kit` module to main package to support downstream project/package testing
 
 ### Fixes
@@ -618,7 +689,7 @@ Released on 18th November 2022 (UTC).
 - Fixed bar aggregation start times for bar specs outside typical intervals (60-SECOND rather than 1-MINUTE etc) 
 - Fixed backtest engine main loop ordering of time events with identically timestamped data
 - Fixed `ModifyOrder` message `str` and `repr` when no quantity
-- Fixed OCO contingency orders which were actually implemented as OUO for backtests
+- Fixed OCO contingent orders which were actually implemented as OUO for backtests
 - Fixed various bugs for Interactive Brokers integration, thanks @limx0 and @rsmb7z
 - Fixed pyarrow version parsing, thanks @ghill2
 - Fixed returning venue from InstrumentId, thanks @rsmb7z
@@ -1434,7 +1505,7 @@ Released on 12th September 2021.
 - Added order custom user tags
 - Added `Actor.register_warning_event` (also applicable to `TradingStrategy`)
 - Added `Actor.deregister_warning_event` (also applicable to `TradingStrategy`)
-- Added `ContingencyType` enum (for contingency orders in an `OrderList`)
+- Added `ContingencyType` enum (for contingent orders in an `OrderList`)
 - All order types can now be `reduce_only` (#437)
 - Refined backtest configuration options
 - Improved efficiency of `UUID4` using the Rust `fastuuid` Python bindings

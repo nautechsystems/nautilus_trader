@@ -15,13 +15,13 @@
 
 import pathlib
 import random
-from datetime import date
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 import fsspec
 import numpy as np
 import pandas as pd
+import pytz
 from fsspec.implementations.local import LocalFileSystem
 from pandas.io.parsers.readers import TextFileReader
 
@@ -52,6 +52,7 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import SyntheticInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -254,32 +255,40 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def btcusdt_future_binance(expiry: Optional[date] = None) -> CryptoFuture:
+    def btcusdt_future_binance(
+        activation: pd.Timestamp | None = None,
+        expiration: pd.Timestamp | None = None,
+    ) -> CryptoFuture:
         """
         Return the Binance Futures BTCUSDT instrument for backtesting.
 
         Parameters
         ----------
-        expiry : date, optional
-            The expiry date for the contract.
+        activation : pd.Timestamp, optional
+            The activation (UTC) for the contract.
+        expiration : pd.Timestamp, optional
+            The expiration (UTC) for the contract.
 
         Returns
         -------
         CryptoFuture
 
         """
-        if expiry is None:
-            expiry = date(2022, 3, 25)
+        if activation is None:
+            activation = pd.Timestamp(2021, 12, 25, tz=pytz.utc)
+        if expiration is None:
+            expiration = pd.Timestamp(2022, 3, 25, tz=pytz.utc)
         return CryptoFuture(
             instrument_id=InstrumentId(
-                symbol=Symbol(f"BTCUSDT_{expiry.strftime('%y%m%d')}"),
+                symbol=Symbol(f"BTCUSDT_{expiration.strftime('%y%m%d')}"),
                 venue=Venue("BINANCE"),
             ),
             raw_symbol=Symbol("BTCUSDT"),
             underlying=BTC,
             quote_currency=USDT,
             settlement_currency=USDT,
-            expiry_date=expiry,
+            activation_ns=activation.value,
+            expiration_ns=expiration.value,
             price_precision=2,
             size_precision=6,
             price_increment=Price(1e-02, precision=2),
@@ -375,7 +384,7 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def default_fx_ccy(symbol: str, venue: Optional[Venue] = None) -> CurrencyPair:
+    def default_fx_ccy(symbol: str, venue: Venue | None = None) -> CurrencyPair:
         """
         Return a default FX currency pair instrument from the given symbol and venue.
 
@@ -461,7 +470,7 @@ class TestInstrumentProvider:
     def future(
         symbol: str = "ESZ21",
         underlying: str = "ES",
-        venue: str = "CME",
+        venue: str = "GLBX",
     ) -> FuturesContract:
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
@@ -473,9 +482,10 @@ class TestInstrumentProvider:
             multiplier=Quantity.from_int(1),
             lot_size=Quantity.from_int(1),
             underlying=underlying,
-            expiry_date=date(2021, 12, 17),
-            ts_event=0,
-            ts_init=0,
+            activation_ns=1616160600000000000,
+            expiration_ns=1639751400000000000,
+            ts_event=1638133151389539971,
+            ts_init=1638316800000000000,
         )
 
     @staticmethod
@@ -491,8 +501,9 @@ class TestInstrumentProvider:
             lot_size=Quantity.from_int(1),
             underlying="AAPL",
             kind=OptionKind.CALL,
-            expiry_date=date(2021, 12, 17),
             strike_price=Price.from_str("149.00"),
+            activation_ns=pd.Timestamp(2021, 9, 17, tz=pytz.utc).value,
+            expiration_ns=pd.Timestamp(2021, 12, 17, tz=pytz.utc).value,
             ts_event=0,
             ts_init=0,
         )
@@ -512,24 +523,24 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
-    def betting_instrument(venue: Optional[str] = None) -> BettingInstrument:
+    def betting_instrument(venue: str | None = None) -> BettingInstrument:
         return BettingInstrument(
             venue_name=venue or "BETFAIR",
             betting_type="ODDS",
-            competition_id="12282733",
+            competition_id=12282733,
             competition_name="NFL",
             event_country_code="GB",
-            event_id="29678534",
+            event_id=29678534,
             event_name="NFL",
             event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-            event_type_id="6423",
+            event_type_id=6423,
             event_type_name="American Football",
             market_id="1.123456789",
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",
-            selection_handicap=None,
-            selection_id="50214",
+            selection_handicap=null_handicap(),
+            selection_id=50214,
             selection_name="Kansas City Chiefs",
             currency="GBP",
             ts_event=0,
@@ -550,13 +561,13 @@ class TestDataProvider:
     """
 
     def __init__(self, branch: str = "develop") -> None:
-        self.fs: Optional[fsspec.AbstractFileSystem] = None
-        self.root: Optional[str] = None
+        self.fs: fsspec.AbstractFileSystem | None = None
+        self.root: str | None = None
         self._determine_filesystem()
         self.branch = branch
 
     @staticmethod
-    def _test_data_directory() -> Optional[str]:
+    def _test_data_directory() -> str | None:
         # Determine if the test data directory exists (i.e. this is a checkout of the source code).
         source_root = pathlib.Path(__file__).parent.parent
         assert source_root.stem == "nautilus_trader"

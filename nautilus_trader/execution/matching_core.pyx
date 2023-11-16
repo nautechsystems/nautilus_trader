@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Callable, Optional
+from typing import Callable
+from typing import Optional
 
 from libc.stdint cimport uint64_t
 

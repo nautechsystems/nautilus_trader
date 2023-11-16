@@ -24,6 +24,8 @@ use pyo3::{
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use ustr::Ustr;
 
+use crate::identifier_for_python;
+
 #[macro_use]
 mod macros;
 
@@ -41,6 +43,9 @@ pub mod trade_id;
 pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
+
+#[cfg(test)]
+pub mod stubs;
 
 impl_from_str_for_identifier!(account_id::AccountId);
 impl_from_str_for_identifier!(client_id::ClientId);
@@ -91,13 +96,3 @@ pub extern "C" fn interned_string_stats() {
 
     ustr::string_cache_iter().for_each(|s| println!("{}", s));
 }
-
-// #[cfg(test)]
-// pub mod stubs {
-//     use crate::identifiers::{
-//         account_id::stubs::*, client_id::stubs::*, client_order_id::stubs::*,
-//         component_id::stubs::*, exec_algorithm_id::stubs::*, instrument_id::stubs::*,
-//         order_list_id::stubs::*, position_id::stubs::*, strategy_id::stubs::*, symbol::stubs::*,
-//         trade_id::stubs::*, trader_id::stubs::*, venue::stubs::*, venue_order_id::stubs::*,
-//     };
-// }

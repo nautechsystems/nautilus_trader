@@ -41,6 +41,7 @@ impl Debug for dyn Indicator + Send {
         write!(f, "Indicator {{ ... }}")
     }
 }
+
 impl Debug for dyn MovingAverage + Send {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Implement custom formatting for the Indicator trait object.

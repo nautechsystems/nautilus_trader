@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional, Union
 
 import msgspec
 
@@ -50,7 +49,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -127,7 +126,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                     f"for {self._binance_account_type.value} account types.",
                 )
                 return
-            instrument_id: Optional[InstrumentId] = data_type.metadata.get("instrument_id")
+            instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
             if instrument_id is None:
                 self._log.error(
                     "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` "
@@ -148,7 +147,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
                     f"for {self._binance_account_type.value} account types.",
                 )
                 return
-            instrument_id: Optional[InstrumentId] = data_type.metadata.get("instrument_id")
+            instrument_id: InstrumentId | None = data_type.metadata.get("instrument_id")
             if instrument_id is None:
                 self._log.error(
                     "Cannot subscribe to `BinanceFuturesMarkPriceUpdate` no instrument ID in `data_type` metadata.",
@@ -169,7 +168,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         # Check if book buffer active
-        book_buffer: Optional[list[Union[OrderBookDelta, OrderBookDeltas]]] = self._book_buffer.get(
+        book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
             instrument_id,
         )
         if book_buffer is not None:

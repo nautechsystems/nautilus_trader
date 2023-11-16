@@ -19,7 +19,7 @@ from decimal import Decimal
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import Price
+from nautilus_trader.core.nautilus_pyo3 import Price
 
 
 class TestPrice:
@@ -30,9 +30,6 @@ class TestPrice:
 
     def test_instantiate_with_none_value_raises_type_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(TypeError):
-            Price(None)
-
         with pytest.raises(TypeError):
             Price(None, precision=0)
 
@@ -454,7 +451,7 @@ class TestPrice:
         result = value1 // value2
 
         # Assert
-        assert type(result) == expected_type
+        assert type(result) is expected_type
         assert result == expected_value
 
     @pytest.mark.parametrize(
@@ -481,7 +478,7 @@ class TestPrice:
         result = value1 % value2
 
         # Assert
-        assert type(result) == expected_type
+        assert type(result) is expected_type
         assert result == expected_value
 
     @pytest.mark.parametrize(

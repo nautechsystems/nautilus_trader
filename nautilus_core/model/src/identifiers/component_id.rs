@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a valid component ID.
@@ -64,48 +63,14 @@ impl From<&str> for ComponentId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
-    ComponentId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn component_id_hash(id: &ComponentId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::component_id::ComponentId;
-
-    #[fixture]
-    pub fn component_risk_engine() -> ComponentId {
-        ComponentId::from("RiskEngine")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, ComponentId};
+    use super::ComponentId;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(component_risk_engine: ComponentId) {

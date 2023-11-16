@@ -15,7 +15,6 @@
 
 import pytest
 
-from nautilus_trader.adapters._template.core import TEMPLATE_VENUE
 from nautilus_trader.adapters._template.providers import TemplateInstrumentProvider
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
@@ -28,7 +27,6 @@ pytestmark = pytest.mark.skip(reason="template")
 def instrument_provider():
     clock = TestClock()
     return TemplateInstrumentProvider(
-        venue=TEMPLATE_VENUE,
         logger=Logger(clock),
     )
 

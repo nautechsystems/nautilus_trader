@@ -46,6 +46,7 @@ async def test_binance_websocket_client():
         clock=clock,
         logger=Logger(clock=clock),
         handler=print,
+        loop=asyncio.get_event_loop(),
     )
 
     ws.subscribe(key=key)

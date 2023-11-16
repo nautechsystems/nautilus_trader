@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a valid trade match ID (assigned by a trading venue).
@@ -77,52 +76,17 @@ impl From<&str> for TradeId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
-    TradeId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn trade_id_hash(id: &TradeId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::trade_id::TradeId;
-
-    #[fixture]
-    pub fn test_trade_id() -> TradeId {
-        TradeId::from("1234567890")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, TradeId};
+    use crate::identifiers::{stubs::*, trade_id::TradeId};
 
     #[rstest]
-    fn test_string_reprs(test_trade_id: TradeId) {
-        assert_eq!(test_trade_id.to_string(), "1234567890");
-        assert_eq!(format!("{test_trade_id}"), "1234567890");
+    fn test_string_reprs(trade_id: TradeId) {
+        assert_eq!(trade_id.to_string(), "1234567890");
+        assert_eq!(format!("{trade_id}"), "1234567890");
     }
 }

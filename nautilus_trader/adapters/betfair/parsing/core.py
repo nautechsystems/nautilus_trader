@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 from collections.abc import Generator
 from os import PathLike
 from typing import BinaryIO
@@ -48,7 +46,7 @@ class BetfairParser:
         self.traded_volumes: dict[InstrumentId, dict[float, float]] = {}
 
     def parse(self, mcm: MCM, ts_init: int | None = None) -> list[PARSE_TYPES]:
-        if isinstance(mcm, (Status, Connection, OCM)):
+        if isinstance(mcm, Status | Connection | OCM):
             return []
         if mcm.is_heartbeat:
             return []
@@ -69,13 +67,6 @@ class BetfairParser:
 def iter_stream(file_like: BinaryIO):
     for line in file_like:
         yield stream_decode(line)
-        # try:
-        #     data = stream_decode(line)
-        # except (msgspec.DecodeError, msgspec.ValidationError) as e:
-        #     print("ERR", e)
-        #     print(msgspec.json.decode(line))
-        #     raise e
-        # yield data
 
 
 def parse_betfair_file(

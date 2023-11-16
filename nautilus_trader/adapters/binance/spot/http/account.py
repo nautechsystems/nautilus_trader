@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Optional
+from typing import Any
 
 import msgspec
 
@@ -31,7 +31,7 @@ from nautilus_trader.adapters.binance.http.endpoint import BinanceHttpEndpoint
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotAccountInfo
 from nautilus_trader.adapters.binance.spot.schemas.account import BinanceSpotOrderOco
 from nautilus_trader.common.clock import LiveClock
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
@@ -87,7 +87,7 @@ class BinanceSpotOpenOrdersHttp(BinanceOpenOrdersHttp):
 
         timestamp: str
         symbol: BinanceSymbol
-        recvWindow: Optional[str] = None
+        recvWindow: str | None = None
 
     async def _delete(self, parameters: DeleteParameters) -> list[dict[str, Any]]:
         method_type = HttpMethod.DELETE
@@ -184,20 +184,20 @@ class BinanceSpotOrderOcoHttp(BinanceHttpEndpoint):
         quantity: str
         price: str
         stopPrice: str
-        listClientOrderId: Optional[str] = None
-        limitClientOrderId: Optional[str] = None
-        limitStrategyId: Optional[int] = None
-        limitStrategyType: Optional[int] = None
-        limitIcebergQty: Optional[str] = None
-        trailingDelta: Optional[str] = None
-        stopClientOrderId: Optional[str] = None
-        stopStrategyId: Optional[int] = None
-        stopStrategyType: Optional[int] = None
-        stopLimitPrice: Optional[str] = None
-        stopIcebergQty: Optional[str] = None
-        stopLimitTimeInForce: Optional[BinanceTimeInForce] = None
-        newOrderRespType: Optional[BinanceNewOrderRespType] = None
-        recvWindow: Optional[str] = None
+        listClientOrderId: str | None = None
+        limitClientOrderId: str | None = None
+        limitStrategyId: int | None = None
+        limitStrategyType: int | None = None
+        limitIcebergQty: str | None = None
+        trailingDelta: str | None = None
+        stopClientOrderId: str | None = None
+        stopStrategyId: int | None = None
+        stopStrategyType: int | None = None
+        stopLimitPrice: str | None = None
+        stopIcebergQty: str | None = None
+        stopLimitTimeInForce: BinanceTimeInForce | None = None
+        newOrderRespType: BinanceNewOrderRespType | None = None
+        recvWindow: str | None = None
 
     async def _post(self, parameters: PostParameters) -> BinanceSpotOrderOco:
         method_type = HttpMethod.POST
@@ -257,9 +257,9 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        orderListId: Optional[str] = None
-        origClientOrderId: Optional[str] = None
-        recvWindow: Optional[str] = None
+        orderListId: str | None = None
+        origClientOrderId: str | None = None
+        recvWindow: str | None = None
 
     class DeleteParameters(msgspec.Struct, omit_defaults=True, frozen=True):
         """
@@ -288,17 +288,17 @@ class BinanceSpotOrderListHttp(BinanceHttpEndpoint):
 
         timestamp: str
         symbol: BinanceSymbol
-        orderListId: Optional[str] = None
-        listClientOrderId: Optional[str] = None
-        newClientOrderId: Optional[str] = None
-        recvWindow: Optional[str] = None
+        orderListId: str | None = None
+        listClientOrderId: str | None = None
+        newClientOrderId: str | None = None
+        recvWindow: str | None = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceSpotOrderOco:
+    async def get(self, parameters: GetParameters) -> BinanceSpotOrderOco:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
 
-    async def _delete(self, parameters: DeleteParameters) -> BinanceSpotOrderOco:
+    async def delete(self, parameters: DeleteParameters) -> BinanceSpotOrderOco:
         method_type = HttpMethod.DELETE
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
@@ -360,13 +360,13 @@ class BinanceSpotAllOrderListHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        fromId: Optional[int] = None
-        startTime: Optional[int] = None
-        endTime: Optional[int] = None
-        limit: Optional[int] = None
-        recvWindow: Optional[str] = None
+        fromId: int | None = None
+        startTime: int | None = None
+        endTime: int | None = None
+        limit: int | None = None
+        recvWindow: str | None = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceSpotOrderOco]:
+    async def get(self, parameters: GetParameters) -> list[BinanceSpotOrderOco]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
@@ -414,9 +414,9 @@ class BinanceSpotOpenOrderListHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        recvWindow: Optional[str] = None
+        recvWindow: str | None = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceSpotOrderOco]:
+    async def get(self, parameters: GetParameters) -> list[BinanceSpotOrderOco]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
@@ -464,9 +464,9 @@ class BinanceSpotAccountHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        recvWindow: Optional[str] = None
+        recvWindow: str | None = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceSpotAccountInfo:
+    async def get(self, parameters: GetParameters) -> BinanceSpotAccountInfo:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
@@ -514,9 +514,9 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
         """
 
         timestamp: str
-        recvWindow: Optional[str] = None
+        recvWindow: str | None = None
 
-    async def _get(self, parameters: GetParameters) -> list[BinanceRateLimit]:
+    async def get(self, parameters: GetParameters) -> list[BinanceRateLimit]:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._resp_decoder.decode(raw)
@@ -576,20 +576,20 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
         quantity: str,
         price: str,
         stop_price: str,
-        list_client_order_id: Optional[str] = None,
-        limit_client_order_id: Optional[str] = None,
-        limit_strategy_id: Optional[int] = None,
-        limit_strategy_type: Optional[int] = None,
-        limit_iceberg_qty: Optional[str] = None,
-        trailing_delta: Optional[str] = None,
-        stop_client_order_id: Optional[str] = None,
-        stop_strategy_id: Optional[int] = None,
-        stop_strategy_type: Optional[int] = None,
-        stop_limit_price: Optional[str] = None,
-        stop_iceberg_qty: Optional[str] = None,
-        stop_limit_time_in_force: Optional[BinanceTimeInForce] = None,
-        new_order_resp_type: Optional[BinanceNewOrderRespType] = None,
-        recv_window: Optional[str] = None,
+        list_client_order_id: str | None = None,
+        limit_client_order_id: str | None = None,
+        limit_strategy_id: int | None = None,
+        limit_strategy_type: int | None = None,
+        limit_iceberg_qty: str | None = None,
+        trailing_delta: str | None = None,
+        stop_client_order_id: str | None = None,
+        stop_strategy_id: int | None = None,
+        stop_strategy_type: int | None = None,
+        stop_limit_price: str | None = None,
+        stop_iceberg_qty: str | None = None,
+        stop_limit_time_in_force: BinanceTimeInForce | None = None,
+        new_order_resp_type: BinanceNewOrderRespType | None = None,
+        recv_window: str | None = None,
     ) -> BinanceSpotOrderOco:
         """
         Send in a new spot OCO order to Binance.
@@ -629,9 +629,9 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_spot_oco(
         self,
-        order_list_id: Optional[str] = None,
-        orig_client_order_id: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        order_list_id: str | None = None,
+        orig_client_order_id: str | None = None,
+        recv_window: str | None = None,
     ) -> BinanceSpotOrderOco:
         """
         Check single spot OCO order information.
@@ -640,7 +640,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             raise RuntimeError(
                 "Either orderListId or origClientOrderId must be provided.",
             )
-        return await self._endpoint_spot_order_list._get(
+        return await self._endpoint_spot_order_list.get(
             parameters=self._endpoint_spot_order_list.GetParameters(
                 timestamp=self._timestamp(),
                 orderListId=order_list_id,
@@ -652,7 +652,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     async def cancel_all_open_orders(
         self,
         symbol: str,
-        recv_window: Optional[str] = None,
+        recv_window: str | None = None,
     ) -> bool:
         """
         Cancel all active orders on a symbol, including OCO.
@@ -672,10 +672,10 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     async def cancel_spot_oco(
         self,
         symbol: str,
-        order_list_id: Optional[str] = None,
-        list_client_order_id: Optional[str] = None,
-        new_client_order_id: Optional[str] = None,
-        recv_window: Optional[str] = None,
+        order_list_id: str | None = None,
+        list_client_order_id: str | None = None,
+        new_client_order_id: str | None = None,
+        recv_window: str | None = None,
     ) -> BinanceSpotOrderOco:
         """
         Delete spot OCO order from Binance.
@@ -684,7 +684,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             raise RuntimeError(
                 "Either orderListId or listClientOrderId must be provided.",
             )
-        return await self._endpoint_spot_order_list._delete(
+        return await self._endpoint_spot_order_list.delete(
             parameters=self._endpoint_spot_order_list.DeleteParameters(
                 timestamp=self._timestamp(),
                 symbol=BinanceSymbol(symbol),
@@ -697,11 +697,11 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_spot_all_oco(
         self,
-        from_id: Optional[int] = None,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        limit: Optional[int] = None,
-        recv_window: Optional[str] = None,
+        from_id: int | None = None,
+        start_time: int | None = None,
+        end_time: int | None = None,
+        limit: int | None = None,
+        recv_window: str | None = None,
     ) -> list[BinanceSpotOrderOco]:
         """
         Check all spot OCO orders' information, matching provided filter parameters.
@@ -710,7 +710,7 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
             raise RuntimeError(
                 "Cannot specify both fromId and a startTime/endTime.",
             )
-        return await self._endpoint_spot_all_order_list._get(
+        return await self._endpoint_spot_all_order_list.get(
             parameters=self._endpoint_spot_all_order_list.GetParameters(
                 timestamp=self._timestamp(),
                 fromId=from_id,
@@ -723,12 +723,12 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_spot_all_open_oco(
         self,
-        recv_window: Optional[str] = None,
+        recv_window: str | None = None,
     ) -> list[BinanceSpotOrderOco]:
         """
         Check all OPEN spot OCO orders' information.
         """
-        return await self._endpoint_spot_open_order_list._get(
+        return await self._endpoint_spot_open_order_list.get(
             parameters=self._endpoint_spot_open_order_list.GetParameters(
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
@@ -737,12 +737,12 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_spot_account_info(
         self,
-        recv_window: Optional[str] = None,
+        recv_window: str | None = None,
     ) -> BinanceSpotAccountInfo:
         """
         Check SPOT/MARGIN Binance account information.
         """
-        return await self._endpoint_spot_account._get(
+        return await self._endpoint_spot_account.get(
             parameters=self._endpoint_spot_account.GetParameters(
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,
@@ -751,12 +751,12 @@ class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
 
     async def query_spot_order_rate_limit(
         self,
-        recv_window: Optional[str] = None,
+        recv_window: str | None = None,
     ) -> list[BinanceRateLimit]:
         """
         Check SPOT/MARGIN order count/rateLimit.
         """
-        return await self._endpoint_spot_order_rate_limit._get(
+        return await self._endpoint_spot_order_rate_limit.get(
             parameters=self._endpoint_spot_order_rate_limit.GetParameters(
                 timestamp=self._timestamp(),
                 recvWindow=recv_window,

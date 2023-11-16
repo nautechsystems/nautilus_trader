@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 import msgspec
 
@@ -27,7 +26,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotAvgPrice
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
@@ -73,11 +72,11 @@ class BinanceSpotExchangeInfoHttp(BinanceHttpEndpoint):
 
         """
 
-        symbol: Optional[BinanceSymbol] = None
-        symbols: Optional[BinanceSymbols] = None
-        permissions: Optional[BinanceSpotPermissions] = None
+        symbol: BinanceSymbol | None = None
+        symbols: BinanceSymbols | None = None
+        permissions: BinanceSpotPermissions | None = None
 
-    async def _get(self, parameters: Optional[GetParameters] = None) -> BinanceSpotExchangeInfo:
+    async def get(self, parameters: GetParameters | None = None) -> BinanceSpotExchangeInfo:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -124,7 +123,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
 
         symbol: BinanceSymbol = None
 
-    async def _get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
+    async def get(self, parameters: GetParameters) -> BinanceSpotAvgPrice:
         method_type = HttpMethod.GET
         raw = await self._method(method_type, parameters)
         return self._get_resp_decoder.decode(raw)
@@ -163,16 +162,16 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
 
     async def query_spot_exchange_info(
         self,
-        symbol: Optional[str] = None,
-        symbols: Optional[list[str]] = None,
-        permissions: Optional[BinanceSpotPermissions] = None,
+        symbol: str | None = None,
+        symbols: list[str] | None = None,
+        permissions: BinanceSpotPermissions | None = None,
     ) -> BinanceSpotExchangeInfo:
         """
         Check Binance Spot exchange information.
         """
         if symbol and symbols:
             raise ValueError("`symbol` and `symbols` cannot be sent together")
-        return await self._endpoint_spot_exchange_info._get(
+        return await self._endpoint_spot_exchange_info.get(
             parameters=self._endpoint_spot_exchange_info.GetParameters(
                 symbol=BinanceSymbol(symbol),
                 symbols=BinanceSymbols(symbols),
@@ -184,7 +183,7 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         """
         Check average price for a provided symbol on the Spot exchange.
         """
-        return await self._endpoint_spot_average_price._get(
+        return await self._endpoint_spot_average_price.get(
             parameters=self._endpoint_spot_average_price.GetParameters(
                 symbol=BinanceSymbol(symbol),
             ),

@@ -13,17 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from collections.abc import Callable
 from collections.abc import Coroutine
-from typing import Any, Callable
+from typing import Any
 
 import msgspec
 import pytest
 from aiohttp import web
 from aiohttp.test_utils import TestServer
 
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 
 
 @pytest.fixture(name="test_server")

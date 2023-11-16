@@ -15,8 +15,11 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::{clock::TestClock, clock_api::TestClock_API, timer::TimeEventHandler};
-use nautilus_core::{cvec::CVec, time::UnixNanos};
+use nautilus_common::{clock::TestClock, ffi::clock::TestClock_API, timer::TimeEventHandler};
+use nautilus_core::{
+    ffi::{cvec::CVec, parsing::u8_as_bool},
+    time::UnixNanos,
+};
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
@@ -35,7 +38,7 @@ impl TimeEventAccumulator {
     /// Advance the given clock to the `to_time_ns`.
     pub fn advance_clock(&mut self, clock: &mut TestClock, to_time_ns: UnixNanos, set_time: bool) {
         let events = clock.advance_time(to_time_ns, set_time);
-        let handlers = clock.match_handlers_py(events);
+        let handlers = clock.match_handlers(events);
         self.event_handlers.extend(handlers);
     }
 
@@ -93,7 +96,7 @@ pub extern "C" fn time_event_accumulator_advance_clock(
     to_time_ns: UnixNanos,
     set_time: u8,
 ) {
-    accumulator.advance_clock(clock, to_time_ns, set_time != 0);
+    accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
 }
 
 #[no_mangle]

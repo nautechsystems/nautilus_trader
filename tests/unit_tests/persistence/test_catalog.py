@@ -145,6 +145,53 @@ class TestPersistenceCatalog:
         assert instrument.id.value == "AUD/USD.SIM"
         assert trade_tick.instrument_id.value == "AUD/USD.SIM"
 
+    @pytest.mark.skip(reason="Not yet partitioning")
+    def test_partioning_min_rows_per_group(
+        self,
+        betfair_catalog: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        instrument = Equity(
+            instrument_id=InstrumentId(symbol=Symbol("AAPL"), venue=Venue("NASDAQ")),
+            raw_symbol=Symbol("AAPL"),
+            currency=USD,
+            price_precision=2,
+            price_increment=Price.from_str("0.01"),
+            multiplier=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1),
+            isin="US0378331005",
+            ts_event=0,
+            ts_init=0,
+            margin_init=Decimal("0.01"),
+            margin_maint=Decimal("0.005"),
+            maker_fee=Decimal("0.005"),
+            taker_fee=Decimal("0.01"),
+        )
+        quote_ticks = []
+
+        # Num quotes needs to be less than 5000 (default value for max_rows_per_group)
+        expected_num_quotes = 100
+
+        for _ in range(expected_num_quotes):
+            quote_tick = QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=Price.from_str("2.1"),
+                ask_price=Price.from_str("2.0"),
+                bid_size=Quantity.from_int(10),
+                ask_size=Quantity.from_int(10),
+                ts_event=0,
+                ts_init=0,
+            )
+            quote_ticks.append(quote_tick)
+
+        # Act
+        self.catalog.write_data(data=quote_ticks, partitioning=["ts_event"])
+
+        result = len(self.catalog.quote_ticks())
+
+        # Assert
+        assert result == expected_num_quotes
+
     def test_catalog_filter(
         self,
         betfair_catalog: ParquetDataCatalog,

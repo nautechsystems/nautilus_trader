@@ -2163,7 +2163,7 @@ class TestDataEngine:
     #         data: bytes = writer.flush_bytes()
     #         f.write(data)
     #
-    #     self.data_engine.register_catalog(catalog, use_rust=True)
+    #     self.data_engine.register_catalog(catalog)
     #
     #     # Act
     #     handler: list[DataResponse] = []
@@ -2246,7 +2246,7 @@ class TestDataEngine:
     #         data: bytes = writer.flush_bytes()
     #         f.write(data)
     #
-    #     self.data_engine.register_catalog(catalog, use_rust=True)
+    #     self.data_engine.register_catalog(catalog)
     #
     #     # Act
     #     handler: list[DataResponse] = []

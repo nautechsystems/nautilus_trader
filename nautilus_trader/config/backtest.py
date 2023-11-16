@@ -16,8 +16,9 @@
 import hashlib
 import importlib
 import sys
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Any, Callable, Optional, Union
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -29,7 +30,7 @@ from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.core.datetime import maybe_dt_to_unix_nanos
+from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -45,20 +46,21 @@ class BacktestVenueConfig(NautilusConfig, frozen=True):
     oms_type: str
     account_type: str
     starting_balances: list[str]
-    base_currency: Optional[str] = None
+    base_currency: str | None = None
     default_leverage: float = 1.0
-    leverages: Optional[dict[str, float]] = None
+    leverages: dict[str, float] | None = None
     book_type: str = "L1_MBP"
     routing: bool = False
     frozen_account: bool = False
     bar_execution: bool = True
     reject_stop_orders: bool = True
     support_gtd_orders: bool = True
+    support_contingent_orders: bool = True
     use_position_ids: bool = True
     use_random_ids: bool = False
     use_reduce_only: bool = True
     # fill_model: Optional[FillModel] = None  # TODO(cs): Implement
-    modules: Optional[list[ImportableConfig]] = None
+    modules: list[ImportableConfig] | None = None
 
 
 class BacktestDataConfig(NautilusConfig, frozen=True):
@@ -68,17 +70,16 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
 
     catalog_path: str
     data_cls: str
-    catalog_fs_protocol: Optional[str] = None
-    catalog_fs_storage_options: Optional[dict] = None
-    instrument_id: Optional[str] = None
-    start_time: Optional[Union[str, int]] = None
-    end_time: Optional[Union[str, int]] = None
-    filter_expr: Optional[str] = None
-    client_id: Optional[str] = None
-    metadata: Optional[dict] = None
-    bar_spec: Optional[str] = None
-    use_rust: Optional[bool] = False
-    batch_size: Optional[int] = 10_000
+    catalog_fs_protocol: str | None = None
+    catalog_fs_storage_options: dict | None = None
+    instrument_id: str | None = None
+    start_time: str | int | None = None
+    end_time: str | int | None = None
+    filter_expr: str | None = None
+    client_id: str | None = None
+    metadata: dict | None = None
+    bar_spec: str | None = None
+    batch_size: int | None = 10_000
 
     @property
     def data_type(self) -> type:
@@ -93,7 +94,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     def query(self) -> dict[str, Any]:
         if self.data_cls is Bar and self.bar_spec:
             bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
-            filter_expr: Optional[str] = f'field("bar_type") == "{bar_type}"'
+            filter_expr: str | None = f'field("bar_type") == "{bar_type}"'
         else:
             filter_expr = self.filter_expr
 
@@ -104,20 +105,19 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             "end": self.end_time,
             "filter_expr": parse_filters_expr(filter_expr),
             "metadata": self.metadata,
-            "use_rust": self.use_rust,
         }
 
     @property
     def start_time_nanos(self) -> int:
         if self.start_time is None:
             return 0
-        return maybe_dt_to_unix_nanos(pd.Timestamp(self.start_time))
+        return dt_to_unix_nanos(self.start_time)
 
     @property
     def end_time_nanos(self) -> int:
         if self.end_time is None:
             return sys.maxsize
-        return maybe_dt_to_unix_nanos(pd.Timestamp(self.end_time))
+        return dt_to_unix_nanos(self.end_time)
 
     def catalog(self) -> ParquetDataCatalog:
         from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
@@ -130,8 +130,8 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
 
     def load(
         self,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> CatalogDataResult:
         query = self.query
         query.update(
@@ -231,15 +231,15 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
 
     venues: list[BacktestVenueConfig]
     data: list[BacktestDataConfig]
-    engine: Optional[BacktestEngineConfig] = None
-    batch_size_bytes: Optional[int] = None
+    engine: BacktestEngineConfig | None = None
+    batch_size_bytes: int | None = None
 
     @property
     def id(self):
         return tokenize_config(self.dict())
 
 
-def parse_filters_expr(s: Optional[str]):
+def parse_filters_expr(s: str | None):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
     """
     Parse a pyarrow.dataset filter expression from a string.
@@ -276,7 +276,7 @@ CUSTOM_ENCODINGS: dict[type, Callable] = {
 
 
 def json_encoder(x):
-    if isinstance(x, (str, Decimal)):
+    if isinstance(x, str | Decimal):
         return str(x)
     elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
         return x.fully_qualified_name()

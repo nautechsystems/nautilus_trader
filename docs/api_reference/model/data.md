@@ -21,6 +21,14 @@
 ```
 
 ```{eval-rst}
+.. automodule:: nautilus_trader.model.data.status
+   :show-inheritance:
+   :inherited-members:
+   :members:
+   :member-order: bysource
+```
+
+```{eval-rst}
 .. automodule:: nautilus_trader.model.data.tick
    :show-inheritance:
    :inherited-members:
@@ -30,14 +38,6 @@
 
 ```{eval-rst}
 .. automodule:: nautilus_trader.model.data.ticker
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.model.data.venue
    :show-inheritance:
    :inherited-members:
    :members:

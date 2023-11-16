@@ -26,7 +26,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 def test_load_binance_deltas() -> None:
     # Arrange
     instrument = TestInstrumentProvider.btcusdt_binance()
-    data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance-btcusdt-depth-snap.csv")
+    data_path = os.path.join(PACKAGE_ROOT, "tests/test_data/binance/btcusdt-depth-snap.csv")
     df = BinanceOrderBookDeltaDataLoader.load(data_path)
 
     wrangler = OrderBookDeltaDataWrangler(instrument)

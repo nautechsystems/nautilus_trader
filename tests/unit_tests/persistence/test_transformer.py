@@ -19,7 +19,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
@@ -37,7 +37,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     # Arrange
-    path = TEST_DATA_DIR / "truefx-audusd-ticks.csv"
+    path = TEST_DATA_DIR / "truefx" / "audusd-ticks.csv"
     df = pd.read_csv(path)
 
     # Act
@@ -59,7 +59,7 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     # Arrange
     provider = TestDataProvider()
     wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
-    ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv"))
+    ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
     # Act
     batches_bytes = DataTransformer.pyobjects_to_batches_bytes(ticks)

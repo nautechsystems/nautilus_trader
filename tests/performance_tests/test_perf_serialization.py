@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import msgspec
 import pytest
 
 from nautilus_trader.common.clock import TestClock
@@ -24,7 +25,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 from nautilus_trader.test_kit.performance import PerformanceHarness
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
@@ -60,7 +61,7 @@ class TestSerializationPerformance(PerformanceHarness):
             ts_init=0,
         )
 
-        self.serializer = MsgPackSerializer()
+        self.serializer = MsgSpecSerializer(encoding=msgspec.msgpack)
 
     @pytest.fixture(autouse=True)
     @pytest.mark.benchmark(disable_gc=True, warmup=True)

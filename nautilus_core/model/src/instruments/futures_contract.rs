@@ -17,6 +17,7 @@
 
 use std::hash::{Hash, Hasher};
 
+use anyhow::Result;
 use nautilus_core::time::UnixNanos;
 use pyo3::prelude::*;
 use rust_decimal::Decimal;
@@ -31,68 +32,76 @@ use crate::{
 
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[pyclass]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct FuturesContract {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
     pub asset_class: AssetClass,
     pub underlying: String,
-    pub expiration: UnixNanos,
+    pub activation_ns: UnixNanos,
+    pub expiration_ns: UnixNanos,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
+    pub margin_init: Decimal,
+    pub margin_maint: Decimal,
+    pub maker_fee: Decimal,
+    pub taker_fee: Decimal,
+    pub multiplier: Quantity,
     pub lot_size: Option<Quantity>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_price: Option<Price>,
     pub min_price: Option<Price>,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
-    pub maker_fee: Decimal,
-    pub taker_fee: Decimal,
 }
 
 impl FuturesContract {
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
         raw_symbol: Symbol,
         asset_class: AssetClass,
         underlying: String,
-        expiration: UnixNanos,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         currency: Currency,
         price_precision: u8,
         price_increment: Price,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        multiplier: Quantity,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-        margin_init: Decimal,
-        margin_maint: Decimal,
-        maker_fee: Decimal,
-        taker_fee: Decimal,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        Ok(Self {
             id,
             raw_symbol,
             asset_class,
             underlying,
-            expiration,
+            activation_ns,
+            expiration_ns,
             currency,
             price_precision,
             price_increment,
+            margin_init,
+            margin_maint,
+            maker_fee,
+            taker_fee,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
             max_price,
             min_price,
-            margin_init,
-            margin_maint,
-            maker_fee,
-            taker_fee,
-        }
+        })
     }
 }
 
@@ -197,5 +206,70 @@ impl Instrument for FuturesContract {
 
     fn taker_fee(&self) -> Decimal {
         self.taker_fee
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Stubs
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+pub mod stubs {
+    use std::str::FromStr;
+
+    use chrono::{TimeZone, Utc};
+    use nautilus_core::time::UnixNanos;
+    use rstest::fixture;
+    use rust_decimal::Decimal;
+
+    use crate::{
+        enums::AssetClass,
+        identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+        instruments::futures_contract::FuturesContract,
+        types::{currency::Currency, price::Price, quantity::Quantity},
+    };
+
+    #[fixture]
+    pub fn futures_contract_es() -> FuturesContract {
+        let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
+        let expiration = Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0).unwrap();
+        FuturesContract::new(
+            InstrumentId::new(Symbol::from("ESZ21"), Venue::from("CME")),
+            Symbol::from("ESZ21"),
+            AssetClass::Index,
+            String::from("ES"),
+            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
+            expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
+            Currency::USD(),
+            2,
+            Price::from("0.01"),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.0").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Decimal::from_str("0.001").unwrap(),
+            Quantity::from("1.0"),
+            Some(Quantity::from("1.0")),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::stubs::*;
+    use crate::instruments::futures_contract::FuturesContract;
+
+    #[rstest]
+    fn test_equality(futures_contract_es: FuturesContract) {
+        let cloned = futures_contract_es.clone();
+        assert_eq!(futures_contract_es, cloned);
     }
 }

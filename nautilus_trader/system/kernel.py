@@ -13,17 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import asyncio
 import concurrent.futures
 import platform
 import signal
 import socket
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
-from typing import Callable
 
 import msgspec
 
@@ -54,6 +52,7 @@ from nautilus_trader.config.common import ExecAlgorithmFactory
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import TracingConfig
+from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import nanos_to_millis
 from nautilus_trader.core.nautilus_pyo3 import LogGuard
@@ -74,7 +73,7 @@ from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 from nautilus_trader.trading.controller import Controller
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
@@ -92,7 +91,7 @@ class NautilusKernel:
     """
     Provides the core Nautilus system kernel.
 
-    The kernel is common between backtest, sandbox and live environment context types.
+    The kernel is common between ``backtest``, ``sandbox`` and ``live`` environment context types.
 
     Parameters
     ----------
@@ -111,6 +110,9 @@ class NautilusKernel:
         If `name` is not a valid string.
     TypeError
         If any configuration object is not of the expected type.
+    InvalidConfiguration
+        If any configuration object is mismatched with the environment context,
+        (live configurations for 'backtest', or backtest configurations for 'live').
 
     """
 
@@ -175,6 +177,7 @@ class NautilusKernel:
             file_name=logging.log_file_name,
             file_format=logging.log_file_format,
             component_levels=logging.log_component_levels,
+            colors=logging.log_colors,
             bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
         )
 
@@ -204,10 +207,12 @@ class NautilusKernel:
         if config.cache_database is None or config.cache_database.type == "in-memory":
             cache_db = None
         elif config.cache_database.type == "redis":
+            encoding = config.cache_database.encoding.lower()
             cache_db = RedisCacheDatabase(
                 trader_id=self._trader_id,
                 logger=self._logger,
-                serializer=MsgPackSerializer(
+                serializer=MsgSpecSerializer(
+                    encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                     timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
                 ),
@@ -222,10 +227,20 @@ class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
+        msgbus_serializer = None
+        if config.message_bus:
+            encoding = config.message_bus.encoding.lower()
+            msgbus_serializer = MsgSpecSerializer(
+                encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
+                timestamps_as_str=True,  # Hardcoded for now
+                timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
+            )
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
             clock=self._clock,
             logger=self._logger,
+            serializer=msgbus_serializer,
+            config=config.message_bus,
         )
 
         self._cache = Cache(
@@ -245,6 +260,11 @@ class NautilusKernel:
         # Data components
         ########################################################################
         if isinstance(config.data_engine, LiveDataEngineConfig):
+            if config.environment == Environment.BACKTEST:
+                raise InvalidConfiguration(
+                    f"Cannot use `LiveDataEngineConfig` in a '{config.environment.value}' environment. "
+                    "Try using a `DataEngineConfig`.",
+                )
             self._data_engine = LiveDataEngine(
                 loop=self.loop,
                 msgbus=self._msgbus,
@@ -254,6 +274,11 @@ class NautilusKernel:
                 config=config.data_engine,
             )
         elif isinstance(config.data_engine, DataEngineConfig):
+            if config.environment != Environment.BACKTEST:
+                raise InvalidConfiguration(
+                    f"Cannot use `DataEngineConfig` in a '{config.environment.value}' environment. "
+                    "Try using a `LiveDataEngineConfig`.",
+                )
             self._data_engine = DataEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
@@ -266,6 +291,11 @@ class NautilusKernel:
         # Risk components
         ########################################################################
         if isinstance(config.risk_engine, LiveRiskEngineConfig):
+            if config.environment == Environment.BACKTEST:
+                raise InvalidConfiguration(
+                    f"Cannot use `LiveRiskEngineConfig` in a '{config.environment.value}' environment. "
+                    "Try using a `RiskEngineConfig`.",
+                )
             self._risk_engine = LiveRiskEngine(
                 loop=self.loop,
                 portfolio=self._portfolio,
@@ -276,6 +306,11 @@ class NautilusKernel:
                 config=config.risk_engine,
             )
         elif isinstance(config.risk_engine, RiskEngineConfig):
+            if config.environment != Environment.BACKTEST:
+                raise InvalidConfiguration(
+                    f"Cannot use `RiskEngineConfig` in a '{config.environment.value}' environment. "
+                    "Try using a `LiveRiskEngineConfig`.",
+                )
             self._risk_engine = RiskEngine(
                 portfolio=self._portfolio,
                 msgbus=self._msgbus,
@@ -289,6 +324,11 @@ class NautilusKernel:
         # Execution components
         ########################################################################
         if isinstance(config.exec_engine, LiveExecEngineConfig):
+            if config.environment == Environment.BACKTEST:
+                raise InvalidConfiguration(
+                    f"Cannot use `LiveExecEngineConfig` in a '{config.environment.value}' environment. "
+                    "Try using a `ExecEngineConfig`.",
+                )
             self._exec_engine = LiveExecutionEngine(
                 loop=self.loop,
                 msgbus=self._msgbus,
@@ -298,6 +338,11 @@ class NautilusKernel:
                 config=config.exec_engine,
             )
         elif isinstance(config.exec_engine, ExecEngineConfig):
+            if config.environment != Environment.BACKTEST:
+                raise InvalidConfiguration(
+                    f"Cannot use `ExecEngineConfig` in a '{config.environment.value}' environment. "
+                    "Try using a `LiveExecEngineConfig`.",
+                )
             self._exec_engine = ExecutionEngine(
                 msgbus=self._msgbus,
                 cache=self._cache,
@@ -367,10 +412,7 @@ class NautilusKernel:
                 fs_protocol=config.catalog.fs_protocol,
                 fs_storage_options=config.catalog.fs_storage_options,
             )
-            self._data_engine.register_catalog(
-                catalog=self._catalog,
-                use_rust=config.catalog.use_rust,
-            )
+            self._data_engine.register_catalog(catalog=self._catalog)
 
         # Create importable actors
         for actor_config in config.actors:

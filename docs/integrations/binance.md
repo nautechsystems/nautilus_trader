@@ -42,13 +42,13 @@ E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within t
 ## Order types
 |                        | Spot                            | Margin                          | Futures           |
 |------------------------|---------------------------------|---------------------------------|-------------------|
-| `MARKET`               | Yes                             | Yes                             | Yes               |
-| `LIMIT`                | Yes                             | Yes                             | Yes               |
-| `STOP_MARKET`          | No                              | Yes                             | Yes               |
-| `STOP_LIMIT`           | Yes (`post-only` not available) | Yes (`post-only` not available) | Yes               |
-| `MARKET_IF_TOUCHED`    | No                              | No                              | Yes               |
-| `LIMIT_IF_TOUCHED`     | Yes                             | Yes                             | Yes               |
-| `TRAILING_STOP_MARKET` | No                              | No                              | Yes               |
+| `MARKET`               | ✓                               | ✓                               | ✓                 |
+| `LIMIT`                | ✓                               | ✓                               | ✓                 |
+| `STOP_MARKET`          |                                 | ✓                               | ✓                 |
+| `STOP_LIMIT`           | ✓ (`post-only` not available)   | ✓ (`post-only` not available)   | ✓                 |
+| `MARKET_IF_TOUCHED`    |                                 |                                 | ✓                 |
+| `LIMIT_IF_TOUCHED`     | ✓                               | ✓                               | ✓                 |
+| `TRAILING_STOP_MARKET` |                                 |                                 | ✓                 |
 
 ### Trailing stops
 Binance use the concept of an *activation price* for trailing stops ([see docs](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292)).
@@ -70,6 +70,8 @@ data and execution clients. To achieve this, add a `BINANCE` section to your cli
 configuration(s):
 
 ```python
+from nautilus_trader.live.node import TradingNode
+
 config = TradingNodeConfig(
     ...,  # Omitted
     data_clients={
@@ -98,6 +100,10 @@ config = TradingNodeConfig(
 Then, create a `TradingNode` and add the client factories:
 
 ```python
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.live.node import TradingNode
+
 # Instantiate the live trading node with a configuration
 node = TradingNode(config=config)
 
@@ -197,6 +203,8 @@ configure the provider to not log the warnings, as per the client configuration
 example below:
 
 ```python
+from nautilus_trader.config import InstrumentProviderConfig
+
 instrument_provider=InstrumentProviderConfig(
     load_all=True,
     log_warnings=False,
@@ -218,6 +226,10 @@ You can subscribe to `BinanceFuturesMarkPriceUpdate` (included funding rating in
 data streams by subscribing in the following way from your actor or strategy:
 
 ```python
+from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPriceUpdate
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import ClientId
+
 # In your `on_start` method
 self.subscribe_data(
     data_type=DataType(BinanceFuturesMarkPriceUpdate, metadata={"instrument_id": self.instrument.id}),
@@ -230,6 +242,8 @@ objects to your `on_data` method. You will need to check the type, as this
 method acts as a flexible handler for all custom/generic data.
 
 ```python
+from nautilus_trader.core.data import Data
+
 def on_data(self, data: Data):
     # First check the type of data
     if isinstance(data, BinanceFuturesMarkPriceUpdate):

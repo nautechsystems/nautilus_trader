@@ -38,7 +38,7 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 class TestSimulationModules:
-    def create_engine(self, modules: list):
+    def create_engine(self, modules: list) -> BacktestEngine:
         engine = BacktestEngine(BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
         engine.add_venue(
             venue=Venue("SIM"),
@@ -51,8 +51,8 @@ class TestSimulationModules:
         wrangler = QuoteTickDataWrangler(USDJPY_SIM)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:10],
-            ask_data=provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:10],
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:10],
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv")[:10],
         )
         engine.add_instrument(USDJPY_SIM)
         engine.add_data(ticks)

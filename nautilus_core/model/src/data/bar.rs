@@ -21,7 +21,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyvalue_err, serialization::Serializable, time::UnixNanos};
+use nautilus_core::{serialization::Serializable, time::UnixNanos};
 use pyo3::prelude::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror;
@@ -36,7 +36,10 @@ use crate::{
 /// method/rule and price type.
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BarSpecification {
     /// The step for binning samples for bar aggregation.
     pub step: usize,
@@ -56,7 +59,10 @@ impl Display for BarSpecification {
 /// aggregation source.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BarType {
     /// The bar types instrument ID.
     pub instrument_id: InstrumentId,
@@ -171,7 +177,10 @@ impl<'de> Deserialize<'de> for BarType {
 #[repr(C)]
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct Bar {
     /// The bar type for this bar.
     pub bar_type: BarType,
@@ -231,7 +240,7 @@ impl Bar {
         metadata
     }
 
-    /// Returns the field map for the type, for use with arrow schemas.
+    /// Returns the field map for the type, for use with Arrow schemas.
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("open".to_string(), "Int64".to_string());
@@ -247,6 +256,8 @@ impl Bar {
     /// Create a new [`Bar`] extracted from the given [`PyAny`].
     #[cfg(feature = "python")]
     pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+        use nautilus_core::python::to_pyvalue_err;
+
         let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
         let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
         let bar_type = BarType::from_str(bar_type_str)

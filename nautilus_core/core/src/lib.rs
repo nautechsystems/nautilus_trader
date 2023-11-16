@@ -13,21 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use pyo3::{prelude::*, PyResult, Python};
-
 pub mod correctness;
-pub mod cvec;
 pub mod datetime;
+pub mod message;
 pub mod parsing;
-pub mod python;
 pub mod serialization;
-pub mod string;
 pub mod time;
 pub mod uuid;
 
-/// Loaded as nautilus_pyo3.core
-#[pymodule]
-pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<uuid::UUID4>()?;
-    Ok(())
-}
+#[cfg(feature = "ffi")]
+pub mod ffi;
+#[cfg(feature = "python")]
+pub mod python;

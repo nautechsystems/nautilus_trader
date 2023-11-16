@@ -14,13 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{correctness::check_valid_string, string::cstr_to_str};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a valid client order ID (assigned by the Nautilus system).
@@ -93,41 +92,6 @@ impl From<&str> for ClientOrderId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn client_order_id_new(ptr: *const c_char) -> ClientOrderId {
-    ClientOrderId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn client_order_id_hash(id: &ClientOrderId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::client_order_id::ClientOrderId;
-
-    #[fixture]
-    pub fn client_order_id() -> ClientOrderId {
-        ClientOrderId::from("O-20200814-102234-001-001-1")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -135,9 +99,12 @@ mod tests {
     use rstest::rstest;
     use ustr::Ustr;
 
-    use super::{stubs::*, ClientOrderId};
-    use crate::identifiers::client_order_id::{
-        optional_ustr_to_vec_client_order_ids, optional_vec_client_order_ids_to_ustr,
+    use super::ClientOrderId;
+    use crate::identifiers::{
+        client_order_id::{
+            optional_ustr_to_vec_client_order_ids, optional_vec_client_order_ids_to_ustr,
+        },
+        stubs::*,
     };
 
     #[rstest]

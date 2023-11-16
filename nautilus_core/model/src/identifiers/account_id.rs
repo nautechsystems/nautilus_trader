@@ -14,16 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    ffi::c_char,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
 use anyhow::Result;
-use nautilus_core::{
-    correctness::{check_string_contains, check_valid_string},
-    string::cstr_to_str,
-};
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid account ID.
@@ -82,55 +78,14 @@ impl From<&str> for AccountId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
-    AccountId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn account_id_hash(id: &AccountId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::*;
-
-    #[fixture]
-    pub fn account_id() -> AccountId {
-        AccountId::from("SIM-001")
-    }
-
-    #[fixture]
-    pub fn account_ib() -> AccountId {
-        AccountId::from("IB-1234567890")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::ffi::{CStr, CString};
-
     use rstest::rstest;
 
-    use super::{stubs::*, *};
+    use super::*;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_account_id_new_invalid_string() {
@@ -157,52 +112,5 @@ mod tests {
     #[rstest]
     fn test_string_reprs(account_ib: AccountId) {
         assert_eq!(account_ib.to_string(), "IB-1234567890");
-    }
-
-    #[rstest]
-    fn test_account_id_round_trip() {
-        let s = "IB-U123456789";
-        let c_string = CString::new(s).unwrap();
-        let ptr = c_string.as_ptr();
-        let account_id = unsafe { account_id_new(ptr) };
-        let char_ptr = account_id.value.as_char_ptr();
-        let account_id_2 = unsafe { account_id_new(char_ptr) };
-        assert_eq!(account_id, account_id_2);
-    }
-
-    #[rstest]
-    fn test_account_id_to_cstr_and_back() {
-        let s = "IB-U123456789";
-        let c_string = CString::new(s).unwrap();
-        let ptr = c_string.as_ptr();
-        let account_id = unsafe { account_id_new(ptr) };
-        let cstr_ptr = account_id.value.as_char_ptr();
-        let c_str = unsafe { CStr::from_ptr(cstr_ptr) };
-        assert_eq!(c_str.to_str().unwrap(), s);
-    }
-
-    #[rstest]
-    fn test_account_id_hash_c() {
-        let s1 = "IB-U123456789";
-        let c_string1 = CString::new(s1).unwrap();
-        let ptr1 = c_string1.as_ptr();
-        let account_id1 = unsafe { account_id_new(ptr1) };
-
-        let s2 = "IB-U123456789";
-        let c_string2 = CString::new(s2).unwrap();
-        let ptr2 = c_string2.as_ptr();
-        let account_id2 = unsafe { account_id_new(ptr2) };
-
-        let hash1 = account_id_hash(&account_id1);
-        let hash2 = account_id_hash(&account_id2);
-
-        let s3 = "IB-U987456789";
-        let c_string3 = CString::new(s3).unwrap();
-        let ptr3 = c_string3.as_ptr();
-        let account_id3 = unsafe { account_id_new(ptr3) };
-
-        let hash3 = account_id_hash(&account_id3);
-        assert_eq!(hash1, hash2);
-        assert_ne!(hash1, hash3);
     }
 }

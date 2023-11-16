@@ -2,7 +2,7 @@
 
 The platform makes it possible to emulate most order types locally, regardless
 of whether the type is supported on a trading venue. The logic and code paths for 
-order emulation are exactly the same for all environment contexts (backtest, sandbox, live), 
+order emulation are exactly the same for all environment contexts (`backtest`, `sandbox`, `live`)
 and utilize a common `OrderEmulator` component.
 
 ```{note}
@@ -53,15 +53,15 @@ trading venue.
 ## Order types
 |                        | Can emulate | Released type |
 |------------------------|-------------|---------------|
-| `MARKET`               | No          | -             |
-| `MARKET_TO_LIMIT`      | No          | -             |
-| `LIMIT`                | Yes         | `MARKET`      |
-| `STOP_MARKET`          | Yes         | `MARKET`      |
-| `STOP_LIMIT`           | Yes         | `LIMIT`       |
-| `MARKET_IF_TOUCHED`    | Yes         | `MARKET`      |
-| `LIMIT_IF_TOUCHED`     | Yes         | `LIMIT`       |
-| `TRAILING_STOP_MARKET` | Yes         | `MARKET`      |
-| `TRAILING_STOP_LIMIT`  | Yes         | `LIMIT`       |
+| `MARKET`               |             | -             |
+| `MARKET_TO_LIMIT`      |             | -             |
+| `LIMIT`                | ✓           | `MARKET`      |
+| `STOP_MARKET`          | ✓           | `MARKET`      |
+| `STOP_LIMIT`           | ✓           | `LIMIT`       |
+| `MARKET_IF_TOUCHED`    | ✓           | `MARKET`      |
+| `LIMIT_IF_TOUCHED`     | ✓           | `LIMIT`       |
+| `TRAILING_STOP_MARKET` | ✓           | `MARKET`      |
+| `TRAILING_STOP_LIMIT`  | ✓           | `LIMIT`       |
 
 ## Querying
 When writing trading strategies, it may be necessary to know the state of emulated orders in the system.
@@ -72,11 +72,8 @@ It's possible to query for emulated orders through the following `Cache` methods
 
 See the full [API reference](../../api_reference/cache) for additional details.
 
-You can also query order objects directly in Python:
+You can also query order objects directly:
 - `order.is_emulated`
-
-Or through the C API if in Cython:
-- `order.is_emulated_c()`
 
 If either of these return `False`, then the order has been _released_ from the
 `OrderEmulator`, and so is no longer considered an emulated order.
@@ -90,5 +87,3 @@ on the `Cache` which is made for the job.
 ## Persisted emulated orders
 If a running system either crashes or shuts down with active emulated orders, then
 they will be reloaded inside the `OrderEmulator` from any configured cache database.
-It should be remembered that any custom `position_id` originally assigned to the
-submit order command will be lost (as per the above warning).

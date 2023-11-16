@@ -13,195 +13,400 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    collections::HashMap,
+    fmt,
+    hash::{Hash, Hasher},
+    sync::mpsc::{channel, Receiver, SendError, Sender},
+    thread,
+};
 
+use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
+use nautilus_model::identifiers::trader_id::TraderId;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use ustr::Ustr;
 
-use crate::clock::TestClock;
+use crate::handlers::MessageHandler;
 
-type Handler = Rc<dyn Fn(&Message)>;
-
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-enum Message {
-    Command {
-        id: UUID4,
-        ts_init: u64,
-    },
-    Document {
-        id: UUID4,
-        ts_init: u64,
-    },
-    Event {
-        id: UUID4,
-        ts_init: u64,
-        ts_event: u64,
-    },
-    Request {
-        id: UUID4,
-        ts_init: u64,
-    },
-    Response {
-        id: UUID4,
-        ts_init: u64,
-        correlation_id: UUID4,
-    },
+// Represents a subscription to a particular topic.
+//
+// This is an internal class intended to be used by the message bus to organize
+// topics and their subscribers.
+#[derive(Clone, Debug)]
+pub struct Subscription {
+    pub handler: MessageHandler,
+    pub topic: Ustr,
+    pub sequence: usize,
+    pub priority: u8,
 }
 
-#[allow(dead_code)]
-struct MessageBus {
-    name: String,
-    clock: TestClock,
+impl Subscription {
+    pub fn new(
+        topic: Ustr,
+        handler: MessageHandler,
+        sequence: usize,
+        priority: Option<u8>,
+    ) -> Self {
+        Self {
+            topic,
+            handler,
+            sequence,
+            priority: priority.unwrap_or(0),
+        }
+    }
+}
+
+impl PartialEq<Self> for Subscription {
+    fn eq(&self, other: &Self) -> bool {
+        self.topic == other.topic && self.handler.handler_id == other.handler.handler_id
+    }
+}
+
+impl Eq for Subscription {}
+
+impl PartialOrd for Subscription {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Subscription {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match other.priority.cmp(&self.priority) {
+            std::cmp::Ordering::Equal => self.sequence.cmp(&other.sequence),
+            other => other,
+        }
+    }
+}
+
+impl Hash for Subscription {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.topic.hash(state);
+        self.handler.handler_id.hash(state);
+    }
+}
+
+/// Represents a bus message including a topic and payload.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BusMessage {
+    /// The topic to publish on.
+    topic: String,
+    /// The serialized payload for the message.
+    payload: Vec<u8>,
+}
+
+impl fmt::Display for BusMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {}",
+            self.topic,
+            String::from_utf8_lossy(&self.payload)
+        )
+    }
+}
+
+/// Provides a generic message bus to facilitate various messaging patterns.
+///
+/// The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
+/// well as direct point-to-point messaging to registered endpoints.
+///
+/// Pub/Sub wildcard patterns for hierarchical topics are possible:
+///  - `*` asterisk represents one or more characters in a pattern.
+///  - `?` question mark represents a single character in a pattern.
+///
+/// Given a topic and pattern potentially containing wildcard characters, i.e.
+/// `*` and `?`, where `?` can match any single character in the topic, and `*`
+/// can match any number of characters including zero characters.
+///
+/// The asterisk in a wildcard matches any character zero or more times. For
+/// example, `comp*` matches anything beginning with `comp` which means `comp`,
+/// `complete`, and `computer` are all matched.
+///
+/// A question mark matches a single character once. For example, `c?mp` matches
+/// `camp` and `comp`. The question mark can also be used more than once.
+/// For example, `c??p` would match both of the above examples and `coop`.
+#[derive(Clone)]
+pub struct MessageBus {
+    tx: Sender<BusMessage>,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
     /// * '*' - any number of any characters
-    subscriptions: HashMap<String, Handler>,
+    subscriptions: IndexMap<Subscription, Vec<Ustr>>,
     /// maps a pattern to all the handlers registered for it
-    /// this is updated whenever a new subscription is created
-    patterns: HashMap<String, Vec<Handler>>,
-    /// handles a message or a request destined for a specific endpoint
-    endpoints: HashMap<String, Handler>,
+    /// this is updated whenever a new subscription is created.
+    patterns: IndexMap<Ustr, Vec<Subscription>>,
+    /// handles a message or a request destined for a specific endpoint.
+    endpoints: IndexMap<Ustr, MessageHandler>,
     /// Relates a request with a response
     /// a request maps it's id to a handler so that a response
-    /// with the same id can later be handled
-    correlation_index: HashMap<UUID4, Handler>,
+    /// with the same id can later be handled.
+    correlation_index: IndexMap<UUID4, MessageHandler>,
+    /// The trader ID associated with the message bus.
+    pub trader_id: TraderId,
+    /// The name for the message bus.
+    pub name: String,
+    // The count of messages sent through the bus.
+    pub sent_count: u64,
+    // The count of requests processed by the bus.
+    pub req_count: u64,
+    // The count of responses processed by the bus.
+    pub res_count: u64,
+    /// The count of messages published by the bus.
+    pub pub_count: u64,
+    /// If the message bus is backed by a database.
+    pub has_backing: bool,
 }
 
-#[allow(dead_code)]
 impl MessageBus {
-    // TODO: not needed accessible from struct field
-    fn endpoints(&self) {}
+    /// Initializes a new instance of the [`MessageBus`].
+    #[must_use]
+    pub fn new(
+        trader_id: TraderId,
+        name: Option<String>,
+        config: Option<HashMap<String, Value>>,
+    ) -> Self {
+        let (tx, rx) = channel::<BusMessage>();
+        let config = config.unwrap_or_default();
+        let has_backing = config.get("database").is_some();
 
-    fn topics(&self) -> Vec<String> {
-        // TODO: Consider using itertools library for ergonomic
-        // and performant iterator apis.
-        self.subscriptions.keys().cloned().collect()
+        thread::spawn(move || {
+            Self::handle_messages(trader_id.value.as_ref(), config, rx);
+        });
+
+        Self {
+            tx,
+            trader_id,
+            name: name.unwrap_or_else(|| stringify!(MessageBus).to_owned()),
+            sent_count: 0,
+            req_count: 0,
+            res_count: 0,
+            pub_count: 0,
+            subscriptions: IndexMap::new(),
+            patterns: IndexMap::new(),
+            endpoints: IndexMap::new(),
+            correlation_index: IndexMap::new(),
+            has_backing,
+        }
     }
 
-    // TODO: This is the modified version of matching_subscriptions
-    // Since we've separated subscription and handler we can choose to return
-    // one of those fields or reconstruct the subscription as a tuple and
-    // return that.
-    // Depends on on how the output of this function is meant to be used
-    fn matching_handlers<'a>(&'a self, pattern: &'a String) -> impl Iterator<Item = &'a Handler> {
-        self.subscriptions.iter().filter_map(|(topic, handler)| {
-            if is_matching(topic, pattern) {
-                Some(handler)
+    /// Returns the registered endpoint addresses.
+    #[must_use]
+    pub fn endpoints(&self) -> Vec<&str> {
+        self.endpoints.keys().map(Ustr::as_str).collect()
+    }
+
+    /// Returns the topics for active subscriptions.
+    #[must_use]
+    pub fn topics(&self) -> Vec<&str> {
+        self.subscriptions
+            .keys()
+            .map(|s| s.topic.as_str())
+            .collect()
+    }
+
+    /// Returns the active correlation IDs.
+    #[must_use]
+    pub fn correlation_ids(&self) -> Vec<&UUID4> {
+        self.correlation_index.keys().collect()
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn has_subscribers(&self, pattern: &str) -> bool {
+        self.matching_handlers(&Ustr::from(pattern))
+            .next()
+            .is_some()
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn subscriptions(&self) -> Vec<&Subscription> {
+        self.subscriptions.keys().collect()
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn subscription_handler_ids(&self) -> Vec<&str> {
+        self.subscriptions
+            .keys()
+            .map(|s| s.handler.handler_id.as_str())
+            .collect()
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn is_registered(&self, endpoint: &str) -> bool {
+        self.endpoints.contains_key(&Ustr::from(endpoint))
+    }
+
+    /// Returns whether there are subscribers for the given `pattern`.
+    #[must_use]
+    pub fn is_subscribed(&self, topic: &str, handler: MessageHandler) -> bool {
+        let sub = Subscription::new(Ustr::from(topic), handler, self.subscriptions.len(), None);
+        self.subscriptions.contains_key(&sub)
+    }
+
+    /// Returns whether there is a pending request for the given `request_id`.
+    #[must_use]
+    pub fn is_pending_response(&self, request_id: &UUID4) -> bool {
+        self.correlation_index.contains_key(request_id)
+    }
+
+    /// Registers the given `handler` for the `endpoint` address.
+    pub fn register(&mut self, endpoint: &str, handler: MessageHandler) {
+        // Updates value if key already exists
+        self.endpoints.insert(Ustr::from(endpoint), handler);
+    }
+
+    /// Deregisters the given `handler` for the `endpoint` address.
+    pub fn deregister(&mut self, endpoint: &str) {
+        // Removes entry if it exists for endpoint
+        self.endpoints.remove(&Ustr::from(endpoint));
+    }
+
+    /// Subscribes the given `handler` to the `topic`.
+    pub fn subscribe(&mut self, topic: &str, handler: MessageHandler, priority: Option<u8>) {
+        let topic = Ustr::from(topic);
+        let sub = Subscription::new(topic, handler, self.subscriptions.len(), priority);
+
+        if self.subscriptions.contains_key(&sub) {
+            // TODO: Implement proper logging
+            println!("{:?} already exists.", sub);
+            return;
+        }
+
+        // Find existing patterns which match this topic
+        let mut matches = Vec::new();
+        for (pattern, subs) in &mut self.patterns {
+            if is_matching(&topic, pattern) {
+                subs.push(sub.clone());
+                subs.sort();
+                // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
+                matches.push(*pattern);
+            }
+        }
+
+        matches.sort();
+
+        self.subscriptions.insert(sub, matches);
+    }
+
+    /// Unsubscribes the given `handler` from the `topic`.
+    pub fn unsubscribe(&mut self, topic: &str, handler: MessageHandler) {
+        let sub = Subscription::new(Ustr::from(topic), handler, self.subscriptions.len(), None);
+        self.subscriptions.remove(&sub);
+    }
+
+    /// Returns the handler for the given `endpoint`.
+    #[must_use]
+    pub fn get_endpoint(&self, endpoint: &Ustr) -> Option<&MessageHandler> {
+        self.endpoints.get(&Ustr::from(endpoint))
+    }
+
+    /// Returns the handler for the request `endpoint` and adds the request ID to the internal
+    /// correlation index to match with the expected response.
+    #[must_use]
+    pub fn request_handler(
+        &mut self,
+        endpoint: &Ustr,
+        request_id: UUID4,
+        response_handler: MessageHandler,
+    ) -> Option<&MessageHandler> {
+        if let Some(handler) = self.endpoints.get(endpoint) {
+            self.correlation_index.insert(request_id, response_handler);
+            Some(handler)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the handler for the matching correlation ID (if found).
+    #[must_use]
+    pub fn correlation_id_handler(&mut self, correlation_id: &UUID4) -> Option<&MessageHandler> {
+        self.correlation_index.get(correlation_id)
+    }
+
+    /// Returns the handler for the matching response `endpoint` based on the internal correlation
+    /// index.
+    #[must_use]
+    pub fn response_handler(&mut self, correlation_id: &UUID4) -> Option<MessageHandler> {
+        self.correlation_index.remove(correlation_id)
+    }
+
+    #[must_use]
+    pub fn matching_subscriptions<'a>(&'a self, pattern: &'a Ustr) -> Vec<&'a Subscription> {
+        let mut matching_subs: Vec<&'a Subscription> = Vec::new();
+
+        // Collect matching subscriptions from direct subscriptions
+        matching_subs.extend(self.subscriptions.iter().filter_map(|(sub, _)| {
+            if is_matching(&sub.topic, pattern) {
+                Some(sub)
+            } else {
+                None
+            }
+        }));
+
+        // Collect matching subscriptions from pattern-based subscriptions
+        // TODO: Improve efficiency of this
+        for subs in self.patterns.values() {
+            let filtered_subs: Vec<&Subscription> = subs
+                .iter()
+                // .filter(|sub| is_matching(&sub.topic, pattern))
+                // .filter(|sub| !matching_subs.contains(sub) && is_matching(&sub.topic, pattern))
+                .collect();
+
+            matching_subs.extend(filtered_subs);
+        }
+
+        // Sort into priority order
+        matching_subs.sort();
+        matching_subs
+    }
+
+    fn matching_handlers<'a>(
+        &'a self,
+        pattern: &'a Ustr,
+    ) -> impl Iterator<Item = &'a MessageHandler> {
+        self.subscriptions.iter().filter_map(move |(sub, _)| {
+            if is_matching(&sub.topic, pattern) {
+                Some(&sub.handler)
             } else {
                 None
             }
         })
     }
 
-    fn has_subscribers(&self, pattern: &String) -> bool {
-        self.matching_handlers(pattern).next().is_some()
-    }
-
-    fn register(&mut self, endpoint: String, handler: Handler) {
-        // updates value if key already exists
-        self.endpoints.insert(endpoint, handler);
-    }
-
-    fn deregister(&mut self, endpoint: &String) {
-        // removes entry if it exists for endpoint
-        self.endpoints.remove(endpoint);
-    }
-
-    fn send(&self, endpoint: &String, msg: &Message) {
-        if let Some(handler) = self.endpoints.get(endpoint) {
-            handler(msg);
+    pub fn publish_external(&self, topic: String, payload: Vec<u8>) {
+        let msg = BusMessage { topic, payload };
+        if let Err(SendError(e)) = self.tx.send(msg) {
+            eprintln!("Error publishing external message: {e}");
         }
     }
 
-    #[allow(unused_variables)]
-    fn request(&mut self, endpoint: &String, request: &Message, callback: Handler) {
-        match request {
-            Message::Request { id, ts_init } => {
-                if self.correlation_index.contains_key(id) {
-                    todo!()
-                } else {
-                    self.correlation_index.insert(*id, callback);
-                    if let Some(handler) = self.endpoints.get(endpoint) {
-                        handler(request);
-                    } else {
-                        // TODO: log error
-                    }
-                }
-            }
-            _ => unreachable!(
-                "message bus request should only be called with Message::Request variant"
-            ),
-        }
-    }
-
-    #[allow(unused_variables)]
-    fn response(&mut self, response: &Message) {
-        match response {
-            Message::Response {
-                id,
-                ts_init,
-                correlation_id,
-            } => {
-                if let Some(callback) = self.correlation_index.get(correlation_id) {
-                    callback(response);
-                } else {
-                    // TODO: log error
-                }
-            }
-            _ => unreachable!(
-                "message bus response should only be called with Message::Response variant"
-            ),
-        }
-    }
-
-    fn subscribe(&mut self, topic: String, handler: Handler) {
-        if self.subscriptions.contains_key(&topic) {
-            // TODO: log
-            return;
+    fn handle_messages(
+        _trader_id: &str,
+        _config: HashMap<String, Value>,
+        rx: Receiver<BusMessage>,
+    ) {
+        // Continue to receive and handle bus messages until channel is hung up
+        while let Ok(msg) = rx.recv() {
+            println!("{}", msg);
         }
 
-        self.subscriptions.insert(topic, handler);
-    }
-
-    #[allow(unused_variables)]
-    fn unsubscribe(&mut self, topic: &String, handler: Handler) {
-        self.subscriptions.remove(topic);
-    }
-
-    fn publish(&mut self, pattern: String, msg: &Message) {
-        // TODO: check if clone can be avoided
-        // Although not possible with this style - https://github.com/rust-lang/rust/issues/51604
-        let entry = self.patterns.entry(pattern.clone());
-
-        // function to find matching handlers
-        let matching_handlers = || {
-            self.subscriptions
-                .iter()
-                .filter_map(|(topic, handler)| {
-                    if is_matching(topic, &pattern) {
-                        Some(handler.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect()
-        };
-
-        // get or insert and return matched handlers
-        let handlers = entry.or_insert_with(matching_handlers);
-
-        // call matched handlers
-        handlers.iter().for_each(|handler| handler(msg));
+        // TODO: WIP
     }
 }
 
-/// match a topic and a string pattern
+/// Match a topic and a string pattern
 /// pattern can contains -
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
-fn is_matching(topic: &String, pattern: &String) -> bool {
+pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     let mut table = [[false; 256]; 256];
     table[0][0] = true;
 
@@ -225,4 +430,225 @@ fn is_matching(topic: &String, pattern: &String) -> bool {
     });
 
     table[n][m]
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use nautilus_core::message::Message;
+    use rstest::*;
+
+    use super::*;
+    use crate::handlers::MessageHandler;
+
+    fn stub_msgbus() -> MessageBus {
+        MessageBus::new(TraderId::from("trader-001"), None, None)
+    }
+
+    fn stub_rust_callback() -> Rc<dyn Fn(Message)> {
+        Rc::new(|m: Message| {
+            format!("{m:?}");
+        })
+    }
+
+    #[rstest]
+    fn test_new() {
+        let trader_id = TraderId::from("trader-001");
+        let msgbus = MessageBus::new(trader_id, None, None);
+
+        assert_eq!(msgbus.trader_id, trader_id);
+        assert_eq!(msgbus.name, stringify!(MessageBus));
+    }
+
+    #[rstest]
+    fn test_endpoints_when_no_endpoints() {
+        let msgbus = stub_msgbus();
+
+        assert!(msgbus.endpoints().is_empty());
+    }
+
+    #[rstest]
+    fn test_topics_when_no_subscriptions() {
+        let msgbus = stub_msgbus();
+
+        assert!(msgbus.topics().is_empty());
+        assert!(!msgbus.has_subscribers("my-topic"));
+    }
+
+    #[rstest]
+    fn test_is_subscribed_when_no_subscriptions() {
+        let msgbus = stub_msgbus();
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, Some(callback));
+
+        assert!(!msgbus.is_subscribed("my-topic", handler));
+    }
+
+    #[rstest]
+    fn test_is_registered_when_no_registrations() {
+        let msgbus = stub_msgbus();
+
+        assert!(!msgbus.is_registered("MyEndpoint"));
+    }
+
+    #[rstest]
+    fn test_is_pending_response_when_no_requests() {
+        let msgbus = stub_msgbus();
+
+        assert!(!msgbus.is_pending_response(&UUID4::default()));
+    }
+
+    #[rstest]
+    fn test_regsiter_endpoint() {
+        let mut msgbus = stub_msgbus();
+        let endpoint = "MyEndpoint";
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, Some(callback));
+
+        msgbus.register(&endpoint, handler);
+
+        assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
+        assert!(msgbus.get_endpoint(&Ustr::from(&endpoint)).is_some());
+    }
+
+    #[rstest]
+    fn test_deregsiter_endpoint() {
+        let mut msgbus = stub_msgbus();
+        let endpoint = "MyEndpoint";
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, Some(callback));
+
+        msgbus.register(&endpoint, handler);
+        msgbus.deregister(&endpoint);
+
+        assert!(msgbus.endpoints().is_empty());
+    }
+
+    #[rstest]
+    fn test_subscribe() {
+        let mut msgbus = stub_msgbus();
+        let topic = "my-topic";
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, Some(callback));
+
+        msgbus.subscribe(&topic, handler, Some(1));
+
+        assert!(msgbus.has_subscribers(&topic));
+        assert_eq!(msgbus.topics(), vec![topic]);
+    }
+
+    #[rstest]
+    fn test_unsubscribe() {
+        let mut msgbus = stub_msgbus();
+        let topic = "my-topic";
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id, Some(callback));
+
+        msgbus.subscribe(&topic, handler.clone(), None);
+        msgbus.unsubscribe(&topic, handler);
+
+        assert!(!msgbus.has_subscribers(&topic));
+        assert!(msgbus.topics().is_empty());
+    }
+
+    #[rstest]
+    fn test_request_handler() {
+        let mut msgbus = stub_msgbus();
+        let endpoint = "MyEndpoint";
+        let request_id = UUID4::new();
+
+        let callback = stub_rust_callback();
+        let handler_id1 = Ustr::from("1");
+        let handler1 = MessageHandler::new(handler_id1, Some(callback));
+
+        msgbus.register(&endpoint, handler1.clone());
+
+        let callback = stub_rust_callback();
+        let handler_id2 = Ustr::from("1");
+        let handler2 = MessageHandler::new(handler_id2, Some(callback));
+
+        assert_eq!(
+            msgbus.request_handler(&Ustr::from(endpoint), request_id.clone(), handler2),
+            Some(&handler1)
+        );
+    }
+
+    #[rstest]
+    fn test_response_handler() {
+        let mut msgbus = stub_msgbus();
+        let correlation_id = UUID4::new();
+
+        let callback = stub_rust_callback();
+        let handler_id = Ustr::from("1");
+        let handler = MessageHandler::new(handler_id.clone(), Some(callback));
+
+        msgbus
+            .correlation_index
+            .insert(correlation_id.clone(), handler.clone());
+
+        assert_eq!(msgbus.response_handler(&correlation_id), Some(handler));
+    }
+
+    #[rstest]
+    fn test_matching_subscriptions() {
+        let mut msgbus = stub_msgbus();
+        let topic = "my-topic";
+
+        let callback = stub_rust_callback();
+        let handler_id1 = Ustr::from("1");
+        let handler1 = MessageHandler::new(handler_id1, Some(callback.clone()));
+
+        let handler_id2 = Ustr::from("2");
+        let handler2 = MessageHandler::new(handler_id2, Some(callback.clone()));
+
+        let handler_id3 = Ustr::from("3");
+        let handler3 = MessageHandler::new(handler_id3, Some(callback.clone()));
+
+        let handler_id4 = Ustr::from("4");
+        let handler4 = MessageHandler::new(handler_id4, Some(callback));
+
+        msgbus.subscribe(&topic, handler1, None);
+        msgbus.subscribe(&topic, handler2, None);
+        msgbus.subscribe(&topic, handler3, Some(1));
+        msgbus.subscribe(&topic, handler4, Some(2));
+        let topic_ustr = Ustr::from(topic);
+        let subs = msgbus.matching_subscriptions(&topic_ustr);
+
+        assert_eq!(subs.len(), 4);
+        assert_eq!(subs[0].handler.handler_id, handler_id4);
+        assert_eq!(subs[1].handler.handler_id, handler_id3);
+        assert_eq!(subs[2].handler.handler_id, handler_id1);
+        assert_eq!(subs[3].handler.handler_id, handler_id2);
+    }
+
+    #[rstest]
+    #[case("*", "*", true)]
+    #[case("a", "*", true)]
+    #[case("a", "a", true)]
+    #[case("a", "b", false)]
+    #[case("data.quotes.BINANCE", "data.*", true)]
+    #[case("data.quotes.BINANCE", "data.quotes*", true)]
+    #[case("data.quotes.BINANCE", "data.*.BINANCE", true)]
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.*", true)]
+    #[case("data.trades.BINANCE.ETHUSDT", "data.*.BINANCE.ETH*", true)]
+    fn test_is_matching(#[case] topic: &str, #[case] pattern: &str, #[case] expected: bool) {
+        assert_eq!(
+            is_matching(&Ustr::from(topic), &Ustr::from(pattern)),
+            expected
+        );
+    }
 }

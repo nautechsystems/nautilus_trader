@@ -13,18 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
+use hyper::header::HeaderName;
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes, PyObject, Python};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{Error, Message},
+    tungstenite::{client::IntoClientRequest, http::HeaderValue, Error, Message},
     MaybeTlsStream, WebSocketStream,
 };
 use tracing::{debug, error};
@@ -33,6 +34,39 @@ type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Messa
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
 type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
+
+#[derive(Debug, Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub struct WebSocketConfig {
+    url: String,
+    handler: PyObject,
+    headers: Vec<(String, String)>,
+    heartbeat: Option<u64>,
+    message: Option<String>,
+}
+
+#[pymethods]
+impl WebSocketConfig {
+    #[new]
+    fn py_new(
+        url: String,
+        handler: PyObject,
+        headers: Vec<(String, String)>,
+        heartbeat: Option<u64>,
+        message: Option<String>,
+    ) -> Self {
+        Self {
+            url,
+            handler,
+            headers,
+            heartbeat,
+            message,
+        }
+    }
+}
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
 ///
@@ -50,49 +84,61 @@ type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 /// It's preferable to set the duration slightly lower - heartbeat more
 /// frequently - than the required amount.
 struct WebSocketClientInner {
+    config: WebSocketConfig,
     read_task: task::JoinHandle<()>,
     heartbeat_task: Option<task::JoinHandle<()>>,
     writer: SharedMessageWriter,
-    url: String,
-    handler: PyObject,
-    heartbeat: Option<u64>,
 }
 
 impl WebSocketClientInner {
     /// Create an inner websocket client.
-    pub async fn connect_url(
-        url: &str,
-        handler: PyObject,
-        heartbeat: Option<u64>,
-    ) -> Result<Self, Error> {
-        let (writer, reader) = Self::connect_with_server(url).await?;
+    pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
+        let WebSocketConfig {
+            url,
+            handler,
+            heartbeat,
+            headers,
+            message,
+        } = &config;
+        let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
-        let handler_clone = handler.clone();
 
         // Keep receiving messages from socket and pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler);
+        let read_task = Self::spawn_read_task(reader, handler.clone());
 
-        let heartbeat_task = Self::spawn_heartbeat_task(heartbeat, writer.clone());
+        let heartbeat_task =
+            Self::spawn_heartbeat_task(*heartbeat, message.clone(), writer.clone());
 
         Ok(Self {
+            config,
             read_task,
             heartbeat_task,
             writer,
-            url: url.to_string(),
-            handler: handler_clone,
-            heartbeat,
         })
     }
 
     /// Connects with the server creating a tokio-tungstenite websocket stream.
     #[inline]
-    pub async fn connect_with_server(url: &str) -> Result<(MessageWriter, MessageReader), Error> {
-        connect_async(url).await.map(|resp| resp.0.split())
+    pub async fn connect_with_server(
+        url: &str,
+        headers: Vec<(String, String)>,
+    ) -> Result<(MessageWriter, MessageReader), Error> {
+        let mut request = url.into_client_request()?;
+        let req_headers = request.headers_mut();
+
+        for (key, val) in headers {
+            let header_value = HeaderValue::from_str(&val).unwrap();
+            let header_name = HeaderName::from_str(&key).unwrap();
+            req_headers.insert(header_name, header_value);
+        }
+
+        connect_async(request).await.map(|resp| resp.0.split())
     }
 
     /// Optionally spawn a hearbeat task to periodically ping the server.
     pub fn spawn_heartbeat_task(
         heartbeat: Option<u64>,
+        message: Option<String>,
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
         heartbeat.map(|duration| {
@@ -102,7 +148,11 @@ impl WebSocketClientInner {
                     sleep(duration).await;
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
-                    match guard.send(Message::Ping(vec![])).await {
+                    let guard_send_response = match message.clone() {
+                        Some(msg) => guard.send(Message::Text(msg)).await,
+                        None => guard.send(Message::Ping(vec![])).await,
+                    };
+                    match guard_send_response {
                         Ok(()) => debug!("Sent heartbeat"),
                         Err(e) => error!("Failed to send heartbeat: {e}"),
                     }
@@ -188,13 +238,18 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
-        let (new_writer, reader) = Self::connect_with_server(&self.url).await?;
+        let (new_writer, reader) =
+            Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
 
-        self.read_task = Self::spawn_read_task(reader, self.handler.clone());
-        self.heartbeat_task = Self::spawn_heartbeat_task(self.heartbeat, self.writer.clone());
+        self.read_task = Self::spawn_read_task(reader, self.config.handler.clone());
+        self.heartbeat_task = Self::spawn_heartbeat_task(
+            self.config.heartbeat,
+            self.config.message.clone(),
+            self.writer.clone(),
+        );
 
         Ok(())
     }
@@ -242,14 +297,12 @@ impl WebSocketClient {
     /// Creates an inner client and controller task to reconnect or disconnect
     /// the client. Also assumes ownership of writer from inner client
     pub async fn connect(
-        url: &str,
-        handler: PyObject,
-        heartbeat: Option<u64>,
+        config: WebSocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> Result<Self, Error> {
-        let inner = WebSocketClientInner::connect_url(url, handler, heartbeat).await?;
+        let inner = WebSocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(Mutex::new(false));
         let controller_task = Self::spawn_controller_task(
@@ -264,7 +317,7 @@ impl WebSocketClient {
                 Ok(_) => debug!("Called post_connection handler"),
                 Err(e) => error!("Error calling post_connection handler: {e}"),
             });
-        }
+        };
 
         Ok(Self {
             writer,
@@ -356,6 +409,21 @@ impl WebSocketClient {
 
 #[pymethods]
 impl WebSocketClient {
+    /// Check if the client is still alive.
+    ///
+    /// Even if the connection is disconnected the client will still be alive
+    /// and trying to reconnect. Only when reconnect fails the client will
+    /// terminate.
+    ///
+    /// This is particularly useful for checking why a `send` failed. It could
+    /// because the connection disconnected and the client is still alive
+    /// and reconnecting. In such cases the send can be retried after some
+    /// delay.
+    #[getter]
+    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+        !slf.controller_task.is_finished()
+    }
+
     /// Create a websocket client.
     ///
     /// # Safety
@@ -364,9 +432,7 @@ impl WebSocketClient {
     #[staticmethod]
     #[pyo3(name = "connect")]
     fn py_connect(
-        url: String,
-        handler: PyObject,
-        heartbeat: Option<u64>,
+        config: WebSocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
@@ -374,9 +440,7 @@ impl WebSocketClient {
     ) -> PyResult<&PyAny> {
         pyo3_asyncio::tokio::future_into_py(py, async move {
             Self::connect(
-                &url,
-                handler,
-                heartbeat,
+                config,
                 post_connection,
                 post_reconnection,
                 post_disconnection,
@@ -409,22 +473,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Check if the client is still alive.
-    ///
-    /// Even if the connection is disconnected the client will still be alive
-    /// and try to reconnect. Only when reconnect fails the client will
-    /// terminate.
-    ///
-    /// This is particularly useful for check why a `send` failed. It could
-    /// because the connection disconnected and the client is still alive
-    /// and reconnecting. In such cases the send can be retried after some
-    /// delay.
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
-        !slf.controller_task.is_finished()
-    }
-
-    /// Send text data to the connection.
+    /// Send text data to the server.
     ///
     /// # Safety
     ///
@@ -445,7 +494,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Send bytes data to the connection.
+    /// Send bytes data to the server.
     ///
     /// # Safety
     ///
@@ -472,28 +521,65 @@ mod tests {
         task::{self, JoinHandle},
         time::{sleep, Duration},
     };
-    use tokio_tungstenite::accept_async;
+    use tokio_tungstenite::{
+        accept_hdr_async,
+        tungstenite::{
+            handshake::server::{self, Callback},
+            http::HeaderValue,
+        },
+    };
     use tracing::debug;
     use tracing_test::traced_test;
 
-    use crate::websocket::WebSocketClient;
+    use crate::websocket::{WebSocketClient, WebSocketConfig};
 
     struct TestServer {
         task: JoinHandle<()>,
         port: u16,
     }
 
+    #[derive(Debug, Clone)]
+    struct TestCallback {
+        key: String,
+        value: HeaderValue,
+    }
+
+    impl Callback for TestCallback {
+        fn on_request(
+            self,
+            request: &server::Request,
+            response: server::Response,
+        ) -> Result<server::Response, server::ErrorResponse> {
+            let _ = response;
+            let value = request.headers().get(&self.key);
+            assert!(value.is_some());
+
+            if let Some(value) = request.headers().get(&self.key) {
+                assert_eq!(value, self.value);
+            }
+
+            Ok(response)
+        }
+    }
+
     impl TestServer {
-        async fn setup() -> Self {
+        async fn setup(key: String, value: String) -> Self {
             let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = TcpListener::local_addr(&server).unwrap().port();
+
+            let test_call_back = TestCallback {
+                key,
+                value: HeaderValue::from_str(&value).unwrap(),
+            };
 
             // Setup test server
             let task = task::spawn(async move {
                 // keep accepting connections
                 loop {
                     let (conn, _) = server.accept().await.unwrap();
-                    let mut websocket = accept_async(conn).await.unwrap();
+                    let mut websocket = accept_hdr_async(conn, test_call_back.clone())
+                        .await
+                        .unwrap();
 
                     task::spawn(async move {
                         loop {
@@ -529,9 +615,11 @@ mod tests {
 
         const N: usize = 10;
         let mut success_count = 0;
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
 
         // Initialize test server
-        let server = TestServer::setup().await;
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
 
         // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
@@ -561,16 +649,16 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let client = WebSocketClient::connect(
-            &format!("ws://127.0.0.1:{}", server.port),
+        let config = WebSocketConfig::py_new(
+            format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
+            vec![(header_key, header_value)],
             None,
             None,
-            None,
-            None,
-        )
-        .await
-        .unwrap();
+        );
+        let client = WebSocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
 
         // Send messages that increment the count
         for _ in 0..N {
@@ -621,6 +709,73 @@ counter = Counter()",
         });
         assert_eq!(count_value, success_count);
         assert_eq!(success_count, N + N);
+
+        // Shutdown client and wait for read task to terminate
+        client.disconnect().await;
+        sleep(Duration::from_secs(1)).await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn message_ping_test() {
+        prepare_freethreaded_python();
+
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
+
+        let (checker, handler) = Python::with_gil(|py| {
+            let pymod = PyModule::from_code(
+                py,
+                r"
+class Checker:
+    def __init__(self):
+        self.check = False
+
+    def handler(self, bytes):
+        if bytes.decode() == 'heartbeat message':
+            self.check = True
+
+    def get_check(self):
+        return self.check
+
+checker = Checker()",
+                "",
+                "",
+            )
+            .unwrap();
+
+            let checker = pymod.getattr("checker").unwrap().into_py(py);
+            let handler = checker.getattr(py, "handler").unwrap().into_py(py);
+
+            (checker, handler)
+        });
+
+        // Initialize test server and config
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
+        let config = WebSocketConfig::py_new(
+            format!("ws://127.0.0.1:{}", server.port),
+            handler.clone(),
+            vec![(header_key, header_value)],
+            Some(1),
+            Some("heartbeat message".to_string()),
+        );
+        let client = WebSocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        // Check if ping message has the correct message
+        sleep(Duration::from_secs(2)).await;
+        let check_value: bool = Python::with_gil(|py| {
+            checker
+                .getattr(py, "get_check")
+                .unwrap()
+                .call0(py)
+                .unwrap()
+                .extract(py)
+                .unwrap()
+        });
+        assert!(check_value);
 
         // Shutdown client and wait for read task to terminate
         client.disconnect().await;

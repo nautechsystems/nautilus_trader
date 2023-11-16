@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Final, Literal
 
 from ibapi.common import UNSET_DECIMAL
 
@@ -22,7 +22,7 @@ from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.model.identifiers import Venue
 
 
-IB_VENUE = Venue("InteractiveBrokers")
+IB_VENUE: Final[Venue] = Venue("InteractiveBrokers")
 
 
 class ContractId(int):
@@ -85,7 +85,7 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
         Exchange where security is traded. Will be SMART for Stocks.
     primaryExchange: str
         Exchange where security is registered. Applies to Stocks.
-    localSymbol: str
+    symbol: str
         Unique Symbol registered in Exchange.
     build_options_chain: bool (default: None)
         Search for full option chain
@@ -130,13 +130,13 @@ class IBContract(NautilusConfig, frozen=True, repr_omit_defaults=True):
     # combos
     comboLegsDescrip: str = ""
     comboLegs: list[ComboLeg] = None
-    deltaNeutralContract: Optional[DeltaNeutralContract] = None
+    deltaNeutralContract: DeltaNeutralContract | None = None
 
     # nautilus specific parameters
-    build_futures_chain: Optional[bool] = None
-    build_options_chain: Optional[bool] = None
-    min_expiry_days: Optional[int] = None
-    max_expiry_days: Optional[int] = None
+    build_futures_chain: bool | None = None
+    build_options_chain: bool | None = None
+    min_expiry_days: int | None = None
+    max_expiry_days: int | None = None
 
 
 class IBOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
@@ -200,7 +200,7 @@ class IBContractDetails(NautilusConfig, frozen=True, repr_omit_defaults=True):
     underSymbol: str = ""
     underSecType: str = ""
     marketRuleIds: str = ""
-    secIdList: Optional[list] = None
+    secIdList: list | None = None
     realExpirationDate: str = ""
     lastTradeTime: str = ""
     stockType: str = ""

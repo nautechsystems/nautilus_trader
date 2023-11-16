@@ -17,8 +17,8 @@ import asyncio
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.network import SocketClient
-from nautilus_trader.core.nautilus_pyo3.network import SocketConfig
+from nautilus_trader.core.nautilus_pyo3 import SocketClient
+from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 

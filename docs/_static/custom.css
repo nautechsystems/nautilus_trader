@@ -89,8 +89,8 @@ h1, h2, h3 {
     transition: transform .25s cubic-bezier(.1,.7,.1,1),box-shadow .25s;
 }
 .md-typeset code {
-    background-color: transparent;
-    color: #f92672;
+    color: #ddc;
+    background-color: #282828;
     display: inline-block;
 }
 .md-nav__link[data-md-state=blur] {

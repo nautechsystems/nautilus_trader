@@ -19,6 +19,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
+heck = "0.4.1"
 
 [features]
 extension-module = ["pyo3/extension-module"]

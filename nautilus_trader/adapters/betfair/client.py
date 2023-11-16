@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from betfair_parser.endpoints import ENDPOINTS
 from betfair_parser.spec.accounts.operations import GetAccountDetails
@@ -61,9 +60,9 @@ from betfair_parser.spec.navigation import Navigation
 
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.rust.common import LogColor
 
 
@@ -113,7 +112,7 @@ class BetfairHttpClient:
         return request.parse_response(response.body, raise_errors=True)
 
     @property
-    def session_token(self) -> Optional[str]:
+    def session_token(self) -> str | None:
         return self._headers.get("X-Authentication")
 
     def update_headers(self, login_resp: LoginResponse):
@@ -139,7 +138,8 @@ class BetfairHttpClient:
         self._log.info("Connecting (Betfair login)")
         request = Login.with_params(username=self.username, password=self.password)
         resp: LoginResponse = await self._post(request)
-        assert resp.status == LoginStatus.SUCCESS
+        if resp.status != LoginStatus.SUCCESS:
+            raise RuntimeError(f"Login not successful: {resp.status.value}")
         self._log.info("Login success.", color=LogColor.GREEN)
         self.update_headers(login_resp=resp)
 
@@ -166,10 +166,10 @@ class BetfairHttpClient:
     async def list_market_catalogue(
         self,
         filter_: MarketFilter,
-        market_projection: Optional[list[MarketProjection]] = None,
-        sort: Optional[MarketSort] = None,
+        market_projection: list[MarketProjection] | None = None,
+        sort: MarketSort | None = None,
         max_results: int = 1000,
-        locale: Optional[str] = None,
+        locale: str | None = None,
     ) -> list[MarketCatalogue]:
         """
         Return specific data about markets.
@@ -189,7 +189,7 @@ class BetfairHttpClient:
     async def get_account_details(self) -> AccountDetailsResponse:
         return await self._post(request=GetAccountDetails.with_params())
 
-    async def get_account_funds(self, wallet: Optional[str] = None) -> AccountFundsResponse:
+    async def get_account_funds(self, wallet: str | None = None) -> AccountFundsResponse:
         return await self._post(request=GetAccountFunds.with_params(wallet=wallet))
 
     async def place_orders(self, request: PlaceOrders) -> PlaceExecutionReport:
@@ -203,17 +203,17 @@ class BetfairHttpClient:
 
     async def list_current_orders(
         self,
-        bet_ids: Optional[set[BetId]] = None,
-        market_ids: Optional[set[str]] = None,
-        order_projection: Optional[OrderProjection] = None,
-        customer_order_refs: Optional[set[CustomerOrderRef]] = None,
-        customer_strategy_refs: Optional[set[CustomerStrategyRef]] = None,
-        date_range: Optional[TimeRange] = None,
-        order_by: Optional[OrderBy] = None,
-        sort_dir: Optional[SortDir] = None,
-        from_record: Optional[int] = None,
-        record_count: Optional[int] = None,
-        include_item_description: Optional[bool] = None,
+        bet_ids: set[BetId] | None = None,
+        market_ids: set[str] | None = None,
+        order_projection: OrderProjection | None = None,
+        customer_order_refs: set[CustomerOrderRef] | None = None,
+        customer_strategy_refs: set[CustomerStrategyRef] | None = None,
+        date_range: TimeRange | None = None,
+        order_by: OrderBy | None = None,
+        sort_dir: SortDir | None = None,
+        from_record: int | None = None,
+        record_count: int | None = None,
+        include_item_description: bool | None = None,
     ) -> list[CurrentOrderSummary]:
         current_orders: list[CurrentOrderSummary] = []
         more_available = True
@@ -242,20 +242,20 @@ class BetfairHttpClient:
     async def list_cleared_orders(
         self,
         bet_status: BetStatus,
-        event_type_ids: Optional[set[EventTypeId]] = None,
-        event_ids: Optional[set[EventId]] = None,
-        market_ids: Optional[set[MarketId]] = None,
-        runner_ids: Optional[set[RunnerId]] = None,
-        bet_ids: Optional[set[BetId]] = None,
-        customer_order_refs: Optional[set[CustomerOrderRef]] = None,
-        customer_strategy_refs: Optional[set[CustomerStrategyRef]] = None,
-        side: Optional[Side] = None,
-        settled_date_range: Optional[TimeRange] = None,
-        group_by: Optional[GroupBy] = None,
-        include_item_description: Optional[bool] = None,
-        locale: Optional[str] = None,
-        from_record: Optional[int] = None,
-        record_count: Optional[int] = None,
+        event_type_ids: set[EventTypeId] | None = None,
+        event_ids: set[EventId] | None = None,
+        market_ids: set[MarketId] | None = None,
+        runner_ids: set[RunnerId] | None = None,
+        bet_ids: set[BetId] | None = None,
+        customer_order_refs: set[CustomerOrderRef] | None = None,
+        customer_strategy_refs: set[CustomerStrategyRef] | None = None,
+        side: Side | None = None,
+        settled_date_range: TimeRange | None = None,
+        group_by: GroupBy | None = None,
+        include_item_description: bool | None = None,
+        locale: str | None = None,
+        from_record: int | None = None,
+        record_count: int | None = None,
     ) -> list[ClearedOrderSummary]:
         cleared_orders: list[ClearedOrderSummary] = []
         more_available = True

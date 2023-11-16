@@ -13,18 +13,29 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any, Callable
+from typing import Any
+from typing import Callable
 
 import cython
+import msgspec
 import numpy as np
+
+from nautilus_trader.config.common import MessageBusConfig
 
 cimport numpy as np
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.common cimport msgbus_drop
+from nautilus_trader.core.rust.common cimport msgbus_new
+from nautilus_trader.core.rust.common cimport msgbus_publish_external
+from nautilus_trader.core.string cimport pybytes_to_cstr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.serialization.base cimport OBJECTS_FOR_EXTERNAL_PUBLISH
+from nautilus_trader.serialization.base cimport Serializer
 
 
 cdef class MessageBus:
@@ -60,6 +71,10 @@ cdef class MessageBus:
         The logger for the message bus.
     name : str, optional
         The custom name for the message bus.
+    serializer : Serializer, optional
+        The serializer for database operations.
+    config : MessageBusConfig, optional
+        The configuration for the message bus.
 
     Raises
     ------
@@ -78,13 +93,24 @@ cdef class MessageBus:
         Clock clock not None,
         Logger logger not None,
         str name = None,
+        Serializer serializer = None,
+        config: MessageBusConfig | None = None,
     ):
         if name is None:
             name = type(self).__name__
         Condition.valid_string(name, "name")
+        if config is None:
+            config = MessageBusConfig()
+        Condition.type(config, MessageBusConfig, "config")
 
         self.trader_id = trader_id
 
+        self._mem = msgbus_new(
+            pystr_to_cstr(trader_id.value),
+            pystr_to_cstr(name) if name else NULL,
+            pybytes_to_cstr(msgspec.json.encode(config)),
+        )
+        self._serializer = serializer
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)
 
@@ -92,12 +118,17 @@ cdef class MessageBus:
         self._patterns: dict[str, Subscription[:]] = {}
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
+        self._has_backing = config.database is not None
 
         # Counters
         self.sent_count = 0
         self.req_count = 0
         self.res_count = 0
         self.pub_count = 0
+
+    def __del__(self) -> None:
+        if self._mem._0 != NULL:
+            msgbus_drop(self._mem)
 
     cpdef list endpoints(self):
         """
@@ -502,6 +533,17 @@ cdef class MessageBus:
         for i in range(len(subs)):
             sub = subs[i]
             sub.handler(msg)
+
+        # Publish externally (if configured)
+        cdef bytes payload_bytes
+        if self._has_backing and self._serializer is not None:
+            if isinstance(msg, OBJECTS_FOR_EXTERNAL_PUBLISH):
+                payload_bytes = self._serializer.serialize(msg)
+                msgbus_publish_external(
+                    &self._mem,
+                    pystr_to_cstr(topic),
+                    pybytes_to_cstr(payload_bytes),
+                )
 
         self.pub_count += 1
 

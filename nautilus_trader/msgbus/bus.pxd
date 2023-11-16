@@ -17,18 +17,23 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.message cimport Request
 from nautilus_trader.core.message cimport Response
+from nautilus_trader.core.rust.common cimport MessageBus_API
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.msgbus.subscription cimport Subscription
+from nautilus_trader.serialization.base cimport Serializer
 
 
 cdef class MessageBus:
+    cdef MessageBus_API _mem
     cdef Clock _clock
     cdef LoggerAdapter _log
+    cdef Serializer _serializer
     cdef dict _subscriptions
     cdef dict _patterns
     cdef dict _endpoints
     cdef dict _correlation_index
+    cdef bint _has_backing
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""

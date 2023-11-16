@@ -284,16 +284,16 @@ def test_orderbook_updates(data_client, parser):
 
     # Assert
     book = order_books[next(iter(order_books))]
-    expected = """╭───────────────┬───────┬──────────────╮
-│ bids          │ price │ asks         │
-├───────────────┼───────┼──────────────┤
-│               │ 1.21  │ [76.380000]  │
-│               │ 1.20  │ [156.740000] │
-│               │ 1.19  │ [147.790000] │
-│ [151.960000]  │ 1.18  │              │
-│ [1275.830000] │ 1.17  │              │
-│ [932.640000]  │ 1.16  │              │
-╰───────────────┴───────┴──────────────╯"""
+    expected = """╭───────────┬───────┬──────────╮
+│ bids      │ price │ asks     │
+├───────────┼───────┼──────────┤
+│           │ 1.21  │ [76.38]  │
+│           │ 1.20  │ [156.74] │
+│           │ 1.19  │ [147.79] │
+│ [151.96]  │ 1.18  │          │
+│ [1275.83] │ 1.17  │          │
+│ [932.64]  │ 1.16  │          │
+╰───────────┴───────┴──────────╯"""
 
     result = book.pprint()
     assert result == expected
@@ -391,7 +391,7 @@ def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     assert ticker.traded_volume == 364.45
     assert (
         str(ticker)
-        == "BetfairTicker(instrument_id=1.176621195-42153-0.0.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
+        == "BetfairTicker(instrument_id=1.176621195-42153-None.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
     )
 
 
@@ -443,7 +443,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
     # Act, Assert
     for update in BetfairDataProvider.market_updates():
         for message in parser.parse(update):
-            if isinstance(message, (BettingInstrument, VenueStatus)):
+            if isinstance(message, BettingInstrument | VenueStatus):
                 continue
             if message.instrument_id not in books:
                 books[message.instrument_id] = create_betfair_order_book(
@@ -456,7 +456,7 @@ def test_betfair_orderbook(data_client, parser) -> None:
                 book.apply_delta(message)
             elif isinstance(
                 message,
-                (Ticker, TradeTick, InstrumentStatus, InstrumentClose),
+                Ticker | TradeTick | InstrumentStatus | InstrumentClose,
             ):
                 pass
             else:
@@ -469,14 +469,14 @@ def test_bsp_deltas_apply(data_client, instrument):
     book = TestDataStubs.make_book(
         instrument=instrument,
         book_type=BookType.L2_MBP,
-        asks=[(0.0010000, 55.81)],
+        asks=[(1000, 55.81)],
     )
 
     bsp_delta = BSPOrderBookDelta(
         instrument_id=instrument.id,
         action=BookAction.UPDATE,
         order=BookOrder(
-            price=Price.from_str("0.990099"),
+            price=Price.from_str("1.01"),
             size=Quantity.from_str("2.0"),
             side=OrderSide.BUY,
             order_id=1,
@@ -491,8 +491,8 @@ def test_bsp_deltas_apply(data_client, instrument):
     book.apply(bsp_delta)
 
     # Assert
-    assert book.best_ask_price() == betfair_float_to_price(0.001)
-    assert book.best_bid_price() == betfair_float_to_price(0.990099)
+    assert book.best_ask_price() == betfair_float_to_price(1000)
+    assert book.best_bid_price() == betfair_float_to_price(1.01)
 
 
 @pytest.mark.asyncio

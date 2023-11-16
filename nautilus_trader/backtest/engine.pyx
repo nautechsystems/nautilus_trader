@@ -15,7 +15,8 @@
 
 import pickle
 from decimal import Decimal
-from typing import Optional, Union
+from typing import Optional
+from typing import Union
 
 import pandas as pd
 
@@ -361,6 +362,7 @@ cdef class BacktestEngine:
         bar_execution: bool = True,
         reject_stop_orders: bool = True,
         support_gtd_orders: bool = True,
+        support_contingent_orders: bool = True,
         use_position_ids: bool = True,
         use_random_ids: bool = False,
         use_reduce_only: bool = True,
@@ -403,6 +405,9 @@ cdef class BacktestEngine:
             If stop orders are rejected on submission if trigger price is in the market.
         support_gtd_orders : bool, default True
             If orders with GTD time in force will be supported by the venue.
+        support_contingent_orders : bool, default True
+            If contingent orders will be supported/respected by the venue.
+            If False then its expected the strategy will be managing any contingent orders.
         use_position_ids : bool, default True
             If venue position IDs will be generated on order fills.
         use_random_ids : bool, default False
@@ -454,6 +459,7 @@ cdef class BacktestEngine:
             bar_execution=bar_execution,
             reject_stop_orders=reject_stop_orders,
             support_gtd_orders=support_gtd_orders,
+            support_contingent_orders=support_contingent_orders,
             use_position_ids=use_position_ids,
             use_random_ids=use_random_ids,
             use_reduce_only=use_reduce_only,
@@ -1201,16 +1207,21 @@ cdef class BacktestEngine:
                 for exchange in self._venues.values():
                     exchange.process(ts_event_init)
 
+    def _get_log_color_code(self):
+        return "\033[36m" if self._log.is_colored else ""
+
     def _log_pre_run(self):
         log_memory(self._log)
 
+        cdef str color = self._get_log_color_code()
+
         for exchange in self._venues.values():
             account = exchange.exec_client.get_account()
-            self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
-            self._log.info("\033[36m=================================================================")
+            self._log.info(f"{color}=================================================================")
+            self._log.info(f"{color} SimulatedVenue {exchange.id}")
+            self._log.info(f"{color}=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
@@ -1219,29 +1230,43 @@ cdef class BacktestEngine:
                     self._log.info(b.to_str())
 
     def _log_run(self, start: pd.Timestamp, end: pd.Timestamp):
-        self._log.info("\033[36m=================================================================")
-        self._log.info("\033[36m BACKTEST RUN")
-        self._log.info("\033[36m=================================================================")
+        cdef str color = self._get_log_color_code()
+
+        self._log.info(f"{color}=================================================================")
+        self._log.info(f"{color} BACKTEST RUN")
+        self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
         self._log.info(f"Run started:    {self._run_started}")
         self._log.info(f"Backtest start: {self._backtest_start}")
         self._log.info(f"Batch start:    {start}")
         self._log.info(f"Batch end:      {end}")
-        self._log.info("\033[36m-----------------------------------------------------------------")
+        self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
-        self._log.info("\033[36m=================================================================")
-        self._log.info("\033[36m BACKTEST POST-RUN")
-        self._log.info("\033[36m=================================================================")
+        if self._run_finished and self._run_started:
+            elapsed_time = self._run_finished - self._run_started
+        else:
+            elapsed_time = None
+
+        if self._backtest_end and self._backtest_start:
+            backtest_range = self._backtest_end - self._backtest_start
+        else:
+            backtest_range = None
+
+        cdef str color = self._get_log_color_code()
+
+        self._log.info(f"{color}=================================================================")
+        self._log.info(f"{color} BACKTEST POST-RUN")
+        self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
         self._log.info(f"Run started:    {self._run_started}")
         self._log.info(f"Run finished:   {self._run_finished}")
-        self._log.info(f"Elapsed time:   {self._run_finished - self._run_started}")
+        self._log.info(f"Elapsed time:   {elapsed_time}")
         self._log.info(f"Backtest start: {self._backtest_start}")
         self._log.info(f"Backtest end:   {self._backtest_end}")
-        self._log.info(f"Backtest range: {self._backtest_end - self._backtest_start}")
+        self._log.info(f"Backtest range: {backtest_range}")
         self._log.info(f"Iterations: {self._iteration:,}")
         self._log.info(f"Total events: {self._kernel.exec_engine.event_count:,}")
         self._log.info(f"Total orders: {self._kernel.cache.orders_total_count():,}")
@@ -1261,11 +1286,11 @@ cdef class BacktestEngine:
             set venue_currencies
         for venue in self._venues.values():
             account = venue.exec_client.get_account()
-            self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36m SimulatedVenue {venue.id}")
-            self._log.info("\033[36m=================================================================")
+            self._log.info(f"{color}=================================================================")
+            self._log.info(f"{color} SimulatedVenue {venue.id}")
+            self._log.info(f"{color}=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             unrealized_pnls: Optional[dict[Currency, Money]] = None
             if venue.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
@@ -1275,15 +1300,15 @@ cdef class BacktestEngine:
                 self._log.info(f"Balances starting:")
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Balances ending:")
                 for b in account.balances_total().values():
                     self._log.info(b.to_str())
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
                 for c in account.commissions().values():
                     self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs (included in totals):")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(venue.id.value))
                 if not unrealized_pnls:
@@ -1296,9 +1321,9 @@ cdef class BacktestEngine:
             for module in venue.modules:
                 module.log_diagnostics(self._log)
 
-            self._log.info("\033[36m=================================================================")
-            self._log.info("\033[36m PORTFOLIO PERFORMANCE")
-            self._log.info("\033[36m=================================================================")
+            self._log.info(f"{color}=================================================================")
+            self._log.info(f"{color} PORTFOLIO PERFORMANCE")
+            self._log.info(f"{color}=================================================================")
 
             # Collect all positions and currencies for venue
             venue_positions = []
@@ -1316,23 +1341,23 @@ cdef class BacktestEngine:
             # Present PnL performance stats per asset
             for currency in sorted(list(venue_currencies), key=lambda x: x.code):
                 self._log.info(f" PnL Statistics ({str(currency)})")
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 unrealized_pnl = unrealized_pnls.get(currency) if unrealized_pnls else None
                 for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency, unrealized_pnl):
                     self._log.info(stat)
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
 
             self._log.info(" Returns Statistics")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             for stat in self._kernel.portfolio.analyzer.get_stats_returns_formatted():
                 self._log.info(stat)
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
 
             self._log.info(" General Statistics")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             for stat in self._kernel.portfolio.analyzer.get_stats_general_formatted():
                 self._log.info(stat)
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
         if client_id not in self._kernel.data_engine.registered_clients:

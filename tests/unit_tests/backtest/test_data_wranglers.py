@@ -41,7 +41,7 @@ class TestQuoteTickDataWrangler:
     def test_tick_data(self):
         # Arrange, Act
         provider = TestDataProvider()
-        ticks = provider.read_csv_ticks("truefx-usdjpy-ticks.csv")
+        ticks = provider.read_csv_ticks("truefx/usdjpy-ticks.csv")
 
         # Assert
         assert len(ticks) == 1000
@@ -55,7 +55,7 @@ class TestQuoteTickDataWrangler:
 
         # Act
         ticks = wrangler.process(
-            data=provider.read_csv_ticks("truefx-usdjpy-ticks.csv"),
+            data=provider.read_csv_ticks("truefx/usdjpy-ticks.csv"),
             default_volume=1000000,
         )
 
@@ -78,7 +78,7 @@ class TestQuoteTickDataWrangler:
 
         # Act
         ticks = wrangler.process(
-            data=provider.read_csv_ticks("truefx-usdjpy-ticks.csv"),
+            data=provider.read_csv_ticks("truefx/usdjpy-ticks.csv"),
             default_volume=1000000,
             ts_init_delta=1_000_500,
         )
@@ -116,8 +116,8 @@ class TestQuoteTickDataWrangler:
         # Arrange
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         provider = TestDataProvider()
-        bid_data = provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:100]
-        ask_data = provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:100]
+        bid_data = provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:100]
+        ask_data = provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv")[:100]
 
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
 
@@ -143,8 +143,8 @@ class TestQuoteTickDataWrangler:
         # Arrange
         usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
         provider = TestDataProvider()
-        bid_data = provider.read_csv_bars("fxcm-usdjpy-m1-bid-2013.csv")[:100]
-        ask_data = provider.read_csv_bars("fxcm-usdjpy-m1-ask-2013.csv")[:100]
+        bid_data = provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:100]
+        ask_data = provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv")[:100]
 
         wrangler = QuoteTickDataWrangler(instrument=usdjpy)
 
@@ -174,7 +174,7 @@ class TestTradeTickDataWrangler:
 
     def test_tick_data(self):
         # Arrange, Act
-        ticks = TestDataProvider().read_csv_ticks("binance-ethusdt-trades.csv")[:100]
+        ticks = TestDataProvider().read_csv_ticks("binance/ethusdt-trades.csv")[:100]
 
         # Assert
         assert len(ticks) == 100
@@ -186,7 +186,7 @@ class TestTradeTickDataWrangler:
         provider = TestDataProvider()
 
         # Act
-        ticks = wrangler.process(provider.read_csv_ticks("binance-ethusdt-trades.csv")[:100])
+        ticks = wrangler.process(provider.read_csv_ticks("binance/ethusdt-trades.csv")[:100])
 
         # Assert
         assert len(ticks) == 100
@@ -205,7 +205,7 @@ class TestTradeTickDataWrangler:
 
         # Act
         ticks = wrangler.process(
-            provider.read_csv_ticks("binance-ethusdt-trades.csv")[:100],
+            provider.read_csv_ticks("binance/ethusdt-trades.csv")[:100],
             ts_init_delta=1_000_500,
         )
 
@@ -253,7 +253,7 @@ class TestBarDataWrangler:
     def test_process(self):
         # Arrange, Act
         provider = TestDataProvider()
-        bars = self.wrangler.process(provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:1000])
+        bars = self.wrangler.process(provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv")[:1000])
 
         # Assert
         assert len(bars) == 1000
@@ -269,7 +269,7 @@ class TestBarDataWrangler:
         # Arrange, Act
         provider = TestDataProvider()
         bars = self.wrangler.process(
-            data=provider.read_csv_bars("fxcm-gbpusd-m1-bid-2012.csv")[:1000],
+            data=provider.read_csv_bars("fxcm/gbpusd-m1-bid-2012.csv")[:1000],
             default_volume=10,
             ts_init_delta=1_000_500,
         )

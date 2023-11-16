@@ -27,6 +27,7 @@ from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import AccountBalance
@@ -94,6 +95,13 @@ class TestReportProvider:
     def test_generate_orders_fills_report_with_no_order_returns_emtpy_dataframe(self):
         # Arrange, Act
         report = ReportProvider.generate_order_fills_report([])
+
+        # Assert
+        assert report.empty
+
+    def test_generate_fills_report_with_no_fills_returns_emtpy_dataframe(self):
+        # Arrange, Act
+        report = ReportProvider.generate_fills_report([])
 
         # Assert
         assert report.empty
@@ -175,6 +183,16 @@ class TestReportProvider:
         order2.apply(TestEventStubs.order_submitted(order2))
         order2.apply(TestEventStubs.order_accepted(order2))
 
+        order3 = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(1_500_000),
+            Price.from_str("0.80000"),
+        )
+
+        order3.apply(TestEventStubs.order_submitted(order3))
+        order3.apply(TestEventStubs.order_accepted(order3))
+
         filled = TestEventStubs.order_filled(
             order1,
             instrument=AUDUSD_SIM,
@@ -185,13 +203,24 @@ class TestReportProvider:
 
         order1.apply(filled)
 
-        orders = [order1, order2]
+        partially_filled = TestEventStubs.order_filled(
+            order3,
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S-1"),
+            last_px=Price.from_str("0.80011"),
+            last_qty=Quantity.from_int(500_000),
+        )
+
+        order3.apply(partially_filled)
+
+        orders = [order1, order2, order3]
 
         # Act
         report = ReportProvider.generate_order_fills_report(orders)
 
         # Assert
-        assert len(report) == 1
+        assert len(report) == 2
         assert report.index.name == "client_order_id"
         assert report.index[0] == order1.client_order_id.value
         assert report.iloc[0]["instrument_id"] == "AUD/USD.SIM"
@@ -200,6 +229,69 @@ class TestReportProvider:
         assert report.iloc[0]["quantity"] == "1500000"
         assert report.iloc[0]["avg_px"] == "0.80011"
         assert report.iloc[0]["slippage"] == "9.99999999995449e-06"
+        assert report.index[1] == order3.client_order_id.value
+        assert report.iloc[1]["instrument_id"] == "AUD/USD.SIM"
+        assert report.iloc[1]["side"] == "SELL"
+        assert report.iloc[1]["type"] == "LIMIT"
+        assert report.iloc[1]["quantity"] == "1500000"
+        assert report.iloc[1]["filled_qty"] == "500000"
+        assert report.iloc[1]["avg_px"] == "0.80011"
+
+    def test_generate_fills_report(self):
+        # Arrange
+        order1 = self.order_factory.limit(
+            AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(1_500_000),
+            Price.from_str("0.80010"),
+        )
+
+        order1.apply(TestEventStubs.order_submitted(order1))
+        order1.apply(TestEventStubs.order_accepted(order1))
+
+        partially_filled1 = TestEventStubs.order_filled(
+            order1,
+            trade_id=TradeId("E-19700101-0000-000-001-1"),
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S-1"),
+            last_qty=Quantity.from_int(1_000_000),
+            last_px=Price.from_str("0.80011"),
+        )
+
+        partially_filled2 = TestEventStubs.order_filled(
+            order1,
+            trade_id=TradeId("E-19700101-0000-000-001-2"),
+            instrument=AUDUSD_SIM,
+            position_id=PositionId("P-1"),
+            strategy_id=StrategyId("S-1"),
+            last_qty=Quantity.from_int(500_000),
+            last_px=Price.from_str("0.80011"),
+        )
+
+        order1.apply(partially_filled1)
+        order1.apply(partially_filled2)
+
+        orders = [order1]
+
+        # Act
+        report = ReportProvider.generate_fills_report(orders)
+
+        # Assert
+        assert len(report) == 2
+        assert report.index.name == "client_order_id"
+        assert report.index[0] == order1.client_order_id.value
+        assert report.iloc[0]["instrument_id"] == "AUD/USD.SIM"
+        assert report.iloc[0]["order_side"] == "BUY"
+        assert report.iloc[0]["order_type"] == "LIMIT"
+        assert report.iloc[0]["last_qty"] == "1000000"
+        assert report.iloc[0]["last_px"] == "0.80011"
+        assert report.index[1] == order1.client_order_id.value
+        assert report.iloc[1]["instrument_id"] == "AUD/USD.SIM"
+        assert report.iloc[1]["order_side"] == "BUY"
+        assert report.iloc[1]["order_type"] == "LIMIT"
+        assert report.iloc[1]["last_qty"] == "500000"
+        assert report.iloc[1]["last_px"] == "0.80011"
 
     def test_generate_positions_report(self):
         # Arrange

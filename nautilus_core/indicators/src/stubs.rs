@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use nautilus_model::{
     data::{
         bar::{Bar, BarSpecification, BarType},
@@ -27,7 +28,8 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, sma::SimpleMovingAverage, MovingAverageType,
+        ema::ExponentialMovingAverage, rma::WilderMovingAverage, sma::SimpleMovingAverage,
+        wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::rsi::RelativeStrengthIndex,
     ratio::efficiency_ratio::EfficiencyRatio,
@@ -113,8 +115,19 @@ pub fn indicator_ema_10() -> ExponentialMovingAverage {
 }
 
 #[fixture]
+pub fn indicator_rma_10() -> WilderMovingAverage {
+    WilderMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
 pub fn indicator_dema_10() -> DoubleExponentialMovingAverage {
     DoubleExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn indicator_wma_10() -> WeightedMovingAverage {
+    let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+    WeightedMovingAverage::new(10, weights, Some(PriceType::Mid)).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

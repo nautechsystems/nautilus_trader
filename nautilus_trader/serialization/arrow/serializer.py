@@ -13,17 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
+from collections.abc import Callable
 from io import BytesIO
-from typing import Any, Callable
+from typing import Any
 
 import pyarrow as pa
 
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.nautilus_pyo3.persistence import DataTransformer
+from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
@@ -227,7 +226,7 @@ def make_dict_serializer(schema: pa.Schema) -> Callable[[list[Data | Event]], pa
 
 def make_dict_deserializer(data_cls):
     def inner(table: pa.Table) -> list[Data | Event]:
-        assert isinstance(table, (pa.Table, pa.RecordBatch))
+        assert isinstance(table, pa.Table | pa.RecordBatch)
         return [data_cls.from_dict(d) for d in table.to_pylist()]
 
     return inner

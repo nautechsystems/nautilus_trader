@@ -14,7 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Callable, Optional
+from typing import Callable
+from typing import Optional
 
 import cython
 import numpy as np
@@ -496,6 +497,7 @@ cdef class TestClock(Clock):
     ):
         Condition.valid_string(name, "name")
         Condition.not_in(name, self.timer_names, "name", "self.timer_names")
+        Condition.positive_int(interval_ns, "interval_ns")
 
         cdef uint64_t ts_now = self.timestamp_ns()
 

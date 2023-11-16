@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
 
 from cpython.mem cimport PyMem_Free
 from cpython.mem cimport PyMem_Malloc

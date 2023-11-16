@@ -13,16 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_char,
-    fmt::{Debug, Display, Formatter},
-};
+use std::fmt::{Debug, Display, Formatter};
 
 use anyhow::Result;
-use nautilus_core::{
-    correctness::{check_string_contains, check_valid_string},
-    string::cstr_to_str,
-};
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid strategy ID.
@@ -57,6 +51,11 @@ impl StrategyId {
             value: Ustr::from(s),
         })
     }
+
+    pub fn get_tag(&self) -> &str {
+        // SAFETY: Unwrap safe as value previously validated
+        self.value.split('-').last().unwrap()
+    }
 }
 
 impl Default for StrategyId {
@@ -86,42 +85,6 @@ impl From<&str> for StrategyId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-
-/// Returns a Nautilus identifier from a C string pointer.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn strategy_id_new(ptr: *const c_char) -> StrategyId {
-    StrategyId::from(cstr_to_str(ptr))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn strategy_id_hash(id: &StrategyId) -> u64 {
-    id.value.precomputed_hash()
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use crate::identifiers::strategy_id::StrategyId;
-
-    #[fixture]
-    pub fn strategy_id_ema_cross() -> StrategyId {
-        StrategyId::from("EMACross-001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
@@ -129,11 +92,16 @@ mod tests {
     use rstest::rstest;
 
     use super::StrategyId;
-    use crate::identifiers::strategy_id::stubs::strategy_id_ema_cross;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(strategy_id_ema_cross: StrategyId) {
         assert_eq!(strategy_id_ema_cross.to_string(), "EMACross-001");
         assert_eq!(format!("{strategy_id_ema_cross}"), "EMACross-001");
+    }
+
+    #[rstest]
+    fn test_get_tag(strategy_id_ema_cross: StrategyId) {
+        assert_eq!(strategy_id_ema_cross.get_tag(), "001");
     }
 }

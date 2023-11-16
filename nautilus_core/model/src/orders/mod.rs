@@ -26,3 +26,6 @@ pub mod stop_limit;
 pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
+
+#[cfg(test)]
+pub mod stubs;

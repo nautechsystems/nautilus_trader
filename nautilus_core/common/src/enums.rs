@@ -13,9 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{ffi::c_char, fmt::Debug, str::FromStr};
+use std::fmt::Debug;
 
-use nautilus_core::string::{cstr_to_string, str_to_cstr};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use strum::{Display, EnumIter, EnumString, FromRepr};
 
@@ -39,7 +39,10 @@ use strum::{Display, EnumIter, EnumString, FromRepr};
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum ComponentState {
     /// When a component is instantiated, but not yet ready to fulfill its specification.
     PreInitialized = 0,
@@ -91,7 +94,10 @@ pub enum ComponentState {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum ComponentTrigger {
     /// A trigger for the component to initialize.
     Initialize = 1,
@@ -144,7 +150,10 @@ pub enum ComponentTrigger {
 )]
 #[strum(ascii_case_insensitive)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum LogLevel {
     /// The **DBG** debug log level.
     #[strum(serialize = "DBG", serialize = "DEBUG")]
@@ -202,7 +211,10 @@ impl std::fmt::Display for LogLevel {
 )]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum LogColor {
     /// The default/normal log color.
     #[strum(serialize = "")]
@@ -233,7 +245,10 @@ pub enum LogColor {
 #[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, FromRepr, EnumString, Display)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(non_camel_case_types)]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
+)]
 pub enum LogFormat {
     /// Header log format. This ANSI escape code is used for magenta text color,
     /// often used for headers or titles in the log output.
@@ -252,76 +267,4 @@ pub enum LogFormat {
     /// Underline log format. This ANSI escape code is used to underline the text in the log output.
     #[strum(serialize = "\x1b[4m")]
     Underline,
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn component_state_to_cstr(value: ComponentState) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn component_state_from_cstr(ptr: *const c_char) -> ComponentState {
-    let value = cstr_to_string(ptr);
-    ComponentState::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `ComponentState` enum string value, was '{value}'"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn component_trigger_to_cstr(value: ComponentTrigger) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn component_trigger_from_cstr(ptr: *const c_char) -> ComponentTrigger {
-    let value = cstr_to_string(ptr);
-    ComponentTrigger::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `ComponentTrigger` enum string value, was '{value}'"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn log_level_to_cstr(value: LogLevel) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn log_level_from_cstr(ptr: *const c_char) -> LogLevel {
-    let value = cstr_to_string(ptr);
-    LogLevel::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `LogLevel` enum string value, was '{value}'"))
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn log_color_to_cstr(value: LogColor) -> *const c_char {
-    str_to_cstr(&value.to_string())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-/// - Assumes `ptr` is a valid C string pointer.
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub unsafe extern "C" fn log_color_from_cstr(ptr: *const c_char) -> LogColor {
-    let value = cstr_to_string(ptr);
-    LogColor::from_str(&value)
-        .unwrap_or_else(|_| panic!("invalid `LogColor` enum string value, was '{value}'"))
 }

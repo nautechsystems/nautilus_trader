@@ -47,7 +47,10 @@ pub const NULL_ORDER: BookOrder = BookOrder {
 /// Represents an order in a book.
 #[repr(C)]
 #[derive(Copy, Clone, Eq, Debug, Serialize, Deserialize)]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct BookOrder {
     /// The order side.
     pub side: OrderSide,

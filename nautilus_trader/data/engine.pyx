@@ -29,7 +29,8 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute`, `process`, `send` and `receive` methods.
 """
 
-from typing import Callable, Optional
+from typing import Callable
+from typing import Optional
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import DataEngineConfig
@@ -131,7 +132,6 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: Optional[DataClient] = None
         self._catalog: Optional[ParquetDataCatalog] = None
-        self._use_rust: bool = False
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -229,7 +229,7 @@ cdef class DataEngine(Component):
 
 # --REGISTRATION ----------------------------------------------------------------------------------
 
-    def register_catalog(self, catalog: ParquetDataCatalog, bint use_rust=False) -> None:
+    def register_catalog(self, catalog: ParquetDataCatalog) -> None:
         """
         Register the given data catalog with the engine.
 
@@ -242,7 +242,6 @@ cdef class DataEngine(Component):
         Condition.not_none(catalog, "catalog")
 
         self._catalog = catalog
-        self._use_rust = use_rust
 
     cpdef void register_client(self, DataClient client):
         """
@@ -685,6 +684,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
+                command.data_type.metadata.get("await_partial"),
             )
         elif command.data_type.type == VenueStatus:
             self._handle_subscribe_venue_status(
@@ -981,6 +981,7 @@ cdef class DataEngine(Component):
         self,
         MarketDataClient client,
         BarType bar_type,
+        bint await_partial,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
@@ -988,7 +989,7 @@ cdef class DataEngine(Component):
         if bar_type.is_internally_aggregated():
             # Internal aggregation
             if bar_type not in self._bar_aggregators:
-                self._start_bar_aggregator(client, bar_type)
+                self._start_bar_aggregator(client, bar_type, await_partial)
         else:
             # External aggregation
             if bar_type.instrument_id.is_synthetic():
@@ -1302,25 +1303,18 @@ cdef class DataEngine(Component):
             if instrument_id is None:
                 data = self._catalog.instruments(as_nautilus=True)
             else:
-                data = self._catalog.instruments(
-                    instrument_ids=[str(instrument_id)],
-                    as_nautilus=True,
-                )
+                data = self._catalog.instruments(instrument_ids=[str(instrument_id)])
         elif request.data_type.type == QuoteTick:
             data = self._catalog.quote_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=self._use_rust,
             )
         elif request.data_type.type == TradeTick:
             data = self._catalog.trade_ticks(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=self._use_rust,
             )
         elif request.data_type.type == Bar:
             bar_type = request.data_type.metadata.get("bar_type")
@@ -1332,16 +1326,12 @@ cdef class DataEngine(Component):
                 bar_type=str(bar_type),
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=False,  # Until implemented
             )
         elif request.data_type.type == InstrumentClose:
             data = self._catalog.instrument_closes(
                 instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
-                use_rust=False,  # Until implemented
             )
         else:
             data = self._catalog.generic_data(
@@ -1349,7 +1339,6 @@ cdef class DataEngine(Component):
                 metadata=request.data_type.metadata,
                 start=ts_start,
                 end=ts_end,
-                as_nautilus=True,
             )
 
         # Validation data is not from the future
@@ -1554,10 +1543,12 @@ cdef class DataEngine(Component):
     cpdef void _handle_bars(self, list bars, Bar partial):
         self._cache.add_bars(bars)
 
-        cdef TimeBarAggregator aggregator
+        cdef BarAggregator aggregator
         if partial is not None and partial.bar_type.is_internally_aggregated():
             # Update partial time bar
             aggregator = self._bar_aggregators.get(partial.bar_type)
+            aggregator.set_await_partial(False)
+
             if aggregator:
                 self._log.debug(f"Applying partial bar {partial} for {partial.bar_type}.")
                 aggregator.set_partial(partial)
@@ -1613,7 +1604,12 @@ cdef class DataEngine(Component):
                 f"no order book found, {snap_event}.",
             )
 
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type):
+    cpdef void _start_bar_aggregator(
+        self,
+        MarketDataClient client,
+        BarType bar_type,
+        bint await_partial,
+    ):
         cdef Instrument instrument = self._cache.instrument(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -1659,6 +1655,9 @@ cdef class DataEngine(Component):
                 f"BarAggregation.{bar_type.spec.aggregation_string_c()} "  # pragma: no cover (design-time error)
                 f"not supported in open-source"  # pragma: no cover (design-time error)
             )
+
+        # Set if awaiting initial partial bar
+        aggregator.set_await_partial(await_partial)
 
         # Add aggregator
         self._bar_aggregators[bar_type] = aggregator

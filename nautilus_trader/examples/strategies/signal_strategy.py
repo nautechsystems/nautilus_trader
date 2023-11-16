@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Optional
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import QuoteTick
@@ -48,7 +47,7 @@ class SignalStrategy(Strategy):
     def __init__(self, config: SignalStrategyConfig) -> None:
         super().__init__(config)
         self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
-        self.instrument: Optional[Instrument] = None
+        self.instrument: Instrument | None = None
         self.counter = 0
 
     def on_start(self) -> None:

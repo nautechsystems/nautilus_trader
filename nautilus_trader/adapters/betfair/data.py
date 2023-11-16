@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-from typing import Optional
 
 import msgspec
 from betfair_parser.spec.streaming import MCM
@@ -38,6 +37,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data.base import DataType
 from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.enums import BookType
@@ -81,7 +81,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
-        account_currency: str,
+        account_currency: Currency,
         strict_handling: bool = False,
     ):
         super().__init__(
@@ -102,7 +102,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-        self.parser = BetfairParser(currency=account_currency)
+        self.parser = BetfairParser(currency=account_currency.code)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
@@ -170,8 +170,8 @@ class BetfairDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: Optional[int] = None,
-        kwargs: Optional[dict] = None,
+        depth: int | None = None,
+        kwargs: dict | None = None,
     ):
         PyCondition.not_none(instrument_id, "instrument_id")
 
@@ -241,6 +241,10 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
+        """
+        Handle an update from the data stream socket.
+        """
+        self._log.debug(f"raw_data: {raw.decode()}")
         update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)
@@ -256,7 +260,7 @@ class BetfairDataClient(LiveMarketDataClient):
         updates = self.parser.parse(mcm=mcm)
         for data in updates:
             self._log.debug(f"{data}")
-            if isinstance(data, (BetfairStartingPrice, BSPOrderBookDelta)):
+            if isinstance(data, BetfairStartingPrice | BSPOrderBookDelta):
                 # Not a regular data type
                 generic_data = GenericData(
                     DataType(data.__class__, {"instrument_id": data.instrument_id}),

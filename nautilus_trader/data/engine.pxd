@@ -48,7 +48,6 @@ cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
     cdef readonly object _catalog
-    cdef readonly bint _use_rust
 
     cdef readonly dict _clients
     cdef readonly dict _routing_map
@@ -124,7 +123,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
-    cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type)
+    cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, bint await_partial)
     cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
     cpdef void _handle_subscribe_venue_status(self, MarketDataClient client, Venue venue)
     cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, InstrumentId instrument_id)
@@ -168,7 +167,7 @@ cdef class DataEngine(Component):
     cpdef void _internal_update_instruments(self, list instruments)
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
-    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type)
+    cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type, bint await_partial)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)
     cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update)

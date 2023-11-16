@@ -1,6 +1,6 @@
 # Adapters
 
-The NautilusTrader design allows for integrating data publishers and/or trading venues
+The NautilusTrader design allows for integrating data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage. 
 
 An integrations adapter is _typically_ comprised of the following main components:
@@ -62,6 +62,8 @@ as configured:
 - All instruments are automatically loaded on start:
 
 ```python
+from nautilus_trader.config import InstrumentProviderConfig
+
 InstrumentProviderConfig(load_all=True)
 ```
 
@@ -124,6 +126,10 @@ cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_
 The handler on the `ExecutionClient`:
 
 ```python
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import InstrumentId
+
 # nautilus_trader/adapters/binance/spot/data.py
 def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
     instrument: Optional[Instrument] = self._instrument_provider.find(instrument_id)

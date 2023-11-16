@@ -16,23 +16,15 @@
 use std::{
     cmp::Ordering,
     fmt::{Display, Formatter},
-    str::FromStr,
 };
 
 use anyhow::Result;
 use nautilus_core::{
     correctness::check_valid_string,
-    python::to_pyvalue_err,
     time::{TimedeltaNanos, UnixNanos},
     uuid::UUID4,
 };
-use pyo3::{
-    basic::CompareOp,
-    ffi,
-    prelude::*,
-    types::{PyLong, PyString, PyTuple},
-    IntoPy, Py, PyAny, PyObject, PyResult, Python, ToPyObject,
-};
+use pyo3::ffi;
 use ustr::Ustr;
 
 #[repr(C)]
@@ -88,102 +80,13 @@ impl PartialEq for TimeEvent {
     }
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// Python API
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(feature = "python")]
-#[pymethods]
-impl TimeEvent {
-    #[new]
-    fn py_new(
-        name: &str,
-        event_id: UUID4,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> PyResult<Self> {
-        Self::new(name, event_id, ts_event, ts_init).map_err(to_pyvalue_err)
-    }
-
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyString, &PyString, &PyLong, &PyLong) = state.extract(py)?;
-
-        self.name = Ustr::from(tuple.0.extract()?);
-        self.event_id = UUID4::from_str(tuple.1.extract()?).map_err(to_pyvalue_err)?;
-        self.ts_event = tuple.2.extract()?;
-        self.ts_init = tuple.3.extract()?;
-
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((
-            self.name.to_string(),
-            self.event_id.to_string(),
-            self.ts_event,
-            self.ts_init,
-        )
-            .to_object(py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
-
-    #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new("NULL", UUID4::new(), 0, 0).unwrap()) // Safe default
-    }
-
-    fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
-        match op {
-            CompareOp::Eq => self.eq(other).into_py(py),
-            CompareOp::Ne => self.ne(other).into_py(py),
-            _ => py.NotImplemented(),
-        }
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    fn __repr__(&self) -> String {
-        format!("{}('{}')", stringify!(UUID4), self)
-    }
-
-    #[getter]
-    #[pyo3(name = "name")]
-    fn py_name(&self) -> String {
-        self.name.to_string()
-    }
-
-    #[getter]
-    #[pyo3(name = "event_id")]
-    fn py_event_id(&self) -> UUID4 {
-        self.event_id
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> UnixNanos {
-        self.ts_event
-    }
-
-    #[getter]
-    #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> UnixNanos {
-        self.ts_init
-    }
-}
-
 #[repr(C)]
 #[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
 pub struct TimeEventHandler {
     /// The event.
     pub event: TimeEvent,
-    /// The event ID.
+    /// The Python callable pointer.
     pub callback_ptr: *mut ffi::PyObject,
 }
 
@@ -217,12 +120,6 @@ pub trait Timer {
     fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent;
     fn iterate_next_time(&mut self, ts_now: UnixNanos);
     fn cancel(&mut self);
-}
-
-#[cfg(feature = "ffi")]
-#[no_mangle]
-pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
-    v
 }
 
 #[derive(Clone)]

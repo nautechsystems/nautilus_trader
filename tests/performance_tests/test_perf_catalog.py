@@ -20,8 +20,8 @@ import tempfile
 import pytest
 
 from nautilus_trader import PACKAGE_ROOT
-from nautilus_trader.core.nautilus_pyo3.persistence import DataBackendSession
-from nautilus_trader.core.nautilus_pyo3.persistence import NautilusDataType
+from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data.base import capsule_to_list
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
 from nautilus_trader.test_kit.performance import PerformanceHarness
@@ -50,7 +50,7 @@ class TestCatalogPerformance(PerformanceHarness):
             return (cls.catalog,), {}
 
         def run(catalog):
-            quotes = catalog.quote_ticks(as_nautilus=True)
+            quotes = catalog.quote_ticks()
             assert len(quotes) == 9500
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
@@ -66,13 +66,13 @@ class TestCatalogPerformance(PerformanceHarness):
 
             cls.catalog = data_catalog_setup(protocol="file", path=tempdir)
 
-            cls._load_quote_ticks_into_catalog(use_rust=True)
+            cls._load_quote_ticks_into_catalog()
 
             # Act
             return (cls.catalog,), {}
 
         def run(catalog):
-            quotes = catalog.quote_ticks(as_nautilus=True, use_rust=True)
+            quotes = catalog.quote_ticks()
             assert len(quotes) == 9500
 
         benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)

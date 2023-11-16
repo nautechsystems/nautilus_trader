@@ -15,7 +15,6 @@
 
 import time
 from collections.abc import Iterable
-from typing import Optional, Union
 
 import msgspec.json
 import pandas as pd
@@ -33,21 +32,21 @@ from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.common import chunk
-from nautilus_trader.adapters.betfair.parsing.requests import parse_handicap
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 
 
 class BetfairInstrumentProviderConfig(InstrumentProviderConfig, frozen=True):
-    event_type_ids: Optional[list[str]] = None
-    event_ids: Optional[list[str]] = None
-    market_ids: Optional[list[str]] = None
-    country_codes: Optional[list[str]] = None
-    market_types: Optional[list[str]] = None
-    event_type_names: Optional[list[str]] = None
+    event_type_ids: list[str] | None = None
+    event_ids: list[str] | None = None
+    market_ids: list[str] | None = None
+    country_codes: list[str] | None = None
+    market_types: list[str] | None = None
+    event_type_names: list[str] | None = None
 
 
 class BetfairInstrumentProvider(InstrumentProvider):
@@ -67,13 +66,12 @@ class BetfairInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: Optional[BetfairHttpClient],
+        client: BetfairHttpClient | None,
         logger: Logger,
         config: BetfairInstrumentProviderConfig,
     ):
         assert config is not None, "Must pass config to BetfairInstrumentProvider"
         super().__init__(
-            venue=BETFAIR_VENUE,
             logger=logger,
             config=config,
         )
@@ -84,18 +82,18 @@ class BetfairInstrumentProvider(InstrumentProvider):
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ) -> None:
         raise NotImplementedError
 
     async def load_async(
         self,
         instrument_id: InstrumentId,
-        filters: Optional[dict] = None,
+        filters: dict | None = None,
     ):
         raise NotImplementedError
 
-    async def load_all_async(self, filters: Optional[dict] = None):
+    async def load_all_async(self, filters: dict | None = None):
         currency = await self.get_account_currency()
         filters = filters or {}
 
@@ -144,11 +142,11 @@ def market_catalog_to_instruments(
     for runner in market_catalog.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=str(market_catalog.event_type.id),
+            event_type_id=market_catalog.event_type.id,
             event_type_name=market_catalog.event_type.name,
-            competition_id=str(market_catalog.competition.id) if market_catalog.competition else "",
+            competition_id=market_catalog.competition.id if market_catalog.competition else 0,
             competition_name=market_catalog.competition.name if market_catalog.competition else "",
-            event_id=str(market_catalog.event.id),
+            event_id=market_catalog.event.id,
             event_name=market_catalog.event.name,
             event_country_code=market_catalog.event.country_code or "",
             event_open_date=pd.Timestamp(market_catalog.event.open_date),
@@ -157,9 +155,9 @@ def market_catalog_to_instruments(
             market_name=market_catalog.market_name,
             market_start_time=pd.Timestamp(market_catalog.market_start_time),
             market_type=market_catalog.description.market_type,
-            selection_id=str(runner.selection_id),
+            selection_id=runner.selection_id,
             selection_name=runner.runner_name,
-            selection_handicap=parse_handicap(runner.handicap),
+            selection_handicap=runner.handicap,
             currency=currency,
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             ts_event=time.time_ns(),
@@ -178,24 +176,24 @@ def market_definition_to_instruments(
     for runner in market_definition.runners:
         instrument = BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
-            event_type_id=str(market_definition.event_type_id.value),
+            event_type_id=market_definition.event_type_id.value,
             event_type_name=market_definition.event_type_name,
-            competition_id=market_definition.competition_id,
-            competition_name=market_definition.competition_name,
+            competition_id=market_definition.competition_id or 0,
+            competition_name=market_definition.competition_name or "",
             event_id=market_definition.event_id,
-            event_name=market_definition.event_name,
+            event_name=market_definition.event_name or "",
             event_country_code=market_definition.country_code,
             event_open_date=pd.Timestamp(market_definition.open_date),
             betting_type=market_definition.betting_type.name,
             market_id=market_definition.market_id,
-            market_name=market_definition.market_name,
+            market_name=market_definition.market_name or "",
             market_start_time=pd.Timestamp(market_definition.market_time)
             if market_definition.market_time
             else pd.Timestamp(0, tz="UTC"),
             market_type=market_definition.market_type,
-            selection_id=str(runner.id),
+            selection_id=runner.id,
             selection_name=runner.name or "",
-            selection_handicap=parse_handicap(runner.hc),
+            selection_handicap=runner.hc or null_handicap(),
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             currency=currency,
             ts_event=time.time_ns(),
@@ -207,7 +205,7 @@ def market_definition_to_instruments(
 
 
 def make_instruments(
-    market: Union[MarketCatalogue, MarketDefinition],
+    market: MarketCatalogue | MarketDefinition,
     currency: str,
 ) -> list[BettingInstrument]:
     if isinstance(market, MarketCatalogue):
@@ -241,12 +239,12 @@ def check_market_filter_keys(keys: Iterable[str]) -> None:
 
 async def load_markets(
     client: BetfairHttpClient,
-    event_type_ids: Optional[list[str]] = None,
-    event_ids: Optional[list[str]] = None,
-    market_ids: Optional[list[str]] = None,
-    event_country_codes: Optional[list[str]] = None,
-    market_market_types: Optional[list[str]] = None,
-    event_type_names: Optional[list[str]] = None,
+    event_type_ids: list[str] | None = None,
+    event_ids: list[str] | None = None,
+    market_ids: list[str] | None = None,
+    event_country_codes: list[str] | None = None,
+    market_market_types: list[str] | None = None,
+    event_type_names: list[str] | None = None,
 ) -> list[FlattenedMarket]:
     market_filter = {
         "event_type_id": event_type_ids,

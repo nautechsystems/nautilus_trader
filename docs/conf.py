@@ -80,14 +80,19 @@ html_theme_options = {
             "title": "Getting Started",
         },
         {
-            "href": "/user_guide/index",
+            "href": "/concepts/index",
             "internal": True,
-            "title": "User Guide",
+            "title": "Concepts",
         },
         {
             "href": "/api_reference/index",
             "internal": True,
-            "title": "API Reference",
+            "title": "Python API",
+        },
+        {
+            "href": "rust",
+            "internal": True,
+            "title": "Rust API",
         },
         {
             "href": "/integrations/index",

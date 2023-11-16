@@ -40,7 +40,10 @@ use crate::{
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
@@ -104,7 +107,7 @@ impl QuoteTick {
         metadata
     }
 
-    /// Returns the field map for the type, for use with arrow schemas.
+    /// Returns the field map for the type, for use with Arrow schemas.
     pub fn get_fields() -> IndexMap<String, String> {
         let mut metadata = IndexMap::new();
         metadata.insert("bid_price".to_string(), "Int64".to_string());

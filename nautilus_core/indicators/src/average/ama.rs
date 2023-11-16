@@ -48,12 +48,12 @@ pub struct AdaptiveMovingAverage {
     pub value: f64,
     /// The input count for the indicator.
     pub count: usize,
+    pub is_initialized: bool,
     _efficiency_ratio: EfficiencyRatio,
     _prior_value: Option<f64>,
     _alpha_fast: f64,
     _alpha_slow: f64,
     has_inputs: bool,
-    is_initialized: bool,
 }
 
 impl Display for AdaptiveMovingAverage {

@@ -421,6 +421,9 @@ cdef class LimitOrder(Order):
         if triggered_price:
             transformed.set_triggered_price_c(triggered_price)
 
+        # Use original order initialization timestamp
+        transformed.ts_init = order.ts_init
+
         Order._hydrate_initial_events(original=order, transformed=transformed)
 
         return transformed

@@ -13,25 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import abc
 from typing import Any, ClassVar
 
 import pandas as pd
 import pyarrow as pa
 
-from nautilus_trader.core.nautilus_pyo3.model import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3 import BarDataWrangler as RustBarDataWrangler
 
 # fmt: off
-from nautilus_trader.core.nautilus_pyo3.model import OrderBookDelta as RustOrderBookDelta
-from nautilus_trader.core.nautilus_pyo3.model import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3.model import TradeTick as RustTradeTick
-from nautilus_trader.core.nautilus_pyo3.persistence import BarDataWrangler as RustBarDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import OrderBookDeltaDataWrangler as RustOrderBookDeltaDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import QuoteTickDataWrangler as RustQuoteTickDataWrangler
-from nautilus_trader.core.nautilus_pyo3.persistence import TradeTickDataWrangler as RustTradeTickDataWrangler
-from nautilus_trader.model.data import BarType
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDeltaDataWrangler as RustOrderBookDeltaDataWrangler
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import QuoteTickDataWrangler as RustQuoteTickDataWrangler
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTickDataWrangler as RustTradeTickDataWrangler
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -100,7 +97,7 @@ class OrderBookDeltaDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[RustOrderBookDelta]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -322,7 +319,7 @@ class TradeTickDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[RustTradeTick]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -415,8 +412,13 @@ class BarDataWrangler(WranglerBase):
 
     Parameters
     ----------
-    instrument : Instrument
-        The instrument for the data wrangler.
+    bar_type : str
+        The bar type for the data wrangler. For example,
+        "GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"
+    price_precision: int
+        The price precision for the data wrangler.
+    size_precision: int
+        The size precision for the data wrangler.
 
     Warnings
     --------
@@ -427,7 +429,7 @@ class BarDataWrangler(WranglerBase):
 
     def __init__(
         self,
-        bar_type: BarType,
+        bar_type: str,
         price_precision: int,
         size_precision: int,
     ) -> None:
@@ -441,7 +443,7 @@ class BarDataWrangler(WranglerBase):
     def from_arrow(
         self,
         table: pa.Table,
-    ) -> list[RustQuoteTick]:
+    ) -> list[RustBar]:
         sink = pa.BufferOutputStream()
         writer: pa.RecordBatchStreamWriter = pa.ipc.new_stream(sink, table.schema)
         writer.write_table(table)
@@ -473,7 +475,7 @@ class BarDataWrangler(WranglerBase):
         Returns
         -------
         list[RustBar]
-            A list of PyO3 [pyclass] `TradeTick` objects.
+            A list of PyO3 [pyclass] `Bar` objects.
 
         """
         # Rename column

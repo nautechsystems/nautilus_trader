@@ -201,7 +201,7 @@ pub trait Order {
 
     fn events(&self) -> Vec<&OrderEvent>;
     fn last_event(&self) -> &OrderEvent {
-        // SAFETY: `Order` specification guarantees at least one event (`OrderInitialized`)
+        // SAFETY: Unwrap safe as `Order` specification guarantees at least one event (`OrderInitialized`)
         self.events().last().unwrap()
     }
 

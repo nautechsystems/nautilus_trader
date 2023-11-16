@@ -1,6 +1,5 @@
 # <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-trader-logo.png" width="500">
 
-[![codacy-quality](https://api.codacy.com/project/badge/Grade/a1d3ccf7bccb4483b091975681a5cb23)](https://app.codacy.com/gh/nautechsystems/nautilus_trader?utm_source=github.com&utm_medium=referral&utm_content=nautechsystems/nautilus_trader&utm_campaign=Badge_Grade_Dashboard)
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
@@ -15,10 +14,10 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.73.0+ | 3.9+   |
-| `macOS (x86_64)`   | 1.73.0+ | 3.9+   |
-| `macOS (arm64)`    | 1.73.0+ | 3.9+   |
-| `Windows (x86_64)` | 1.73.0+ | 3.9+   |
+| `Linux (x86_64)`   | 1.73.0+ | 3.10+  |
+| `macOS (x86_64)`   | 1.73.0+ | 3.10+  |
+| `macOS (arm64)`    | 1.73.0+ | 3.10+  |
+| `Windows (x86_64)` | 1.73.0+ | 3.10+  |
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
@@ -137,17 +136,18 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 ## Integrations
 
 NautilusTrader is designed in a modular way to work with 'adapters' which provide
-connectivity to data publishers and/or trading venues - converting their raw API
+connectivity to data providers and/or trading venues - converting their raw API
 into a unified interface. The following integrations are currently supported:
 
-| Name                                                      | ID        | Type                    | Status                                                  | Docs                                                              |
-| :-------------------------------------------------------- | :-------- | :---------------------- | :------------------------------------------------------ | :---------------------------------------------------------------- |
-| [Betfair](https://betfair.com)                            | `BETFAIR` | Sports Betting Exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
-| [Binance](https://binance.com)                            | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Binance US](https://binance.us)                          | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE` | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`   | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `IB`      | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
+| Name                                                      | ID          | Type                    | Status                                                  | Docs                                                              |
+| :-------------------------------------------------------- | :---------- | :---------------------- | :------------------------------------------------------ | :---------------------------------------------------------------- |
+| [Betfair](https://betfair.com)                            | `BETFAIR`   | Sports betting exchange | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/betfair.html) |
+| [Binance](https://binance.com)                            | `BINANCE`   | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Binance US](https://binance.us)                          | `BINANCE`   | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`   | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html) |
+| [Bybit](https://www.bybit.com)                            | `BYBIT`     | Crypto exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
+| [Databento](https://databento.com)                        | `DATABENTO` | Data provider           | ![status](https://img.shields.io/badge/building-orange) |                                                                   |
+| [Interactive Brokers](https://www.interactivebrokers.com) | `IB`        | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/ib.html)      |
 
 Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
 

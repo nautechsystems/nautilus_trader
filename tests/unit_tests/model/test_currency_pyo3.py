@@ -17,8 +17,8 @@ import pickle
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3.model import Currency
-from nautilus_trader.core.nautilus_pyo3.model import CurrencyType
+from nautilus_trader.core.nautilus_pyo3 import Currency
+from nautilus_trader.core.nautilus_pyo3 import CurrencyType
 
 
 AUD = Currency.from_str("AUD")
