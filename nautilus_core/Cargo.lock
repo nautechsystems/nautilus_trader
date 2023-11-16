@@ -1289,9 +1289,9 @@ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "errno"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c18ee0ed65a5f1f81cac6b1d213b69c35fa47d4252ad41f1486dbd8226fe36e"
+checksum = "f258a7194e7f7c2a7837a8913aeab7fd8c383457034fa20ce4dd3dcb813e8eb8"
 dependencies = [
  "libc",
  "windows-sys",
@@ -3831,7 +3831,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tungstenite"
 version = "0.20.1"
-source = "git+https://github.com/snapview/tungstenite-rs#272d83c4309b68838a139b6288bb94d166ffd7b1"
+source = "git+https://github.com/snapview/tungstenite-rs#a6cbed7bffd7c060e3e032405e00d97ffb7d16e3"
 dependencies = [
  "byteorder",
  "bytes",
