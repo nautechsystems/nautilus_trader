@@ -32,7 +32,7 @@ use pyo3::{
     ffi,
     prelude::*,
     types::{PyList, PyString},
-    AsPyPointer, Python,
+    Python,
 };
 
 use crate::{
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn msgbus_has_subscribers(
     pattern_ptr: *const c_char,
 ) -> u8 {
     let pattern = cstr_to_ustr(pattern_ptr);
-    bus.has_subscribers(pattern.as_str()) as u8
+    u8::from(bus.has_subscribers(pattern.as_str()))
 }
 
 #[no_mangle]
@@ -162,7 +162,7 @@ pub extern "C" fn msgbus_subscriptions(bus: &MessageBus_API) -> *mut ffi::PyObje
         let subs_info: Vec<Py<PyString>> = bus
             .subscriptions()
             .iter()
-            .map(|s| PyString::new(py, &format!("{:?}", s)).into())
+            .map(|s| PyString::new(py, &format!("{s:?}")).into())
             .collect();
         PyList::new(py, subs_info).into()
     })
@@ -178,7 +178,7 @@ pub unsafe extern "C" fn msgbus_is_registered(
     endpoint_ptr: *const c_char,
 ) -> u8 {
     let endpoint = cstr_to_string(endpoint_ptr);
-    bus.is_registered(&endpoint) as u8
+    u8::from(bus.is_registered(&endpoint))
 }
 
 /// # Safety
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn msgbus_is_subscribed(
     let topic = cstr_to_ustr(topic_ptr);
     let handler_id = cstr_to_ustr(handler_id_ptr);
     let handler = MessageHandler::new(handler_id, None);
-    bus.is_subscribed(topic.as_str(), handler) as u8
+    u8::from(bus.is_subscribed(topic.as_str(), handler))
 }
 
 /// # Safety
@@ -206,7 +206,7 @@ pub unsafe extern "C" fn msgbus_is_pending_response(
     bus: &MessageBus_API,
     request_id: &UUID4,
 ) -> u8 {
-    bus.is_pending_response(request_id) as u8
+    u8::from(bus.is_pending_response(request_id))
 }
 
 #[no_mangle]
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn msgbus_register(
     let handler_id = cstr_to_ustr(handler_id_ptr);
     let handler = MessageHandler::new(handler_id, None);
     bus.register(&endpoint, handler);
-    handler_id.as_ptr() as *const c_char
+    handler_id.as_ptr().cast::<c_char>()
 }
 
 /// # Safety
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn msgbus_subscribe(
     let handler_id = cstr_to_ustr(handler_id_ptr);
     let handler = MessageHandler::new(handler_id, None);
     bus.subscribe(&topic, handler, Some(priority));
-    handler_id.as_ptr() as *const c_char
+    handler_id.as_ptr().cast::<c_char>()
 }
 
 /// # Safety
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn msgbus_endpoint_callback(
 ) -> *const c_char {
     let endpoint = cstr_to_ustr(endpoint_ptr);
     match bus.get_endpoint(&endpoint) {
-        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        Some(handler) => handler.handler_id.as_ptr().cast::<c_char>(),
         None => std::ptr::null(),
     }
 }
@@ -319,7 +319,7 @@ pub unsafe extern "C" fn msgbus_matching_callbacks(
     let pattern = cstr_to_ustr(pattern_ptr);
     let subs: Vec<&Subscription> = bus.matching_subscriptions(&pattern);
     subs.iter()
-        .map(|s| s.handler.handler_id.as_ptr() as *const c_char)
+        .map(|s| s.handler.handler_id.as_ptr().cast::<c_char>())
         .collect::<Vec<*const c_char>>()
         .into()
 }
@@ -348,7 +348,7 @@ pub unsafe extern "C" fn msgbus_request_callback(
     let handler_id = cstr_to_ustr(handler_id_ptr);
     let handler = MessageHandler::new(handler_id, None);
     match bus.request_handler(&endpoint, request_id, handler) {
-        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        Some(handler) => handler.handler_id.as_ptr().cast::<c_char>(),
         None => std::ptr::null(),
     }
 }
@@ -362,7 +362,7 @@ pub unsafe extern "C" fn msgbus_response_callback(
     correlation_id: &UUID4,
 ) -> *const c_char {
     match bus.response_handler(correlation_id) {
-        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        Some(handler) => handler.handler_id.as_ptr().cast::<c_char>(),
         None => std::ptr::null(),
     }
 }
@@ -376,7 +376,7 @@ pub unsafe extern "C" fn msgbus_correlation_id_handler(
     correlation_id: &UUID4,
 ) -> *const c_char {
     match bus.correlation_id_handler(correlation_id) {
-        Some(handler) => handler.handler_id.as_ptr() as *const c_char,
+        Some(handler) => handler.handler_id.as_ptr().cast::<c_char>(),
         None => std::ptr::null(),
     }
 }
@@ -392,7 +392,7 @@ pub unsafe extern "C" fn msgbus_is_matching(
 ) -> u8 {
     let topic = cstr_to_ustr(topic_ptr);
     let pattern = cstr_to_ustr(pattern_ptr);
-    is_matching(&topic, &pattern) as u8
+    u8::from(is_matching(&topic, &pattern))
 }
 
 /// # Safety

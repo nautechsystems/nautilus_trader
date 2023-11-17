@@ -21,19 +21,19 @@ use super::get_datetime_tag;
 use crate::clock::Clock;
 
 #[repr(C)]
-pub struct ClientOrderIdGenerator {
+pub struct ClientOrderIdGenerator<'a> {
     trader_id: TraderId,
     strategy_id: StrategyId,
-    clock: Box<dyn Clock>,
+    clock: &'a mut Box<dyn Clock>,
     count: usize,
 }
 
-impl ClientOrderIdGenerator {
+impl<'a> ClientOrderIdGenerator<'a> {
     #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
-        clock: Box<dyn Clock>,
+        clock: &'a mut Box<dyn Clock>,
         initial_count: usize,
     ) -> Self {
         Self {
@@ -80,35 +80,38 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{clock::TestClock, generators::client_order_id::ClientOrderIdGenerator};
+    use crate::{
+        clock::{stubs::test_clock, Clock, TestClock},
+        generators::client_order_id::ClientOrderIdGenerator,
+    };
 
-    fn get_client_order_id_generator(initial_count: Option<usize>) -> ClientOrderIdGenerator {
+    fn get_client_order_id_generator(
+        clock: &mut Box<dyn Clock>,
+        initial_count: Option<usize>,
+    ) -> ClientOrderIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("EMACross-001");
-        let clock = TestClock::new();
-        ClientOrderIdGenerator::new(
-            trader_id,
-            strategy_id,
-            Box::new(clock),
-            initial_count.unwrap_or(0),
-        )
+        ClientOrderIdGenerator::new(trader_id, strategy_id, clock, initial_count.unwrap_or(0))
     }
 
     #[rstest]
-    fn test_init() {
-        let generator = get_client_order_id_generator(None);
+    fn test_init(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let generator = get_client_order_id_generator(&mut test_clock, None);
         assert_eq!(generator.count(), 0);
     }
 
     #[rstest]
-    fn test_init_with_initial_count() {
-        let generator = get_client_order_id_generator(Some(7));
+    fn test_init_with_initial_count(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let generator = get_client_order_id_generator(&mut test_clock, Some(7));
         assert_eq!(generator.count(), 7);
     }
 
     #[rstest]
-    fn test_generate_client_order_id_from_start() {
-        let mut generator = get_client_order_id_generator(None);
+    fn test_generate_client_order_id_from_start(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_client_order_id_generator(&mut test_clock, None);
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -128,8 +131,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_client_order_id_from_initial() {
-        let mut generator = get_client_order_id_generator(Some(5));
+    fn test_generate_client_order_id_from_initial(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_client_order_id_generator(&mut test_clock, Some(5));
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -149,8 +153,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset() {
-        let mut generator = get_client_order_id_generator(None);
+    fn test_reset(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_client_order_id_generator(&mut test_clock, None);
         generator.generate();
         generator.generate();
         generator.reset();

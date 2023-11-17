@@ -13,12 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::{c_char, CStr},
-    str::FromStr,
-};
+use std::{ffi::c_char, str::FromStr};
 
-use nautilus_core::ffi::string::{cstr_to_string, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_to_str, cstr_to_string, str_to_cstr};
 
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType, types::currency::Currency};
 
@@ -36,18 +33,11 @@ pub unsafe extern "C" fn currency_from_py(
     name_ptr: *const c_char,
     currency_type: CurrencyType,
 ) -> Currency {
-    assert!(!code_ptr.is_null(), "`code_ptr` was NULL");
-    assert!(!name_ptr.is_null(), "`name_ptr` was NULL");
-
     Currency::new(
-        CStr::from_ptr(code_ptr)
-            .to_str()
-            .expect("CStr::from_ptr failed for `code_ptr`"),
+        cstr_to_str(code_ptr),
         precision,
         iso4217,
-        CStr::from_ptr(name_ptr)
-            .to_str()
-            .expect("CStr::from_ptr failed for `name_ptr`"),
+        cstr_to_str(name_ptr),
         currency_type,
     )
     .unwrap()
@@ -169,7 +159,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`code_ptr` was NULL")]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_currency_from_py_null_code_ptr() {
         let name = CString::new("My Currency").unwrap();
         let _ = unsafe {
@@ -178,7 +168,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`name_ptr` was NULL")]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_currency_from_py_null_name_ptr() {
         let code = CString::new("MYC").unwrap();
         let _ = unsafe {
