@@ -21,8 +21,8 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "32.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
-sqlx = { version = "0.7.1", features = ["sqlite","postgres","any","runtime-tokio"] }
+datafusion = { version = "33.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
+sqlx = { version = "0.7.2", features = ["sqlite","postgres","any","runtime-tokio"] }
 
 [features]
 extension-module = [
