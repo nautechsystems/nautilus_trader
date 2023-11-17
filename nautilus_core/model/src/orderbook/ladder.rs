@@ -306,7 +306,7 @@ mod tests {
 
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 50.0);
-        assert_eq!(ladder.exposures(), 500.00000000000006);
+        assert_eq!(ladder.exposures(), 500.0);
     }
 
     #[rstest]
@@ -344,11 +344,8 @@ mod tests {
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
-        assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
-        assert_eq!(
-            ladder.top().unwrap().price.value.as_f64(),
-            11.100_000_000_000_001
-        )
+        assert_eq!(ladder.exposures(), 222.0);
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1)
     }
 
     #[rstest]
@@ -363,11 +360,8 @@ mod tests {
         ladder.update(order);
         assert_eq!(ladder.len(), 1);
         assert_eq!(ladder.sizes(), 20.0);
-        assert_eq!(ladder.exposures(), 222.000_000_000_000_03);
-        assert_eq!(
-            ladder.top().unwrap().price.value.as_f64(),
-            11.100_000_000_000_001
-        )
+        assert_eq!(ladder.exposures(), 222.0);
+        assert_eq!(ladder.top().unwrap().price.value.as_f64(), 11.1)
     }
 
     #[rstest]
