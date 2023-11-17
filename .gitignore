@@ -57,3 +57,4 @@ tests/test_data/catalog/
 bench_data/
 
 !tests/integration_tests/adapters/betfair/responses/*.log
+**/test_db.sqlite
