@@ -78,6 +78,9 @@ impl Indicator for HullMovingAverage {
 
     fn reset(&mut self) {
         self.value = 0.0;
+        self._ma1.reset();
+        self._ma2.reset();
+        self._ma3.reset();
         self.count = 0;
         self.has_inputs = false;
         self.is_initialized = false;
@@ -237,9 +240,16 @@ mod tests {
     fn test_reset(mut indicator_hma_10: HullMovingAverage) {
         indicator_hma_10.update_raw(1.0);
         assert_eq!(indicator_hma_10.count, 1);
+        assert_eq!(indicator_hma_10.value, 1.0);
+        assert_eq!(indicator_hma_10._ma1.value, 1.0);
+        assert_eq!(indicator_hma_10._ma2.value, 1.0);
+        assert_eq!(indicator_hma_10._ma3.value, 1.0);
         indicator_hma_10.reset();
         assert_eq!(indicator_hma_10.value, 0.0);
         assert_eq!(indicator_hma_10.count, 0);
+        assert_eq!(indicator_hma_10._ma1.value, 0.0);
+        assert_eq!(indicator_hma_10._ma2.value, 0.0);
+        assert_eq!(indicator_hma_10._ma3.value, 0.0);
         assert!(!indicator_hma_10.has_inputs);
         assert!(!indicator_hma_10.is_initialized);
     }
