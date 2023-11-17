@@ -13,6 +13,7 @@
 *.xml
 *.key
 *.key_secret
+*.sqlite
 
 .benchmarks*
 .coverage*
