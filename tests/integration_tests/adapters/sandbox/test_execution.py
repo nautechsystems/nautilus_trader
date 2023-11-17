@@ -59,7 +59,7 @@ def _make_order_book_delta(instrument, order: BookOrder):
 @pytest.mark.asyncio()
 async def test_connect(exec_client):
     exec_client.connect()
-    await asyncio.sleep(0)
+    await asyncio.sleep(0.010)
     assert isinstance(exec_client.exchange, SimulatedExchange)
     assert exec_client.is_connected
 
@@ -68,6 +68,7 @@ async def test_connect(exec_client):
 async def test_submit_order_success(exec_client, instrument, strategy, events):
     # Arrange
     exec_client.connect()
+    await asyncio.sleep(0.010)
     order = TestExecStubs.limit_order(instrument_id=instrument.id)
 
     # Act
@@ -86,6 +87,8 @@ async def test_submit_order_success(exec_client, instrument, strategy, events):
 async def test_order_filled_order_book_delta(exec_client, instrument, strategy, events):
     # Arrange
     exec_client.connect()
+    await asyncio.sleep(0.010)
+
     bid = BookOrder(OrderSide.BUY, Price.from_str("2.00"), Quantity.from_int(100), 0)
     ask = BookOrder(OrderSide.SELL, Price.from_str("3.00"), Quantity.from_int(100), 1)
     exec_client.on_data(_make_order_book_delta(instrument, bid))
@@ -94,6 +97,7 @@ async def test_order_filled_order_book_delta(exec_client, instrument, strategy, 
     # Act
     order = TestExecStubs.limit_order(instrument_id=instrument.id)
     strategy.submit_order(order=order)
+    await asyncio.sleep(0.5)
 
     # Assert
     _, submitted, _, accepted, _, filled, _ = events
@@ -107,6 +111,7 @@ async def test_order_filled_order_book_delta(exec_client, instrument, strategy, 
 async def test_modify_order_success(exec_client, strategy, instrument, events):
     # Arrange
     exec_client.connect()
+    await asyncio.sleep(0.010)
     order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
         price=Price.from_str("0.01"),
@@ -133,6 +138,8 @@ async def test_modify_order_success(exec_client, strategy, instrument, events):
 async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument):
     # Arrange
     exec_client.connect()
+    await asyncio.sleep(0.010)
+
     order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
         price=Price.from_str("0.01"),
@@ -160,6 +167,8 @@ async def test_modify_order_error_no_venue_id(exec_client, strategy, instrument)
 async def test_cancel_order_success(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
+    await asyncio.sleep(0.010)
+
     order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
         price=Price.from_str("0.01"),
@@ -181,6 +190,8 @@ async def test_cancel_order_success(exec_client, cache, strategy, instrument, ev
 async def test_cancel_order_fail(exec_client, cache, strategy, instrument, events):
     # Arrange
     exec_client.connect()
+    await asyncio.sleep(0.010)
+
     order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
         price=Price.from_str("0.01"),

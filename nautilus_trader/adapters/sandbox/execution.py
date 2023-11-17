@@ -84,7 +84,8 @@ class SandboxExecutionClient(LiveExecutionClient):
         balance: int,
         account_id: str = "001",
         oms_type: OmsType = OmsType.NETTING,
-        account_type: AccountType = AccountType.MARGIN,
+        account_type: AccountType = AccountType.CASH,
+        default_leverage=None,
     ) -> None:
         self._currency = Currency.from_str(currency)
         money = Money(value=balance, currency=self._currency)
@@ -113,7 +114,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             account_type=self._account_type,
             base_currency=self._currency,
             starting_balances=[self.balance.free],
-            default_leverage=Decimal(10),
+            default_leverage=Decimal(0),
             leverages={},
             instruments=[],
             modules=[],
@@ -139,8 +140,13 @@ class SandboxExecutionClient(LiveExecutionClient):
 
         # Load instruments into simulated exchange
         self._log.info("Waiting for data client to load instruments..")
-        await asyncio.sleep(5)
-        instruments = self.exchange.cache.instruments(self.sandbox_venue)
+        for _ in range(50):
+            instruments = self.exchange.cache.instruments(self.sandbox_venue)
+            if instruments:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            raise RuntimeError("Found no instruments in cache!")
         self._log.info(f"Loading {len(instruments)} instruments into SimulatedExchange")
         for instrument in instruments:
             self.exchange.add_instrument(instrument)
