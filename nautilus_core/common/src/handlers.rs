@@ -16,7 +16,7 @@
 use std::{fmt, rc::Rc};
 
 use nautilus_core::message::Message;
-use pyo3::{ffi, prelude::*, AsPyPointer};
+use pyo3::{ffi, prelude::*};
 use ustr::Ustr;
 
 use crate::timer::TimeEvent;

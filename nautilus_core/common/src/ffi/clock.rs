@@ -26,7 +26,6 @@ use pyo3::{
     ffi,
     prelude::*,
     types::{PyList, PyString},
-    AsPyPointer,
 };
 
 use crate::{
