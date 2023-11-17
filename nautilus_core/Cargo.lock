@@ -2986,9 +2986,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal"
-version = "1.33.0"
+version = "1.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "076ba1058b036d3ca8bcafb1d54d0b0572e99d7ecd3e4222723e18ca8e9ca9a8"
+checksum = "06676aec5ccb8fc1da723cc8c0f9a46549f21ebb8753d3915c6c41db1e7f1dc4"
 dependencies = [
  "arrayvec",
  "borsh",
@@ -3002,9 +3002,9 @@ dependencies = [
 
 [[package]]
 name = "rust_decimal_macros"
-version = "1.33.0"
+version = "1.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d046567948abd4179cb947aa10f12e53369f860d579adc4a5f2c8713f8267f"
+checksum = "2e43721f4ef7060ebc2c3ede757733209564ca8207f47674181bcd425dd76945"
 dependencies = [
  "quote",
  "rust_decimal",
@@ -3040,9 +3040,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.21.8"
+version = "0.21.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "446e14c5cda4f3f30fe71863c34ec70f5ac79d6087097ad0bb433e1be5edf04c"
+checksum = "629648aced5775d558af50b2b4c7b02983a04b312126d45eeead26e7caa498b9"
 dependencies = [
  "log",
  "ring 0.17.5",
@@ -3831,7 +3831,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tungstenite"
 version = "0.20.1"
-source = "git+https://github.com/snapview/tungstenite-rs#a6cbed7bffd7c060e3e032405e00d97ffb7d16e3"
+source = "git+https://github.com/snapview/tungstenite-rs#08cdd76dd606ba933eb6edbb342107bea403a0eb"
 dependencies = [
  "byteorder",
  "bytes",
