@@ -85,8 +85,8 @@ mod tests {
         generators::order_list_id::OrderListIdGenerator,
     };
 
-    fn get_order_list_id_generator<'a>(
-        clock: &'a mut Box<dyn Clock>,
+    fn get_order_list_id_generator(
+        clock: &mut Box<dyn Clock>,
         initial_count: Option<usize>,
     ) -> OrderListIdGenerator {
         let trader_id = TraderId::from("TRADER-001");

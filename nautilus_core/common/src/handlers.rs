@@ -42,6 +42,7 @@ pub struct MessageHandler {
 
 impl MessageHandler {
     // TODO: Validate exactly one of these is `Some`
+    #[must_use]
     pub fn new(handler_id: Ustr, callback: Option<Rc<dyn Fn(Message)>>) -> Self {
         Self {
             handler_id,
@@ -73,6 +74,7 @@ pub struct EventHandler {
 
 impl EventHandler {
     // TODO: Validate exactly one of these is `Some`
+    #[must_use]
     pub fn new(py_callback: Option<PyObject>, callback: Option<Rc<dyn Fn(TimeEvent)>>) -> Self {
         Self {
             py_callback,
@@ -80,6 +82,7 @@ impl EventHandler {
         }
     }
 
+    #[must_use]
     pub fn as_ptr(self) -> *mut ffi::PyObject {
         // SAFETY: Will panic if `unwrap` is called on None
         self.py_callback.unwrap().as_ptr()

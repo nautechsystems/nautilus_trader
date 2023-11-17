@@ -80,7 +80,7 @@ mod tests {
         generators::position_id::PositionIdGenerator,
     };
 
-    fn get_position_id_generator<'a>(clock: &'a mut Box<dyn Clock>) -> PositionIdGenerator {
+    fn get_position_id_generator(clock: &mut Box<dyn Clock>) -> PositionIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
         PositionIdGenerator::new(trader_id, clock)
     }

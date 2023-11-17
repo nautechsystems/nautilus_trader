@@ -34,14 +34,14 @@ fn str_to_database_engine(engine_str: &str) -> DatabaseEngine {
     match engine_str {
         "POSTGRES" => DatabaseEngine::POSTGRES,
         "SQLITE" => DatabaseEngine::SQLITE,
-        _ => panic!("Invalid database engine: {}", engine_str),
+        _ => panic!("Invalid database engine: {engine_str}"),
     }
 }
 
 impl Database {
     pub async fn new(engine: Option<DatabaseEngine>, conn_string: Option<&str>) -> Self {
         install_default_drivers();
-        let db_options = Database::get_db_options(engine, conn_string);
+        let db_options = Self::get_db_options(engine, conn_string);
         let db = sqlx::pool::PoolOptions::new()
             .max_connections(20)
             .connect_with(db_options)
@@ -49,11 +49,12 @@ impl Database {
         match db {
             Ok(pool) => Self { pool },
             Err(err) => {
-                panic!("Failed to connect to database: {}", err)
+                panic!("Failed to connect to database: {err}")
             }
         }
     }
 
+    #[must_use]
     pub fn get_db_options(
         engine: Option<DatabaseEngine>,
         conn_string: Option<&str>,
@@ -78,7 +79,7 @@ impl Database {
                     .expect("Invalid SQLITE connection string"),
             },
             Err(err) => {
-                panic!("Failed to connect to database: {}", err)
+                panic!("Failed to connect to database: {err}")
             }
         }
     }
@@ -160,7 +161,7 @@ mod tests {
         }
         impl FromRow<'_, sqlx::any::AnyRow> for SimpleValue {
             fn from_row(row: &sqlx::any::AnyRow) -> Result<Self, sqlx::Error> {
-                Ok(SimpleValue {
+                Ok(Self {
                     value: row.try_get(0)?,
                 })
             }
@@ -184,7 +185,7 @@ mod tests {
         }
         impl FromRow<'_, sqlx::any::AnyRow> for Item {
             fn from_row(row: &sqlx::any::AnyRow) -> Result<Self, sqlx::Error> {
-                Ok(Item {
+                Ok(Self {
                     key: row.try_get(0)?,
                     value: row.try_get(1)?,
                 })
