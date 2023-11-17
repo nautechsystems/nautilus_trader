@@ -194,6 +194,17 @@ class BarType:
     def from_str(cls, value: str) -> BarType: ...
 
 class Bar:
+    def __init__(
+        self,
+        bar_type: BarType,
+        open: Price,
+        high: Price,
+        low: Price,
+        close: Price,
+        volume: Quantity,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
     @staticmethod
     def get_fields() -> dict[str, str]: ...
 
@@ -204,10 +215,30 @@ class OrderBookDelta:
     def get_fields() -> dict[str, str]: ...
 
 class QuoteTick:
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        bid_price: Price,
+        ask_price: Price,
+        bid_size: Quantity,
+        ask_size: Quantity,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
     @staticmethod
     def get_fields() -> dict[str, str]: ...
 
 class TradeTick:
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        price: Price,
+        size: Quantity,
+        aggressor_side: AggressorSide,
+        trade_id: TradeId,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
     @staticmethod
     def get_fields() -> dict[str, str]: ...
     @classmethod
@@ -793,3 +824,32 @@ class TradeTickDataWrangler:
     @property
     def size_precision(self) -> int: ...
     def process_record_batches_bytes(self, data: bytes) -> list[TradeTick]: ...
+
+
+###################################################################################################
+# Indicators
+###################################################################################################
+class SimpleMovingAverage:
+    def __init__(
+        self,
+        period: int,
+        price_type: PriceType = None,
+    )-> None: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def period(self) -> int: ...
+    @property
+    def count(self) -> int: ...
+    @property
+    def initialized(self) -> bool: ...
+    @property
+    def has_inputs(self) -> bool: ...
+    @property
+    def value(self) -> float: ...
+
+    def update_raw(self, value: float) -> None: ...
+    def reset(self) -> None: ...
+    def handle_quote_tick(self, tick: QuoteTick) -> None: ...
+    def handle_trade_tick(self, tick: TradeTick) -> None: ...
+    def handle_bar(self, bar: Bar) -> None: ...
