@@ -145,6 +145,7 @@ mod tests {
                 py_dict
                     .get_item("type")
                     .unwrap()
+                    .unwrap()
                     .downcast::<PyString>()
                     .unwrap()
                     .to_str()
@@ -155,6 +156,7 @@ mod tests {
                 py_dict
                     .get_item("ts_event")
                     .unwrap()
+                    .unwrap()
                     .downcast::<PyInt>()
                     .unwrap()
                     .extract::<i64>()
@@ -164,6 +166,7 @@ mod tests {
             assert_eq!(
                 py_dict
                     .get_item("is_reconciliation")
+                    .unwrap()
                     .unwrap()
                     .downcast::<PyBool>()
                     .unwrap()

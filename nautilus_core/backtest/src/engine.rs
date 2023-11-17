@@ -111,7 +111,7 @@ pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumu
 mod tests {
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
-    use pyo3::{types::PyList, AsPyPointer, Py, Python};
+    use pyo3::{types::PyList, Py, Python};
     use rstest::*;
 
     use super::*;
