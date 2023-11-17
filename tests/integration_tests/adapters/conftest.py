@@ -23,6 +23,7 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.core.message import Event
+from nautilus_trader.core.rust.common import LogLevel
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.events import AccountState
@@ -54,7 +55,7 @@ def clock():
 
 @pytest.fixture()
 def logger(clock):
-    return Logger(clock)  # Bypass for normal testing
+    return Logger(clock, level_stdout=LogLevel.DEBUG)
 
 
 @pytest.fixture()

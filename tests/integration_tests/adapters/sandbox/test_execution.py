@@ -89,13 +89,28 @@ async def test_order_filled_order_book_delta(exec_client, instrument, strategy, 
     exec_client.connect()
     await asyncio.sleep(0.010)
 
-    bid = BookOrder(OrderSide.BUY, Price.from_str("2.00"), Quantity.from_int(100), 0)
-    ask = BookOrder(OrderSide.SELL, Price.from_str("3.00"), Quantity.from_int(100), 1)
+    bid = BookOrder(
+        OrderSide.BUY,
+        Price(2, instrument.price_precision),
+        Quantity(100, instrument.size_precision),
+        0,
+    )
+    ask = BookOrder(
+        OrderSide.SELL,
+        Price(3, instrument.price_precision),
+        Quantity(100, instrument.size_precision),
+        1,
+    )
     exec_client.on_data(_make_order_book_delta(instrument, bid))
     exec_client.on_data(_make_order_book_delta(instrument, ask))
 
     # Act
-    order = TestExecStubs.limit_order(instrument_id=instrument.id)
+    order = TestExecStubs.limit_order(
+        instrument_id=instrument.id,
+        price=Price(3.01, instrument.price_precision),
+        quantity=Quantity(100, instrument.size_precision),
+        order_side=OrderSide.BUY,
+    )
     strategy.submit_order(order=order)
     await asyncio.sleep(0.5)
 
