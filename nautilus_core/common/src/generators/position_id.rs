@@ -23,15 +23,15 @@ use super::get_datetime_tag;
 use crate::clock::Clock;
 
 #[repr(C)]
-pub struct PositionIdGenerator {
+pub struct PositionIdGenerator<'a> {
     trader_id: TraderId,
-    clock: Box<dyn Clock>,
+    clock: &'a mut Box<dyn Clock>,
     counts: HashMap<StrategyId, usize>,
 }
 
-impl PositionIdGenerator {
+impl<'a> PositionIdGenerator<'a> {
     #[must_use]
-    pub fn new(trader_id: TraderId, clock: Box<dyn Clock>) -> Self {
+    pub fn new(trader_id: TraderId, clock: &'a mut Box<dyn Clock>) -> Self {
         Self {
             trader_id,
             clock,
@@ -75,17 +75,20 @@ mod tests {
     };
     use rstest::rstest;
 
-    use crate::{clock::TestClock, generators::position_id::PositionIdGenerator};
+    use crate::{
+        clock::{stubs::test_clock, Clock, TestClock},
+        generators::position_id::PositionIdGenerator,
+    };
 
-    fn get_position_id_generator() -> PositionIdGenerator {
+    fn get_position_id_generator<'a>(clock: &'a mut Box<dyn Clock>) -> PositionIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
-        let clock = TestClock::new();
-        PositionIdGenerator::new(trader_id, Box::new(clock))
+        PositionIdGenerator::new(trader_id, clock)
     }
 
     #[rstest]
-    fn test_generate_position_id_one_strategy() {
-        let mut generator = get_position_id_generator();
+    fn test_generate_position_id_one_strategy(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_position_id_generator(&mut test_clock);
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-001"), false);
 
@@ -94,8 +97,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_position_id_multiple_strategies() {
-        let mut generator = get_position_id_generator();
+    fn test_generate_position_id_multiple_strategies(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_position_id_generator(&mut test_clock);
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-002"), false);
         let result3 = generator.generate(StrategyId::from("S-002"), false);
@@ -106,8 +110,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_generate_position_id_with_flipped_appends_correctly() {
-        let mut generator = get_position_id_generator();
+    fn test_generate_position_id_with_flipped_appends_correctly(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_position_id_generator(&mut test_clock);
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-002"), true);
         let result3 = generator.generate(StrategyId::from("S-001"), true);
@@ -118,16 +123,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_count_when_strategy_id_has_not_been_used() {
-        let generator = get_position_id_generator();
+    fn test_get_count_when_strategy_id_has_not_been_used(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let generator = get_position_id_generator(&mut test_clock);
         let result = generator.count(StrategyId::from("S-001"));
 
         assert_eq!(result, 0);
     }
 
     #[rstest]
-    fn set_count_with_valid_strategy() {
-        let mut generator = get_position_id_generator();
+    fn set_count_with_valid_strategy(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_position_id_generator(&mut test_clock);
         generator.set_count(7, StrategyId::from("S-001"));
         let result = generator.count(StrategyId::from("S-001"));
 
@@ -135,8 +142,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset() {
-        let mut generator = get_position_id_generator();
+    fn test_reset(test_clock: TestClock) {
+        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
+        let mut generator = get_position_id_generator(&mut test_clock);
         generator.generate(StrategyId::from("S-001"), false);
         generator.generate(StrategyId::from("S-001"), false);
         generator.reset();
