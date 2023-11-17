@@ -43,6 +43,7 @@ pub struct Subscription {
 }
 
 impl Subscription {
+    #[must_use]
     pub fn new(
         topic: Ustr,
         handler: MessageHandler,
@@ -275,7 +276,7 @@ impl MessageBus {
 
         if self.subscriptions.contains_key(&sub) {
             // TODO: Implement proper logging
-            println!("{:?} already exists.", sub);
+            println!("{sub:?} already exists.");
             return;
         }
 
@@ -394,7 +395,7 @@ impl MessageBus {
     ) {
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            println!("{}", msg);
+            println!("{msg}");
         }
 
         // TODO: WIP
@@ -406,6 +407,7 @@ impl MessageBus {
 /// '*' - match 0 or more characters after this
 /// '?' - match any character once
 /// 'a-z' - match the specific character
+#[must_use]
 pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     let mut table = [[false; 256]; 256];
     table[0][0] = true;
@@ -513,10 +515,10 @@ mod tests {
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, Some(callback));
 
-        msgbus.register(&endpoint, handler);
+        msgbus.register(endpoint, handler);
 
         assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
-        assert!(msgbus.get_endpoint(&Ustr::from(&endpoint)).is_some());
+        assert!(msgbus.get_endpoint(&Ustr::from(endpoint)).is_some());
     }
 
     #[rstest]
@@ -528,8 +530,8 @@ mod tests {
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, Some(callback));
 
-        msgbus.register(&endpoint, handler);
-        msgbus.deregister(&endpoint);
+        msgbus.register(endpoint, handler);
+        msgbus.deregister(endpoint);
 
         assert!(msgbus.endpoints().is_empty());
     }
@@ -543,9 +545,9 @@ mod tests {
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, Some(callback));
 
-        msgbus.subscribe(&topic, handler, Some(1));
+        msgbus.subscribe(topic, handler, Some(1));
 
-        assert!(msgbus.has_subscribers(&topic));
+        assert!(msgbus.has_subscribers(topic));
         assert_eq!(msgbus.topics(), vec![topic]);
     }
 
@@ -558,10 +560,10 @@ mod tests {
         let handler_id = Ustr::from("1");
         let handler = MessageHandler::new(handler_id, Some(callback));
 
-        msgbus.subscribe(&topic, handler.clone(), None);
-        msgbus.unsubscribe(&topic, handler);
+        msgbus.subscribe(topic, handler.clone(), None);
+        msgbus.unsubscribe(topic, handler);
 
-        assert!(!msgbus.has_subscribers(&topic));
+        assert!(!msgbus.has_subscribers(topic));
         assert!(msgbus.topics().is_empty());
     }
 
@@ -575,14 +577,14 @@ mod tests {
         let handler_id1 = Ustr::from("1");
         let handler1 = MessageHandler::new(handler_id1, Some(callback));
 
-        msgbus.register(&endpoint, handler1.clone());
+        msgbus.register(endpoint, handler1.clone());
 
         let callback = stub_rust_callback();
         let handler_id2 = Ustr::from("1");
         let handler2 = MessageHandler::new(handler_id2, Some(callback));
 
         assert_eq!(
-            msgbus.request_handler(&Ustr::from(endpoint), request_id.clone(), handler2),
+            msgbus.request_handler(&Ustr::from(endpoint), request_id, handler2),
             Some(&handler1)
         );
     }
@@ -594,11 +596,11 @@ mod tests {
 
         let callback = stub_rust_callback();
         let handler_id = Ustr::from("1");
-        let handler = MessageHandler::new(handler_id.clone(), Some(callback));
+        let handler = MessageHandler::new(handler_id, Some(callback));
 
         msgbus
             .correlation_index
-            .insert(correlation_id.clone(), handler.clone());
+            .insert(correlation_id, handler.clone());
 
         assert_eq!(msgbus.response_handler(&correlation_id), Some(handler));
     }
@@ -621,10 +623,10 @@ mod tests {
         let handler_id4 = Ustr::from("4");
         let handler4 = MessageHandler::new(handler_id4, Some(callback));
 
-        msgbus.subscribe(&topic, handler1, None);
-        msgbus.subscribe(&topic, handler2, None);
-        msgbus.subscribe(&topic, handler3, Some(1));
-        msgbus.subscribe(&topic, handler4, Some(2));
+        msgbus.subscribe(topic, handler1, None);
+        msgbus.subscribe(topic, handler2, None);
+        msgbus.subscribe(topic, handler3, Some(1));
+        msgbus.subscribe(topic, handler4, Some(2));
         let topic_ustr = Ustr::from(topic);
         let subs = msgbus.matching_subscriptions(&topic_ustr);
 

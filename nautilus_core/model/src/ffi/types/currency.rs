@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`code_ptr` was NULL")]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_currency_from_py_null_code_ptr() {
         let name = CString::new("My Currency").unwrap();
         let _ = unsafe {
@@ -168,7 +168,7 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic(expected = "`name_ptr` was NULL")]
+    #[should_panic(expected = "`ptr` was NULL")]
     fn test_currency_from_py_null_name_ptr() {
         let code = CString::new("MYC").unwrap();
         let _ = unsafe {

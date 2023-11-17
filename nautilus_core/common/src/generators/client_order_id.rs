@@ -85,8 +85,8 @@ mod tests {
         generators::client_order_id::ClientOrderIdGenerator,
     };
 
-    fn get_client_order_id_generator<'a>(
-        clock: &'a mut Box<dyn Clock>,
+    fn get_client_order_id_generator(
+        clock: &mut Box<dyn Clock>,
         initial_count: Option<usize>,
     ) -> ClientOrderIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
