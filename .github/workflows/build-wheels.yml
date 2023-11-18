@@ -14,7 +14,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest]
-        python-version: ["3.11"]
+        python-version: ["3.11", "3.12"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
