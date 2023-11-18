@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient

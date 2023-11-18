@@ -24,8 +24,8 @@ import pytz
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
-from nautilus_trader.common.timer import TimeEvent
-from nautilus_trader.common.timer import TimeEventHandler
+from nautilus_trader.common.clock import TimeEvent
+from nautilus_trader.common.clock import TimeEventHandler
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.test_kit.stubs.data import UNIX_EPOCH
 

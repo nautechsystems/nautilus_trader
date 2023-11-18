@@ -85,13 +85,3 @@
    :members:
    :member-order: bysource
 ```
-
-## Timer
-
-```{eval-rst}
-.. automodule:: nautilus_trader.common.timer
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
