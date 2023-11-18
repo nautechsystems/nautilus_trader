@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod database;
-pub mod schema;
-pub mod sql;
+#[derive(sqlx::FromRow)]
+pub struct GeneralItem {
+    pub key: String,
+    pub value: String,
+}
