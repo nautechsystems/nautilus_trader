@@ -17,6 +17,7 @@ indexmap = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
+rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -29,7 +30,6 @@ derive_builder = "0.12.0"
 evalexpr = "11.2.0"
 tabled = "0.12.2"
 thousands = "0.2.0"
-rstest = { workspace = true }
 
 [features]
 extension-module = [
@@ -38,7 +38,7 @@ extension-module = [
 ]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-stubs = []
+stubs = ["rstest"]
 default = ["ffi", "python"]
 
 [dev-dependencies]

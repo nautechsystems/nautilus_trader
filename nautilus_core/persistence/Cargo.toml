@@ -20,7 +20,7 @@ path = "src/bin/drop_db.rs"
 
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model" , features = ["stubs"]}
+nautilus-model = { path = "../model", features = ["stubs"]}
 anyhow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
