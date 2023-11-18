@@ -13,11 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{path::Path, str::FromStr};
 
+use anyhow::Result;
 use sqlx::{
     any::{install_default_drivers, AnyConnectOptions},
-    Error, Pool,
+    sqlite::SqliteConnectOptions,
+    Error, Pool, SqlitePool,
 };
 
 #[derive(Clone)]
@@ -32,8 +34,8 @@ pub enum DatabaseEngine {
 
 fn str_to_database_engine(engine_str: &str) -> DatabaseEngine {
     match engine_str {
-        "POSTGRES" => DatabaseEngine::POSTGRES,
-        "SQLITE" => DatabaseEngine::SQLITE,
+        "POSTGRES" | "postgres" => DatabaseEngine::POSTGRES,
+        "SQLITE" | "sqlite" => DatabaseEngine::SQLITE,
         _ => panic!("Invalid database engine: {engine_str}"),
     }
 }
@@ -106,30 +108,52 @@ impl Database {
     }
 }
 
-#[warn(dead_code)]
+pub async fn init_db_schema(db: &Database,schema_dir: &str) -> Result<()> {
+    // scan all the files in the current directory
+    let mut sql_files =
+        std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
+
+    for file in sql_files.iter_mut() {
+        let file_name = file.file_name();
+        println!("Executing SQL file: {:?}", file_name);
+        let file_path = file.path();
+        let sql_content = std::fs::read_to_string(file_path.clone())?;
+        for sql_statement in sql_content.split(';').filter(|s| !s.trim().is_empty()) {
+            db.execute(sql_statement).await.unwrap_or_else(|e| {
+                panic!(
+                    "Failed to execute SQL statement: {} with reason {}",
+                    file_path.display(),
+                    e
+                )
+            });
+        }
+    }
+    Ok(())
+}
+
+pub async fn setup_test_database() -> Database {
+    // check if test_db.sqlite exists,if not, create it
+    let db_path = std::env::var("TEST_DB_PATH").unwrap_or("test_db.sqlite".to_string());
+    let db_file_path = Path::new(db_path.as_str());
+    let exists = db_file_path.exists();
+    if !exists {
+        SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .filename(db_file_path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("Failed to create test_db.sqlite");
+    }
+    Database::new(Some(DatabaseEngine::SQLITE), Some("sqlite:test_db.sqlite")).await
+}
+
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
 
-    use sqlx::{sqlite::SqliteConnectOptions, FromRow, Row, SqlitePool};
+    use sqlx::{FromRow, Row};
 
-    use crate::db::database::{Database, DatabaseEngine};
-    async fn setup_test_database() -> Database {
-        // check if test_db.sqlite exists,if not, create it
-        let db_path = std::env::var("TEST_DB_PATH").unwrap_or("test_db.sqlite".to_string());
-        let db_file_path = Path::new(db_path.as_str());
-        let exists = db_file_path.exists();
-        if !exists {
-            SqlitePool::connect_with(
-                SqliteConnectOptions::new()
-                    .filename(db_file_path)
-                    .create_if_missing(true),
-            )
-            .await
-            .expect("Failed to create test_db.sqlite");
-        }
-        Database::new(Some(DatabaseEngine::SQLITE), Some("sqlite:test_db.sqlite")).await
-    }
+    use crate::db::database::{setup_test_database, Database};
 
     async fn init_item_table(database: &Database) {
         database
