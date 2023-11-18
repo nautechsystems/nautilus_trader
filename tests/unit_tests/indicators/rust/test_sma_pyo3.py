@@ -75,7 +75,7 @@ def test_handle_quote_tick_updates_indicator(sma: SimpleMovingAverage):
 
     # Assert
     assert indicator.has_inputs
-    assert round(indicator.value, 1) == 1987.5
+    assert indicator.value == 1987.5
 
 
 def test_handle_trade_tick_updates_indicator(sma: SimpleMovingAverage):
@@ -89,7 +89,7 @@ def test_handle_trade_tick_updates_indicator(sma: SimpleMovingAverage):
 
     # Assert
     assert indicator.has_inputs
-    assert round(indicator.value, 1) == 1987.0
+    assert indicator.value == 1987.0
 
 
 def test_handle_bar_updates_indicator(sma: SimpleMovingAverage):
@@ -154,9 +154,9 @@ def test_handle_quote_tick_updates_with_expected_value(sma: SimpleMovingAverage)
     assert sma_for_ticks1.has_inputs
     assert sma_for_ticks2.has_inputs
     assert sma_for_ticks3.has_inputs
-    assert round(sma_for_ticks1.value, 5) == 1.00003
-    assert round(sma_for_ticks2.value, 5) == 1.00002
-    assert round(sma_for_ticks3.value, 5) == 1.00001
+    assert sma_for_ticks1.value == 1.00003
+    assert sma_for_ticks2.value == 1.00002
+    assert sma_for_ticks3.value == 1.00001
 
 
 def test_handle_trade_tick_updates_with_expected_value(sma: SimpleMovingAverage):
@@ -170,7 +170,7 @@ def test_handle_trade_tick_updates_with_expected_value(sma: SimpleMovingAverage)
 
     # Assert
     assert sma_for_ticks.has_inputs
-    assert round(sma_for_ticks.value, 1) == 1987.0
+    assert sma_for_ticks.value == 1987.0
 
 
 def test_reset_successfully_returns_indicator_to_fresh_state(sma: SimpleMovingAverage):
