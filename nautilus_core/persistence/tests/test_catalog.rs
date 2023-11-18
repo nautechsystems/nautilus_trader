@@ -19,13 +19,73 @@ use nautilus_model::data::{
     trade::TradeTick, Data,
 };
 use nautilus_persistence::{
-    backend::session::{DataBackendSession, QueryResult},
+    backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
 #[ignore] // TODO: Investigate why this is suddenly failing the monotonically increasing assert?
+#[rstest]
+fn test_quote_tick_python_interface() {
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let expected_length = 9500;
+    let mut catalog = DataBackendSession::new(1000);
+    catalog
+        .add_file::<QuoteTick>("quote_005", file_path, None)
+        .unwrap();
+    let query_result: QueryResult = catalog.get_query_result();
+    let mut query_result = DataQueryResult::new(query_result, catalog.chunk_size);
+    let mut count = 0;
+    while let Some(chunk) = query_result.next() {
+        if chunk.len() == 0 {
+            break;
+        }
+        let chunk: CVec = chunk.into();
+        let ticks: &[Data] =
+            unsafe { std::slice::from_raw_parts(chunk.ptr as *const Data, chunk.len) };
+        count += ticks.len();
+        assert!(is_monotonically_increasing_by_init(&ticks));
+    }
+
+    assert_eq!(expected_length, count);
+}
+
+#[rstest]
+fn test_quote_tick_python_control_flow() {
+    pyo3::prepare_freethreaded_python();
+
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let expected_length = 9500;
+    let catalog = DataBackendSession::new(1_000_000);
+    Python::with_gil(|py| {
+        let pycatalog: Py<PyAny> = catalog.into_py(py);
+        pycatalog
+            .call_method1(
+                py,
+                "add_file",
+                (NautilusDataType::QuoteTick, "order_book_deltas", file_path),
+            )
+            .unwrap();
+        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+        let mut count = 0;
+        while let Ok(chunk) = result.call_method0(py, "__next__") {
+            let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+            let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+            if cvec.len == 0 {
+                break;
+            } else {
+                let slice: &[Data] =
+                    unsafe { std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len) };
+                count += slice.len();
+                assert!(is_monotonically_increasing_by_init(slice));
+            }
+        }
+
+        assert_eq!(expected_length, count);
+    });
+}
+
 #[rstest]
 fn test_order_book_delta_query() {
     let expected_length = 1077;

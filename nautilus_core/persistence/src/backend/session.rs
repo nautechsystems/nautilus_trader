@@ -208,6 +208,25 @@ impl DataQueryResult {
     }
 }
 
+impl Iterator for DataQueryResult {
+    type Item = Vec<Data>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.drop_chunk();
+
+        for _ in 0..self.size {
+            match self.result.next() {
+                Some(item) => self.acc.push(item),
+                None => break,
+            }
+        }
+
+        let mut acc: Vec<Data> = Vec::new();
+        std::mem::swap(&mut acc, &mut self.acc);
+        Some(acc)
+    }
+}
+
 impl Drop for DataQueryResult {
     fn drop(&mut self) {
         self.drop_chunk();
