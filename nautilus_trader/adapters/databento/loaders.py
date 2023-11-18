@@ -18,7 +18,6 @@ from pathlib import Path
 
 import databento
 import msgspec
-from databento.common.symbology import InstrumentMap
 
 from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.parsing import parse_record
@@ -170,7 +169,7 @@ class DatabentoDataLoader:
 
         """
         store = databento.from_dbn(path)
-        instrument_map = InstrumentMap()
+        instrument_map = databento.common.symbology.InstrumentMap()
         instrument_map.insert_metadata(metadata=store.metadata)
 
         output: list[Data] = []
