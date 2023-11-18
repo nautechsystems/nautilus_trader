@@ -16,7 +16,6 @@
 import databento
 import pandas as pd
 import pytz
-from databento.common.symbology import InstrumentMap
 
 from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
 from nautilus_trader.adapters.databento.enums import DatabentoInstrumentClass
@@ -298,7 +297,7 @@ def parse_ohlcv_msg(
 
 def parse_record(
     record: databento.DBNRecord,
-    instrument_map: InstrumentMap,
+    instrument_map: databento.common.symbology.InstrumentMap,
     publishers: dict[int, DatabentoPublisher],
 ) -> Data:
     if isinstance(record, databento.InstrumentDefMsg):
