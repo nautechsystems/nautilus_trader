@@ -23,6 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     let db = Database::new(None, None).await;
     let sql_schema_dir = "../schema/sql";
-    init_db_schema(&db,sql_schema_dir).await?;
+    init_db_schema(&db, sql_schema_dir).await?;
     Ok(())
 }
