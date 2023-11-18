@@ -22,7 +22,7 @@ serde_json = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 ustr = { workspace = true }
-redis = "0.23.3"
+redis = { version = "0.23.3", features = ["tokio-comp", "keep-alive", "connection-manager"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
