@@ -21,6 +21,7 @@ path = "src/bin/drop_db.rs"
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" , features = ["stubs"]}
+anyhow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -30,9 +31,8 @@ thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
 datafusion = { version = "33.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
-sqlx = { version = "0.7.2", features = ["sqlite","postgres","any","runtime-tokio"] }
-anyhow = { workspace = true }
 dotenv = "0.15.0"
+sqlx = { version = "0.7.2", features = ["sqlite","postgres","any","runtime-tokio"] }
 
 [features]
 extension-module = [
