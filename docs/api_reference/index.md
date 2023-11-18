@@ -19,7 +19,6 @@
    infrastructure.md
    live.md
    model/index.md
-   msgbus.md
    persistence.md
    portfolio.md
    risk.md

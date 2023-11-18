@@ -27,6 +27,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.data import Data
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -49,7 +50,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class SandboxExecutionClient(LiveExecutionClient):
