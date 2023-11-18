@@ -16,7 +16,7 @@
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
-    trade::TradeTick, Data, HasTsInit,
+    trade::TradeTick, Data,
 };
 use nautilus_persistence::{
     backend::session::{DataBackendSession, DataQueryResult, QueryResult},
@@ -26,27 +26,16 @@ use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
 #[rstest]
-fn test_user_data() {
-    let file_path = "../../tests/test_data/user_data.parquet";
-    let mut catalog = DataBackendSession::new(10_000);
-    catalog
-        .add_file::<QuoteTick>("quote_005", file_path, None)
-        .unwrap();
-    let query_result: QueryResult = catalog.get_query_result();
-    let ticks: Vec<Data> = query_result.collect();
-
-    assert!(is_monotonically_increasing_by_init(&ticks));
-}
-
-#[rstest]
-fn test_user_data_raw_half() {
-    let file_path = "../../tests/test_data/user_data.parquet";
-    let mut catalog = DataBackendSession::new(10_000);
+fn test_quote_tick_python_interface() {
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let expected_length = 9500;
+    let mut catalog = DataBackendSession::new(1000);
     catalog
         .add_file::<QuoteTick>("quote_005", file_path, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let mut query_result = DataQueryResult::new(query_result, catalog.chunk_size);
+    let mut count = 0;
     while let Some(chunk) = query_result.next() {
         if chunk.len() == 0 {
             break;
@@ -54,15 +43,19 @@ fn test_user_data_raw_half() {
         let chunk: CVec = chunk.into();
         let ticks: &[Data] =
             unsafe { std::slice::from_raw_parts(chunk.ptr as *const Data, chunk.len) };
+        count += ticks.len();
         assert!(is_monotonically_increasing_by_init(&ticks));
     }
+
+    assert_eq!(expected_length, count);
 }
 
 #[rstest]
-fn test_user_data_raw_full() {
+fn test_quote_tick_python_control_flow() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_data/user_data.parquet";
+    let file_path = "../../tests/test_data/quote_tick_data.parquet";
+    let expected_length = 9500;
     let catalog = DataBackendSession::new(1_000_000);
     Python::with_gil(|py| {
         let pycatalog: Py<PyAny> = catalog.into_py(py);
@@ -74,6 +67,7 @@ fn test_user_data_raw_full() {
             )
             .unwrap();
         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+        let mut count = 0;
         while let Ok(chunk) = result.call_method0(py, "__next__") {
             let capsule: &PyCapsule = chunk.downcast(py).unwrap();
             let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
@@ -82,9 +76,12 @@ fn test_user_data_raw_full() {
             } else {
                 let slice: &[Data] =
                     unsafe { std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len) };
+                count += slice.len();
                 assert!(is_monotonically_increasing_by_init(slice));
             }
         }
+
+        assert_eq!(expected_length, count);
     });
 }
 

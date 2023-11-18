@@ -14,9 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::{ffi::cvec::CVec, python::to_pyruntime_err};
-use nautilus_model::data::{
-    bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick, Data,
-};
+use nautilus_model::data::{bar::Bar, delta::OrderBookDelta, quote::QuoteTick, trade::TradeTick};
 use pyo3::{prelude::*, types::PyCapsule};
 
 use crate::backend::session::{DataBackendSession, DataQueryResult};
