@@ -28,10 +28,10 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.currency import Currency
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 CLIENTS: dict[str, BetfairHttpClient] = {}
