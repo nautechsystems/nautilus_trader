@@ -48,12 +48,12 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.enums_c cimport log_level_from_str
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport log_memory
-from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos

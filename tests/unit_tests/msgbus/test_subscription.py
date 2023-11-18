@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.msgbus.subscription import Subscription
+from nautilus_trader.msgbus.bus import Subscription
 
 
 class TestSubscription:
