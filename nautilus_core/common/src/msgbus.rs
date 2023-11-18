@@ -24,6 +24,7 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+use redis::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
@@ -131,7 +132,7 @@ impl fmt::Display for BusMessage {
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[derive(Clone)]
 pub struct MessageBus {
-    tx: Sender<BusMessage>,
+    tx: Option<Sender<BusMessage>>,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -170,13 +171,17 @@ impl MessageBus {
         name: Option<String>,
         config: Option<HashMap<String, Value>>,
     ) -> Self {
-        let (tx, rx) = channel::<BusMessage>();
         let config = config.unwrap_or_default();
         let has_backing = config.get("database").is_some();
-
-        thread::spawn(move || {
-            Self::handle_messages(trader_id.value.as_ref(), config, rx);
-        });
+        let tx = if has_backing {
+            let (tx, rx) = channel::<BusMessage>();
+            thread::spawn(move || {
+                Self::handle_messages(trader_id.value.as_ref(), config, rx);
+            });
+            Some(tx)
+        } else {
+            None
+        };
 
         Self {
             tx,
@@ -382,24 +387,58 @@ impl MessageBus {
     }
 
     pub fn publish_external(&self, topic: String, payload: Vec<u8>) {
-        let msg = BusMessage { topic, payload };
-        if let Err(SendError(e)) = self.tx.send(msg) {
-            eprintln!("Error publishing external message: {e}");
+        if let Some(tx) = &self.tx {
+            let msg = BusMessage { topic, payload };
+            if let Err(SendError(e)) = tx.send(msg) {
+                eprintln!("Error publishing external message: {e}");
+            }
+        } else {
+            eprintln!("Error publishing external message: no tx channel");
         }
     }
 
-    fn handle_messages(
-        _trader_id: &str,
-        _config: HashMap<String, Value>,
-        rx: Receiver<BusMessage>,
-    ) {
+    fn handle_messages(trader_id: &str, config: HashMap<String, Value>, rx: Receiver<BusMessage>) {
+        let redis_url = get_redis_url(config);
+        let client = redis::Client::open(redis_url).unwrap();
+        let mut conn = client.get_connection().unwrap();
+
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            println!("{msg}");
-        }
+            let result: Result<(), redis::RedisError> =
+                conn.publish(format!("{trader_id}:{}", msg.topic), msg.payload);
 
-        // TODO: WIP
+            if let Err(e) = result {
+                eprintln!("Error publishing message: {e}");
+            }
+        }
     }
+}
+
+pub fn get_redis_url(config: HashMap<String, Value>) -> String {
+    let host_default = Value::String("127.0.0.1".to_string());
+    let port_default = Value::String("6379".to_string());
+    let host = config.get("host").unwrap_or(&host_default);
+    let port = config.get("port").unwrap_or(&port_default);
+    let username = config
+        .get("username")
+        .map(|v| v.as_str().unwrap_or_default());
+    let password = config
+        .get("password")
+        .map(|v| v.as_str().unwrap_or_default());
+    let use_ssl = config.get("ssl").unwrap_or(&Value::Bool(false));
+
+    format!(
+        "redis{}://{}:{}@{}:{}",
+        if use_ssl.as_bool().unwrap_or(false) {
+            "s"
+        } else {
+            ""
+        },
+        username.unwrap_or(""),
+        password.unwrap_or(""),
+        host.as_str().unwrap(),
+        port.as_str().unwrap(),
+    )
 }
 
 /// Match a topic and a string pattern
