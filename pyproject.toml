@@ -50,7 +50,7 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.12"
+python = ">=3.10,<3.13"
 cython = "==3.0.5"  # Build dependency (pinned for stability)
 numpy = "^1.26.2"  # Build dependency
 toml = "^0.10.2"  # Build dependency
