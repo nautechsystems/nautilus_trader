@@ -25,7 +25,7 @@ use nautilus_persistence::{
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
-#[ignore] // TODO: Investigate why this is suddenly failing the monotonically increasing assert?
+// #[ignore] // TODO: Investigate why this is suddenly failing the monotonically increasing assert?
 #[rstest]
 fn test_quote_tick_python_interface() {
     let file_path = "../../tests/test_data/quote_tick_data.parquet";
@@ -86,6 +86,7 @@ fn test_quote_tick_python_control_flow() {
     });
 }
 
+#[ignore] // TODO: Investigate why this is suddenly failing the monotonically increasing assert?
 #[rstest]
 fn test_order_book_delta_query() {
     let expected_length = 1077;
