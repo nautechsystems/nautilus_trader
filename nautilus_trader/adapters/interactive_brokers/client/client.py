@@ -1260,13 +1260,54 @@ class InteractiveBrokersClient(Component, EWrapper):
         )
         return bar
 
-    @staticmethod
-    def _ib_bar_to_ts_init(bar: BarData, bar_type: BarType) -> int:
-        ts_init = (
-            pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc).value
-            + pd.Timedelta(bar_type.spec.timedelta).value
-        )
-        return ts_init
+    def _convert_ib_bar_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Convert the date from BarData to unix nanoseconds.
+
+        If the bar type's aggregation is 14 (daily), the bar date is always returned
+        in the YYYYMMDD format from IB. For all other aggregations, the bar date is
+        returned in system time.
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be converted.
+        bar_type : BarType
+            The type of the bar which includes the aggregation info.
+
+        Returns
+        -------
+        int
+
+        """
+        if bar_type.spec.aggregation == 14:
+            # Day bars are always returned with bar date in YYYYMMDD format
+            ts = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
+        else:
+            ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
+
+        return ts.value
+
+    def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Convert the date from BarData to unix nanoseconds adjusted by the timedelta of
+        the BarType, so that ts_init is set to the end of the bar period and not the
+        start.
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be converted.
+        bar_type : BarType
+            The type of the bar, which includes timedelta.
+
+        Returns
+        -------
+        int
+
+        """
+        ts = self._convert_ib_bar_to_unix_nanos(bar, bar_type)
+        return ts + pd.Timedelta(bar_type.spec.timedelta).value
 
     def _ib_bar_to_nautilus_bar(
         self,
@@ -1277,6 +1318,8 @@ class InteractiveBrokersClient(Component, EWrapper):
     ) -> Bar:
         instrument = self._cache.instrument(bar_type.instrument_id)
 
+        ts_event = self._convert_ib_bar_to_unix_nanos(bar, bar_type)
+
         bar = Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
@@ -1284,7 +1327,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             low=instrument.make_price(bar.low),
             close=instrument.make_price(bar.close),
             volume=instrument.make_qty(0 if bar.volume == -1 else bar.volume),
-            ts_event=pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc).value,
+            ts_event=ts_event,
             ts_init=ts_init,
             is_revision=is_revision,
         )
