@@ -20,7 +20,6 @@ from nautilus_trader.core.message cimport Response
 from nautilus_trader.core.rust.common cimport MessageBus_API
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.msgbus.subscription cimport Subscription
 from nautilus_trader.serialization.base cimport Serializer
 
 
@@ -66,3 +65,12 @@ cdef class MessageBus:
 
 
 cdef bint is_matching(str topic, str pattern)
+
+
+cdef class Subscription:
+    cdef readonly str topic
+    """The topic for the subscription.\n\n:returns: `str`"""
+    cdef readonly object handler
+    """The handler for the subscription.\n\n:returns: `Callable`"""
+    cdef readonly int priority
+    """The priority for the subscription.\n\n:returns: `int`"""
