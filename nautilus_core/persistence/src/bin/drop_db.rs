@@ -13,6 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod database;
-pub mod schema;
-pub mod sql;
+use dotenv::dotenv;
+use nautilus_persistence::db::database::{Database, DatabaseEngine};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // load envs if exists
+    dotenv().ok();
+
+    let db = Database::new(Some(DatabaseEngine::POSTGRES), None).await;
+
+    db.execute("DROP SCHEMA IF EXISTS nautilus CASCADE;")
+        .await
+        .map_err(|e| e.to_string())?;
+    db.execute("DROP ROLE IF EXISTS nautilus;")
+        .await
+        .map_err(|e| e.to_string())?;
+    println!("Dropped nautilus schema and role.");
+    Ok(())
+}

@@ -13,6 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod database;
-pub mod schema;
-pub mod sql;
+use anyhow::Result;
+use dotenv::dotenv;
+use nautilus_persistence::db::database::{init_db_schema, Database};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // load envs if exists
+    dotenv().ok();
+    let db = Database::new(None, None).await;
+    let sql_schema_dir = "../schema/sql";
+    init_db_schema(&db, sql_schema_dir).await?;
+    Ok(())
+}
