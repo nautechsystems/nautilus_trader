@@ -44,12 +44,31 @@ def get_bybit_http_client(
     secret: str | None = None,
     base_url: str | None = None,
     is_testnet: bool = False,
-):
+) -> BybitHttpClient:
     """
-    Cache and return a Binance HTTP client with the given key and secret.
+    Cache and return a Bybit HTTP client with the given key and secret.
 
     If a cached client with matching key and secret already exists, then that cached
     client will be returned.
+
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock for the client.
+    logger : Logger
+        The logger for the client.
+    key : str, optional
+        The API key for the client.
+    secret : str, optional
+        The API secret for the client.
+    base_url : str, optional
+        The base URL for the API endpoints.
+    is_testnet : bool, default False
+        If the client is connecting to the testnet API.
+
+    Returns
+    -------
+    BinanceHttpClient
 
     """
     global HTTP_CLIENTS
@@ -59,7 +78,10 @@ def get_bybit_http_client(
     client_key: str = "|".join((key, secret))
 
     # setup rate limit quotas
-    ratelimiter_default_quota = Quota.rate_per_second(120)
+    # current rate limit in bybit is 120 requests in any 5-second window.
+    # and that is 24 request per second.
+    # https://bybit-exchange.github.io/docs/v5/rate-limit
+    ratelimiter_default_quota = Quota.rate_per_second(24)
     ratelimiter_quotas: list[tuple[str, Quota]] = []
 
     if client_key not in HTTP_CLIENTS:
@@ -84,6 +106,32 @@ def get_bybit_instrument_provider(
     is_testnet: bool,
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
+    """
+    Cache and return a Bybit instrument provider.
+
+    If a cached provider with matching key and secret already exists, then that
+    cached provider will be returned.
+
+    Parameters
+    ----------
+    client : BybitHttpClient
+        The client for the instrument provider.
+    logger : Logger
+        The logger for the instrument provider.
+    clock : LiveClock
+        The clock for the instrument provider.
+    instrument_types : list[BybitInstrumentType]
+        List of instruments to load and sync with.
+    is_testnet : bool
+        If the provider is for the Spot testnet.
+    config : InstrumentProviderConfig
+        The configuration for the instrument provider.
+
+    Returns
+    -------
+    BybitInstrumentProvider
+
+    """
     return BybitInstrumentProvider(
         client=client,
         logger=logger,
@@ -95,6 +143,10 @@ def get_bybit_instrument_provider(
 
 
 class BybitLiveDataClientFactory(LiveDataClientFactory):
+    """
+    Provides a `Bybit` live data client factory.
+    """
+
     @staticmethod
     def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
@@ -105,6 +157,32 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         clock: LiveClock,
         logger: Logger,
     ) -> BybitDataClient:
+        """
+        Create a new Bybit data client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The client name.
+        config : BybitDataClientConfig
+            The client configuration.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+         clock : LiveClock
+            The clock for the client.
+        logger : Logger
+            The logger for the client.
+
+        Returns
+        -------
+        BybitDataClient
+
+        """
+
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             logger=logger,
@@ -142,6 +220,10 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
 
 
 class BybitLiveExecClientFactory(LiveExecClientFactory):
+    """
+    Provides a `Bybit` live execution client factory.
+    """
+
     @staticmethod
     def create(  # type: ignore
         loop: asyncio.AbstractEventLoop,
@@ -152,6 +234,31 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         clock: LiveClock,
         logger: Logger,
     ) -> BybitExecutionClient:
+        """
+        Create a new Bybit execution client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The client name.
+        config : BybitExecClientConfig
+            The client configuration.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : Logger
+            The logger for the client.
+
+        Returns
+        -------
+        BybitExecutionClient
+
+        """
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             logger=logger,
