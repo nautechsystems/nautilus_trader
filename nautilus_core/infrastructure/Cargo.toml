@@ -1,5 +1,5 @@
 [package]
-name = "nautilus-common"
+name = "nautilus-infrastructure"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,36 +7,29 @@ description.workspace = true
 documentation.workspace = true
 
 [lib]
-name = "nautilus_common"
-crate-type = ["rlib", "staticlib"]
-proc-macro = true
+name = "nautilus_infrastructure"
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
+nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
-chrono = { workspace = true }
-indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 redis = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
-ustr = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
-rstest = { workspace = true }
+rstest.workspace = true
 
 [features]
 extension-module = [
     "pyo3/extension-module",
+    "nautilus-common/extension-module",
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-ffi = ["cbindgen"]
 python = ["pyo3"]
-default = ["ffi", "python"]
-
-[build-dependencies]
-cbindgen = { workspace = true, optional = true }
+default = ["python"]

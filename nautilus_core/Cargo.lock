@@ -2217,7 +2217,24 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "redis",
  "rstest",
+ "strum",
+]
+
+[[package]]
+name = "nautilus-infrastructure"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "redis",
+ "rstest",
+ "serde",
+ "serde_json",
  "strum",
 ]
 
@@ -2302,6 +2319,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-indicators",
+ "nautilus-infrastructure",
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence",

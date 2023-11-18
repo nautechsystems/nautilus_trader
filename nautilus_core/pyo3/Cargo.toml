@@ -14,6 +14,7 @@ crate-type = ["cdylib"]
 nautilus-core = { path = "../core" }
 nautilus-common = { path = "../common" }
 nautilus-indicators = { path = "../indicators" }
+nautilus-infrastructure = { path = "../infrastructure" }
 nautilus-model = { path = "../model" }
 nautilus-persistence = { path = "../persistence" }
 nautilus-network = { path = "../network" }
@@ -28,6 +29,7 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-common/extension-module",
     "nautilus-indicators/extension-module",
+    "nautilus-infrastructure/extension-module",
     "nautilus-model/extension-module",
     "nautilus-persistence/extension-module",
 ]

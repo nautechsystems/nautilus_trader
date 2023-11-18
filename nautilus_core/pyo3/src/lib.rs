@@ -143,6 +143,13 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
+    // Infrastructure
+    let n = "infrastructure";
+    let submodule = pyo3::wrap_pymodule!(nautilus_infrastructure::python::infrastructure);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
     // Network
     let n = "network";
     let submodule = pyo3::wrap_pymodule!(nautilus_network::python::network);
