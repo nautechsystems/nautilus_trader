@@ -29,6 +29,7 @@ Alternative implementations can be written on top of the generic engine - which
 just need to override the `execute` and `process` methods.
 """
 
+import time
 from decimal import Decimal
 from typing import Optional
 
@@ -52,7 +53,6 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
-from nautilus_trader.core.rust.core cimport unix_timestamp_ms
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -573,7 +573,7 @@ cdef class ExecutionEngine(Component):
         """
         Load the cache up from the execution database.
         """
-        cdef uint64_t ts = unix_timestamp_ms()
+        cdef uint64_t ts = int(time.time() * 1000)
 
         self._cache.cache_general()
         self._cache.cache_currencies()
@@ -587,7 +587,7 @@ cdef class ExecutionEngine(Component):
         self._cache.check_integrity()
         self._set_position_id_counts()
 
-        self._log.info(f"Loaded cache in {(unix_timestamp_ms() - ts)}ms.")
+        self._log.info(f"Loaded cache in {(int(time.time() * 1000) - ts)}ms.")
 
     cpdef void execute(self, TradingCommand command):
         """

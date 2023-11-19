@@ -15,6 +15,7 @@
 
 import copy
 import pickle
+import time
 import uuid
 from collections import deque
 from decimal import Decimal
@@ -33,8 +34,6 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.core cimport unix_timestamp
-from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.data.bar cimport Bar
@@ -343,13 +342,13 @@ cdef class Cache(CacheFacade):
         self.clear_index()
 
         self._log.debug(f"Building index...")
-        cdef double ts = unix_timestamp()
+        cdef double ts = time.time()
 
         self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
-        self._log.debug(f"Index built in {unix_timestamp() - ts:.3f}s.")
+        self._log.debug(f"Index built in {time.time() - ts:.3f}s.")
 
     cpdef bint check_integrity(self):
         """
@@ -370,7 +369,7 @@ cdef class Cache(CacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef uint64_t timestamp_us = unix_timestamp_us()
+        cdef uint64_t timestamp_us = time.time_ns() // 1000
         self._log.info("Checking data integrity...")
 
         # Needed type defs
@@ -632,7 +631,7 @@ cdef class Cache(CacheFacade):
                 error_count += 1
 
         # Finally
-        cdef uint64_t total_us = round(unix_timestamp_us() - timestamp_us)
+        cdef uint64_t total_us = round((time.time_ns() // 1000) - timestamp_us)
         if error_count == 0:
             self._log.info(
                 f"Integrity check passed in {total_us}μs.",
