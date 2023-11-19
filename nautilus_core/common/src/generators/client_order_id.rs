@@ -82,7 +82,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        clock::{stubs::test_clock, Clock, TestClock},
+        clock::{stubs::test_clock, TestClock},
         generators::client_order_id::ClientOrderIdGenerator,
     };
 
@@ -97,13 +97,13 @@ mod tests {
 
     #[rstest]
     fn test_init(test_clock: TestClock) {
-        let mut generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
+        let generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
         assert_eq!(generator.count(), 0);
     }
 
     #[rstest]
     fn test_init_with_initial_count(test_clock: TestClock) {
-        let mut generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
+        let generator = get_client_order_id_generator(test_clock.get_time_clone(), None);
         assert_eq!(generator.count(), 7);
     }
 

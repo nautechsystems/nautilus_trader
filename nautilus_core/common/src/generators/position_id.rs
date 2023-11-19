@@ -77,7 +77,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        clock::{stubs::test_clock, Clock, TestClock},
+        clock::{stubs::test_clock, TestClock},
         generators::position_id::PositionIdGenerator,
     };
 
@@ -122,7 +122,7 @@ mod tests {
 
     #[rstest]
     fn test_get_count_when_strategy_id_has_not_been_used(test_clock: TestClock) {
-        let mut generator = get_position_id_generator(test_clock.get_time_clone());
+        let generator = get_position_id_generator(test_clock.get_time_clone());
         let result = generator.count(StrategyId::from("S-001"));
 
         assert_eq!(result, 0);
