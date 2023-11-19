@@ -34,7 +34,7 @@ pub struct RedisCacheDatabase {
 
 impl CacheDatabase for RedisCacheDatabase {
     fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Self {
-        let redis_url = get_redis_url(config.clone());
+        let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
         let read_conn = client.get_connection().unwrap();
 
@@ -70,7 +70,7 @@ impl CacheDatabase for RedisCacheDatabase {
         config: HashMap<String, Value>,
         rx: Receiver<DatabaseOperation>,
     ) {
-        let redis_url = get_redis_url(config);
+        let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
         let _conn = client.get_connection().unwrap();
 
@@ -84,18 +84,21 @@ impl CacheDatabase for RedisCacheDatabase {
 }
 
 // Consolidate this with the MessageBus version
-pub fn get_redis_url(config: HashMap<String, Value>) -> String {
-    let host_default = Value::String("127.0.0.1".to_string());
-    let port_default = Value::String("6379".to_string());
-    let host = config.get("host").unwrap_or(&host_default);
-    let port = config.get("port").unwrap_or(&port_default);
-    let username = config
+pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
+    let empty = Value::Object(serde_json::Map::new());
+    let database = config.get("database").unwrap_or(&empty);
+
+    let host = database
+        .get("host")
+        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
+    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let username = database
         .get("username")
         .map(|v| v.as_str().unwrap_or_default());
-    let password = config
+    let password = database
         .get("password")
         .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = config.get("ssl").unwrap_or(&Value::Bool(false));
+    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
 
     format!(
         "redis{}://{}:{}@{}:{}",
@@ -106,7 +109,7 @@ pub fn get_redis_url(config: HashMap<String, Value>) -> String {
         },
         username.unwrap_or(""),
         password.unwrap_or(""),
-        host.as_str().unwrap(),
-        port.as_str().unwrap(),
+        host.unwrap(),
+        port.unwrap(),
     )
 }

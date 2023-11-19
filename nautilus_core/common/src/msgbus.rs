@@ -172,7 +172,7 @@ impl MessageBus {
         config: Option<HashMap<String, Value>>,
     ) -> Self {
         let config = config.unwrap_or_default();
-        let has_backing = config.get("database").is_some();
+        let has_backing = config.get("database").map_or(false, |v| v != &Value::Null);
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
             thread::spawn(move || {
@@ -398,14 +398,16 @@ impl MessageBus {
     }
 
     fn handle_messages(trader_id: &str, config: HashMap<String, Value>, rx: Receiver<BusMessage>) {
-        let redis_url = get_redis_url(config);
+        let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
+        let stream = get_stream_name(&config);
         let mut conn = client.get_connection().unwrap();
 
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            let result: Result<(), redis::RedisError> =
-                conn.publish(format!("{trader_id}:{}", msg.topic), msg.payload);
+            let key = format!("{stream}{trader_id}:{}", &msg.topic);
+            let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
+            let result: Result<(), redis::RedisError> = conn.xadd(&key, "*", &items);
 
             if let Err(e) = result {
                 eprintln!("Error publishing message: {e}");
@@ -414,18 +416,21 @@ impl MessageBus {
     }
 }
 
-pub fn get_redis_url(config: HashMap<String, Value>) -> String {
-    let host_default = Value::String("127.0.0.1".to_string());
-    let port_default = Value::String("6379".to_string());
-    let host = config.get("host").unwrap_or(&host_default);
-    let port = config.get("port").unwrap_or(&port_default);
-    let username = config
+pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
+    let empty = Value::Object(serde_json::Map::new());
+    let database = config.get("database").unwrap_or(&empty);
+
+    let host = database
+        .get("host")
+        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
+    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let username = database
         .get("username")
         .map(|v| v.as_str().unwrap_or_default());
-    let password = config
+    let password = database
         .get("password")
         .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = config.get("ssl").unwrap_or(&Value::Bool(false));
+    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
 
     format!(
         "redis{}://{}:{}@{}:{}",
@@ -436,9 +441,22 @@ pub fn get_redis_url(config: HashMap<String, Value>) -> String {
         },
         username.unwrap_or(""),
         password.unwrap_or(""),
-        host.as_str().unwrap(),
-        port.as_str().unwrap(),
+        host.unwrap(),
+        port.unwrap(),
     )
+}
+
+pub fn get_stream_name(config: &HashMap<String, Value>) -> String {
+    match config.get("stream") {
+        Some(Value::String(s)) => {
+            if !s.is_empty() {
+                format!("{}:", s.trim_matches('"'))
+            } else {
+                s.to_string()
+            }
+        }
+        _ => "".to_string(),
+    }
 }
 
 /// Match a topic and a string pattern
