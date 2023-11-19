@@ -17,7 +17,6 @@
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.database import CacheDatabase
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -26,6 +25,7 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import SyntheticInstrument
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import Strategy

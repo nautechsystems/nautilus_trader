@@ -26,12 +26,12 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 

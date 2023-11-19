@@ -30,9 +30,9 @@ from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.objects import Currency
 
 
 class BetfairParser:

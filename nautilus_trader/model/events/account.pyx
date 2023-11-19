@@ -20,12 +20,12 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport account_type_from_str
 from nautilus_trader.model.enums_c cimport account_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport MarginBalance
 
 

@@ -305,7 +305,7 @@ import decimal
 
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.identifiers import InstrumentId
 

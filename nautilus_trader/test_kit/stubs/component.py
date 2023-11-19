@@ -27,12 +27,12 @@ from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.portfolio.portfolio import Portfolio

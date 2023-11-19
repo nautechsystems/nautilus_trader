@@ -19,10 +19,10 @@ from itertools import permutations
 import pandas as pd
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.enums_c cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.objects cimport Currency
 
 
 cdef class ExchangeRateCalculator:
