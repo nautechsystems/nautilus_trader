@@ -103,7 +103,7 @@ mod tests {
 
     #[rstest]
     fn test_init_with_initial_count(test_clock: TestClock) {
-        let generator = get_order_list_id_generator(test_clock.get_time_clone(), None);
+        let generator = get_order_list_id_generator(test_clock.get_time_clone(), Some(7));
         assert_eq!(generator.count(), 7);
     }
 
