@@ -22,6 +22,7 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.indicators.average.ema import ExponentialMovingAverage
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
@@ -35,7 +36,6 @@ from nautilus_trader.model.events import PositionClosed
 from nautilus_trader.model.events import PositionOpened
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.trading.strategy import Strategy

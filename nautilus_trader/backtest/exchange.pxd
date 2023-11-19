@@ -26,6 +26,7 @@ from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.execution.messages cimport TradingCommand
+from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
@@ -42,7 +43,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.orderbook.book cimport OrderBook
 
 
 cdef class SimulatedExchange:

@@ -36,6 +36,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.rust.model import OrderSide
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import InstrumentClose
@@ -54,7 +55,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
