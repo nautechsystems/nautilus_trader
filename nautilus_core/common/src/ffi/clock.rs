@@ -88,28 +88,28 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_set_time(clock: &mut TestClock_API, to_time_ns: u64) {
-    clock.set_time(to_time_ns);
+pub extern "C" fn test_clock_set_time(clock: &TestClock_API, to_time_ns: u64) {
+    clock.time_ns.set_time(to_time_ns);
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp(clock: &mut TestClock_API) -> f64 {
-    clock.timestamp()
+pub extern "C" fn test_clock_timestamp(clock: &TestClock_API) -> f64 {
+    clock.time_ns.get_time_sec()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_ms(clock: &mut TestClock_API) -> u64 {
-    clock.timestamp_ms()
+pub extern "C" fn test_clock_timestamp_ms(clock: &TestClock_API) -> u64 {
+    clock.time_ns.get_time_ms()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_us(clock: &mut TestClock_API) -> u64 {
-    clock.timestamp_us()
+pub extern "C" fn test_clock_timestamp_us(clock: &TestClock_API) -> u64 {
+    clock.time_ns.get_time_us()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_ns(clock: &mut TestClock_API) -> u64 {
-    clock.timestamp_ns()
+pub extern "C" fn test_clock_timestamp_ns(clock: &TestClock_API) -> u64 {
+    clock.time_ns.get_time_ns()
 }
 
 #[no_mangle]

@@ -337,15 +337,15 @@ void test_clock_drop(struct TestClock_API clock);
  */
 void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
 
-void test_clock_set_time(struct TestClock_API *clock, uint64_t to_time_ns);
+void test_clock_set_time(const struct TestClock_API *clock, uint64_t to_time_ns);
 
-double test_clock_timestamp(struct TestClock_API *clock);
+double test_clock_timestamp(const struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_ms(struct TestClock_API *clock);
+uint64_t test_clock_timestamp_ms(const struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_us(struct TestClock_API *clock);
+uint64_t test_clock_timestamp_us(const struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_ns(struct TestClock_API *clock);
+uint64_t test_clock_timestamp_ns(const struct TestClock_API *clock);
 
 PyObject *test_clock_timer_names(const struct TestClock_API *clock);
 
