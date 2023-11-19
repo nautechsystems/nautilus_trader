@@ -54,8 +54,8 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap

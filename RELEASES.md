@@ -11,8 +11,10 @@ Released on TBD (UTC).
 - Added generic SQL database support with `sqlx` in Rust, thanks @filipmacek
 
 ### Breaking Changes
-- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (not handles both JSON and MsgPack)
+- Consolidated all `data` submodules into one `data` module (reduce binary wheel size)
+- Moved `Currency` from `model.currency` to `model.objects` (consolidating modules to reduce binary wheel size)
 - Moved `MsgSpecSerializer` module from `serialization.msgpack.serializer` to `serialization.serializer`
+- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack)
 
 ### Fixes
 - Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek

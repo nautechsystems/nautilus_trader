@@ -81,11 +81,11 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.status import InstrumentClose
-from nautilus_trader.model.data.status import InstrumentStatus
-from nautilus_trader.model.data.status import VenueStatus
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import VenueStatus
+from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orderbook import OrderBook
 

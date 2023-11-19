@@ -46,7 +46,7 @@ def test_book_order_from_raw() -> None:
 
 def test_delta_fully_qualified_name() -> None:
     # Arrange, Act, Assert
-    assert OrderBookDelta.fully_qualified_name() == "nautilus_trader.model.data.book:OrderBookDelta"
+    assert OrderBookDelta.fully_qualified_name() == "nautilus_trader.model.data:OrderBookDelta"
 
 
 def test_delta_from_raw() -> None:
@@ -257,9 +257,7 @@ def test_delta_from_dict_returns_expected_clear() -> None:
 
 def test_deltas_fully_qualified_name() -> None:
     # Arrange, Act, Assert
-    assert (
-        OrderBookDeltas.fully_qualified_name() == "nautilus_trader.model.data.book:OrderBookDeltas"
-    )
+    assert OrderBookDeltas.fully_qualified_name() == "nautilus_trader.model.data:OrderBookDeltas"
 
 
 def test_deltas_hash_str_and_repr() -> None:

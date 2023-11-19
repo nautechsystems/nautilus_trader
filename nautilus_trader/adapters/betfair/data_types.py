@@ -20,9 +20,9 @@ import pyarrow as pa
 # fmt: off
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
-from nautilus_trader.model.data.book import BookOrder
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import Ticker
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import Price

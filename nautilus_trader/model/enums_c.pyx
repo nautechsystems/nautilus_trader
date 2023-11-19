@@ -90,7 +90,7 @@ from nautilus_trader.core.rust.model cimport trigger_type_from_cstr
 from nautilus_trader.core.rust.model cimport trigger_type_to_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
-from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.data cimport BarAggregation
 
 
 cpdef AccountType account_type_from_str(str value):

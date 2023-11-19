@@ -20,3 +20,16 @@ state transitions of trading in a generic way. Many system implementations could
 built around this domain model.
 
 """
+
+from nautilus_trader.core.nautilus_pyo3 import Bar as RustBar
+from nautilus_trader.core.nautilus_pyo3 import OrderBookDelta as RustOrderBookDelta
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+
+
+NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
+    RustOrderBookDelta,
+    RustQuoteTick,
+    RustTradeTick,
+    RustBar,
+)

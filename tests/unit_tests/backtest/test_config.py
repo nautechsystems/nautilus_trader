@@ -143,7 +143,7 @@ class TestBacktestConfig:
     def test_resolve_cls(self):
         config = BacktestDataConfig(
             catalog_path=self.catalog.path,
-            data_cls="nautilus_trader.model.data.tick:QuoteTick",
+            data_cls="nautilus_trader.model.data:QuoteTick",
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             catalog_fs_storage_options={},
             instrument_id="AUD/USD.IDEALPRO",
@@ -197,7 +197,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1030  # UNIX
+        assert result == 1022  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -218,7 +218,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 770  # UNIX
+        assert len(raw) == 765  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -239,7 +239,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1842
+        assert result == 1822
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -247,7 +247,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
         print("token_value:", value.decode())
-        assert token == "1e0c0ddaf6d9a53a1885b1a78102dfcb62d0418374472b091a36899fc25c9004"  # UNIX
+        assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"  # UNIX
 
     @pytest.mark.skip(reason="fix after merge")
     @pytest.mark.parametrize(
