@@ -12,6 +12,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Consolidated all `data` submodules into one `data` module (reduce binary wheel size)
+- Moved `OrderBook` from `model.orderbook.book` to `model.book` (subpackage only had this single module)
 - Moved `Currency` from `model.currency` to `model.objects` (consolidating modules to reduce binary wheel size)
 - Moved `MsgSpecSerializer` module from `serialization.msgpack.serializer` to `serialization.serializer`
 - Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack)
