@@ -72,11 +72,11 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.status import InstrumentClose
-from nautilus_trader.model.data.status import InstrumentStatus
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide

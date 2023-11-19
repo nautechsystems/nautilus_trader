@@ -419,7 +419,7 @@ class TestBarType:
 class TestBar:
     def test_fully_qualified_name(self):
         # Arrange, Act, Assert
-        assert Bar.fully_qualified_name() == "nautilus_trader.model.data.bar:Bar"
+        assert Bar.fully_qualified_name() == "nautilus_trader.model.data:Bar"
 
     def test_validation_when_high_below_open_raises_value_error(self):
         # Arrange, Act, Assert

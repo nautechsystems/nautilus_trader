@@ -20,7 +20,7 @@ import pandas as pd
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
-from nautilus_trader.model.data.base import capsule_to_list
+from nautilus_trader.model.data import capsule_to_list
 
 
 def test_backend_session_order_book() -> None:

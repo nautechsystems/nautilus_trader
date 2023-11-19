@@ -37,7 +37,7 @@ from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
-from nautilus_trader.model.data.bar_aggregation cimport BarAggregation
+from nautilus_trader.model.data cimport BarAggregation
 
 
 cpdef AccountType account_type_from_str(str value)
