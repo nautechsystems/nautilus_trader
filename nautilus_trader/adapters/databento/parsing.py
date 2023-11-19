@@ -23,7 +23,6 @@ from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
@@ -46,6 +45,7 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import FIXED_SCALAR
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 

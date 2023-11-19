@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import Currency
 
 
 class AccountError(Exception):

@@ -24,8 +24,8 @@ from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.analysis.statistic import PortfolioStatistic
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import unix_nanos_to_dt
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.position import Position
 
