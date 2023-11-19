@@ -20,10 +20,10 @@ use chrono::{
     SecondsFormat,
 };
 
-const MILLISECONDS_IN_SECOND: u64 = 1_000;
-const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
-const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
-const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
+pub const MILLISECONDS_IN_SECOND: u64 = 1_000;
+pub const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
+pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
+pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
 /// Converts seconds to nanoseconds (ns).
 #[inline]
