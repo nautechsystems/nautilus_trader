@@ -15,6 +15,9 @@
 
 import msgspec
 
+from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
+from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
+
 from cpython.datetime cimport timedelta
 from cpython.mem cimport PyMem_Free
 from cpython.mem cimport PyMem_Malloc
@@ -79,10 +82,6 @@ from nautilus_trader.core.rust.model cimport venue_new
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
-
-from nautilus_trader.core.nautilus_pyo3 import QuoteTick as RustQuoteTick
-from nautilus_trader.core.nautilus_pyo3 import TradeTick as RustTradeTick
-
 from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport AggressorSide
