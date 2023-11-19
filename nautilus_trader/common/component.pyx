@@ -27,6 +27,7 @@ from nautilus_trader.common.enums_c cimport ComponentTrigger
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.messages cimport ComponentStateChanged
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
@@ -34,7 +35,6 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef dict _COMPONENT_STATE_TABLE = {

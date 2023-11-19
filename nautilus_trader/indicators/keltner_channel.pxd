@@ -16,7 +16,7 @@
 from nautilus_trader.indicators.atr cimport AverageTrueRange
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data cimport Bar
 
 
 cdef class KeltnerChannel(Indicator):

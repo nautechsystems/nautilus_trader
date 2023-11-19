@@ -36,11 +36,10 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport unix_timestamp
 from nautilus_trader.core.rust.core cimport unix_timestamp_us
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
@@ -62,6 +61,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity

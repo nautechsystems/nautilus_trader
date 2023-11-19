@@ -132,3 +132,12 @@ pytest-coverage:
 .PHONY: test-examples
 test-examples:
 	bash scripts/test-examples.sh
+
+.PHONY: init-db
+init-db:
+	(cd nautilus_core && cargo run --bin init-db)
+
+.PHONY: drop-db
+drop-db:
+	(cd nautilus_core && cargo run --bin drop-db)
+

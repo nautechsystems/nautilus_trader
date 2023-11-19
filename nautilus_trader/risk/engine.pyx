@@ -32,6 +32,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.messages cimport TradingStateChanged
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
@@ -43,8 +44,8 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport AssetType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport OrderStatus
@@ -66,7 +67,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 

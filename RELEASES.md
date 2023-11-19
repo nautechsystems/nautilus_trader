@@ -8,13 +8,19 @@ Released on TBD (UTC).
 - Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
 - Added `WilderMovingAverage` in Rust, thanks @ayush-sb
 - Added all common identifier generators in Rust, thanks @filipmacek
+- Added generic SQL database support with `sqlx` in Rust, thanks @filipmacek
 
 ### Breaking Changes
-- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (not handles both JSON and MsgPack)
+- Consolidated all `data` submodules into one `data` module (reduce binary wheel size)
+- Moved `OrderBook` from `model.orderbook.book` to `model.book` (subpackage only had this single module)
+- Moved `Currency` from `model.currency` to `model.objects` (consolidating modules to reduce binary wheel size)
 - Moved `MsgSpecSerializer` module from `serialization.msgpack.serializer` to `serialization.serializer`
+- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack)
 
 ### Fixes
 - Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek
+- Fixed conversion of fixed precision integers to floats (should be dividing to avoid rounding errors), thanks for reporting @filipmacek
+- Fixed daily timestamp parsing for Interactive Brokers, thanks @benjaminsingleton
 
 ---
 

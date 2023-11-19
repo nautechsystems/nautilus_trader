@@ -17,12 +17,12 @@ nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+redis = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 ustr = { workspace = true }
-redis = "0.23.3"
 
 [dev-dependencies]
 tempfile = { workspace = true }

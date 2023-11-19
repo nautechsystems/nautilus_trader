@@ -20,11 +20,11 @@ from typing import Final
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.message import Command
 from nautilus_trader.core.message import Event
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.risk.engine import RiskEngine
 

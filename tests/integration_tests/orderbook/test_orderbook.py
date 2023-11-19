@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 import pytest
 
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.objects import Price
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from tests import TEST_DATA_DIR

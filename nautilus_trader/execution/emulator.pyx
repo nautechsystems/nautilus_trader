@@ -29,6 +29,7 @@ from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.uuid cimport UUID4
@@ -40,8 +41,8 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport OrderStatus
@@ -71,7 +72,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef set SUPPORTED_TRIGGERS = {TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE}

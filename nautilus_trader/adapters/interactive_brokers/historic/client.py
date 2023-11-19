@@ -19,18 +19,18 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data.bar import Bar
-from nautilus_trader.model.data.bar import BarSpecification
-from nautilus_trader.model.data.bar import BarType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.base import Instrument
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class HistoricInteractiveBrokersClient:

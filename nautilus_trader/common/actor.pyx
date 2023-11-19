@@ -49,6 +49,7 @@ from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport SENT
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.message cimport Event
@@ -58,17 +59,17 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.status cimport InstrumentClose
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport Ticker
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -76,7 +77,6 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class Actor(Component):

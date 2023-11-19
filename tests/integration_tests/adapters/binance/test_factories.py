@@ -32,7 +32,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.test_kit.mocks.cache_database import MockCacheDatabase
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 

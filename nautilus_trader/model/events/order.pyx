@@ -36,7 +36,6 @@ from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.enums_c cimport ContingencyType
 from nautilus_trader.model.enums_c cimport LiquiditySide
 from nautilus_trader.model.enums_c cimport OrderSide
@@ -61,6 +60,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.identifiers cimport TraderId
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 

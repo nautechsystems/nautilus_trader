@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import Ticker
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -23,7 +23,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 class TestTicker:
     def test_fully_qualified_name(self):
         # Arrange, Act, Assert
-        assert Ticker.fully_qualified_name() == "nautilus_trader.model.data.ticker:Ticker"
+        assert Ticker.fully_qualified_name() == "nautilus_trader.model.data:Ticker"
 
     def test_ticker_hash_str_and_repr(self):
         # Arrange

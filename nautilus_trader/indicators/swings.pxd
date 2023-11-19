@@ -16,7 +16,7 @@
 from cpython.datetime cimport datetime
 
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.data.bar cimport Bar
+from nautilus_trader.model.data cimport Bar
 
 
 cdef class Swings(Indicator):

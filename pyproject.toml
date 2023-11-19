@@ -50,7 +50,7 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.12"
+python = ">=3.10,<3.13"
 cython = "==3.0.5"  # Build dependency (pinned for stability)
 numpy = "^1.26.2"  # Build dependency
 toml = "^0.10.2"  # Build dependency
@@ -88,7 +88,7 @@ black = "^23.11.0"
 docformatter = "^1.7.5"
 mypy = "^1.7.0"
 pre-commit = "^3.5.0"
-ruff = "^0.1.5"
+ruff = "^0.1.6"
 types-pytz = "^2023.3"
 types-redis = "^4.6"
 types-requests = "^2.31"

@@ -21,10 +21,10 @@ from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumPar
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Quantity

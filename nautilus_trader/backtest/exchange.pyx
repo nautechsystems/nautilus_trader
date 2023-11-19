@@ -39,10 +39,11 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OmsType
@@ -56,7 +57,6 @@ from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 
 

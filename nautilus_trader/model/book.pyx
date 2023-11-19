@@ -74,8 +74,8 @@ from nautilus_trader.core.rust.model cimport vec_fills_drop
 from nautilus_trader.core.rust.model cimport vec_levels_drop
 from nautilus_trader.core.rust.model cimport vec_orders_drop
 from nautilus_trader.core.string cimport cstr_to_pystr
-from nautilus_trader.model.data.book cimport BookOrder
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport BookAction
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport OrderSide

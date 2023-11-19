@@ -45,12 +45,12 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 
 #[must_use]
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
-    (value as f64) * 0.000_000_001
+    (value as f64) / FIXED_SCALAR
 }
 
 #[must_use]
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
-    (value as f64) * 0.000_000_001
+    (value as f64) / FIXED_SCALAR
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -165,7 +165,7 @@ mod tests {
     fn test_fixed_i64_to_f64(
         #[values(1, -1, 2, -2, 10, -10, 100, -100, 1_000, -1_000)] value: i64,
     ) {
-        assert_eq!(fixed_i64_to_f64(value), value as f64 * 0.000_000_001);
+        assert_eq!(fixed_i64_to_f64(value), value as f64 / FIXED_SCALAR);
     }
 
     #[rstest]
@@ -194,6 +194,6 @@ mod tests {
         value: u64,
     ) {
         let result = fixed_u64_to_f64(value);
-        assert_eq!(result, (value as f64) * 0.000_000_001);
+        assert_eq!(result, (value as f64) / FIXED_SCALAR);
     }
 }

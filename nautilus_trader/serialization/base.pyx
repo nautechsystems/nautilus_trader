@@ -26,13 +26,13 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.status cimport InstrumentClose
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport Ticker
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -192,7 +192,24 @@ OBJECTS_FOR_EXTERNAL_PUBLISH = (
     PositionOpened,
     PositionChanged,
     PositionClosed,
+    Instrument,
     SyntheticInstrument,
+    BettingInstrument,
+    Equity,
+    FuturesContract,
+    OptionsContract,
+    CurrencyPair,
+    CryptoPerpetual,
+    CryptoFuture,
+    TradeTick,
+    Ticker,
+    QuoteTick,
+    Bar,
+    InstrumentStatus,
+    VenueStatus,
+    InstrumentClose,
+    BinanceBar,
+    BinanceTicker,
 )
 
 

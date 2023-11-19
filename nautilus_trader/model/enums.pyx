@@ -39,7 +39,7 @@ from nautilus_trader.core.rust.model import TimeInForce
 from nautilus_trader.core.rust.model import TradingState
 from nautilus_trader.core.rust.model import TrailingOffsetType
 from nautilus_trader.core.rust.model import TriggerType
-from nautilus_trader.model.data.bar_aggregation import BarAggregation
+from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.enums_c import account_type_from_str
 from nautilus_trader.model.enums_c import account_type_to_str
 from nautilus_trader.model.enums_c import aggregation_source_from_str

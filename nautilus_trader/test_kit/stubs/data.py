@@ -23,6 +23,7 @@ import pytz
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import NULL_ORDER
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
@@ -51,7 +52,6 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.persistence.wranglers import BarDataWrangler
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider

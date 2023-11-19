@@ -44,7 +44,7 @@ pub mod trader_id;
 pub mod venue;
 pub mod venue_order_id;
 
-#[cfg(test)]
+#[cfg(feature = "stubs")]
 pub mod stubs;
 
 impl_from_str_for_identifier!(account_id::AccountId);

@@ -601,3 +601,76 @@ cdef inline bint is_matching(str topic, str pattern):
 # Python wrapper for test access
 def is_matching_py(str topic, str pattern) -> bool:
     return is_matching(topic, pattern)
+
+
+cdef class Subscription:
+    """
+    Represents a subscription to a particular topic.
+
+    This is an internal class intended to be used by the message bus to organize
+    topics and their subscribers.
+
+    Parameters
+    ----------
+    topic : str
+        The topic for the subscription. May include wildcard characters `*` and `?`.
+    handler : Callable[[Message], None]
+        The handler for the subscription.
+    priority : int
+        The priority for the subscription.
+
+    Raises
+    ------
+    ValueError
+        If `topic` is not a valid string.
+    ValueError
+        If `handler` is not of type `Callable`.
+    ValueError
+        If `priority` is negative (< 0).
+
+    Notes
+    -----
+    The subscription equality is determined by the topic and handler,
+    priority is not considered (and could change).
+    """
+
+    def __init__(
+        self,
+        str topic,
+        handler not None: Callable[[Any], None],
+        int priority=0,
+    ):
+        Condition.valid_string(topic, "topic")
+        Condition.callable(handler, "handler")
+        Condition.not_negative_int(priority, "priority")
+
+        self.topic = topic
+        self.handler = handler
+        self.priority = priority
+
+    def __eq__(self, Subscription other) -> bool:
+        return self.topic == other.topic and self.handler == other.handler
+
+    def __lt__(self, Subscription other) -> bool:
+        return self.priority < other.priority
+
+    def __le__(self, Subscription other) -> bool:
+        return self.priority <= other.priority
+
+    def __gt__(self, Subscription other) -> bool:
+        return self.priority > other.priority
+
+    def __ge__(self, Subscription other) -> bool:
+        return self.priority >= other.priority
+
+    def __hash__(self) -> int:
+        # Convert handler to string to avoid builtin_function_or_method hashing issues
+        return hash((self.topic, str(self.handler)))
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}("
+            f"topic={self.topic}, "
+            f"handler={self.handler}, "
+            f"priority={self.priority})"
+        )

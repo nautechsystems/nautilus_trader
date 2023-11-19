@@ -20,7 +20,7 @@ import numpy as np
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.stats cimport fast_mean_iterated
 from nautilus_trader.indicators.base.indicator cimport Indicator
-from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Price
 

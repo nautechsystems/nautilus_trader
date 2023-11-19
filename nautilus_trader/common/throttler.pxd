@@ -20,8 +20,8 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.common.timer cimport TimeEvent
 
 
 cdef class Throttler:

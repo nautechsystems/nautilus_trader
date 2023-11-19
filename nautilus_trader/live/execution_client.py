@@ -32,6 +32,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
@@ -47,7 +48,6 @@ from nautilus_trader.execution.reports import ExecutionMassStatus
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
@@ -55,7 +55,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.model.objects import Currency
 
 
 class LiveExecutionClient(ExecutionClient):

@@ -20,9 +20,9 @@ import numpy as np
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.stats cimport fast_mean
 from nautilus_trader.indicators.average.moving_average cimport MovingAverage
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.objects cimport Price
 

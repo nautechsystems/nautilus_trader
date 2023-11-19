@@ -16,17 +16,18 @@
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.timer cimport TimeEvent
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.enums_c cimport PositionSide
@@ -63,7 +64,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.bus cimport MessageBus
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 

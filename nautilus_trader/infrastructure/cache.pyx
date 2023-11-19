@@ -31,8 +31,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data.tick cimport QuoteTick
+from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.enums_c cimport OrderType
 from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.enums_c cimport currency_type_from_str
@@ -53,6 +52,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order

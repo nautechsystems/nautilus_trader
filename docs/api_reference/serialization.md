@@ -5,15 +5,7 @@
 ```
 
 ```{eval-rst}
-.. automodule:: nautilus_trader.serialization.msgpack.serializer
-   :show-inheritance:
-   :inherited-members:
-   :members:
-   :member-order: bysource
-```
-
-```{eval-rst}
-.. automodule:: nautilus_trader.serialization.arrow.serializer
+.. automodule:: nautilus_trader.serialization.serializer
    :show-inheritance:
    :inherited-members:
    :members:

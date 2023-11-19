@@ -24,6 +24,7 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+use redis::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
@@ -131,7 +132,7 @@ impl fmt::Display for BusMessage {
 /// For example, `c??p` would match both of the above examples and `coop`.
 #[derive(Clone)]
 pub struct MessageBus {
-    tx: Sender<BusMessage>,
+    tx: Option<Sender<BusMessage>>,
     /// mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -170,13 +171,17 @@ impl MessageBus {
         name: Option<String>,
         config: Option<HashMap<String, Value>>,
     ) -> Self {
-        let (tx, rx) = channel::<BusMessage>();
         let config = config.unwrap_or_default();
-        let has_backing = config.get("database").is_some();
-
-        thread::spawn(move || {
-            Self::handle_messages(trader_id.value.as_ref(), config, rx);
-        });
+        let has_backing = config.get("database").map_or(false, |v| v != &Value::Null);
+        let tx = if has_backing {
+            let (tx, rx) = channel::<BusMessage>();
+            thread::spawn(move || {
+                Self::handle_messages(trader_id.value.as_ref(), config, rx);
+            });
+            Some(tx)
+        } else {
+            None
+        };
 
         Self {
             tx,
@@ -382,23 +387,75 @@ impl MessageBus {
     }
 
     pub fn publish_external(&self, topic: String, payload: Vec<u8>) {
-        let msg = BusMessage { topic, payload };
-        if let Err(SendError(e)) = self.tx.send(msg) {
-            eprintln!("Error publishing external message: {e}");
+        if let Some(tx) = &self.tx {
+            let msg = BusMessage { topic, payload };
+            if let Err(SendError(e)) = tx.send(msg) {
+                eprintln!("Error publishing external message: {e}");
+            }
+        } else {
+            eprintln!("Error publishing external message: no tx channel");
         }
     }
 
-    fn handle_messages(
-        _trader_id: &str,
-        _config: HashMap<String, Value>,
-        rx: Receiver<BusMessage>,
-    ) {
+    fn handle_messages(trader_id: &str, config: HashMap<String, Value>, rx: Receiver<BusMessage>) {
+        let redis_url = get_redis_url(&config);
+        let client = redis::Client::open(redis_url).unwrap();
+        let stream = get_stream_name(&config);
+        let mut conn = client.get_connection().unwrap();
+
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            println!("{msg}");
-        }
+            let key = format!("{stream}{trader_id}:{}", &msg.topic);
+            let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
+            let result: Result<(), redis::RedisError> = conn.xadd(&key, "*", &items);
 
-        // TODO: WIP
+            if let Err(e) = result {
+                eprintln!("Error publishing message: {e}");
+            }
+        }
+    }
+}
+
+pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
+    let empty = Value::Object(serde_json::Map::new());
+    let database = config.get("database").unwrap_or(&empty);
+
+    let host = database
+        .get("host")
+        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
+    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let username = database
+        .get("username")
+        .map(|v| v.as_str().unwrap_or_default());
+    let password = database
+        .get("password")
+        .map(|v| v.as_str().unwrap_or_default());
+    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
+
+    format!(
+        "redis{}://{}:{}@{}:{}",
+        if use_ssl.as_bool().unwrap_or(false) {
+            "s"
+        } else {
+            ""
+        },
+        username.unwrap_or(""),
+        password.unwrap_or(""),
+        host.unwrap(),
+        port.unwrap(),
+    )
+}
+
+pub fn get_stream_name(config: &HashMap<String, Value>) -> String {
+    match config.get("stream") {
+        Some(Value::String(s)) => {
+            if !s.is_empty() {
+                format!("{}:", s.trim_matches('"'))
+            } else {
+                s.to_string()
+            }
+        }
+        _ => "".to_string(),
     }
 }
 

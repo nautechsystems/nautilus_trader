@@ -34,7 +34,6 @@ from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -53,6 +52,7 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.instruments import SyntheticInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity

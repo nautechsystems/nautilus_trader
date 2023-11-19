@@ -23,8 +23,8 @@ from libc.stdint cimport int64_t
 from collections import deque
 
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.core cimport secs_to_nanos
 

@@ -188,10 +188,10 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     ----------
     type : str, {'redis'}, default 'redis'
         The database type.
-    host : str, default 'localhost'
-        The database host address.
+    host : str, optional
+        The database host address. If `None` then should use the typical default.
     port : int, optional
-        The database port.
+        The database port. If `None` then should use the typical default.
     username : str, optional
         The account username for the database connection.
     password : str, optional
@@ -202,7 +202,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     """
 
     type: str = "redis"
-    host: str = "localhost"
+    host: str | None = None
     port: int | None = None
     username: str | None = None
     password: str | None = None
@@ -217,6 +217,8 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     ----------
     database : DatabaseConfig, optional
         The configuration for the message bus backing database.
+    stream : str, optional
+        The additional top level stream name for any external publishing (must have a `database` config).
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
@@ -226,6 +228,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     """
 
     database: DatabaseConfig | None = None
+    stream: str | None = None
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
 

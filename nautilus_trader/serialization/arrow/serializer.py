@@ -24,11 +24,11 @@ from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data.base import GenericData
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument

@@ -28,7 +28,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 

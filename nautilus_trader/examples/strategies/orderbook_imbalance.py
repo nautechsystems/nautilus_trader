@@ -17,6 +17,7 @@ import datetime
 from decimal import Decimal
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
@@ -26,7 +27,6 @@ from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.trading.strategy import Strategy
 
 

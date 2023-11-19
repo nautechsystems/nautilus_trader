@@ -28,14 +28,14 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data.base import capsule_to_list
+from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.types import CatalogDataResult
 

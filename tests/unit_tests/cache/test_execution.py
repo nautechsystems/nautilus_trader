@@ -22,13 +22,13 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
@@ -42,11 +42,11 @@ from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine

@@ -17,10 +17,10 @@ import pickle
 
 import pytest
 
+from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
-from nautilus_trader.common.timer import TimeEvent
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import TradingState

@@ -21,19 +21,20 @@ from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.book cimport BookOrder
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport LiquiditySide
 from nautilus_trader.model.enums_c cimport MarketStatus
@@ -49,10 +50,10 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
@@ -64,7 +65,6 @@ from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderMatchingEngine:

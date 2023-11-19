@@ -26,6 +26,7 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
+from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport Price_t
@@ -43,9 +44,10 @@ from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.data.book cimport BookOrder
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.enums_c cimport AggressorSide
 from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.enums_c cimport ContingencyType
@@ -79,7 +81,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
@@ -91,7 +92,6 @@ from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderMatchingEngine:

@@ -33,18 +33,18 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.model.objects import Currency
 
 
 class BetfairDataClient(LiveMarketDataClient):

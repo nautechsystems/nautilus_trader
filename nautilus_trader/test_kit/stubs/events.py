@@ -22,7 +22,6 @@ from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import TradingState
@@ -49,6 +48,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price

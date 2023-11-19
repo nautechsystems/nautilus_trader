@@ -30,7 +30,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
-from nautilus_trader.model.data import NAUTILUS_PYO3_DATA_TYPES
+from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
@@ -48,12 +48,12 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.enums_c cimport log_level_from_str
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.logging cimport log_memory
-from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
@@ -68,14 +68,14 @@ from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.enums_c cimport AggregationSource
 from nautilus_trader.model.enums_c cimport BookType

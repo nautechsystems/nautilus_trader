@@ -106,6 +106,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a4668cab20f66d8d020e1fbc0ebe47217433c1b6c8f2040faf858554e394ace6"
 
 [[package]]
+name = "arc-swap"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bddcadddf5e9015d310179a59bb28c4d4b9920ad0f11e8e14dbadf654890c9a6"
+
+[[package]]
 name = "arrayref"
 version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -762,7 +768,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "35ed6e9d84f0b51a7f52daf1c7d71dd136fd7a3f41a8462b8cdb8c78d920fad4"
 dependencies = [
  "bytes",
+ "futures-core",
  "memchr",
+ "pin-project-lite",
+ "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -1314,6 +1324,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
+name = "dotenv"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
+
+[[package]]
 name = "dotenvy"
 version = "0.15.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1380,9 +1396,9 @@ dependencies = [
 
 [[package]]
 name = "evalexpr"
-version = "11.1.0"
+version = "11.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e757e796a66b54d19fa26de38e75c3351eb7a3755c85d7d181a8c61437ff60c"
+checksum = "d4c66d3694d06f23490e33b7d5d22368c1f0bc24423b61cfba4bb1b100fc55ef"
 
 [[package]]
 name = "event-listener"
@@ -2207,7 +2223,24 @@ dependencies = [
  "nautilus-core",
  "nautilus-model",
  "pyo3",
+ "redis",
  "rstest",
+ "strum",
+]
+
+[[package]]
+name = "nautilus-infrastructure"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "redis",
+ "rstest",
+ "serde",
+ "serde_json",
  "strum",
 ]
 
@@ -2267,11 +2300,13 @@ dependencies = [
 name = "nautilus-persistence"
 version = "0.12.0"
 dependencies = [
+ "anyhow",
  "binary-heap-plus",
  "chrono",
  "compare",
  "criterion",
  "datafusion",
+ "dotenv",
  "futures",
  "nautilus-core",
  "nautilus-model",
@@ -2292,6 +2327,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-indicators",
+ "nautilus-infrastructure",
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence",
@@ -2695,6 +2731,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pin-project"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fda4ed1c6c173e3fc7a83629421152e01d7b1f9b7f65fb301e490e8cfc656422"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4359fd9c9171ec6e8c62926d6faaf553a8dc3f64e1507e76da7911b4f6a04405"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.39",
+]
+
+[[package]]
 name = "pin-project-lite"
 version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3015,12 +3071,21 @@ version = "0.23.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4f49cdc0bb3f412bf8e7d1bd90fe1d9eb10bc5c399ba90973c14662a27b3f8ba"
 dependencies = [
+ "arc-swap",
+ "async-trait",
+ "bytes",
  "combine",
+ "futures",
+ "futures-util",
  "itoa",
  "percent-encoding",
+ "pin-project-lite",
  "ryu",
  "sha1_smol",
  "socket2 0.4.10",
+ "tokio",
+ "tokio-retry",
+ "tokio-util",
  "url",
 ]
 
@@ -4128,6 +4193,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-retry"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f57eb36ecbe0fc510036adff84824dd3c24bb781e21bfa67b69d556aa85214f"
+dependencies = [
+ "pin-project",
+ "rand",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-rustls"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4179,6 +4255,7 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

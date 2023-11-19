@@ -24,7 +24,7 @@ import pytz
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import is_datetime_utc
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import Currency
 
 
 @unique

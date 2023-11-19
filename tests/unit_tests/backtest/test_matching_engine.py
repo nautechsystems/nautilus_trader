@@ -22,6 +22,7 @@ from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OmsType
@@ -29,7 +30,6 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.orders import MarketOrder
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
