@@ -120,13 +120,13 @@ cdef class Quantity:
             raise ValueError(
                 f"invalid `value`, was {value:_}",
             )
-        if value > QUANTITY_MAX:
+        if value > RUST_QUANTITY_MAX:
             raise ValueError(
-                f"invalid `value` greater than `QUANTITY_MAX` {QUANTITY_MAX:_}, was {value:_}",
+                f"invalid `value` greater than `QUANTITY_MAX` {RUST_QUANTITY_MAX:_}, was {value:_}",
             )
-        if value < QUANTITY_MIN:
+        if value < RUST_QUANTITY_MIN:
             raise ValueError(
-                f"invalid `value` less than `QUANTITY_MIN` {QUANTITY_MIN:_}, was {value:_}",
+                f"invalid `value` less than `QUANTITY_MIN` {RUST_QUANTITY_MIN:_}, was {value:_}",
             )
 
         self._mem = quantity_new(value, precision)
@@ -562,13 +562,13 @@ cdef class Price:
             raise ValueError(
                 f"invalid `value`, was {value:_}",
             )
-        if value > PRICE_MAX:
+        if value > RUST_PRICE_MAX:
             raise ValueError(
-                f"invalid `value` greater than `PRICE_MAX` {PRICE_MAX:_}, was {value:_}",
+                f"invalid `value` greater than `PRICE_MAX` {RUST_PRICE_MAX:_}, was {value:_}",
             )
-        if value < PRICE_MIN:
+        if value < RUST_PRICE_MIN:
             raise ValueError(
-                f"invalid `value` less than `PRICE_MIX` {PRICE_MIN:_}, was {value:_}",
+                f"invalid `value` less than `PRICE_MIX` {RUST_PRICE_MIN:_}, was {value:_}",
             )
 
         self._mem = price_new(value, precision)
@@ -936,13 +936,13 @@ cdef class Money:
             raise ValueError(
                 f"invalid `value`, was {value:_}",
             )
-        if value_f64 > MONEY_MAX:
+        if value_f64 > RUST_MONEY_MAX:
             raise ValueError(
-                f"invalid `value` greater than `MONEY_MAX` {MONEY_MAX:_}, was {value:_}",
+                f"invalid `value` greater than `MONEY_MAX` {RUST_MONEY_MAX:_}, was {value:_}",
             )
-        if value_f64 < MONEY_MIN:
+        if value_f64 < RUST_MONEY_MIN:
             raise ValueError(
-                f"invalid `value` less than `MONEY_MIN` {MONEY_MIN:_}, was {value:_}",
+                f"invalid `value` less than `MONEY_MIN` {RUST_MONEY_MIN:_}, was {value:_}",
             )
 
         self._mem = money_new(value_f64, currency._mem)
