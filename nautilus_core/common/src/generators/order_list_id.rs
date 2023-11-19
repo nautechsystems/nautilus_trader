@@ -130,7 +130,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_order_list_id_from_initial(test_clock: TestClock) {
-        let mut generator = get_order_list_id_generator(test_clock.get_time_clone(), None);
+        let mut generator = get_order_list_id_generator(test_clock.get_time_clone(), Some(5));
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
