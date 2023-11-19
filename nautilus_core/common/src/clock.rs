@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs},
-    time::{duration_since_unix_epoch, UnixNanos},
+    time::{AtomicTime, ClockMode, UnixNanos},
 };
 
 use crate::{
@@ -26,82 +25,11 @@ use crate::{
     timer::{TestTimer, TimeEvent, TimeEventHandler},
 };
 
-const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
-
-pub struct MonotonicClock {
-    /// The last recorded duration value for the clock.
-    last: Duration,
-}
-
-/// Provides a monotonic clock.
-///
-/// Always produces unique and monotonically increasing timestamps.
-impl MonotonicClock {
-    /// Returns a monotonic `Duration` since the UNIX epoch, ensuring that the returned value is
-    /// always greater than the previously returned value.
-    fn monotonic_duration_since_unix_epoch(&mut self) -> Duration {
-        let now = duration_since_unix_epoch();
-        let output = if now <= self.last {
-            self.last + ONE_NANOSECOND
-        } else {
-            now
-        };
-        self.last = output;
-        output
-    }
-
-    /// Initializes a new `MonotonicClock` instance.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            last: duration_since_unix_epoch(),
-        }
-    }
-
-    /// Returns the current seconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_secs(&mut self) -> f64 {
-        self.monotonic_duration_since_unix_epoch().as_secs_f64()
-    }
-
-    /// Returns the current milliseconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_millis(&mut self) -> u64 {
-        self.monotonic_duration_since_unix_epoch().as_millis() as u64
-    }
-
-    /// Returns the current microseconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_micros(&mut self) -> u64 {
-        self.monotonic_duration_since_unix_epoch().as_micros() as u64
-    }
-
-    /// Returns the current nanoseconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_nanos(&mut self) -> u64 {
-        self.monotonic_duration_since_unix_epoch().as_nanos() as u64
-    }
-}
-
-impl Default for MonotonicClock {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// Represents a type of clock.
 ///
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
-    /// Return the current UNIX time in seconds.
-    fn timestamp(&mut self) -> f64;
-
-    /// Return the current UNIX time in milliseconds (ms).
-    fn timestamp_ms(&mut self) -> u64;
-
-    /// Return the current UNIX time in microseconds (us).
-    fn timestamp_us(&mut self) -> u64;
-
-    /// Return the current UNIX time in nanoseconds (ns).
-    fn timestamp_ns(&mut self) -> u64;
-
     /// Return the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
 
@@ -133,13 +61,13 @@ pub trait Clock {
         callback: Option<EventHandler>,
     );
 
-    fn next_time_ns(&mut self, name: &str) -> UnixNanos;
+    fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
 }
 
 pub struct TestClock {
-    time_ns: UnixNanos,
+    time: AtomicTime,
     timers: HashMap<String, TestTimer>,
     default_callback: Option<EventHandler>,
     callbacks: HashMap<String, EventHandler>,
@@ -149,11 +77,15 @@ impl TestClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            time_ns: 0,
+            time: AtomicTime::new(ClockMode::STATIC, 0),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
         }
+    }
+
+    pub fn get_time_clone(&self) -> AtomicTime {
+        self.time.clone()
     }
 
     #[must_use]
@@ -161,19 +93,15 @@ impl TestClock {
         &self.timers
     }
 
-    pub fn set_time(&mut self, to_time_ns: UnixNanos) {
-        self.time_ns = to_time_ns;
-    }
-
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
         assert!(
-            to_time_ns >= self.time_ns,
+            to_time_ns >= self.time.get_time_ns(),
             "`to_time_ns` was < `self._time_ns`"
         );
 
         if set_time {
-            self.time_ns = to_time_ns;
+            self.time.set_time(to_time_ns);
         }
 
         let mut timers: Vec<TimeEvent> = self
@@ -217,23 +145,15 @@ impl Default for TestClock {
     }
 }
 
+impl Deref for TestClock {
+    type Target = AtomicTime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.time
+    }
+}
+
 impl Clock for TestClock {
-    fn timestamp(&mut self) -> f64 {
-        nanos_to_secs(self.time_ns)
-    }
-
-    fn timestamp_ms(&mut self) -> u64 {
-        nanos_to_millis(self.time_ns)
-    }
-
-    fn timestamp_us(&mut self) -> u64 {
-        nanos_to_micros(self.time_ns)
-    }
-
-    fn timestamp_ns(&mut self) -> u64 {
-        self.time_ns
-    }
-
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -270,10 +190,13 @@ impl Clock for TestClock {
             None => None,
         };
 
+        // TODO: should the atomic clock be shared
+        // currently share timestamp nanoseconds
+        let time_ns = self.time.get_time_ns();
         let timer = TestTimer::new(
             name.clone(),
-            alert_time_ns - self.time_ns,
-            self.time_ns,
+            alert_time_ns - time_ns,
+            time_ns,
             Some(alert_time_ns),
         );
         self.timers.insert(name, timer);
@@ -302,7 +225,7 @@ impl Clock for TestClock {
         self.timers.insert(name, timer);
     }
 
-    fn next_time_ns(&mut self, name: &str) -> UnixNanos {
+    fn next_time_ns(&self, name: &str) -> UnixNanos {
         let timer = self.timers.get(name);
         match timer {
             None => 0,
@@ -327,7 +250,7 @@ impl Clock for TestClock {
 }
 
 pub struct LiveClock {
-    internal: MonotonicClock,
+    internal: AtomicTime,
     timers: HashMap<String, TestTimer>,
     default_callback: Option<EventHandler>,
     callbacks: HashMap<String, EventHandler>,
@@ -337,7 +260,7 @@ impl LiveClock {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            internal: MonotonicClock::default(),
+            internal: AtomicTime::new(ClockMode::LIVE, 0),
             timers: HashMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
@@ -351,23 +274,15 @@ impl Default for LiveClock {
     }
 }
 
+impl Deref for LiveClock {
+    type Target = AtomicTime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
+}
+
 impl Clock for LiveClock {
-    fn timestamp(&mut self) -> f64 {
-        self.internal.unix_timestamp_secs()
-    }
-
-    fn timestamp_ms(&mut self) -> u64 {
-        self.internal.unix_timestamp_millis()
-    }
-
-    fn timestamp_us(&mut self) -> u64 {
-        self.internal.unix_timestamp_micros()
-    }
-
-    fn timestamp_ns(&mut self) -> u64 {
-        self.internal.unix_timestamp_nanos()
-    }
-
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -404,7 +319,7 @@ impl Clock for LiveClock {
             None => None,
         };
 
-        let ts_now = self.timestamp_ns();
+        let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let timer = TestTimer::new(
             name.clone(),
@@ -438,7 +353,7 @@ impl Clock for LiveClock {
         self.timers.insert(name, timer);
     }
 
-    fn next_time_ns(&mut self, name: &str) -> UnixNanos {
+    fn next_time_ns(&self, name: &str) -> UnixNanos {
         let timer = self.timers.get(name);
         match timer {
             None => 0,
@@ -472,11 +387,6 @@ pub mod stubs {
     use super::*;
 
     #[fixture]
-    pub fn monotonic_clock() -> MonotonicClock {
-        MonotonicClock::new()
-    }
-
-    #[fixture]
     pub fn test_clock() -> TestClock {
         TestClock::new()
     }
@@ -492,33 +402,6 @@ mod tests {
     use stubs::*;
 
     use super::*;
-
-    #[rstest]
-    fn test_monotonic_clock_increasing(mut monotonic_clock: MonotonicClock) {
-        let secs1 = monotonic_clock.unix_timestamp_secs();
-        let secs2 = monotonic_clock.unix_timestamp_secs();
-        assert!(secs2 >= secs1);
-
-        let millis1 = monotonic_clock.unix_timestamp_millis();
-        let millis2 = monotonic_clock.unix_timestamp_millis();
-        assert!(millis2 >= millis1);
-
-        let micros1 = monotonic_clock.unix_timestamp_micros();
-        let micros2 = monotonic_clock.unix_timestamp_micros();
-        assert!(micros2 >= micros1);
-
-        let nanos1 = monotonic_clock.unix_timestamp_nanos();
-        let nanos2 = monotonic_clock.unix_timestamp_nanos();
-        assert!(nanos2 >= nanos1);
-    }
-
-    #[rstest]
-    fn test_monotonic_clock_beyond_unix_epoch(mut monotonic_clock: MonotonicClock) {
-        assert!(monotonic_clock.unix_timestamp_secs() > 1_650_000_000.0);
-        assert!(monotonic_clock.unix_timestamp_millis() > 1_650_000_000_000);
-        assert!(monotonic_clock.unix_timestamp_micros() > 1_650_000_000_000_000);
-        assert!(monotonic_clock.unix_timestamp_nanos() > 1_650_000_000_000_000_000);
-    }
 
     #[rstest]
     fn test_set_timer_ns_py(mut test_clock: TestClock) {
@@ -606,7 +489,7 @@ mod tests {
 
             assert_eq!(test_clock.timer_names().len(), 1);
             assert_eq!(test_clock.timer_count(), 1);
-            assert_eq!(test_clock.time_ns, 3);
+            assert_eq!(test_clock.get_time_ns(), 3);
         });
     }
 
@@ -625,7 +508,7 @@ mod tests {
 
             assert_eq!(test_clock.timer_names().len(), 1);
             assert_eq!(test_clock.timer_count(), 1);
-            assert_eq!(test_clock.time_ns, 0);
+            assert_eq!(test_clock.get_time_ns(), 0);
         });
     }
 }

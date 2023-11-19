@@ -5,6 +5,14 @@
 #include <stdint.h>
 #include <Python.h>
 
+#define MILLISECONDS_IN_SECOND 1000
+
+#define NANOSECONDS_IN_SECOND 1000000000
+
+#define NANOSECONDS_IN_MILLISECOND 1000000
+
+#define NANOSECONDS_IN_MICROSECOND 1000
+
 /**
  * `CVec` is a C compatible struct that stores an opaque pointer to a block of
  * memory, it's length and the capacity of the vector it was allocated from.
@@ -71,26 +79,6 @@ uint64_t nanos_to_millis(uint64_t nanos);
  * Converts nanoseconds (ns) to microseconds (μs).
  */
 uint64_t nanos_to_micros(uint64_t nanos);
-
-/**
- * Returns the current seconds since the UNIX epoch.
- */
-double unix_timestamp(void);
-
-/**
- * Returns the current milliseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_ms(void);
-
-/**
- * Returns the current microseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_us(void);
-
-/**
- * Returns the current nanoseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_ns(void);
 
 void cvec_drop(struct CVec cvec);
 

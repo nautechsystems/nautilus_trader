@@ -4,6 +4,14 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
+    const uint64_t MILLISECONDS_IN_SECOND # = 1000
+
+    const uint64_t NANOSECONDS_IN_SECOND # = 1000000000
+
+    const uint64_t NANOSECONDS_IN_MILLISECOND # = 1000000
+
+    const uint64_t NANOSECONDS_IN_MICROSECOND # = 1000
+
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
     # memory, it's length and the capacity of the vector it was allocated from.
     #
@@ -44,18 +52,6 @@ cdef extern from "../includes/core.h":
 
     # Converts nanoseconds (ns) to microseconds (μs).
     uint64_t nanos_to_micros(uint64_t nanos);
-
-    # Returns the current seconds since the UNIX epoch.
-    double unix_timestamp();
-
-    # Returns the current milliseconds since the UNIX epoch.
-    uint64_t unix_timestamp_ms();
-
-    # Returns the current microseconds since the UNIX epoch.
-    uint64_t unix_timestamp_us();
-
-    # Returns the current nanoseconds since the UNIX epoch.
-    uint64_t unix_timestamp_ns();
 
     void cvec_drop(CVec cvec);
 

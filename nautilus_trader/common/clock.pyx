@@ -64,9 +64,6 @@ from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport nanos_to_millis
 from nautilus_trader.core.rust.core cimport nanos_to_secs
-from nautilus_trader.core.rust.core cimport unix_timestamp
-from nautilus_trader.core.rust.core cimport unix_timestamp_ms
-from nautilus_trader.core.rust.core cimport unix_timestamp_ns
 from nautilus_trader.core.rust.core cimport uuid4_from_cstr
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
