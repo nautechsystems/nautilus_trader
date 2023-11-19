@@ -80,26 +80,6 @@ uint64_t nanos_to_millis(uint64_t nanos);
  */
 uint64_t nanos_to_micros(uint64_t nanos);
 
-/**
- * Returns the current seconds since the UNIX epoch.
- */
-double unix_timestamp(void);
-
-/**
- * Returns the current milliseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_ms(void);
-
-/**
- * Returns the current microseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_us(void);
-
-/**
- * Returns the current nanoseconds since the UNIX epoch.
- */
-uint64_t unix_timestamp_ns(void);
-
 void cvec_drop(struct CVec cvec);
 
 struct CVec cvec_new(void);

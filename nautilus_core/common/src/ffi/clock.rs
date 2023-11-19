@@ -89,27 +89,27 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
 
 #[no_mangle]
 pub extern "C" fn test_clock_set_time(clock: &TestClock_API, to_time_ns: u64) {
-    clock.time_ns.set_time(to_time_ns);
+    clock.set_time(to_time_ns);
 }
 
 #[no_mangle]
 pub extern "C" fn test_clock_timestamp(clock: &TestClock_API) -> f64 {
-    clock.time_ns.get_time_sec()
+    clock.get_time()
 }
 
 #[no_mangle]
 pub extern "C" fn test_clock_timestamp_ms(clock: &TestClock_API) -> u64 {
-    clock.time_ns.get_time_ms()
+    clock.get_time_ms()
 }
 
 #[no_mangle]
 pub extern "C" fn test_clock_timestamp_us(clock: &TestClock_API) -> u64 {
-    clock.time_ns.get_time_us()
+    clock.get_time_ms()
 }
 
 #[no_mangle]
 pub extern "C" fn test_clock_timestamp_ns(clock: &TestClock_API) -> u64 {
-    clock.time_ns.get_time_ns()
+    clock.get_time_ns()
 }
 
 #[no_mangle]
@@ -281,20 +281,20 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp(clock: &mut LiveClock_API) -> f64 {
-    clock.timestamp()
+    clock.get_time()
 }
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClock_API) -> u64 {
-    clock.timestamp_ms()
+    clock.get_time_ms()
 }
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
-    clock.timestamp_us()
+    clock.get_time_ms()
 }
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
-    clock.timestamp_ns()
+    clock.get_time_ns()
 }
