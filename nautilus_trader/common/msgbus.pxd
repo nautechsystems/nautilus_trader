@@ -28,11 +28,12 @@ cdef class MessageBus:
     cdef Clock _clock
     cdef LoggerAdapter _log
     cdef Serializer _serializer
-    cdef dict _subscriptions
-    cdef dict _patterns
-    cdef dict _endpoints
-    cdef dict _correlation_index
+    cdef dict[Subscription, list[str]] _subscriptions
+    cdef dict[str, Subscription[:]] _patterns
+    cdef dict[str, object] _endpoints
+    cdef dict[UUID4, object] _correlation_index
     cdef bint _has_backing
+    cdef tuple[type] _publishable_types
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""

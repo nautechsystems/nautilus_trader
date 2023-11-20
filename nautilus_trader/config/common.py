@@ -224,6 +224,10 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
         If `False` then will persit as UNIX nanoseconds.
+    types_filter : list[type], optional
+        A list of serializable types *not* to publish externally.
+    autotrim_mins : int, optional
+        The streams lookback window in minutes to be autotrimmed.
 
     """
 
@@ -231,6 +235,8 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     stream: str | None = None
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
+    types_filter: list[type] | None = None
+    autotrim_mins: int | None = None
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
