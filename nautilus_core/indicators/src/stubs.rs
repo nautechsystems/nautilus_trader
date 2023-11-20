@@ -28,8 +28,8 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, rma::WilderMovingAverage, sma::SimpleMovingAverage,
-        wma::WeightedMovingAverage, MovingAverageType,
+        ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
+        sma::SimpleMovingAverage, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::rsi::RelativeStrengthIndex,
     ratio::efficiency_ratio::EfficiencyRatio,
@@ -112,6 +112,11 @@ pub fn indicator_sma_10() -> SimpleMovingAverage {
 #[fixture]
 pub fn indicator_ema_10() -> ExponentialMovingAverage {
     ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn indicator_hma_10() -> HullMovingAverage {
+    HullMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
 }
 
 #[fixture]
