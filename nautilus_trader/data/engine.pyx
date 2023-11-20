@@ -1301,7 +1301,7 @@ cdef class DataEngine(Component):
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
-                data = self._catalog.instruments(as_nautilus=True)
+                data = self._catalog.instruments()
             else:
                 data = self._catalog.instruments(instrument_ids=[str(instrument_id)])
         elif request.data_type.type == QuoteTick:

@@ -211,10 +211,7 @@ class BacktestNode:
         # Add instruments
         for config in data_configs:
             if is_nautilus_class(config.data_type):
-                instruments = config.catalog().instruments(
-                    instrument_ids=config.instrument_id,
-                    as_nautilus=True,
-                )
+                instruments = config.catalog().instruments(instrument_ids=config.instrument_id)
                 for instrument in instruments or []:
                     if instrument.id not in engine.cache.instrument_ids():
                         engine.add_instrument(instrument)
