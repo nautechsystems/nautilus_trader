@@ -13,33 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::time::AtomicTime;
 use nautilus_model::identifiers::{
     order_list_id::OrderListId, strategy_id::StrategyId, trader_id::TraderId,
 };
 
 use super::get_datetime_tag;
-use crate::clock::Clock;
 
 #[repr(C)]
-pub struct OrderListIdGenerator<'a> {
+pub struct OrderListIdGenerator {
     trader_id: TraderId,
     strategy_id: StrategyId,
-    clock: &'a mut Box<dyn Clock>,
+    time: AtomicTime,
     count: usize,
 }
 
-impl<'a> OrderListIdGenerator<'a> {
+impl OrderListIdGenerator {
     #[must_use]
     pub fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
-        clock: &'a mut Box<dyn Clock>,
+        time: AtomicTime,
         initial_count: usize,
     ) -> Self {
         Self {
             trader_id,
             strategy_id,
-            clock,
+            time,
             count: initial_count,
         }
     }
@@ -58,7 +58,7 @@ impl<'a> OrderListIdGenerator<'a> {
     }
 
     pub fn generate(&mut self) -> OrderListId {
-        let datetime_tag = get_datetime_tag(self.clock.timestamp_ms());
+        let datetime_tag = get_datetime_tag(self.time.get_time_ms());
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
         self.count += 1;
@@ -75,43 +75,41 @@ impl<'a> OrderListIdGenerator<'a> {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_core::time::AtomicTime;
     use nautilus_model::identifiers::{
         order_list_id::OrderListId, strategy_id::StrategyId, trader_id::TraderId,
     };
     use rstest::rstest;
 
     use crate::{
-        clock::{stubs::test_clock, Clock, TestClock},
+        clock::{stubs::test_clock, TestClock},
         generators::order_list_id::OrderListIdGenerator,
     };
 
     fn get_order_list_id_generator(
-        clock: &mut Box<dyn Clock>,
+        time: AtomicTime,
         initial_count: Option<usize>,
     ) -> OrderListIdGenerator {
         let trader_id = TraderId::from("TRADER-001");
         let strategy_id = StrategyId::from("EMACross-001");
-        OrderListIdGenerator::new(trader_id, strategy_id, clock, initial_count.unwrap_or(0))
+        OrderListIdGenerator::new(trader_id, strategy_id, time, initial_count.unwrap_or(0))
     }
 
     #[rstest]
     fn test_init(test_clock: TestClock) {
-        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
-        let generator = get_order_list_id_generator(&mut test_clock, None);
+        let generator = get_order_list_id_generator(test_clock.get_time_clone(), None);
         assert_eq!(generator.count(), 0);
     }
 
     #[rstest]
     fn test_init_with_initial_count(test_clock: TestClock) {
-        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
-        let generator = get_order_list_id_generator(&mut test_clock, Some(7));
+        let generator = get_order_list_id_generator(test_clock.get_time_clone(), Some(7));
         assert_eq!(generator.count(), 7);
     }
 
     #[rstest]
     fn test_generate_order_list_id_from_start(test_clock: TestClock) {
-        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
-        let mut generator = get_order_list_id_generator(&mut test_clock, None);
+        let mut generator = get_order_list_id_generator(test_clock.get_time_clone(), None);
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -132,8 +130,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_order_list_id_from_initial(test_clock: TestClock) {
-        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
-        let mut generator = get_order_list_id_generator(&mut test_clock, Some(5));
+        let mut generator = get_order_list_id_generator(test_clock.get_time_clone(), Some(5));
         let result1 = generator.generate();
         let result2 = generator.generate();
         let result3 = generator.generate();
@@ -154,8 +151,7 @@ mod tests {
 
     #[rstest]
     fn test_reset(test_clock: TestClock) {
-        let mut test_clock: Box<dyn Clock> = Box::new(test_clock);
-        let mut generator = get_order_list_id_generator(&mut test_clock, None);
+        let mut generator = get_order_list_id_generator(test_clock.get_time_clone(), None);
         generator.generate();
         generator.generate();
         generator.reset();

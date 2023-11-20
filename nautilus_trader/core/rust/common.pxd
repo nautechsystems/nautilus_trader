@@ -212,15 +212,15 @@ cdef extern from "../includes/common.h":
     # - Assumes `callback_ptr` is a valid `PyCallable` pointer.
     void test_clock_register_default_handler(TestClock_API *clock, PyObject *callback_ptr);
 
-    void test_clock_set_time(TestClock_API *clock, uint64_t to_time_ns);
+    void test_clock_set_time(const TestClock_API *clock, uint64_t to_time_ns);
 
-    double test_clock_timestamp(TestClock_API *clock);
+    double test_clock_timestamp(const TestClock_API *clock);
 
-    uint64_t test_clock_timestamp_ms(TestClock_API *clock);
+    uint64_t test_clock_timestamp_ms(const TestClock_API *clock);
 
-    uint64_t test_clock_timestamp_us(TestClock_API *clock);
+    uint64_t test_clock_timestamp_us(const TestClock_API *clock);
 
-    uint64_t test_clock_timestamp_ns(TestClock_API *clock);
+    uint64_t test_clock_timestamp_ns(const TestClock_API *clock);
 
     PyObject *test_clock_timer_names(const TestClock_API *clock);
 
