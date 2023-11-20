@@ -134,6 +134,7 @@ cpdef list capsule_to_list(capsule):
 
     return objects
 
+
 cdef class BarSpecification:
     """
     Represents a bar aggregation specification including a step, aggregation

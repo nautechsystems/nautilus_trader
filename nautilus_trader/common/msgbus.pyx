@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import copy
 from typing import Any
 from typing import Callable
 
@@ -105,11 +106,17 @@ cdef class MessageBus:
 
         self.trader_id = trader_id
 
+        # Copy and clear `types_filter` before passing down to the core MessageBus
+        cdef list types_filter = copy.copy(config.types_filter)
+        if config.types_filter is not None:
+            config.types_filter.clear()
+
         self._mem = msgbus_new(
             pystr_to_cstr(trader_id.value),
             pystr_to_cstr(name) if name else NULL,
             pybytes_to_cstr(msgspec.json.encode(config)),
         )
+
         self._serializer = serializer
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)
@@ -119,6 +126,9 @@ cdef class MessageBus:
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
         self._has_backing = config.database is not None
+        self._publishable_types = OBJECTS_FOR_EXTERNAL_PUBLISH
+        if types_filter is not None:
+            self._publishable_types = tuple(o for o in OBJECTS_FOR_EXTERNAL_PUBLISH if o not in types_filter)
 
         # Counters
         self.sent_count = 0
@@ -537,7 +547,7 @@ cdef class MessageBus:
         # Publish externally (if configured)
         cdef bytes payload_bytes
         if self._has_backing and self._serializer is not None:
-            if isinstance(msg, OBJECTS_FOR_EXTERNAL_PUBLISH):
+            if isinstance(msg, self._publishable_types):
                 payload_bytes = self._serializer.serialize(msg)
                 msgbus_publish_external(
                     &self._mem,
