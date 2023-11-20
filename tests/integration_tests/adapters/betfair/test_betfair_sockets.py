@@ -14,6 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import platform
+import sys
 
 import pytest
 
@@ -26,6 +28,10 @@ from nautilus_trader.common.logging import LoggerAdapter
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32" and platform.python_version().startswith("3.12"),
+    reason="Failing on Windows with Python 3.12",
+)
 class TestBetfairSockets:
     def setup(self):
         # Fixture Setup
