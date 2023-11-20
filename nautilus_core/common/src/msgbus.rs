@@ -398,6 +398,10 @@ impl MessageBus {
     }
 
     fn handle_messages(trader_id: &str, config: HashMap<String, Value>, rx: Receiver<BusMessage>) {
+        let _autotrim_mins = config
+            .get("autotrim_mins")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
         let stream = get_stream_name(&config);

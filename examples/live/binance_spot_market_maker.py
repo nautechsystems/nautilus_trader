@@ -51,6 +51,7 @@ config_node = TradingNodeConfig(
     #     stream="custom_name",
     #     encoding="json",
     #     timestamps_as_iso8601=True,
+    #     types_filter=[QuoteTick],
     # ),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
