@@ -162,7 +162,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
 }
 
 
-OBJECTS_FOR_EXTERNAL_PUBLISH = (
+EXTERNAL_PUBLISHING_TYPES = (
     str,
     int,
     float,

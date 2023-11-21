@@ -21,8 +21,6 @@ import cython
 import msgspec
 import numpy as np
 
-from nautilus_trader.config.common import MessageBusConfig
-
 cimport numpy as np
 
 from nautilus_trader.common.clock cimport Clock
@@ -35,7 +33,7 @@ from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.serialization.base cimport OBJECTS_FOR_EXTERNAL_PUBLISH
+from nautilus_trader.serialization.base cimport EXTERNAL_PUBLISHING_TYPES
 from nautilus_trader.serialization.base cimport Serializer
 
 
@@ -95,8 +93,11 @@ cdef class MessageBus:
         Logger logger not None,
         str name = None,
         Serializer serializer = None,
-        config: MessageBusConfig | None = None,
+        config: Any | None = None,
     ):
+        # Temporary fix for import error
+        from nautilus_trader.config.common import MessageBusConfig
+
         if name is None:
             name = type(self).__name__
         Condition.valid_string(name, "name")
@@ -126,9 +127,9 @@ cdef class MessageBus:
         self._subscriptions: dict[Subscription, list[str]] = {}
         self._correlation_index: dict[UUID4, Callable[[Any], None]] = {}
         self._has_backing = config.database is not None
-        self._publishable_types = OBJECTS_FOR_EXTERNAL_PUBLISH
+        self._publishable_types = EXTERNAL_PUBLISHING_TYPES
         if types_filter is not None:
-            self._publishable_types = tuple(o for o in OBJECTS_FOR_EXTERNAL_PUBLISH if o not in types_filter)
+            self._publishable_types = tuple(o for o in EXTERNAL_PUBLISHING_TYPES if o not in types_filter)
 
         # Counters
         self.sent_count = 0

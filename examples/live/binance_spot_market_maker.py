@@ -48,7 +48,6 @@ config_node = TradingNodeConfig(
     cache_database=CacheDatabaseConfig(type="in-memory"),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),  # No yet for operational use
-    #     stream="custom_name",
     #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     types_filter=[QuoteTick],
