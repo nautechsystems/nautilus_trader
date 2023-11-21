@@ -678,6 +678,7 @@ class WebSocketConfig:
         handler: Callable[..., Any],
         headers: list[tuple[str, str]],
         heartbeat: int | None = None,
+        heartbeat_msg: str | None = None,
     ) -> None: ...
 
 class WebSocketClient:

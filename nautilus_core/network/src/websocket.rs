@@ -45,7 +45,7 @@ pub struct WebSocketConfig {
     handler: PyObject,
     headers: Vec<(String, String)>,
     heartbeat: Option<u64>,
-    message: Option<String>,
+    heartbeat_msg: Option<String>,
 }
 
 #[pymethods]
@@ -56,14 +56,14 @@ impl WebSocketConfig {
         handler: PyObject,
         headers: Vec<(String, String)>,
         heartbeat: Option<u64>,
-        message: Option<String>,
+        heartbeat_msg: Option<String>,
     ) -> Self {
         Self {
             url,
             handler,
             headers,
             heartbeat,
-            message,
+            heartbeat_msg,
         }
     }
 }
@@ -98,7 +98,7 @@ impl WebSocketClientInner {
             handler,
             heartbeat,
             headers,
-            message,
+            heartbeat_msg,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
@@ -107,7 +107,7 @@ impl WebSocketClientInner {
         let read_task = Self::spawn_read_task(reader, handler.clone());
 
         let heartbeat_task =
-            Self::spawn_heartbeat_task(*heartbeat, message.clone(), writer.clone());
+            Self::spawn_heartbeat_task(*heartbeat, heartbeat_msg.clone(), writer.clone());
 
         Ok(Self {
             config,
@@ -247,7 +247,7 @@ impl WebSocketClientInner {
         self.read_task = Self::spawn_read_task(reader, self.config.handler.clone());
         self.heartbeat_task = Self::spawn_heartbeat_task(
             self.config.heartbeat,
-            self.config.message.clone(),
+            self.config.heartbeat_msg.clone(),
             self.writer.clone(),
         );
 
