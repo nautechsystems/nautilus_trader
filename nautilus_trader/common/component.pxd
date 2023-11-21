@@ -15,7 +15,12 @@
 
 from typing import Callable
 
+from cpython.datetime cimport timedelta
+from libc.stdint cimport int64_t
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.msgbus cimport MessageBus
@@ -86,3 +91,37 @@ cdef class Component:
         bint is_transitory,
         action: Callable[[None], None]=*,
     )
+
+
+cdef class Throttler:
+    cdef Clock _clock
+    cdef LoggerAdapter _log
+    cdef uint64_t _interval_ns
+    cdef object _buffer
+    cdef str _timer_name
+    cdef object _timestamps
+    cdef object _output_send
+    cdef object _output_drop
+    cdef bint _warm
+
+    cdef readonly str name
+    """The name of the throttler.\n\n:returns: `str`"""
+    cdef readonly int limit
+    """The limit for the throttler rate.\n\n:returns: `int`"""
+    cdef readonly timedelta interval
+    """The interval for the throttler rate.\n\n:returns: `timedelta`"""
+    cdef readonly bint is_limiting
+    """If the throttler is currently limiting messages (buffering or dropping).\n\n:returns: `bool`"""
+    cdef readonly int recv_count
+    """If count of messages received by the throttler.\n\n:returns: `int`"""
+    cdef readonly int sent_count
+    """If count of messages sent from the throttler.\n\n:returns: `int`"""
+
+    cpdef double used(self)
+    cpdef void send(self, msg)
+    cdef int64_t _delta_next(self)
+    cdef void _limit_msg(self, msg)
+    cdef void _set_timer(self, handler: Callable[[TimeEvent], None])
+    cpdef void _process(self, TimeEvent event)
+    cpdef void _resume(self, TimeEvent event)
+    cdef void _send_msg(self, msg)
