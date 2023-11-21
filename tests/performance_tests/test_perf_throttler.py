@@ -17,7 +17,7 @@ from datetime import timedelta
 
 import pytest
 
-from nautilus_trader.common.throttler import Throttler
+from nautilus_trader.common.component import Throttler
 from nautilus_trader.test_kit.performance import PerformanceHarness
 
 

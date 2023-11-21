@@ -18,9 +18,7 @@ from typing import Any
 from typing import Callable
 from typing import Optional
 
-from nautilus_trader.common.enums import ComponentState as PyComponentState
-from nautilus_trader.common.enums import component_state_to_str
-from nautilus_trader.common.enums import component_trigger_to_str
+from nautilus_trader.core.rust.common import ComponentState as PyComponentState
 
 from cpython.datetime cimport timedelta
 from libc.stdint cimport int64_t
