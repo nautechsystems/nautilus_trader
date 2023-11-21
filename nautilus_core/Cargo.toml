@@ -41,7 +41,7 @@ thiserror = "1.0.50"
 tracing = "0.1.40"
 tokio = { version = "1.34.0", features = ["full"] }
 ustr = { git = "https://github.com/anderslanglands/ustr", features = ["serde"] }
-uuid = { version = "1.5.0", features = ["v4"] }
+uuid = { version = "1.6.1", features = ["v4"] }
 
 # dev-dependencies
 criterion = "0.5.1"
