@@ -22,8 +22,6 @@ from nautilus_trader.common.enums import component_state_to_str
 from nautilus_trader.common.enums import component_trigger_to_str
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.enums_c cimport ComponentState
-from nautilus_trader.common.enums_c cimport ComponentTrigger
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.messages cimport ComponentStateChanged
@@ -31,10 +29,34 @@ from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport FiniteStateMachine
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ComponentTrigger
+from nautilus_trader.core.rust.common cimport component_state_from_cstr
+from nautilus_trader.core.rust.common cimport component_state_to_cstr
+from nautilus_trader.core.rust.common cimport component_trigger_from_cstr
+from nautilus_trader.core.rust.common cimport component_trigger_to_cstr
+from nautilus_trader.core.string cimport cstr_to_pystr
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
+
+
+cpdef ComponentState component_state_from_str(str value):
+    return component_state_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str component_state_to_str(ComponentState value):
+    return cstr_to_pystr(component_state_to_cstr(value))
+
+
+cpdef ComponentTrigger component_trigger_from_str(str value):
+    return component_trigger_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str component_trigger_to_str(ComponentTrigger value):
+    return cstr_to_pystr(component_trigger_to_cstr(value))
 
 
 cdef dict _COMPONENT_STATE_TABLE = {

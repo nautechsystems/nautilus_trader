@@ -16,13 +16,21 @@
 from typing import Callable
 
 from nautilus_trader.common.clock cimport Clock
-from nautilus_trader.common.enums_c cimport ComponentTrigger
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.fsm cimport FiniteStateMachine
+from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.common cimport ComponentTrigger
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
+
+
+cpdef ComponentState component_state_from_str(str value)
+cpdef str component_state_to_str(ComponentState value)
+
+cpdef ComponentTrigger component_trigger_from_str(str value)
+cpdef str component_trigger_to_str(ComponentTrigger value)
 
 
 cdef class ComponentFSMFactory:

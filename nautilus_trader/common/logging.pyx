@@ -36,6 +36,10 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
+from nautilus_trader.core.rust.common cimport log_color_from_cstr
+from nautilus_trader.core.rust.common cimport log_color_to_cstr
+from nautilus_trader.core.rust.common cimport log_level_from_cstr
+from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_drop
 from nautilus_trader.core.rust.common cimport logger_get_instance_id
 from nautilus_trader.core.rust.common cimport logger_get_machine_id_cstr
@@ -49,6 +53,22 @@ from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
+
+
+cpdef LogColor log_color_from_str(str value):
+    return log_color_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str log_color_to_str(LogColor value):
+    return cstr_to_pystr(log_color_to_cstr(value))
+
+
+cpdef LogLevel log_level_from_str(str value):
+    return log_level_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str log_level_to_str(LogLevel value):
+    return cstr_to_pystr(log_level_to_cstr(value))
 
 
 RECV = "<--"
