@@ -17,7 +17,7 @@ from decimal import Decimal
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.throttler cimport Throttler
+from nautilus_trader.common.component cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport TradingState
