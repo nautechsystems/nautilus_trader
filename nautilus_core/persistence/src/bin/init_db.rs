@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // load envs if exists
     dotenv().ok();
     let db = Database::new(None, None).await;
-    let sql_schema_dir = "../schema/sql";
+    let sql_schema_dir = "../schema";
     init_db_schema(&db, sql_schema_dir).await?;
     Ok(())
 }
