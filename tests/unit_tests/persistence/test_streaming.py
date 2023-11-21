@@ -147,7 +147,7 @@ class TestPersistenceStreaming:
     ) -> None:
         # Arrange
         self.catalog = betfair_catalog
-        instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
+        instrument_id = self.catalog.instruments()[0].id.value
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",
@@ -205,7 +205,7 @@ class TestPersistenceStreaming:
     ) -> None:
         # Arrange
         self.catalog = betfair_catalog
-        instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
+        instrument_id = self.catalog.instruments()[0].id.value
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",
