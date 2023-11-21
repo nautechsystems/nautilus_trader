@@ -19,12 +19,12 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport Level_API
 from nautilus_trader.core.rust.model cimport OrderBook_API
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order

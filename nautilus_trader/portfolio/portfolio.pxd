@@ -19,8 +19,8 @@ from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.msgbus cimport MessageBus
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.position cimport PositionEvent

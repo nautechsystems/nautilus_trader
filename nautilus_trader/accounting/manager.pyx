@@ -25,9 +25,9 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport PositionId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance

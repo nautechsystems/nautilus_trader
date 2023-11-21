@@ -20,13 +20,13 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.enums_c cimport TradingState
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price

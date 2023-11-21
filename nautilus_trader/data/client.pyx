@@ -24,12 +24,12 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport BookType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument

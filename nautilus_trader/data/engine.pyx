@@ -53,6 +53,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -78,7 +79,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
-from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId

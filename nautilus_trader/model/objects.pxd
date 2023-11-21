@@ -17,12 +17,113 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport Currency_t
+from nautilus_trader.core.rust.model cimport CurrencyType
+from nautilus_trader.core.rust.model cimport HaltReason
+from nautilus_trader.core.rust.model cimport InstrumentCloseType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport Money_t
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OptionKind
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport Quantity_t
+from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TradingState
+from nautilus_trader.core.rust.model cimport TrailingOffsetType
+from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.objects cimport Currency
+
+
+cpdef AccountType account_type_from_str(str value)
+cpdef str account_type_to_str(AccountType value)
+
+cpdef AggregationSource aggregation_source_from_str(str value)
+cpdef str aggregation_source_to_str(AggregationSource value)
+
+cpdef AggressorSide aggressor_side_from_str(str value)
+cpdef str aggressor_side_to_str(AggressorSide value)
+
+cpdef AssetClass asset_class_from_str(str value)
+cpdef str asset_class_to_str(AssetClass value)
+
+cpdef AssetType asset_type_from_str(str value)
+cpdef str asset_type_to_str(AssetType value)
+
+cpdef BarAggregation bar_aggregation_from_str(str value)
+cpdef str bar_aggregation_to_str(BarAggregation value)
+
+cpdef BookAction book_action_from_str(str value)
+cpdef str book_action_to_str(BookAction value)
+
+cpdef BookType book_type_from_str(str value)
+cpdef str book_type_to_str(BookType value)
+
+cpdef ContingencyType contingency_type_from_str(str value)
+cpdef str contingency_type_to_str(ContingencyType value)
+
+cpdef CurrencyType currency_type_from_str(str value)
+cpdef str currency_type_to_str(CurrencyType value)
+
+cpdef InstrumentCloseType instrument_close_type_from_str(str value)
+cpdef str instrument_close_type_to_str(InstrumentCloseType value)
+
+cpdef LiquiditySide liquidity_side_from_str(str value)
+cpdef str liquidity_side_to_str(LiquiditySide value)
+
+cpdef MarketStatus market_status_from_str(str value)
+cpdef str market_status_to_str(MarketStatus value)
+
+cpdef HaltReason halt_reason_from_str(str value)
+cpdef str halt_reason_to_str(HaltReason value)
+
+cpdef OmsType oms_type_from_str(str value)
+cpdef str oms_type_to_str(OmsType value)
+
+cpdef OptionKind option_kind_from_str(str value)
+cpdef str option_kind_to_str(OptionKind value)
+
+cpdef OrderSide order_side_from_str(str value)
+cpdef str order_side_to_str(OrderSide value)
+
+cpdef OrderStatus order_status_from_str(str value)
+cpdef str order_status_to_str(OrderStatus value)
+
+cpdef OrderType order_type_from_str(str value)
+cpdef str order_type_to_str(OrderType value)
+
+cpdef PositionSide position_side_from_str(str value)
+cpdef str position_side_to_str(PositionSide value)
+
+cpdef PriceType price_type_from_str(str value)
+cpdef str price_type_to_str(PriceType value)
+
+cpdef TimeInForce time_in_force_from_str(str value)
+cpdef str time_in_force_to_str(TimeInForce value)
+
+cpdef TradingState trading_state_from_str(str value)
+cpdef str trading_state_to_str(TradingState value)
+
+cpdef TrailingOffsetType trailing_offset_type_from_str(str value)
+cpdef str trailing_offset_type_to_str(TrailingOffsetType value)
+
+cpdef TriggerType trigger_type_from_str(str value)
+cpdef str trigger_type_to_str(TriggerType value)
 
 
 cdef class Quantity:

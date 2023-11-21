@@ -23,6 +23,11 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.execution.matching_core cimport MatchingCore
 from nautilus_trader.execution.messages cimport BatchCancelOrders
 from nautilus_trader.execution.messages cimport CancelAllOrders
@@ -35,11 +40,6 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport MarketStatus
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport TimeInForce
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId

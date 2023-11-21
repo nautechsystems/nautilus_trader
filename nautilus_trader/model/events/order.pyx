@@ -23,6 +23,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.rust.model cimport order_accepted_new
 from nautilus_trader.core.rust.model cimport order_denied_new
 from nautilus_trader.core.rust.model cimport order_emulated_new
@@ -36,24 +42,6 @@ from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TimeInForce
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport contingency_type_from_str
-from nautilus_trader.model.enums_c cimport contingency_type_to_str
-from nautilus_trader.model.enums_c cimport liquidity_side_from_str
-from nautilus_trader.model.enums_c cimport liquidity_side_to_str
-from nautilus_trader.model.enums_c cimport order_side_from_str
-from nautilus_trader.model.enums_c cimport order_side_to_str
-from nautilus_trader.model.enums_c cimport order_type_from_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
-from nautilus_trader.model.enums_c cimport time_in_force_from_str
-from nautilus_trader.model.enums_c cimport time_in_force_to_str
-from nautilus_trader.model.enums_c cimport trigger_type_from_str
-from nautilus_trader.model.enums_c cimport trigger_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -63,6 +51,18 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.objects cimport contingency_type_from_str
+from nautilus_trader.model.objects cimport contingency_type_to_str
+from nautilus_trader.model.objects cimport liquidity_side_from_str
+from nautilus_trader.model.objects cimport liquidity_side_to_str
+from nautilus_trader.model.objects cimport order_side_from_str
+from nautilus_trader.model.objects cimport order_side_to_str
+from nautilus_trader.model.objects cimport order_type_from_str
+from nautilus_trader.model.objects cimport order_type_to_str
+from nautilus_trader.model.objects cimport time_in_force_from_str
+from nautilus_trader.model.objects cimport time_in_force_to_str
+from nautilus_trader.model.objects cimport trigger_type_from_str
+from nautilus_trader.model.objects cimport trigger_type_to_str
 
 
 cdef class OrderEvent(Event):

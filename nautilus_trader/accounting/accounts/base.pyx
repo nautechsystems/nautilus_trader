@@ -18,12 +18,12 @@ from typing import Optional
 from nautilus_trader.accounting.error import AccountBalanceNegative
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.enums_c cimport AccountType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport account_type_to_str
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport account_type_to_str
 
 
 cdef class Account:

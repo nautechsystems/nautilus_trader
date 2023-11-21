@@ -25,6 +25,9 @@ from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
@@ -34,9 +37,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
-from nautilus_trader.model.enums_c cimport AccountType
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument

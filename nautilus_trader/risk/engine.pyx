@@ -37,6 +37,12 @@ from nautilus_trader.common.throttler cimport Throttler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Command
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TradingState
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -46,14 +52,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport AssetType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderStatus
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TradingState
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport order_type_to_str
-from nautilus_trader.model.enums_c cimport trading_state_to_str
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderModifyRejected
@@ -64,6 +62,8 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.objects cimport order_type_to_str
+from nautilus_trader.model.objects cimport trading_state_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position

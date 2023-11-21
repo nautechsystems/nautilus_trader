@@ -25,9 +25,9 @@ from nautilus_trader.accounting.calculators cimport RolloverInterestCalculator
 from nautilus_trader.backtest.exchange cimport SimulatedExchange
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.model.book cimport OrderBook
-from nautilus_trader.model.enums_c cimport AssetClass
-from nautilus_trader.model.enums_c cimport PriceType
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency

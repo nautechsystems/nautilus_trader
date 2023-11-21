@@ -29,14 +29,11 @@ from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport QuoteTick
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport currency_type_from_str
-from nautilus_trader.model.enums_c cimport currency_type_to_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
@@ -55,6 +52,9 @@ from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
+from nautilus_trader.model.objects cimport currency_type_from_str
+from nautilus_trader.model.objects cimport currency_type_to_str
+from nautilus_trader.model.objects cimport order_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder

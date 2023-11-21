@@ -27,9 +27,13 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookOrder_t
+from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport Level_API
 from nautilus_trader.core.rust.model cimport OrderBook_API
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
 from nautilus_trader.core.rust.model cimport book_order_from_raw
@@ -76,16 +80,12 @@ from nautilus_trader.core.rust.model cimport vec_orders_drop
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport book_type_to_str
-from nautilus_trader.model.enums_c cimport order_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.objects cimport book_type_to_str
+from nautilus_trader.model.objects cimport order_side_to_str
 
 
 cdef class OrderBook(Data):

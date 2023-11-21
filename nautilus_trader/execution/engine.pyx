@@ -53,6 +53,9 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.execution.client cimport ExecutionClient
@@ -65,10 +68,6 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport PositionSide
-from nautilus_trader.model.enums_c cimport oms_type_to_str
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
@@ -88,6 +87,7 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
+from nautilus_trader.model.objects cimport oms_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 
 

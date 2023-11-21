@@ -20,6 +20,9 @@ from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.factories cimport OrderFactory
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.msgbus cimport MessageBus
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
@@ -28,9 +31,6 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
