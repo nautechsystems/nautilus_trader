@@ -21,8 +21,8 @@ from nautilus_trader.common.component import component_state_from_str
 from nautilus_trader.common.component import component_state_to_str
 from nautilus_trader.common.component import component_trigger_from_str
 from nautilus_trader.common.component import component_trigger_to_str
-from nautilus_trader.common.component import log_level_from_str
-from nautilus_trader.common.component import log_level_to_str
+from nautilus_trader.common.logging import log_level_from_str
+from nautilus_trader.common.logging import log_level_to_str
 from nautilus_trader.core.rust.common import ComponentState
 from nautilus_trader.core.rust.common import ComponentTrigger
 from nautilus_trader.core.rust.common import LogColor
