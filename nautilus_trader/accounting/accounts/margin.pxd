@@ -16,7 +16,7 @@
 from decimal import Decimal
 
 from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport MarginBalance

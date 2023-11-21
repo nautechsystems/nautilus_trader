@@ -33,14 +33,14 @@ from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport secs_to_nanos
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport AggressorSide
-from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport OrderSide
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price

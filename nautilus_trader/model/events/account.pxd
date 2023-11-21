@@ -16,8 +16,8 @@
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.enums_c cimport AccountType
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport Currency
 

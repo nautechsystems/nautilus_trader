@@ -66,6 +66,10 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data cimport Bar
@@ -76,10 +80,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
-from nautilus_trader.model.enums_c cimport AccountType
-from nautilus_trader.model.enums_c cimport AggregationSource
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport OmsType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId

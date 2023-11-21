@@ -22,6 +22,9 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.book cimport OrderBook
@@ -29,9 +32,6 @@ from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport PositionSide
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
