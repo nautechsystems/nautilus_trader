@@ -126,7 +126,7 @@ Nautilus uses a `BacktestRunConfig` object, which allows configuring a backtest 
 We can now use configuration objects to build up our final run configuration:
 
 ```python
-instrument = catalog.instruments(as_nautilus=True)[0]
+instrument = catalog.instruments()[0]
 
 venue_configs = [
     BacktestVenueConfig(

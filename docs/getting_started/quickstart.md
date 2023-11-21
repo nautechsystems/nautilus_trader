@@ -207,7 +207,7 @@ venue = BacktestVenueConfig(
 Second, we need to know about the instruments that we would like to load data for, we can use the `ParquetDataCatalog` for this:
 
 ```python
-instruments = catalog.instruments(as_nautilus=True)
+instruments = catalog.instruments()
 instruments
 ```
 
