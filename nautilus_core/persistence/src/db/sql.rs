@@ -69,7 +69,7 @@ mod tests {
 
     async fn setup_sql_cache_database() -> SqlCacheDatabase {
         let db = setup_test_database().await;
-        let schema_dir = "../../schema/sql";
+        let schema_dir = "../../schema";
         init_db_schema(&db, schema_dir)
             .await
             .expect("Failed to init db schema");
