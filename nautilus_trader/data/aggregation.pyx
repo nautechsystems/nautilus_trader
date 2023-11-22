@@ -557,6 +557,10 @@ cdef class TimeBarAggregator(BarAggregator):
     timestamp_on_close : bool, default True
         If timestamp `ts_event` will be bar close.
         If False then timestamp will be bar open.
+    interval_type : str, default 'left-open'
+        Determines the type of interval used for time aggregation.
+        - 'left-open': start time is excluded and end time is included (default).
+        - 'right-open': start time is included and end time is excluded.
 
     Raises
     ------
@@ -572,6 +576,7 @@ cdef class TimeBarAggregator(BarAggregator):
         Logger logger not None,
         bint build_with_no_updates = True,
         bint timestamp_on_close = True,
+        str interval_type = "left-open",
     ):
         super().__init__(
             instrument=instrument,
@@ -592,6 +597,15 @@ cdef class TimeBarAggregator(BarAggregator):
         self._cached_update = None
         self._build_with_no_updates = build_with_no_updates
         self._timestamp_on_close = timestamp_on_close
+
+        if interval_type == "left-open":
+            self._is_left_open = True
+        elif interval_type == "right-open":
+            self._is_left_open = False
+        else:
+            raise ValueError(
+                f"Invalid interval_type: {interval_type}. Must be 'left-open' or 'right-open'.",
+            )
 
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
@@ -722,12 +736,15 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         self._builder.update(price, size, ts_event)
-        if self._build_on_next_tick:  # (fast C-level check)
+        if self._build_on_next_tick:
             ts_init = ts_event
-            ts_event = self._stored_close_ns
-            if not self._timestamp_on_close:
-                # Timestamp on open
+
+            # Adjusting the timestamp logic based on interval_type
+            if self._interval_type == "left-open":
+                ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
+            elif self._interval_type == "right-open":
                 ts_event = self._stored_open_ns
+
             self._build_and_send(ts_event=ts_event, ts_init=ts_init)
             # Reset flag and clear stored close
             self._build_on_next_tick = False
@@ -744,10 +761,12 @@ cdef class TimeBarAggregator(BarAggregator):
             return  # Do not build and emit bar
 
         cdef uint64_t ts_init = event.ts_event
-        cdef uint64_t ts_event = event.ts_event
-        if not self._timestamp_on_close:
-            # Timestamp on open
+        cdef uint64_t ts_event
+        if self._is_left_open:
+            ts_event = event.ts_event if self._timestamp_on_close else self._stored_open_ns
+        else:
             ts_event = self._stored_open_ns
+
         self._build_and_send(ts_event=ts_event, ts_init=ts_init)
 
         # Close time becomes the next open time

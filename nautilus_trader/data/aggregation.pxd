@@ -98,6 +98,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef str _timer_name
     cdef bint _build_with_no_updates
     cdef bint _timestamp_on_close
+    cdef bint _is_left_open
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""
