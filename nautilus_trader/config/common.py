@@ -287,6 +287,10 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_timestamp_on_close : bool, default True
         If time bar aggregators will timestamp `ts_event` on bar close.
         If False then will timestamp on bar open.
+    time_bars_interval_type : str, default 'left-open'
+        Determines the type of interval used for time aggregation.
+        - 'left-open': start time is excluded and end time is included (default).
+        - 'right-open': start time is included and end time is excluded.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
@@ -296,6 +300,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     time_bars_build_with_no_updates: bool = True
     time_bars_timestamp_on_close: bool = True
+    time_bars_interval_type: str = "left-open"
     validate_data_sequence: bool = False
     debug: bool = False
 
