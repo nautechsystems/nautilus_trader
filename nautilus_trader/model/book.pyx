@@ -80,12 +80,12 @@ from nautilus_trader.core.rust.model cimport vec_orders_drop
 from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.functions cimport book_type_to_str
+from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport book_type_to_str
-from nautilus_trader.model.objects cimport order_side_to_str
 
 
 cdef class OrderBook(Data):
