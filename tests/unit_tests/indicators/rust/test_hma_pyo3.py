@@ -15,8 +15,8 @@
 
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.core.nautilus_pyo3 import HullMovingAverage
+from nautilus_trader.core.nautilus_pyo3 import PriceType
 from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 
