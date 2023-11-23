@@ -53,12 +53,12 @@ from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.events.position cimport PositionEvent
+from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.objects cimport position_side_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.position cimport Position
 from nautilus_trader.portfolio.base cimport PortfolioFacade

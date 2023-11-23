@@ -37,6 +37,9 @@ from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.functions cimport currency_type_from_str
+from nautilus_trader.model.functions cimport currency_type_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -52,9 +55,6 @@ from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport currency_type_from_str
-from nautilus_trader.model.objects cimport currency_type_to_str
-from nautilus_trader.model.objects cimport order_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder

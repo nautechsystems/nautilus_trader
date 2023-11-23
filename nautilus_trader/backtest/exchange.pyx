@@ -47,6 +47,8 @@ from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.data cimport VenueStatus
+from nautilus_trader.model.functions cimport account_type_to_str
+from nautilus_trader.model.functions cimport oms_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -55,8 +57,6 @@ from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport account_type_to_str
-from nautilus_trader.model.objects cimport oms_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 
 

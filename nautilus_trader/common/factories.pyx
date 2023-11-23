@@ -28,6 +28,7 @@ from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -35,7 +36,6 @@ from nautilus_trader.model.identifiers cimport OrderListId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport order_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
