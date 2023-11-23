@@ -8,10 +8,6 @@ class InteractiveBrokersErrorHandler:
     This class handles various error and warning scenarios that might arise during the
     operation of the InteractiveBrokersClient.
 
-    The InteractiveBrokersErrorHandler processes errors related to subscriptions,
-    requests, and orders, and it logs them appropriately. It also manages client errors
-    and connectivity issues, updating the state of YourTradingClass as needed.
-
     https://ibkrcampus.com/ibkr-api-page/tws-api-error-codes/#understanding-error-codes
 
     """
