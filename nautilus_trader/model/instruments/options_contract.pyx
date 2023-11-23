@@ -24,16 +24,16 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport AssetType
 from nautilus_trader.core.rust.model cimport OptionKind
+from nautilus_trader.model.functions cimport asset_class_from_str
+from nautilus_trader.model.functions cimport asset_class_to_str
+from nautilus_trader.model.functions cimport option_kind_from_str
+from nautilus_trader.model.functions cimport option_kind_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.base cimport Price
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport asset_class_from_str
-from nautilus_trader.model.objects cimport asset_class_to_str
-from nautilus_trader.model.objects cimport option_kind_from_str
-from nautilus_trader.model.objects cimport option_kind_to_str
 
 
 cdef class OptionsContract(Instrument):

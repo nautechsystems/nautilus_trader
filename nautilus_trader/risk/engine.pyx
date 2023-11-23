@@ -55,6 +55,8 @@ from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCancelRejected
 from nautilus_trader.model.events.order cimport OrderDenied
 from nautilus_trader.model.events.order cimport OrderModifyRejected
+from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport trading_state_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -62,8 +64,6 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport order_type_to_str
-from nautilus_trader.model.objects cimport trading_state_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position

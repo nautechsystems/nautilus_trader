@@ -33,10 +33,10 @@ from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.functions cimport bar_aggregation_to_str
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport bar_aggregation_to_str
 
 
 cdef class BarBuilder:

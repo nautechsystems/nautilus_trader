@@ -21,9 +21,9 @@ from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.model.functions cimport trailing_offset_type_to_str
+from nautilus_trader.model.functions cimport trigger_type_to_str
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport trailing_offset_type_to_str
-from nautilus_trader.model.objects cimport trigger_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 
 

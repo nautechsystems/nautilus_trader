@@ -22,9 +22,9 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport order_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 
 

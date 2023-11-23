@@ -75,6 +75,7 @@ from nautilus_trader.model.events.position cimport PositionChanged
 from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.events.position cimport PositionOpened
+from nautilus_trader.model.functions cimport oms_type_to_str
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ComponentId
@@ -87,7 +88,6 @@ from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport oms_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 
 

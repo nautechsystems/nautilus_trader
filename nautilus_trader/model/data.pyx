@@ -91,28 +91,28 @@ from nautilus_trader.core.string cimport cstr_to_pystr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.string cimport ustr_to_pystr
 from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.functions cimport aggregation_source_from_str
+from nautilus_trader.model.functions cimport aggressor_side_from_str
+from nautilus_trader.model.functions cimport aggressor_side_to_str
+from nautilus_trader.model.functions cimport bar_aggregation_from_str
+from nautilus_trader.model.functions cimport bar_aggregation_to_str
+from nautilus_trader.model.functions cimport book_action_from_str
+from nautilus_trader.model.functions cimport book_action_to_str
+from nautilus_trader.model.functions cimport halt_reason_from_str
+from nautilus_trader.model.functions cimport halt_reason_to_str
+from nautilus_trader.model.functions cimport instrument_close_type_from_str
+from nautilus_trader.model.functions cimport instrument_close_type_to_str
+from nautilus_trader.model.functions cimport market_status_from_str
+from nautilus_trader.model.functions cimport market_status_to_str
+from nautilus_trader.model.functions cimport order_side_from_str
+from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport price_type_from_str
+from nautilus_trader.model.functions cimport price_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport aggregation_source_from_str
-from nautilus_trader.model.objects cimport aggressor_side_from_str
-from nautilus_trader.model.objects cimport aggressor_side_to_str
-from nautilus_trader.model.objects cimport bar_aggregation_from_str
-from nautilus_trader.model.objects cimport bar_aggregation_to_str
-from nautilus_trader.model.objects cimport book_action_from_str
-from nautilus_trader.model.objects cimport book_action_to_str
-from nautilus_trader.model.objects cimport halt_reason_from_str
-from nautilus_trader.model.objects cimport halt_reason_to_str
-from nautilus_trader.model.objects cimport instrument_close_type_from_str
-from nautilus_trader.model.objects cimport instrument_close_type_to_str
-from nautilus_trader.model.objects cimport market_status_from_str
-from nautilus_trader.model.objects cimport market_status_to_str
-from nautilus_trader.model.objects cimport order_side_from_str
-from nautilus_trader.model.objects cimport order_side_to_str
-from nautilus_trader.model.objects cimport price_type_from_str
-from nautilus_trader.model.objects cimport price_type_to_str
 
 
 # SAFETY: Do NOT deallocate the capsule here

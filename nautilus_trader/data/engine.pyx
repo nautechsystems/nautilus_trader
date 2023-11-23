@@ -143,6 +143,7 @@ cdef class DataEngine(Component):
         self.debug = config.debug
         self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
+        self._time_bars_interval_type = config.time_bars_interval_type
         self._validate_data_sequence = config.validate_data_sequence
 
         # Counters
@@ -1627,6 +1628,7 @@ cdef class DataEngine(Component):
                 logger=self._log.get_logger(),
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 timestamp_on_close=self._time_bars_timestamp_on_close,
+                interval_type=self._time_bars_interval_type,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

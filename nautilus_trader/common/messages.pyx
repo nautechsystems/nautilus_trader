@@ -28,11 +28,11 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.functions cimport trading_state_from_str
+from nautilus_trader.model.functions cimport trading_state_to_str
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId
-from nautilus_trader.model.objects cimport trading_state_from_str
-from nautilus_trader.model.objects cimport trading_state_to_str
 
 
 cdef class ComponentStateChanged(Event):
