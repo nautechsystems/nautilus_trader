@@ -909,7 +909,7 @@ class HullMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type = None
+        price_type: PriceType = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
