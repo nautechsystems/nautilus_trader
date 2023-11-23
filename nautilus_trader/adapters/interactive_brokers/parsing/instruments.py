@@ -287,7 +287,7 @@ def parse_crypto_contract(
         base_currency=Currency.from_str(details.contract.symbol),
         quote_currency=Currency.from_str(details.contract.currency),
         settlement_currency=Currency.from_str(details.contract.currency),
-        is_inverse=False,  # No inverse instruments trade on InteractiveBrokers?
+        is_inverse=True,
         price_precision=price_precision,
         size_precision=size_precision,
         price_increment=Price(details.minTick, price_precision),

@@ -491,6 +491,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             if value := getattr(order, key, None):
                 setattr(ib_order, field, fn(value))
 
+        if self._cache.instrument(order.instrument_id).is_inverse:
+            ib_order.cashQty = int(ib_order.totalQuantity)
+            ib_order.totalQuantity = 0
+
         if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
             ib_order.auxPrice = float(order.trailing_offset)
             if order.trigger_price:
@@ -804,6 +808,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             status = OrderStatus.PENDING_CANCEL
         elif order_status == "Rejected":
             status = OrderStatus.REJECTED
+        elif order_status == "Inactive":
+            self._log.warning(
+                f"Order status is 'Inactive' because it is invalid or triggered an error for {order_ref=}",
+            )
+            return
         elif order_status in ["PreSubmitted", "Submitted"]:
             self._log.debug(
                 f"Ignoring `_on_order_status` event for {order_status=} is handled in `_on_open_order`",
