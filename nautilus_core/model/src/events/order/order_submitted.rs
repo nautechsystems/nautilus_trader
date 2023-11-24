@@ -13,35 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::uuid::UUID4;
-use rstest::fixture;
-use ustr::Ustr;
+use derive_builder::{self, Builder};
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
 
-use crate::{
-    events::order::OrderDenied,
-    identifiers::{
-        client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
-        stubs::*, trader_id::TraderId,
-    },
+use crate::identifiers::{
+    account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+    strategy_id::StrategyId, trader_id::TraderId,
 };
 
-#[fixture]
-pub fn order_denied_max_submitted_rate(
-    trader_id: TraderId,
-    strategy_id_ema_cross: StrategyId,
-    instrument_id_btc_usdt: InstrumentId,
-    client_order_id: ClientOrderId,
-) -> OrderDenied {
-    let event_id = UUID4::new();
-    OrderDenied::new(
-        trader_id,
-        strategy_id_ema_cross,
-        instrument_id_btc_usdt,
-        client_order_id,
-        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"),
-        event_id,
-        0,
-        0,
-    )
-    .unwrap()
+#[repr(C)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
+pub struct OrderSubmitted {
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
+    pub account_id: AccountId,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }

@@ -13,5 +13,28 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod order;
-pub mod position;
+use derive_builder::{self, Builder};
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
+
+use crate::identifiers::{
+    account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+    strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
+};
+
+#[repr(C)]
+#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
+pub struct OrderPendingUpdate {
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
+    pub venue_order_id: Option<VenueOrderId>,
+    pub account_id: AccountId,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+    pub reconciliation: bool,
+}
