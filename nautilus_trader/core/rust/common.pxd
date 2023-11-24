@@ -364,6 +364,7 @@ cdef extern from "../includes/common.h":
     # - Assumes `name_ptr` is a valid C string pointer.
     MessageBus_API msgbus_new(const char *trader_id_ptr,
                               const char *name_ptr,
+                              const char *instance_id_ptr,
                               const char *config_ptr);
 
     void msgbus_drop(MessageBus_API bus);

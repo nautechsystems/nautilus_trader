@@ -218,7 +218,9 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     database : DatabaseConfig, optional
         The configuration for the message bus backing database.
     stream : str, optional
-        The additional top level stream name for any external publishing (must have a `database` config).
+        The additional prefix for externally published stream names (must have a `database` config).
+    use_instance_id : bool, default False
+        If the traders instance ID should be used in stream names.
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
@@ -233,6 +235,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
 
     database: DatabaseConfig | None = None
     stream: str | None = None
+    use_instance_id: bool = False
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
     types_filter: list[type] | None = None

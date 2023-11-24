@@ -237,6 +237,7 @@ class NautilusKernel:
             )
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
+            instance_id=self._instance_id,
             clock=self._clock,
             logger=self._logger,
             serializer=msgbus_serializer,

@@ -513,6 +513,7 @@ void logger_log(struct Logger_API *logger,
  */
 struct MessageBus_API msgbus_new(const char *trader_id_ptr,
                                  const char *name_ptr,
+                                 const char *instance_id_ptr,
                                  const char *config_ptr);
 
 void msgbus_drop(struct MessageBus_API bus);

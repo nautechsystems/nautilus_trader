@@ -149,6 +149,8 @@ pub struct MessageBus {
     correlation_index: IndexMap<UUID4, MessageHandler>,
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
+    /// The instance ID associated with the message bus.
+    pub instance_id: UUID4,
     /// The name for the message bus.
     pub name: String,
     // The count of messages sent through the bus.
@@ -168,6 +170,7 @@ impl MessageBus {
     #[must_use]
     pub fn new(
         trader_id: TraderId,
+        instance_id: UUID4,
         name: Option<String>,
         config: Option<HashMap<String, Value>>,
     ) -> Self {
@@ -176,7 +179,7 @@ impl MessageBus {
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
             thread::spawn(move || {
-                Self::handle_messages(trader_id.value.as_ref(), config, rx);
+                Self::handle_messages(trader_id.value.as_ref(), instance_id, config, rx);
             });
             Some(tx)
         } else {
@@ -186,6 +189,7 @@ impl MessageBus {
         Self {
             tx,
             trader_id,
+            instance_id,
             name: name.unwrap_or_else(|| stringify!(MessageBus).to_owned()),
             sent_count: 0,
             req_count: 0,
@@ -397,14 +401,19 @@ impl MessageBus {
         }
     }
 
-    fn handle_messages(trader_id: &str, config: HashMap<String, Value>, rx: Receiver<BusMessage>) {
+    fn handle_messages(
+        trader_id: &str,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
+        rx: Receiver<BusMessage>,
+    ) {
         let _autotrim_mins = config
             .get("autotrim_mins")
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as usize;
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
-        let stream = get_stream_name(&config);
+        let stream = get_stream_name(&config, instance_id);
         let mut conn = client.get_connection().unwrap();
 
         // Continue to receive and handle bus messages until channel is hung up
@@ -450,17 +459,21 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
     )
 }
 
-pub fn get_stream_name(config: &HashMap<String, Value>) -> String {
-    match config.get("stream") {
-        Some(Value::String(s)) => {
-            if !s.is_empty() {
-                format!("{}:", s.trim_matches('"'))
-            } else {
-                s.to_string()
-            }
+pub fn get_stream_name(config: &HashMap<String, Value>, instance_id: UUID4) -> String {
+    let mut name = String::new();
+
+    if let Some(Value::String(s)) = config.get("stream") {
+        if !s.is_empty() {
+            name.push_str(s.trim_matches('"'));
+            name.push(':');
         }
-        _ => "".to_string(),
     }
+
+    if let Some(Value::Bool(true)) = config.get("use_instance_id") {
+        name.push_str(&format!("{instance_id}:"));
+    }
+
+    name
 }
 
 /// Match a topic and a string pattern
@@ -502,14 +515,14 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 mod tests {
     use std::rc::Rc;
 
-    use nautilus_core::message::Message;
+    use nautilus_core::{message::Message, uuid::UUID4};
     use rstest::*;
 
     use super::*;
     use crate::handlers::MessageHandler;
 
     fn stub_msgbus() -> MessageBus {
-        MessageBus::new(TraderId::from("trader-001"), None, None)
+        MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
     }
 
     fn stub_rust_callback() -> Rc<dyn Fn(Message)> {
@@ -521,7 +534,7 @@ mod tests {
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::new(trader_id, None, None);
+        let msgbus = MessageBus::new(trader_id, UUID4::new(), None, None);
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));
