@@ -28,8 +28,8 @@ from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPri
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.data import DataType

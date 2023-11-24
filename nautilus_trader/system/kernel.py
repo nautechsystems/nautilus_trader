@@ -32,13 +32,13 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig

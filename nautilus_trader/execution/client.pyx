@@ -24,8 +24,8 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport LiquiditySide

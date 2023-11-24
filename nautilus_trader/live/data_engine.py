@@ -19,8 +19,8 @@ from typing import Final
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.config import LiveDataEngineConfig
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data

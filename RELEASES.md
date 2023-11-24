@@ -8,7 +8,10 @@ Released on TBD (UTC).
 - Added `DataEngineConfig.time_bars_interval_type` (determines the type of interval used for time aggregation `left-open` or `right-open`)
 - Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
 - Added `QuoteTickDataWrangler.process_bar_data` options for `offset_interval_ms` and `timestamp_is_close`
+- Added identifier generators in Rust, thanks @filipmacek
+- Added `OrderFactory` in Rust, thanks @filipmacek
 - Added `WilderMovingAverage` in Rust, thanks @ayush-sb
+- Added `HullMovingAverage` in Rust, thanks @ayush-sb
 - Added all common identifier generators in Rust, thanks @filipmacek
 - Added generic SQL database support with `sqlx` in Rust, thanks @filipmacek
 
@@ -16,8 +19,9 @@ Released on TBD (UTC).
 - Consolidated all `data` submodules into one `data` module (reduce binary wheel size)
 - Moved `OrderBook` from `model.orderbook.book` to `model.book` (subpackage only had this single module)
 - Moved `Currency` from `model.currency` to `model.objects` (consolidating modules to reduce binary wheel size)
-- Moved `MsgSpecSerializer` module from `serialization.msgpack.serializer` to `serialization.serializer`
-- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack)
+- Moved `MessageBus` from `common.msgbus` to `common.component` (consolidating modules to reduce binary wheel size)
+- Moved `MsgSpecSerializer` from `serialization.msgpack.serializer` to `serialization.serializer`
+- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack formats)
 
 ### Fixes
 - Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek

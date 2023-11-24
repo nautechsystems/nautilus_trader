@@ -42,12 +42,12 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
 from nautilus_trader.common.logging cimport RES
 from nautilus_trader.common.logging cimport Logger
-from nautilus_trader.common.msgbus cimport MessageBus
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos

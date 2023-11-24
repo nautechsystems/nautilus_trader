@@ -14,9 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.execution.client import ExecutionClient
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
