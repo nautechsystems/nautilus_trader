@@ -259,7 +259,7 @@ impl Display for OrderDenied {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "OrderDenied(instrument_id={}, client_order_id={},reason={})",
+            "OrderDenied(instrument_id={}, client_order_id={}, reason={})",
             self.instrument_id, self.client_order_id, self.reason
         )
     }
@@ -549,6 +549,6 @@ mod tests {
     #[rstest]
     fn test_order_denied_display(order_denied_max_submitted_rate: OrderDenied) {
         let display = format!("{}", order_denied_max_submitted_rate);
-        assert_eq!(display, "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1,reason=Exceeded MAX_ORDER_SUBMIT_RATE)");
+        assert_eq!(display, "OrderDenied(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, reason=Exceeded MAX_ORDER_SUBMIT_RATE)");
     }
 }
