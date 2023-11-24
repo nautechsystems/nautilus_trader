@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
 - Added `DataEngineConfig.time_bars_interval_type` (determines the type of interval used for time aggregation `left-open` or `right-open`)
 - Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
+- Added `QuoteTickDataWrangler.process_bar_data` options for `offset_interval_ms` and `timestamp_is_close`
 - Added `WilderMovingAverage` in Rust, thanks @ayush-sb
 - Added all common identifier generators in Rust, thanks @filipmacek
 - Added generic SQL database support with `sqlx` in Rust, thanks @filipmacek
