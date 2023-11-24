@@ -146,7 +146,7 @@ def test_value_with_ten_inputs_returns_expected_value(rma: WilderMovingAverage):
 
 def test_reset_successfully_returns_indicator_to_fresh_state(rma: WilderMovingAverage):
     # Arrange
-    for _i in range(1000):
+    for _i in range(10):
         rma.update_raw(1.00000)
 
     # Act

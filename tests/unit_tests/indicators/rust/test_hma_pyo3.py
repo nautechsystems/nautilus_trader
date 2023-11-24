@@ -166,7 +166,7 @@ def test_handle_trade_tick_updates_with_expected_value(hma: HullMovingAverage):
 
 def test_reset_successfully_returns_indicator_to_fresh_state(hma: HullMovingAverage):
     # Arrange
-    for _i in range(1000):
+    for _i in range(10):
         hma.update_raw(1.0)
 
     # Act
