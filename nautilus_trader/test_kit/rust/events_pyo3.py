@@ -12,3 +12,22 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+from nautilus_trader.core.nautilus_pyo3 import UUID4
+from nautilus_trader.core.nautilus_pyo3 import OrderDenied
+from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
+
+
+class TestEventsProviderPyo3:
+    @staticmethod
+    def order_denied_max_submit_rate() -> OrderDenied:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderDenied(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.audusd_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            reason="Exceeded MAX_ORDER_SUBMIT_RATE",
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+        )

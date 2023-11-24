@@ -13,8 +13,35 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod order;
-pub mod position;
+use nautilus_core::uuid::UUID4;
+use rstest::fixture;
+use ustr::Ustr;
 
-#[cfg(feature = "stubs")]
-pub mod stubs;
+use crate::{
+    events::order::OrderDenied,
+    identifiers::{
+        client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
+        stubs::*, trader_id::TraderId,
+    },
+};
+
+#[fixture]
+pub fn order_denied_max_submitted_rate(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderDenied {
+    let event_id = UUID4::new();
+    OrderDenied::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"),
+        event_id,
+        0,
+        0,
+    )
+    .unwrap()
+}
