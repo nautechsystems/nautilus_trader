@@ -12,3 +12,25 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+from nautilus_trader.core.nautilus_pyo3 import OrderDenied
+from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
+
+
+def test_order_denied():
+    event = TestEventsProviderPyo3.order_denied_max_submit_rate()
+    result_dict = OrderDenied.to_dict(event)
+    order_denied = OrderDenied.from_dict(result_dict)
+    assert order_denied == event
+    assert (
+        str(event)
+        == "OrderDenied(instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
+        + "reason=Exceeded MAX_ORDER_SUBMIT_RATE)"
+    )
+    assert (
+        repr(event)
+        == "OrderDenied(trader_id=TESTER-000, strategy_id=S-001, "
+        + "instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
+        + "reason=Exceeded MAX_ORDER_SUBMIT_RATE, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )

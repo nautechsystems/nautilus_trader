@@ -628,6 +628,24 @@ class FuturesContract: ...
 class OptionsContract: ...
 class SyntheticInstrument: ...
 
+### Events
+class OrderDenied:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderDenied: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
 ###################################################################################################
 # Network
 ###################################################################################################
