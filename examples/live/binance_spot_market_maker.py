@@ -50,9 +50,10 @@ config_node = TradingNodeConfig(
     #     database=DatabaseConfig(),  # No yet for operational use
     #     encoding="json",
     #     stream="quoters",
-    #     use_instance_id=True,
+    #     use_instance_id=False,
     #     timestamps_as_iso8601=True,
     #     types_filter=[QuoteTick],
+    #     autotrim_mins=30,
     # ),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
