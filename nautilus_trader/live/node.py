@@ -84,6 +84,7 @@ class TradingNode:
         self._is_built = False
         self._is_running = False
 
+        self._task_autotrim_streams: asyncio.Task | None = None
         self._task_heartbeats: asyncio.Task | None = None
         self._task_position_snapshots: asyncio.Task | None = None
 
@@ -301,6 +302,10 @@ class TradingNode:
                 self.kernel.exec_engine.get_evt_queue_task(),
             ]
 
+            if self._config.message_bus and self._config.message_bus.autotrim_mins:
+                self._task_autotrim_streams = asyncio.create_task(
+                    self.autotrim_streams(self._config.message_bus.autotrim_mins),
+                )
             if self._config.heartbeat_interval:
                 self._task_heartbeats = asyncio.create_task(
                     self.maintain_heartbeat(self._config.heartbeat_interval),
@@ -313,6 +318,24 @@ class TradingNode:
             await asyncio.gather(*tasks)
         except asyncio.CancelledError as e:
             self.kernel.log.error(str(e))
+
+    async def autotrim_streams(self, autotrim_mins: int) -> None:
+        """
+        Autotrim all message bus external publishing streams to `autotrim_mins` while
+        the node is running.
+
+        Parameters
+        ----------
+        autotrim_mins : int
+            The stream lookback window in minutes to trim to.
+
+        """
+        try:
+            while True:
+                await asyncio.sleep(60.0)  # Trim once a minute
+                self.kernel.msgbus.trim_streams(lookback_mins=autotrim_mins)
+        except asyncio.CancelledError:
+            pass
 
     async def maintain_heartbeat(self, interval: float) -> None:
         """
@@ -380,6 +403,11 @@ class TradingNode:
 
         """
         self.kernel.log.info("STOPPING...")
+
+        if self._task_autotrim_streams:
+            self.kernel.log.info("Cancelling `task_autotrim_streams` task...")
+            self._task_autotrim_streams.cancel()
+            self._task_autotrim_streams = None
 
         if self._task_heartbeats:
             self.kernel.log.info("Cancelling `task_heartbeats` task...")

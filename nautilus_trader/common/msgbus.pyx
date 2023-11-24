@@ -252,6 +252,25 @@ cdef class MessageBus:
 
         return request_id in self._correlation_index
 
+    cpdef void trim_streams(self, int lookback_mins):
+        """
+        Trim all streams to the lookback window minutes.
+
+        Parameters
+        ----------
+        lookback_mins : int
+            The lookback window in minutes to trim to.
+
+        Raises
+        ------
+        ValueError
+            If the `lookback_mins` if not positive (> 0).
+
+        """
+        Condition.positive_int(lookback_mins, "lookback_mins")
+
+        # TODO: Add msgbus_trim_streams function
+
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
         Register the given `handler` to receive messages at the `endpoint` address.
