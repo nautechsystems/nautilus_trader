@@ -169,7 +169,7 @@ pub mod tests {
     }
 
     #[rstest]
-    fn est_set_client_order_id_count(mut order_factory: OrderFactory) {
+    fn test_set_client_order_id_count(mut order_factory: OrderFactory) {
         order_factory.set_client_order_id_count(10);
         let client_order_id = order_factory.generate_client_order_id();
         assert_eq!(
@@ -179,7 +179,7 @@ pub mod tests {
     }
 
     #[rstest]
-    fn est_set_order_list_id_count(mut order_factory: OrderFactory) {
+    fn test_set_order_list_id_count(mut order_factory: OrderFactory) {
         order_factory.set_order_list_id_count(10);
         let order_list_id = order_factory.generate_order_list_id();
         assert_eq!(
