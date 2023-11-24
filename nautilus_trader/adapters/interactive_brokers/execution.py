@@ -41,8 +41,8 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import times
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4

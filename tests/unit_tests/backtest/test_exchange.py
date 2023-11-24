@@ -25,9 +25,9 @@ from nautilus_trader.backtest.models import LatencyModel
 from nautilus_trader.backtest.modules import SimulationModule
 from nautilus_trader.backtest.modules import SimulationModuleConfig
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.core.datetime import secs_to_nanos
