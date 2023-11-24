@@ -91,6 +91,7 @@ cdef class MessageBus:
         TraderId trader_id not None,
         Clock clock not None,
         Logger logger not None,
+        UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
         config: Any | None = None,
@@ -98,6 +99,8 @@ cdef class MessageBus:
         # Temporary fix for import error
         from nautilus_trader.config.common import MessageBusConfig
 
+        if instance_id is None:
+            instance_id = UUID4()
         if name is None:
             name = type(self).__name__
         Condition.valid_string(name, "name")
@@ -115,6 +118,7 @@ cdef class MessageBus:
         self._mem = msgbus_new(
             pystr_to_cstr(trader_id.value),
             pystr_to_cstr(name) if name else NULL,
+            pystr_to_cstr(instance_id.to_str()),
             pybytes_to_cstr(msgspec.json.encode(config)),
         )
 

@@ -49,6 +49,8 @@ config_node = TradingNodeConfig(
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),  # No yet for operational use
     #     encoding="json",
+    #     stream="quoters",
+    #     use_instance_id=True,
     #     timestamps_as_iso8601=True,
     #     types_filter=[QuoteTick],
     # ),

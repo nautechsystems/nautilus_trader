@@ -74,12 +74,19 @@ impl DerefMut for MessageBus_API {
 pub unsafe extern "C" fn msgbus_new(
     trader_id_ptr: *const c_char,
     name_ptr: *const c_char,
+    instance_id_ptr: *const c_char,
     config_ptr: *const c_char,
 ) -> MessageBus_API {
     let trader_id = TraderId::from_str(&cstr_to_string(trader_id_ptr)).unwrap();
     let name = optional_cstr_to_string(name_ptr);
+    let instance_id = UUID4::from(cstr_to_string(instance_id_ptr).as_str());
     let config = optional_bytes_to_json(config_ptr);
-    MessageBus_API(Box::new(MessageBus::new(trader_id, name, config)))
+    MessageBus_API(Box::new(MessageBus::new(
+        trader_id,
+        instance_id,
+        name,
+        config,
+    )))
 }
 
 #[no_mangle]
