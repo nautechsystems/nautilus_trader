@@ -13,20 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod clock;
-pub mod enums;
-#[cfg(feature = "ffi")]
-pub mod ffi;
-pub mod generators;
-pub mod handlers;
-pub mod logging;
-pub mod msgbus;
-#[cfg(feature = "python")]
-pub mod python;
-pub mod testing;
-pub mod timer;
+use nautilus_core::time::{AtomicTime, ClockMode};
+use nautilus_model::identifiers::stubs::*;
+use rstest::fixture;
 
-pub mod factories;
+use crate::factories::OrderFactory;
 
-#[cfg(test)]
-pub mod stubs;
+#[fixture]
+pub fn order_factory() -> OrderFactory {
+    let trader_id = trader_id();
+    let strategy_id = strategy_id_ema_cross();
+    let clock = AtomicTime::new(ClockMode::STATIC, 0);
+    OrderFactory::new(trader_id, strategy_id, clock, None, None)
+}
