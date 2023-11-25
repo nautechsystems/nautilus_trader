@@ -111,9 +111,9 @@ impl fmt::Display for BusMessage {
     }
 }
 
-const _DELIMITER: char = ':';
-const _XTRIM: &str = "XTRIM";
-const _MINID: &str = "MINID";
+const DELIMITER: char = ':';
+const XTRIM: &str = "XTRIM";
+const MINID: &str = "MINID";
 
 /// Provides a generic message bus to facilitate various messaging patterns.
 ///
@@ -444,9 +444,9 @@ impl MessageBus {
             // Improve efficiency of this by batching
             if *last_trim_ms < (unix_duration_now - Duration::from_secs(60)).as_millis() as usize {
                 let min_timestamp_ms = (unix_duration_now - autotrim_duration).as_millis() as usize;
-                let result: Result<(), redis::RedisError> = redis::cmd(_XTRIM)
+                let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
                     .arg(&key)
-                    .arg(_MINID)
+                    .arg(MINID)
                     .arg(min_timestamp_ms)
                     .query(&mut conn);
 
@@ -500,16 +500,16 @@ pub fn get_stream_name(
     if let Some(Value::String(s)) = config.get("stream") {
         if !s.is_empty() {
             stream_name.push_str(s.trim_matches('"'));
-            stream_name.push(_DELIMITER);
+            stream_name.push(DELIMITER);
         }
     }
 
     stream_name.push_str(trader_id);
-    stream_name.push(_DELIMITER);
+    stream_name.push(DELIMITER);
 
     if let Some(Value::Bool(true)) = config.get("use_instance_id") {
         stream_name.push_str(&format!("{instance_id}"));
-        stream_name.push(_DELIMITER);
+        stream_name.push(DELIMITER);
     }
 
     stream_name

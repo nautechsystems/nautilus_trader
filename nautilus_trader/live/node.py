@@ -329,7 +329,7 @@ class TradingNode:
                 await asyncio.sleep(interval)
                 msg = self.kernel.clock.utc_now()
                 self.cache.heartbeat(msg)
-                self.kernel.msgbus.publish("heath:heartbeat", str(msg))
+                self.kernel.msgbus.publish("health:heartbeat", str(msg))
         except asyncio.CancelledError:
             pass
 
