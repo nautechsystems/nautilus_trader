@@ -9,7 +9,6 @@ documentation.workspace = true
 [lib]
 name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
-proc-macro = true
 
 [dependencies]
 nautilus-core = { path = "../core" }
