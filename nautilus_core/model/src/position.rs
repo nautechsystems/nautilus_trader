@@ -22,7 +22,7 @@ use nautilus_core::time::UnixNanos;
 
 use crate::{
     enums::{OrderSide, PositionSide},
-    events::order::order_filled::OrderFilled,
+    events::order::filled::OrderFilled,
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,

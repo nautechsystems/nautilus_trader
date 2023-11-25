@@ -27,14 +27,12 @@ use crate::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
-        order_accepted::OrderAccepted, order_cancel_rejected::OrderCancelRejected,
-        order_canceled::OrderCanceled, order_denied::OrderDenied, order_emulated::OrderEmulated,
-        order_event::OrderEvent, order_expired::OrderExpired, order_filled::OrderFilled,
-        order_initialized::OrderInitialized, order_modified_rejected::OrderModifyRejected,
-        order_pending_cancel::OrderPendingCancel, order_pending_update::OrderPendingUpdate,
-        order_rejected::OrderRejected, order_released::OrderReleased,
-        order_submitted::OrderSubmitted, order_triggered::OrderTriggered,
-        order_updated::OrderUpdated,
+        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
+        denied::OrderDenied, emulated::OrderEmulated, event::OrderEvent, expired::OrderExpired,
+        filled::OrderFilled, initialized::OrderInitialized, modified_rejected::OrderModifyRejected,
+        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
+        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
+        triggered::OrderTriggered, updated::OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -658,9 +656,8 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide},
         events::order::{
-            order_accepted::OrderAcceptedBuilder, order_denied::OrderDeniedBuilder,
-            order_filled::OrderFilledBuilder, order_initialized::OrderInitializedBuilder,
-            order_submitted::OrderSubmittedBuilder,
+            accepted::OrderAcceptedBuilder, denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
+            initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
         },
         orders::market::MarketOrder,
     };

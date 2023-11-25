@@ -28,9 +28,7 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{
-        order_event::OrderEvent, order_initialized::OrderInitialized, order_updated::OrderUpdated,
-    },
+    events::order::{event::OrderEvent, initialized::OrderInitialized, updated::OrderUpdated},
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
         instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,

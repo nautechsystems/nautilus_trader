@@ -19,9 +19,8 @@ use nautilus_core::{ffi::string::cstr_to_ustr, time::UnixNanos, uuid::UUID4};
 
 use crate::{
     events::order::{
-        order_accepted::OrderAccepted, order_denied::OrderDenied, order_emulated::OrderEmulated,
-        order_rejected::OrderRejected, order_released::OrderReleased,
-        order_submitted::OrderSubmitted,
+        accepted::OrderAccepted, denied::OrderDenied, emulated::OrderEmulated,
+        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,

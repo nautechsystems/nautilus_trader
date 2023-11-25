@@ -13,22 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod order_accepted;
-pub mod order_cancel_rejected;
-pub mod order_canceled;
-pub mod order_denied;
-pub mod order_emulated;
-pub mod order_event;
-pub mod order_expired;
-pub mod order_filled;
-pub mod order_initialized;
-pub mod order_modified_rejected;
-pub mod order_pending_cancel;
-pub mod order_pending_update;
-pub mod order_rejected;
-pub mod order_released;
-pub mod order_submitted;
-pub mod order_triggered;
-pub mod order_updated;
+pub mod accepted;
+pub mod cancel_rejected;
+pub mod canceled;
+pub mod denied;
+pub mod emulated;
+pub mod event;
+pub mod expired;
+pub mod filled;
+pub mod initialized;
+pub mod modified_rejected;
+pub mod pending_cancel;
+pub mod pending_update;
+pub mod rejected;
+pub mod released;
+pub mod submitted;
+pub mod triggered;
+pub mod updated;
+
 #[cfg(feature = "stubs")]
 pub mod stubs;
