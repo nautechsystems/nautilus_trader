@@ -210,62 +210,13 @@ impl Instrument for FuturesContract {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use std::str::FromStr;
-
-    use chrono::{TimeZone, Utc};
-    use nautilus_core::time::UnixNanos;
-    use rstest::fixture;
-    use rust_decimal::Decimal;
-
-    use crate::{
-        enums::AssetClass,
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
-        instruments::futures_contract::FuturesContract,
-        types::{currency::Currency, price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn futures_contract_es() -> FuturesContract {
-        let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
-        let expiration = Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0).unwrap();
-        FuturesContract::new(
-            InstrumentId::new(Symbol::from("ESZ21"), Venue::from("CME")),
-            Symbol::from("ESZ21"),
-            AssetClass::Index,
-            String::from("ES"),
-            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-            expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
-            Currency::USD(),
-            2,
-            Price::from("0.01"),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Quantity::from("1.0"),
-            Some(Quantity::from("1.0")),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::instruments::futures_contract::FuturesContract;
+    use crate::instruments::{futures_contract::FuturesContract, stubs::*};
 
     #[rstest]
     fn test_equality(futures_contract_es: FuturesContract) {
