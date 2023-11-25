@@ -412,55 +412,76 @@ impl MessageBus {
         config: HashMap<String, Value>,
         rx: Receiver<BusMessage>,
     ) {
-        let redis_url = get_redis_url(&config);
-        let client = redis::Client::open(redis_url).unwrap();
-        let stream_name = get_stream_name(&config, trader_id, instance_id);
-        let autotrim_mins = config
-            .get("autotrim_mins")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
-        let autotrim_duration = Duration::from_secs(autotrim_mins as u64 * 60);
-        let mut last_trim_index: HashMap<String, usize> = HashMap::new();
-        let mut conn = client.get_connection().unwrap();
+        let database_config = config
+            .get("database")
+            .expect("No `MessageBusConfig` `database` config specified");
+        let backing_type = database_config
+            .get("type")
+            .expect("No `MessageBusConfig` database config `type` specified")
+            .as_str()
+            .expect("`MessageBusConfig` database `type` must be a valid string");
 
-        // Continue to receive and handle bus messages until channel is hung up
-        while let Ok(msg) = rx.recv() {
-            let key = format!("{stream_name}{}", &msg.topic);
-            let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
-            let result: Result<(), redis::RedisError> = conn.xadd(&key, "*", &items);
+        match backing_type {
+            "redis" => handle_messages_with_redis(trader_id, instance_id, config, rx),
+            other => panic!("Unsupported message bus backing database type '{other}'"),
+        }
+    }
+}
+
+fn handle_messages_with_redis(
+    trader_id: &str,
+    instance_id: UUID4,
+    config: HashMap<String, Value>,
+    rx: Receiver<BusMessage>,
+) {
+    let redis_url = get_redis_url(&config);
+    let client = redis::Client::open(redis_url).unwrap();
+    let stream_name = get_stream_name(&config, trader_id, instance_id);
+    let autotrim_mins = config
+        .get("autotrim_mins")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as usize;
+    let autotrim_duration = Duration::from_secs(autotrim_mins as u64 * 60);
+    let mut last_trim_index: HashMap<String, usize> = HashMap::new();
+    let mut conn = client.get_connection().unwrap();
+
+    // Continue to receive and handle bus messages until channel is hung up
+    while let Ok(msg) = rx.recv() {
+        let key = format!("{stream_name}{}", &msg.topic);
+        let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
+        let result: Result<(), redis::RedisError> = conn.xadd(&key, "*", &items);
+
+        if let Err(e) = result {
+            eprintln!("Error publishing message: {e}");
+        }
+
+        if autotrim_mins == 0 {
+            return; // Nothing else to do
+        }
+
+        // Autotrim stream
+        let last_trim_ms = last_trim_index.entry(key.clone()).or_insert(0); // Remove clone
+        let unix_duration_now = duration_since_unix_epoch();
+
+        // Improve efficiency of this by batching
+        if *last_trim_ms < (unix_duration_now - Duration::from_secs(60)).as_millis() as usize {
+            let min_timestamp_ms = (unix_duration_now - autotrim_duration).as_millis() as usize;
+            let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
+                .arg(&key)
+                .arg(MINID)
+                .arg(min_timestamp_ms)
+                .query(&mut conn);
 
             if let Err(e) = result {
-                eprintln!("Error publishing message: {e}");
-            }
-
-            if autotrim_mins == 0 {
-                return; // Nothing else to do
-            }
-
-            // Autotrim stream
-            let last_trim_ms = last_trim_index.entry(key.clone()).or_insert(0); // Remove clone
-            let unix_duration_now = duration_since_unix_epoch();
-
-            // Improve efficiency of this by batching
-            if *last_trim_ms < (unix_duration_now - Duration::from_secs(60)).as_millis() as usize {
-                let min_timestamp_ms = (unix_duration_now - autotrim_duration).as_millis() as usize;
-                let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
-                    .arg(&key)
-                    .arg(MINID)
-                    .arg(min_timestamp_ms)
-                    .query(&mut conn);
-
-                if let Err(e) = result {
-                    eprintln!("Error trimming stream '{key}': {e}");
-                } else {
-                    last_trim_index.insert(key, unix_duration_now.as_millis() as usize);
-                }
+                eprintln!("Error trimming stream '{key}': {e}");
+            } else {
+                last_trim_index.insert(key, unix_duration_now.as_millis() as usize);
             }
         }
     }
 }
 
-pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
+fn get_redis_url(config: &HashMap<String, Value>) -> String {
     let empty = Value::Object(serde_json::Map::new());
     let database = config.get("database").unwrap_or(&empty);
 
@@ -490,11 +511,7 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
     )
 }
 
-pub fn get_stream_name(
-    config: &HashMap<String, Value>,
-    trader_id: &str,
-    instance_id: UUID4,
-) -> String {
+fn get_stream_name(config: &HashMap<String, Value>, trader_id: &str, instance_id: UUID4) -> String {
     let mut stream_name = String::new();
 
     if let Some(Value::String(s)) = config.get("stream") {
