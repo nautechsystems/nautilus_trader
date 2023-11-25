@@ -19,10 +19,11 @@ use std::{
     hash::{Hash, Hasher},
     sync::mpsc::{channel, Receiver, SendError, Sender},
     thread,
+    time::Duration,
 };
 
 use indexmap::IndexMap;
-use nautilus_core::uuid::UUID4;
+use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
 use serde::{Deserialize, Serialize};
@@ -109,6 +110,10 @@ impl fmt::Display for BusMessage {
         )
     }
 }
+
+const _DELIMITER: char = ':';
+const _XTRIM: &str = "XTRIM";
+const _MINID: &str = "MINID";
 
 /// Provides a generic message bus to facilitate various messaging patterns.
 ///
@@ -409,17 +414,47 @@ impl MessageBus {
     ) {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
-        let stream = get_stream_name(&config, instance_id);
+        let stream_name = get_stream_name(&config, trader_id, instance_id);
+        let autotrim_mins = config
+            .get("autotrim_mins")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let autotrim_duration = Duration::from_secs(autotrim_mins as u64 * 60);
+        let mut last_trim_index: HashMap<String, usize> = HashMap::new();
         let mut conn = client.get_connection().unwrap();
 
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            let key = format!("{stream}{trader_id}:{}", &msg.topic);
+            let key = format!("{stream_name}{}", &msg.topic);
             let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
             let result: Result<(), redis::RedisError> = conn.xadd(&key, "*", &items);
 
             if let Err(e) = result {
                 eprintln!("Error publishing message: {e}");
+            }
+
+            if autotrim_mins == 0 {
+                return; // Nothing else to do
+            }
+
+            // Autotrim stream
+            let last_trim_ms = last_trim_index.entry(key.clone()).or_insert(0); // Remove clone
+            let unix_duration_now = duration_since_unix_epoch();
+
+            // Improve efficiency of this by batching
+            if *last_trim_ms < (unix_duration_now - Duration::from_secs(60)).as_millis() as usize {
+                let min_timestamp_ms = (unix_duration_now - autotrim_duration).as_millis() as usize;
+                let result: Result<(), redis::RedisError> = redis::cmd(_XTRIM)
+                    .arg(&key)
+                    .arg(_MINID)
+                    .arg(min_timestamp_ms)
+                    .query(&mut conn);
+
+                if let Err(e) = result {
+                    eprintln!("Error trimming stream '{key}': {e}");
+                } else {
+                    last_trim_index.insert(key, unix_duration_now.as_millis() as usize);
+                }
             }
         }
     }
@@ -455,21 +490,29 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
     )
 }
 
-pub fn get_stream_name(config: &HashMap<String, Value>, instance_id: UUID4) -> String {
-    let mut name = String::new();
+pub fn get_stream_name(
+    config: &HashMap<String, Value>,
+    trader_id: &str,
+    instance_id: UUID4,
+) -> String {
+    let mut stream_name = String::new();
 
     if let Some(Value::String(s)) = config.get("stream") {
         if !s.is_empty() {
-            name.push_str(s.trim_matches('"'));
-            name.push(':');
+            stream_name.push_str(s.trim_matches('"'));
+            stream_name.push(_DELIMITER);
         }
     }
 
+    stream_name.push_str(trader_id);
+    stream_name.push(_DELIMITER);
+
     if let Some(Value::Bool(true)) = config.get("use_instance_id") {
-        name.push_str(&format!("{instance_id}:"));
+        stream_name.push_str(&format!("{instance_id}"));
+        stream_name.push(_DELIMITER);
     }
 
-    name
+    stream_name
 }
 
 /// Match a topic and a string pattern

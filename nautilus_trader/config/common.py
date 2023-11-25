@@ -230,6 +230,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         A list of serializable types *not* to publish externally.
     autotrim_mins : int, optional
         The streams lookback window in minutes to be autotrimmed.
+        Note: requires Redis version >= 6.2.0 otherwise will result in a command syntax error.
 
     """
 

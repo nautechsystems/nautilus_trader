@@ -13,7 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Return the decimal precision inferred from the given string.
+use anyhow::{anyhow, Result};
+
+/// Returns the decimal precision inferred from the given string.
 #[must_use]
 pub fn precision_from_str(s: &str) -> u8 {
     let lower_s = s.to_lowercase();
@@ -25,6 +27,19 @@ pub fn precision_from_str(s: &str) -> u8 {
         return 0;
     }
     return lower_s.split('.').last().unwrap().len() as u8;
+}
+
+/// Returns a usize from the given bytes.
+pub fn bytes_to_usize(bytes: &[u8]) -> Result<usize> {
+    // Check bytes width
+    if bytes.len() >= std::mem::size_of::<usize>() {
+        let mut buffer = [0u8; std::mem::size_of::<usize>()];
+        buffer.copy_from_slice(&bytes[..std::mem::size_of::<usize>()]);
+
+        Ok(usize::from_le_bytes(buffer))
+    } else {
+        Err(anyhow!("Not enough bytes to represent a `usize`"))
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -51,5 +66,35 @@ mod tests {
     fn test_precision_from_str(#[case] s: &str, #[case] expected: u8) {
         let result = precision_from_str(s);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_bytes_to_usize_empty() {
+        let payload: Vec<u8> = vec![];
+        let result = bytes_to_usize(&payload);
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap().to_string(),
+            "Not enough bytes to represent a `usize`"
+        );
+    }
+
+    #[rstest]
+    fn test_bytes_to_usize_invalid() {
+        let payload: Vec<u8> = vec![0x01, 0x02, 0x03];
+        let result = bytes_to_usize(&payload);
+        assert!(result.is_err());
+        assert_eq!(
+            result.err().unwrap().to_string(),
+            "Not enough bytes to represent a `usize`"
+        );
+    }
+
+    #[rstest]
+    fn test_bytes_to_usize_valid() {
+        let payload: Vec<u8> = vec![0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let result = bytes_to_usize(&payload).unwrap();
+        assert_eq!(result, 0x0807060504030201);
+        assert_eq!(result, 578437695752307201);
     }
 }
