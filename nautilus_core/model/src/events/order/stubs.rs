@@ -13,17 +13,54 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::str::FromStr;
+
 use nautilus_core::uuid::UUID4;
 use rstest::fixture;
 use ustr::Ustr;
 
 use crate::{
-    events::order::denied::OrderDenied,
+    enums::{LiquiditySide, OrderSide, OrderType},
+    events::order::{denied::OrderDenied, filled::OrderFilled},
     identifiers::{
-        client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
-        stubs::*, trader_id::TraderId,
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        strategy_id::StrategyId, stubs::*, trade_id::TradeId, trader_id::TraderId,
+        venue_order_id::VenueOrderId,
     },
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
+
+#[fixture]
+pub fn order_filled(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderFilled {
+    let event_id = UUID4::new();
+    OrderFilled::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        VenueOrderId::new("123456").unwrap(),
+        AccountId::new("SIM-001").unwrap(),
+        TradeId::new("1").unwrap(),
+        OrderSide::Buy,
+        OrderType::Limit,
+        Quantity::from_str("0.561").unwrap(),
+        Price::from_str("22000").unwrap(),
+        Currency::from_str("USDT").unwrap(),
+        LiquiditySide::Taker,
+        event_id,
+        0,
+        0,
+        false,
+        None,
+        Some(Money::from_str("12.2 USDT").unwrap()),
+    )
+    .unwrap()
+}
 
 #[fixture]
 pub fn order_denied_max_submitted_rate(
