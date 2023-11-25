@@ -13,5 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod order;
-pub mod position;
+use derive_builder::{self, Builder};
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use serde::{Deserialize, Serialize};
+
+use crate::identifiers::{
+    client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
+    trader_id::TraderId,
+};
+
+#[repr(C)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
+#[builder(default)]
+#[serde(tag = "type")]
+pub struct OrderEmulated {
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
+    pub instrument_id: InstrumentId,
+    pub client_order_id: ClientOrderId,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}

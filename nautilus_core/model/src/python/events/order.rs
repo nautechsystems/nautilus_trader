@@ -25,7 +25,7 @@ use rust_decimal::prelude::ToPrimitive;
 use ustr::Ustr;
 
 use crate::{
-    events::order::OrderDenied,
+    events::order::order_denied::OrderDenied,
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
         trader_id::TraderId,

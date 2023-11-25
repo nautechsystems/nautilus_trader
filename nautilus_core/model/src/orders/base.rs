@@ -27,10 +27,14 @@ use crate::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEvent,
-        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated,
+        order_accepted::OrderAccepted, order_cancel_rejected::OrderCancelRejected,
+        order_canceled::OrderCanceled, order_denied::OrderDenied, order_emulated::OrderEmulated,
+        order_event::OrderEvent, order_expired::OrderExpired, order_filled::OrderFilled,
+        order_initialized::OrderInitialized, order_modified_rejected::OrderModifyRejected,
+        order_pending_cancel::OrderPendingCancel, order_pending_update::OrderPendingUpdate,
+        order_rejected::OrderRejected, order_released::OrderReleased,
+        order_submitted::OrderSubmitted, order_triggered::OrderTriggered,
+        order_updated::OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -654,8 +658,9 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide},
         events::order::{
-            OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderFilledBuilder,
-            OrderInitializedBuilder, OrderSubmittedBuilder,
+            order_accepted::OrderAcceptedBuilder, order_denied::OrderDeniedBuilder,
+            order_filled::OrderFilledBuilder, order_initialized::OrderInitializedBuilder,
+            order_submitted::OrderSubmittedBuilder,
         },
         orders::market::MarketOrder,
     };
