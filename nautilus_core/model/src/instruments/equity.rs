@@ -201,54 +201,13 @@ impl Instrument for Equity {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use std::str::FromStr;
-
-    use rstest::fixture;
-    use rust_decimal::Decimal;
-
-    use crate::{
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-        instruments::equity::Equity,
-        types::{currency::Currency, price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn equity_aapl() -> Equity {
-        Equity::new(
-            InstrumentId::from("AAPL.NASDAQ"),
-            Symbol::from("AAPL"),
-            String::from("US0378331005"),
-            Currency::from("USD"),
-            2,
-            Price::from("0.01"),
-            Quantity::from(1),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Some(Quantity::from(1)),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::instruments::equity::Equity;
+    use crate::instruments::{equity::Equity, stubs::*};
 
     #[rstest]
     fn test_equality(equity_aapl: Equity) {

@@ -22,6 +22,9 @@ pub mod options_contract;
 pub mod synthetic;
 pub mod synthetic_api;
 
+#[cfg(feature = "stubs")]
+pub mod stubs;
+
 use anyhow::Result;
 use rust_decimal::Decimal;
 
