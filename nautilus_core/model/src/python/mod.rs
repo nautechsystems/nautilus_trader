@@ -293,6 +293,6 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     // events
-    m.add_class::<crate::events::order::order_denied::OrderDenied>()?;
+    m.add_class::<crate::events::order::denied::OrderDenied>()?;
     Ok(())
 }

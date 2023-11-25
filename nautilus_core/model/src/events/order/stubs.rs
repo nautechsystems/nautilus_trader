@@ -18,7 +18,7 @@ use rstest::fixture;
 use ustr::Ustr;
 
 use crate::{
-    events::order::order_denied::OrderDenied,
+    events::order::denied::OrderDenied,
     identifiers::{
         client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
         stubs::*, trader_id::TraderId,
