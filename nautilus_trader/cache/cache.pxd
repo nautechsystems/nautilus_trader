@@ -107,9 +107,9 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
     cdef readonly bint snapshot_orders
-    """If order state snapshots should be taken.\n\n:returns: `bool`"""
+    """If order state snapshots should be persisted.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions
-    """If position state snapshots should be taken.\n\n:returns: `bool`"""
+    """If position state snapshots should be persisted.\n\n:returns: `bool`"""
 
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)

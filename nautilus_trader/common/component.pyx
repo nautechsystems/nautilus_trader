@@ -687,6 +687,10 @@ cdef class MessageBus:
         The custom name for the message bus.
     serializer : Serializer, optional
         The serializer for database operations.
+    snapshot_orders : bool, default False
+        If order state snapshots should be published externally.
+    snapshot_positions : bool, default False
+        If position state snapshots should be published externally.
     config : MessageBusConfig, optional
         The configuration for the message bus.
 
@@ -709,6 +713,8 @@ cdef class MessageBus:
         UUID4 instance_id = None,
         str name = None,
         Serializer serializer = None,
+        bint snapshot_orders: bool = False,
+        bint snapshot_positions: bool = False,
         config: Any | None = None,
     ):
         # Temporary fix for import error
@@ -726,6 +732,8 @@ cdef class MessageBus:
         self.trader_id = trader_id
         self.serializer = serializer
         self.has_backing = config.database is not None
+        self.snapshot_orders = snapshot_orders
+        self.snapshot_positions = snapshot_positions
 
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)

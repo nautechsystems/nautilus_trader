@@ -241,6 +241,8 @@ class NautilusKernel:
             clock=self._clock,
             logger=self._logger,
             serializer=msgbus_serializer,
+            snapshot_orders=config.snapshot_orders,
+            snapshot_positions=config.snapshot_positions,
             config=config.message_bus,
         )
 
