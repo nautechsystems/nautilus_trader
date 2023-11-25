@@ -294,5 +294,6 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
     // events
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
+    m.add_class::<crate::events::order::filled::OrderFilled>()?;
     Ok(())
 }

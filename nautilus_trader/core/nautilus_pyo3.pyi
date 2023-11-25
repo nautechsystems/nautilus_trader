@@ -645,6 +645,38 @@ class OrderDenied:
     def from_dict(cls, values: dict[str, str]) -> OrderDenied: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderFilled:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+        trade_id: TradeId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        last_qty: Quantity,
+        last_px: Price,
+        currency: Currency,
+        liquidity_side: LiquiditySide,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        position_id: PositionId | None = None,
+        commission: Money | None = None,
+    )-> None: ...
+    @property
+    def is_buy(self) -> bool: ...
+    @property
+    def is_sell(self) -> bool: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderFilled: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
 
 ###################################################################################################
 # Network
