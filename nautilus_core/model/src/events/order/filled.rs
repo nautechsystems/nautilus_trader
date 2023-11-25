@@ -13,8 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{fmt::Display, str::FromStr};
+
+use anyhow::Result;
 use derive_builder::{self, Builder};
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -31,6 +35,10 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct OrderFilled {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -39,18 +47,73 @@ pub struct OrderFilled {
     pub venue_order_id: VenueOrderId,
     pub account_id: AccountId,
     pub trade_id: TradeId,
-    pub position_id: Option<PositionId>,
     pub order_side: OrderSide,
     pub order_type: OrderType,
     pub last_qty: Quantity,
     pub last_px: Price,
     pub currency: Currency,
-    pub commission: Option<Money>,
     pub liquidity_side: LiquiditySide,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
     pub reconciliation: bool,
+    pub position_id: Option<PositionId>,
+    pub commission: Option<Money>,
+}
+
+impl OrderFilled {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+        trade_id: TradeId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        last_qty: Quantity,
+        last_px: Price,
+        currency: Currency,
+        liquidity_side: LiquiditySide,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        reconciliation: bool,
+        position_id: Option<PositionId>,
+        commission: Option<Money>,
+    ) -> Result<OrderFilled> {
+        Ok(OrderFilled {
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            account_id,
+            trade_id,
+            order_side,
+            order_type,
+            last_qty,
+            last_px,
+            currency,
+            liquidity_side,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation,
+            position_id,
+            commission,
+        })
+    }
+
+    pub fn is_buy(&self) -> bool {
+        self.order_side == OrderSide::Buy
+    }
+
+    pub fn is_sell(&self) -> bool {
+        self.order_side == OrderSide::Sell
+    }
 }
 
 impl Default for OrderFilled {
@@ -76,5 +139,68 @@ impl Default for OrderFilled {
             ts_init: Default::default(),
             reconciliation: Default::default(),
         }
+    }
+}
+
+impl Display for OrderFilled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OrderFilled(\
+            instrument_id={}, \
+            client_order_id={}, \
+            venue_order_id={}, \
+            account_id={}, \
+            trade_id={}, \
+            position_id={}, \
+            order_side={}, \
+            order_type={}, \
+            last_qty={}, \
+            last_px={}, \
+            commission={} ,\
+            liquidity_side={}, \
+            ts_event={})",
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id,
+            self.account_id,
+            self.trade_id,
+            self.position_id.unwrap_or_default(),
+            self.order_side,
+            self.order_type,
+            self.last_qty,
+            self.last_px,
+            self.commission
+                .unwrap_or(Money::from_str("0.0 USD").unwrap()),
+            self.liquidity_side,
+            self.ts_event
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::events::order::{filled::OrderFilled, stubs::*};
+
+    #[rstest]
+    fn test_order_filled_display(order_filled: OrderFilled) {
+        let display = format!("{}", order_filled);
+        assert_eq!(
+            display,
+            "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+            venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=P-001, \
+            order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22000, \
+            commission=12.20000000 USDT ,liquidity_side=TAKER, ts_event=0)")
+    }
+
+    #[rstest]
+    fn test_order_filled_is_buy(order_filled: OrderFilled) {
+        assert!(order_filled.is_buy());
+        assert!(!order_filled.is_sell());
     }
 }

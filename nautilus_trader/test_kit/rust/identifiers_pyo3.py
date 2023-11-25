@@ -100,7 +100,7 @@ class TestIdProviderPyo3:
 
     @staticmethod
     def venue_order_id() -> VenueOrderId:
-        return VenueOrderId("1")
+        return VenueOrderId("123456")
 
     @staticmethod
     def trade_id() -> TradeId:
