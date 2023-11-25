@@ -199,6 +199,10 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     ssl : bool, default False
         If database should use an SSL enabled connection.
 
+    Notes
+    -----
+    Requires Redis version 6.2.0 and above for correct operation.
+
     """
 
     type: str = "redis"
@@ -229,8 +233,11 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     types_filter : list[type], optional
         A list of serializable types *not* to publish externally.
     autotrim_mins : int, optional
-        The streams lookback window in minutes to be autotrimmed.
-        Note: requires Redis version >= 6.2.0 otherwise will result in a command syntax error.
+        The lookback window in minutes for automatic stream trimming.
+        The actual window may extend up to one minute beyond the specified value since streams are
+        trimmed at most once every minute.
+        Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
+        in acommand syntax error.
 
     """
 
