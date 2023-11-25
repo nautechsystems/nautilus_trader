@@ -33,6 +33,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.common.messages cimport ComponentStateChanged
@@ -724,6 +725,19 @@ cdef class MessageBus:
 
         self.trader_id = trader_id
 
+        self._serializer = serializer
+        self._clock = clock
+        self._log = LoggerAdapter(component_name=name, logger=logger)
+
+        # Configuration
+        self._log.info(f"{config.database=}", LogColor.BLUE)
+        self._log.info(f"{config.stream=}", LogColor.BLUE)
+        self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
+        self._log.info(f"{config.encoding=}", LogColor.BLUE)
+        self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
+        self._log.info(f"{config.types_filter=}", LogColor.BLUE)
+        self._log.info(f"{config.autotrim_mins=}", LogColor.BLUE)
+
         # Copy and clear `types_filter` before passing down to the core MessageBus
         cdef list types_filter = copy.copy(config.types_filter)
         if config.types_filter is not None:
@@ -735,10 +749,6 @@ cdef class MessageBus:
             pystr_to_cstr(instance_id.to_str()),
             pybytes_to_cstr(msgspec.json.encode(config)),
         )
-
-        self._serializer = serializer
-        self._clock = clock
-        self._log = LoggerAdapter(component_name=name, logger=logger)
 
         self._endpoints: dict[str, Callable[[Any], None]] = {}
         self._patterns: dict[str, Subscription[:]] = {}
@@ -865,25 +875,6 @@ cdef class MessageBus:
         Condition.not_none(request_id, "request_id")
 
         return request_id in self._correlation_index
-
-    cpdef void trim_streams(self, int lookback_mins):
-        """
-        Trim all streams to the lookback window minutes.
-
-        Parameters
-        ----------
-        lookback_mins : int
-            The lookback window in minutes to trim to.
-
-        Raises
-        ------
-        ValueError
-            If the `lookback_mins` if not positive (> 0).
-
-        """
-        Condition.positive_int(lookback_mins, "lookback_mins")
-
-        # TODO: Add msgbus_trim_streams function
 
     cpdef void register(self, str endpoint, handler: Callable[[Any], None]):
         """
