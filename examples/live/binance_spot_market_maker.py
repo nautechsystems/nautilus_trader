@@ -26,6 +26,8 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import DatabaseConfig
+from nautilus_trader.config.common import MessageBusConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
@@ -45,16 +47,20 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache_database=CacheDatabaseConfig(type="in-memory"),
-    # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),  # No yet for operational use
-    #     encoding="json",
-    #     stream="quoters",
-    #     use_instance_id=False,
-    #     timestamps_as_iso8601=True,
-    #     types_filter=[QuoteTick],
-    #     autotrim_mins=30,
-    # ),
+    cache_database=CacheDatabaseConfig(type="redis"),
+    message_bus=MessageBusConfig(
+        database=DatabaseConfig(),  # No yet for operational use
+        encoding="json",
+        stream="quoters",
+        use_instance_id=False,
+        timestamps_as_iso8601=True,
+        # types_filter=[QuoteTick],
+        autotrim_mins=1,
+    ),
+    heartbeat_interval=1.0,
+    snapshot_orders=True,
+    snapshot_positions=True,
+    snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_API_KEY"

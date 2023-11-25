@@ -247,6 +247,8 @@ class NautilusKernel:
         self._cache = Cache(
             database=cache_db,
             logger=self._logger,
+            snapshot_orders=config.snapshot_orders,
+            snapshot_positions=config.snapshot_positions,
             config=config.cache,
         )
 

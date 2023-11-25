@@ -718,6 +718,8 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
         )
+        if self._msgbus.has_backing and self._cache.snapshot_orders:
+            self._publish_order_snapshot(order)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
@@ -764,6 +766,8 @@ cdef class ExecutionEngine(Component):
         if not self._cache.order_exists(order.client_order_id):
             # Cache order
             self._cache.add_order(order, command.position_id, command.client_id)
+            if self._msgbus.has_backing and self._cache.snapshot_orders:
+                self._publish_order_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -793,6 +797,8 @@ cdef class ExecutionEngine(Component):
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, command.position_id, command.client_id)
+                if self._msgbus.has_backing and self._cache.snapshot_orders:
+                    self._publish_order_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
@@ -1020,6 +1026,8 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{event.strategy_id}",
             msg=event,
         )
+        if self._msgbus.has_backing and self._cache.snapshot_orders:
+            self._publish_order_snapshot(order)
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
@@ -1069,11 +1077,15 @@ cdef class ExecutionEngine(Component):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
+            if self._msgbus.has_backing and self._cache.snapshot_positions:
+                self._publish_position_snapshot(position)
         else:
             try:
                 self._cache.snapshot_position(position)
                 position.apply(fill)
                 self._cache.update_position(position)
+                if self._msgbus.has_backing and self._cache.snapshot_positions:
+                    self._publish_position_snapshot(position)
             except KeyError as e:
                 # Protected against duplicate OrderFilled
                 self._log.exception(f"Error on applying {fill!r} to {position!r}", e)
@@ -1102,6 +1114,8 @@ cdef class ExecutionEngine(Component):
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)
+        if self._msgbus.has_backing and self._cache.snapshot_positions:
+            self._publish_position_snapshot(position)
 
         cdef PositionEvent event
         if position.is_closed_c():
@@ -1216,3 +1230,21 @@ cdef class ExecutionEngine(Component):
 
         # Open flipped position
         self._open_position(instrument, None, fill_split2, oms_type)
+
+    cpdef void _publish_order_snapshot(self, Order order):
+        if self._msgbus.serializer is not None:
+            self._msgbus.publish_c(
+                topic=f"snapshots:orders:{order.client_order_id.to_str()}",
+                msg=self._msgbus.serializer.serialize(order.to_dict())
+            )
+
+    cpdef void _publish_position_snapshot(self, Position position):
+        cdef dict position_state = position.to_dict()
+        cdef Money unrealized_pnl = self._cache.calculate_unrealized_pnl(position)
+        if unrealized_pnl is not None:
+            position_state["unrealized_pnl"] = unrealized_pnl.to_str()
+        if self._msgbus.serializer is not None:
+            self._msgbus.publish(
+                topic=f"snapshots:positions:{position.id}",
+                msg=self._msgbus.serializer.serialize(position_state),
+            )

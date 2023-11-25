@@ -724,8 +724,9 @@ cdef class MessageBus:
         Condition.type(config, MessageBusConfig, "config")
 
         self.trader_id = trader_id
+        self.serializer = serializer
+        self.has_backing = config.database is not None
 
-        self._serializer = serializer
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)
 
@@ -1175,9 +1176,12 @@ cdef class MessageBus:
 
         # Publish externally (if configured)
         cdef bytes payload_bytes
-        if self._has_backing and self._serializer is not None:
+        if self._has_backing and self.serializer is not None:
             if isinstance(msg, self._publishable_types):
-                payload_bytes = self._serializer.serialize(msg)
+                if isinstance(msg, bytes):
+                    payload_bytes = msg
+                else:
+                    payload_bytes = self.serializer.serialize(msg)
                 msgbus_publish_external(
                     &self._mem,
                     pystr_to_cstr(topic),

@@ -122,3 +122,5 @@ cdef class ExecutionEngine(Component):
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
+    cpdef void _publish_order_snapshot(self, Order order)
+    cpdef void _publish_position_snapshot(self, Position position)
