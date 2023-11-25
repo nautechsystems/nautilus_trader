@@ -117,17 +117,12 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    // TODO: Currently experiencing the following issue when trying to add `common`
-    // error[E0631]: type mismatch in closure arguments
-    // = note: expected closure signature `fn(pyo3::Python<'_>) -> _`
-    //         found closure signature `fn(pyo3::marker::Python<'_>) -> _`
-
     // Common
-    // let n = "common";
-    // let submodule = pyo3::wrap_pymodule!(nautilus_common::python::common);
-    // m.add_wrapped(submodule)?;
-    // sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-    // re_export_module_attributes(m, n)?;
+    let n = "common";
+    let submodule = pyo3::wrap_pymodule!(nautilus_common::python::common);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
 
     // Model
     let n = "model";
