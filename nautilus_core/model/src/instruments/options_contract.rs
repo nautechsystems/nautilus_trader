@@ -213,63 +213,13 @@ impl Instrument for OptionsContract {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use std::str::FromStr;
-
-    use chrono::{TimeZone, Utc};
-    use nautilus_core::time::UnixNanos;
-    use rstest::fixture;
-    use rust_decimal::Decimal;
-
-    use crate::{
-        enums::{AssetClass, OptionKind},
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-        instruments::options_contract::OptionsContract,
-        types::{currency::Currency, price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn options_contract_appl() -> OptionsContract {
-        let activation = Utc.with_ymd_and_hms(2021, 9, 17, 0, 0, 0).unwrap();
-        let expiration = Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0).unwrap();
-        OptionsContract::new(
-            InstrumentId::from("AAPL211217C00150000.OPRA"),
-            Symbol::from("AAPL211217C00150000"),
-            AssetClass::Equity,
-            String::from("AAPL"),
-            OptionKind::Call,
-            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-            expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
-            Price::from("149.0"),
-            Currency::USD(),
-            2,
-            Price::from("0.01"),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Some(Quantity::from("1.0")),
-            None,
-            None,
-            None,
-            None,
-        )
-        .unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::instruments::options_contract::OptionsContract;
+    use crate::instruments::{options_contract::OptionsContract, stubs::*};
 
     #[rstest]
     fn test_equality(options_contract_appl: OptionsContract) {
