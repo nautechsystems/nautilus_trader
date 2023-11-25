@@ -28,6 +28,9 @@ from nautilus_trader.serialization.base cimport _OBJECT_TO_DICT_MAP
 from nautilus_trader.serialization.base cimport Serializer
 
 
+cdef tuple[str, int, float, bool] _PRIMITIVES = (str, int, float, bool)
+
+
 cdef class MsgSpecSerializer(Serializer):
     """
     Provides a serializer for either the 'MessagePack' or 'JSON' specifications.
@@ -82,7 +85,10 @@ cdef class MsgSpecSerializer(Serializer):
         else:
             delegate = _OBJECT_TO_DICT_MAP.get(type(obj).__name__)
             if delegate is None:
-                raise RuntimeError(f"cannot serialize object: unrecognized type {type(obj)}")
+                if isinstance(obj, _PRIMITIVES):
+                    return self._encode(obj)
+                else:
+                    raise RuntimeError(f"cannot serialize object: unrecognized type {type(obj)}")
             obj_dict = delegate(obj)
 
         cdef dict timestamp_kvs = {

@@ -662,8 +662,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._reconcile_trade_report(order, trade, instrument)
 
         if report.avg_px is None:
-            self._log.error("report.avg_px was `None` when a value was expected.")
-            return False  # Failed
+            self._log.warning("report.avg_px was `None` when a value was expected.")
 
         # Check reported filled qty against order filled qty
         if report.filled_qty != order.filled_qty:
@@ -673,7 +672,7 @@ class LiveExecutionEngine(ExecutionEngine):
             fill: OrderFilled = self._generate_inferred_fill(order, report, instrument)
             self._handle_event(fill)
             assert report.filled_qty == order.filled_qty
-            if not math.isclose(report.avg_px, order.avg_px):
+            if report.avg_px is not None and not math.isclose(report.avg_px, order.avg_px):
                 self._log.warning(
                     f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}",
                 )

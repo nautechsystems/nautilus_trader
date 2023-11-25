@@ -102,7 +102,6 @@ cdef class MessageBus:
     cdef MessageBus_API _mem
     cdef Clock _clock
     cdef LoggerAdapter _log
-    cdef Serializer _serializer
     cdef dict[Subscription, list[str]] _subscriptions
     cdef dict[str, Subscription[:]] _patterns
     cdef dict[str, object] _endpoints
@@ -112,6 +111,10 @@ cdef class MessageBus:
 
     cdef readonly TraderId trader_id
     """The trader ID associated with the bus.\n\n:returns: `TraderId`"""
+    cdef readonly Serializer serializer
+    """The serializer for the bus.\n\n:returns: `Serializer`"""
+    cdef readonly bint has_backing
+    """If the message bus has a database backing.\n\n:returns: `bool`"""
     cdef readonly int sent_count
     """The count of messages sent through the bus.\n\n:returns: `int`"""
     cdef readonly int req_count

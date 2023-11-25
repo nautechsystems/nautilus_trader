@@ -136,7 +136,7 @@ cdef class Cache(CacheFacade):
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
     cdef void _assign_position_id_to_contingencies(self, Order order)
-    cdef Money _calculate_unrealized_pnl(self, Position position)
+    cpdef Money calculate_unrealized_pnl(self, Position position)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)

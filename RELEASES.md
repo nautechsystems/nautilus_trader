@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Moved `Currency` from `model.currency` to `model.objects` (consolidating modules to reduce binary wheel size)
 - Moved `MessageBus` from `common.msgbus` to `common.component` (consolidating modules to reduce binary wheel size)
 - Moved `MsgSpecSerializer` from `serialization.msgpack.serializer` to `serialization.serializer`
+- Moved `CacheConfig` `snapshot_orders`, `snapshot_positions`, `snapshot_positions_interval` to `NautilusKernelConfig` (logical applicability)
 - Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack formats)
 
 ### Fixes
