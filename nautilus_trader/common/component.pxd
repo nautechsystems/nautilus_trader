@@ -115,6 +115,10 @@ cdef class MessageBus:
     """The serializer for the bus.\n\n:returns: `Serializer`"""
     cdef readonly bint has_backing
     """If the message bus has a database backing.\n\n:returns: `bool`"""
+    cdef readonly bint snapshot_orders
+    """If order state snapshots should be published externally.\n\n:returns: `bool`"""
+    cdef readonly bint snapshot_positions
+    """If position state snapshots should be published externally.\n\n:returns: `bool`"""
     cdef readonly int sent_count
     """The count of messages sent through the bus.\n\n:returns: `int`"""
     cdef readonly int req_count

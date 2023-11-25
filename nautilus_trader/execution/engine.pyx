@@ -718,7 +718,7 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
         )
-        if self._msgbus.has_backing and self._cache.snapshot_orders:
+        if self._msgbus.has_backing and self._msgbus.snapshot_orders:
             self._publish_order_snapshot(order)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
@@ -766,7 +766,7 @@ cdef class ExecutionEngine(Component):
         if not self._cache.order_exists(order.client_order_id):
             # Cache order
             self._cache.add_order(order, command.position_id, command.client_id)
-            if self._msgbus.has_backing and self._cache.snapshot_orders:
+            if self._msgbus.has_backing and self._msgbus.snapshot_orders:
                 self._publish_order_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
@@ -797,7 +797,7 @@ cdef class ExecutionEngine(Component):
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, command.position_id, command.client_id)
-                if self._msgbus.has_backing and self._cache.snapshot_orders:
+                if self._msgbus.has_backing and self._msgbus.snapshot_orders:
                     self._publish_order_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
@@ -1026,7 +1026,7 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{event.strategy_id}",
             msg=event,
         )
-        if self._msgbus.has_backing and self._cache.snapshot_orders:
+        if self._msgbus.has_backing and self._msgbus.snapshot_orders:
             self._publish_order_snapshot(order)
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
@@ -1077,14 +1077,14 @@ cdef class ExecutionEngine(Component):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
-            if self._msgbus.has_backing and self._cache.snapshot_positions:
+            if self._msgbus.has_backing and self._msgbus.snapshot_positions:
                 self._publish_position_snapshot(position)
         else:
             try:
                 self._cache.snapshot_position(position)
                 position.apply(fill)
                 self._cache.update_position(position)
-                if self._msgbus.has_backing and self._cache.snapshot_positions:
+                if self._msgbus.has_backing and self._msgbus.snapshot_positions:
                     self._publish_position_snapshot(position)
             except KeyError as e:
                 # Protected against duplicate OrderFilled
@@ -1114,7 +1114,7 @@ cdef class ExecutionEngine(Component):
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)
-        if self._msgbus.has_backing and self._cache.snapshot_positions:
+        if self._msgbus.has_backing and self._msgbus.snapshot_positions:
             self._publish_position_snapshot(position)
 
         cdef PositionEvent event

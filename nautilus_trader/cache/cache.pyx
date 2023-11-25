@@ -82,9 +82,9 @@ cdef class Cache(CacheFacade):
     config : CacheConfig, optional
         The cache configuration.
     snapshot_orders : bool, default False
-        If order state snapshots should be taken.
+        If order state snapshots should be persisted.
     snapshot_positions : bool, default False
-        If position state snapshots should be taken.
+        If position state snapshots should be persisted.
 
     Raises
     ------
