@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt::Display, str::FromStr};
+use std::fmt::Display;
 
 use anyhow::Result;
 use derive_builder::{self, Builder};
@@ -170,8 +170,7 @@ impl Display for OrderFilled {
             self.order_type,
             self.last_qty,
             self.last_px,
-            self.commission
-                .unwrap_or(Money::from_str("0.0 USD").unwrap()),
+            self.commission.unwrap_or(Money::from("0.0 USD")),
             self.liquidity_side,
             self.ts_event
         )
