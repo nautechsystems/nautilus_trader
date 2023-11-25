@@ -115,6 +115,12 @@ impl FromStr for Money {
     }
 }
 
+impl From<&str> for Money {
+    fn from(input: &str) -> Self {
+        Self::from_str(input).unwrap()
+    }
+}
+
 impl From<Money> for f64 {
     fn from(money: Money) -> Self {
         money.as_f64()
