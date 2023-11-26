@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fmt, rc::Rc};
+use std::{fmt, sync::Arc};
 
 use nautilus_core::message::Message;
 use pyo3::{ffi, prelude::*};
@@ -33,17 +33,39 @@ pub extern "C" fn dummy_callable(c: PyCallableWrapper) -> PyCallableWrapper {
     c
 }
 
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct SafeMessageCallback {
+    pub callback: Arc<dyn Fn(Message) + Send>,
+}
+
+unsafe impl Send for SafeMessageCallback {}
+unsafe impl Sync for SafeMessageCallback {}
+
+#[allow(dead_code)]
+#[derive(Clone)]
+pub struct SafeTimeEventCallback {
+    pub callback: Arc<dyn Fn(TimeEvent) + Send>,
+}
+
+unsafe impl Send for SafeTimeEventCallback {}
+unsafe impl Sync for SafeTimeEventCallback {}
+
 // TODO: Make this more generic
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct MessageHandler {
     pub handler_id: Ustr,
-    _callback: Option<Rc<dyn Fn(Message)>>,
+    _callback: Option<SafeMessageCallback>,
 }
 
 impl MessageHandler {
     // TODO: Validate exactly one of these is `Some`
     #[must_use]
-    pub fn new(handler_id: Ustr, callback: Option<Rc<dyn Fn(Message)>>) -> Self {
+    pub fn new(handler_id: Ustr, callback: Option<SafeMessageCallback>) -> Self {
         Self {
             handler_id,
             _callback: callback,
@@ -67,15 +89,19 @@ impl fmt::Debug for MessageHandler {
 
 // TODO: Make this more generic
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct EventHandler {
     py_callback: Option<PyObject>,
-    _callback: Option<Rc<dyn Fn(TimeEvent)>>,
+    _callback: Option<SafeTimeEventCallback>,
 }
 
 impl EventHandler {
     // TODO: Validate exactly one of these is `Some`
     #[must_use]
-    pub fn new(py_callback: Option<PyObject>, callback: Option<Rc<dyn Fn(TimeEvent)>>) -> Self {
+    pub fn new(py_callback: Option<PyObject>, callback: Option<SafeTimeEventCallback>) -> Self {
         Self {
             py_callback,
             _callback: callback,

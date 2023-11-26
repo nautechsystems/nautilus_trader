@@ -12,19 +12,3 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-pub mod clock;
-pub mod timer;
-
-use pyo3::prelude::*;
-
-/// Loaded as nautilus_pyo3.common
-#[pymodule]
-pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::enums::ComponentState>()?;
-    m.add_class::<crate::enums::ComponentTrigger>()?;
-    m.add_class::<crate::enums::LogColor>()?;
-    m.add_class::<crate::enums::LogLevel>()?;
-    m.add_class::<crate::enums::LogFormat>()?;
-    Ok(())
-}

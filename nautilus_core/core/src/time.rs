@@ -15,8 +15,10 @@
 
 use std::{
     ops::Deref,
-    rc::Rc,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -54,7 +56,7 @@ pub struct AtomicTime {
     /// Atomic clock is operating in live or static mode
     mode: ClockMode,
     /// The last recorded time in nanoseconds for the clock
-    timestamp_ns: Rc<AtomicU64>,
+    timestamp_ns: Arc<AtomicU64>,
 }
 
 impl Deref for AtomicTime {
@@ -70,7 +72,7 @@ impl AtomicTime {
     pub fn new(mode: ClockMode, time: u64) -> Self {
         AtomicTime {
             mode,
-            timestamp_ns: Rc::new(AtomicU64::new(time)),
+            timestamp_ns: Arc::new(AtomicU64::new(time)),
         }
     }
 
