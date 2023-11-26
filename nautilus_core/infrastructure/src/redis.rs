@@ -20,6 +20,7 @@ use std::{
 };
 
 use anyhow::{anyhow, Result};
+use nautilus_common::redis::get_redis_url;
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::{Commands, Connection};
 use serde_json::Value;
@@ -81,35 +82,4 @@ impl CacheDatabase for RedisCacheDatabase {
             println!("{:?} {:?}", op.op_type, op.payload);
         }
     }
-}
-
-// Consolidate this with the MessageBus version
-pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
-    let empty = Value::Object(serde_json::Map::new());
-    let database = config.get("database").unwrap_or(&empty);
-
-    let host = database
-        .get("host")
-        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
-    let username = database
-        .get("username")
-        .map(|v| v.as_str().unwrap_or_default());
-    let password = database
-        .get("password")
-        .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
-
-    format!(
-        "redis{}://{}:{}@{}:{}",
-        if use_ssl.as_bool().unwrap_or(false) {
-            "s"
-        } else {
-            ""
-        },
-        username.unwrap_or(""),
-        password.unwrap_or(""),
-        host.unwrap(),
-        port.unwrap(),
-    )
 }
