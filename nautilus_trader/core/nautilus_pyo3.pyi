@@ -676,7 +676,16 @@ class OrderFilled:
     def from_dict(cls, values: dict[str, str]) -> OrderFilled: ...
     def to_dict(self) -> dict[str, str]: ...
 
+###################################################################################################
+# Infrastructure
+###################################################################################################
 
+class RedisCacheDatabase:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        config: dict[str, Any],
+    ) -> None: ...
 
 ###################################################################################################
 # Network
