@@ -32,9 +32,11 @@ impl DatabaseOperation {
 }
 
 pub trait CacheDatabase {
-    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Self;
-    fn read(&mut self, op_type: String) -> Vec<Vec<u8>>;
-    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
+    type DatabaseType;
+
+    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Result<Self::DatabaseType>;
+    fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>>;
+    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<String>;
     fn handle_ops(
         trader_id: TraderId,
         config: HashMap<String, Value>,
