@@ -48,15 +48,15 @@ impl RedisCacheDatabase {
     #[pyo3(name = "read")]
     fn py_read(&mut self, op_type: String) -> PyResult<Vec<Vec<u8>>> {
         match self.read(op_type) {
-            Ok(result) => Ok(result),
+            Ok(payload) => Ok(payload),
             Err(e) => Err(to_pyruntime_err(e)),
         }
     }
 
     #[pyo3(name = "write")]
-    fn py_write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> PyResult<String> {
+    fn py_write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
         match self.write(op_type, payload) {
-            Ok(ok) => Ok(ok),
+            Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }
     }

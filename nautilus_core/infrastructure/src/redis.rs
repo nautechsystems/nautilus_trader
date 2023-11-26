@@ -19,7 +19,7 @@ use std::{
     thread,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use nautilus_common::redis::get_redis_url;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
@@ -64,11 +64,11 @@ impl CacheDatabase for RedisCacheDatabase {
         Ok(result)
     }
 
-    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<String> {
+    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
         let op = DatabaseOperation::new(op_type, payload);
         match self.tx.send(op) {
-            Ok(_) => Ok("OK".to_string()),
-            Err(e) => Err(anyhow!("Failed to send to channel: {e}")),
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
         }
     }
 
