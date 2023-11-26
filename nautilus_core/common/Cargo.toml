@@ -17,7 +17,7 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-redis = { workspace = true }
+redis = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
@@ -35,7 +35,8 @@ extension-module = [
 ]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-default = ["ffi", "python"]
+redis-msgbus = ["redis"]
+default = ["ffi", "python", "redis-msgbus"]
 
 
 [build-dependencies]

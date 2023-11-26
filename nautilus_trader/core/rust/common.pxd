@@ -137,6 +137,9 @@ cdef extern from "../includes/common.h":
     cdef struct TestClock:
         pass
 
+    cdef struct PyCallableWrapper_t:
+        PyObject *ptr;
+
     # Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
     #
     # This struct wraps `TestClock` in a way that makes it compatible with C function
@@ -200,8 +203,7 @@ cdef extern from "../includes/common.h":
         # The Python callable pointer.
         PyObject *callback_ptr;
 
-    cdef struct PyCallableWrapper_t:
-        PyObject *ptr;
+    PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);
 
     TestClock_API test_clock_new();
 
@@ -503,5 +505,3 @@ cdef extern from "../includes/common.h":
     const char *time_event_to_cstr(const TimeEvent_t *event);
 
     TimeEventHandler_t dummy(TimeEventHandler_t v);
-
-    PyCallableWrapper_t dummy_callable(PyCallableWrapper_t c);
