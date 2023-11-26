@@ -1,12 +1,31 @@
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2021 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from inspect import iscoroutinefunction
 
+from ibapi.wrapper import EWrapper
 
-class InteractiveBrokersErrorHandler:
+
+class InteractiveBrokersErrorHandler(EWrapper):
     """
-    A dedicated error handling class for the InteractiveBrokersClient.
+    Handles errors and warnings for the InteractiveBrokersClient.
 
-    This class handles various error and warning scenarios that might arise during the
-    operation of the InteractiveBrokersClient.
+    This class is designed to process and log various types of error messages and
+    warnings encountered during the operation of the InteractiveBrokersClient. It
+    categorizes different error codes and manages appropriate responses, including
+    logging and state updates.
 
     https://ibkrcampus.com/ibkr-api-page/tws-api-error-codes/#understanding-error-codes
 
@@ -20,16 +39,61 @@ class InteractiveBrokersErrorHandler:
 
     def __init__(self, client):
         self._client = client
+        self._log = client._log
 
-    def _log_message(self, error_code: int, req_id: int, error_string: str, is_warning: bool):
+    def _log_message(
+        self,
+        error_code: int,
+        req_id: int,
+        error_string: str,
+        is_warning: bool,
+    ) -> None:
+        """
+        Log the provided error or warning message.
+
+        Parameters
+        ----------
+        error_code : int
+            The error code associated with the message.
+        req_id : int
+            The request ID associated with the error or warning.
+        error_string : str
+            The error or warning message string.
+        is_warning : bool
+            Indicates whether the message is a warning or an error.
+
+        Returns
+        -------
+        None
+
+        """
         msg_type = "Warning" if is_warning else "Error"
         msg = f"{msg_type} {error_code} {req_id=}: {error_string}"
         if is_warning:
-            self._client._log.info(msg)
+            self._log.info(msg)
         else:
-            self._client._log.error(msg)
+            self._log.error(msg)
 
-    def process_error(self, req_id: int, error_code: int, error_string: str):
+    def _process_error(self, req_id: int, error_code: int, error_string: str) -> None:
+        """
+        Process an error based on its code, request ID, and message. Depending on the
+        error code, this method delegates to specific error handlers or performs general
+        error handling.
+
+        Parameters
+        ----------
+        req_id : int
+            The request ID associated with the error.
+        error_code : int
+            The error code.
+        error_string : str
+            The error message string.
+
+        Returns
+        -------
+        None
+
+        """
         is_warning = error_code in self.WARNING_CODES or 2100 <= error_code < 2200
         self._log_message(error_code, req_id, error_string, is_warning)
 
@@ -38,23 +102,42 @@ class InteractiveBrokersErrorHandler:
                 self._handle_subscription_error(req_id, error_code, error_string)
             elif self._client.requests.get(req_id=req_id):
                 self._handle_request_error(req_id, error_code, error_string)
-            elif req_id in self._client._order_id_to_order_ref:
+            elif req_id in self._client.order_manager.order_id_to_order_ref:
                 self._handle_order_error(req_id, error_code, error_string)
             else:
-                self._client._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
+                self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
-            self._client._log.warning(f"Client or Connectivity Lost Error: {error_string}")
+            self._log.warning(f"Client or Connectivity Lost Error: {error_string}")
             if self._client.is_ib_ready.is_set():
                 self._client.is_ib_ready.clear()
         elif error_code in self.CONNECTIVITY_RESTORED_CODES:
             if not self._client.is_ib_ready.is_set():
                 self._client.is_ib_ready.set()
 
-    def _handle_subscription_error(self, req_id: int, error_code: int, error_string: str):
+    def _handle_subscription_error(self, req_id: int, error_code: int, error_string: str) -> None:
+        """
+        Handle errors specific to data subscriptions. Processes subscription-related
+        errors and takes appropriate actions, such as cancelling the subscription or
+        clearing flags.
+
+        Parameters
+        ----------
+        req_id : int
+            The request ID associated with the subscription error.
+        error_code : int
+            The error code.
+        error_string : str
+            The error message string.
+
+        Returns
+        -------
+        None
+
+        """
         subscription = self._client.subscriptions.get(req_id=req_id)
         if error_code in [10189, 366, 102]:
             # Handle specific subscription-related error codes
-            self._client._log.warning(f"{error_code}: {error_string}")
+            self._log.warning(f"{error_code}: {error_string}")
             subscription.cancel()
             if iscoroutinefunction(subscription.handle):
                 self._client.create_task(subscription.handle())
@@ -62,29 +145,65 @@ class InteractiveBrokersErrorHandler:
                 subscription.handle()
         elif error_code == 10182:
             # Handle disconnection error
-            self._client._log.warning(f"{error_code}: {error_string}")
+            self._log.warning(f"{error_code}: {error_string}")
             if self._client.is_ib_ready.is_set():
-                self._client._log.info(f"`is_ib_ready` cleared by {subscription.name}")
+                self._log.info(f"`is_ib_ready` cleared by {subscription.name}")
                 self._client.is_ib_ready.clear()
         else:
             # Log unknown subscription errors
-            self._client._log.warning(
+            self._log.warning(
                 f"Unknown subscription error: {error_code} for req_id {req_id}",
             )
 
-    def _handle_request_error(self, req_id: int, error_code: int, error_string: str):
-        request = self._client.requests.get(req_id=req_id)
-        self._client._log.warning(f"{error_code}: {error_string}, {request}")
-        self._client._end_request(req_id, success=False)
+    def _handle_request_error(self, req_id: int, error_code: int, error_string: str) -> None:
+        """
+        Handle errors related to general requests. Logs the error and ends the request
+        associated with the given request ID.
 
-    def _handle_order_error(self, req_id: int, error_code: int, error_string: str):
-        order_ref = self._client._order_id_to_order_ref.get(req_id, None)
+        Parameters
+        ----------
+        req_id : int
+            The request ID associated with the error.
+        error_code : int
+            The error code.
+        error_string : str
+            The error message string.
+
+        Returns
+        -------
+        None
+
+        """
+        request = self._client.requests.get(req_id=req_id)
+        self._log.warning(f"{error_code}: {error_string}, {request}")
+        self._client.end_request(req_id, success=False)
+
+    def _handle_order_error(self, req_id: int, error_code: int, error_string: str) -> None:
+        """
+        Handle errors related to orders. Manages various order-related errors, including
+        rejections and cancellations, and logs or forwards them as appropriate.
+
+        Parameters
+        ----------
+        req_id : int
+            The request ID associated with the order error.
+        error_code : int
+            The error code.
+        error_string : str
+            The error message string.
+
+        Returns
+        -------
+        None
+
+        """
+        order_ref = self._client.order_manager.order_id_to_order_ref.get(req_id, None)
         if not order_ref:
-            self._client._log.warning(f"Order reference not found for req_id {req_id}")
+            self._log.warning(f"Order reference not found for req_id {req_id}")
             return
 
         name = f"orderStatus-{order_ref.account}"
-        handler = self._client._event_subscriptions.get(name, None)
+        handler = self._client.event_subscriptions.get(name, None)
 
         if error_code in self.ORDER_REJECTION_CODES:
             # Handle various order rejections
@@ -96,4 +215,17 @@ class InteractiveBrokersErrorHandler:
                 handler(order_ref=order_ref.order_id, order_status="Cancelled", reason=error_string)
         else:
             # Log unknown order errors
-            self._client._log.warning(f"Unknown order error: {error_code} for req_id {req_id}")
+            self._log.warning(f"Unknown order error: {error_code} for req_id {req_id}")
+
+    # -- EWrapper overrides -----------------------------------------------------------------------
+    def error(
+        self,
+        req_id: int,
+        error_code: int,
+        error_string: str,
+        advanced_order_reject_json: str = "",
+    ) -> None:
+        """
+        Errors sent by the TWS are received here.
+        """
+        self._error_handler.process_error(req_id, error_code, error_string)

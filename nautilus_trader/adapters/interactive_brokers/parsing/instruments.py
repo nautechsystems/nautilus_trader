@@ -98,9 +98,10 @@ re_crypto = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
 
 
 def _extract_isin(details: IBContractDetails) -> int:
-    for tag_value in details.secIdList:
-        if tag_value.tag == "ISIN":
-            return tag_value.value
+    if details.secIdList:
+        for tag_value in details.secIdList:
+            if tag_value.tag == "ISIN":
+                return tag_value.value
     raise ValueError("No ISIN found")
 
 
@@ -308,7 +309,7 @@ def parse_crypto_contract(
     )
 
 
-def decade_digit(last_digit: str, contract: IBContract):
+def decade_digit(last_digit: str, contract: IBContract) -> int:
     if year := contract.lastTradeDateOrContractMonth[:4]:
         return int(year[2:3])
     elif int(last_digit) > int(repr(datetime.datetime.now().year)[-1]):

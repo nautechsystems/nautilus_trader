@@ -80,7 +80,7 @@ class InteractiveBrokersGateway:
         self.trading_mode = trading_mode
         self.read_only_api = read_only_api
         self.host = host
-        self.port = port or self.PORTS[trading_mode]
+        self.port = port or self.PORTS[trading_mode] if trading_mode else None
         self._docker = docker.from_env()
         self._container = None
         self.log = logger or logging.getLogger("nautilus_trader")
@@ -124,7 +124,7 @@ class InteractiveBrokersGateway:
             return False
         return any(b"Forking :::" in line for line in logs.split(b"\n"))
 
-    def start(self, wait: int | None = 90):
+    def start(self, wait: int | None = 90) -> None:
         """
         Start the gateway.
 
@@ -183,16 +183,16 @@ class InteractiveBrokersGateway:
                 raise RuntimeError(f"Gateway `{self.CONTAINER_NAME}-{self.port}` not ready")
 
         self.log.info(
-            f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port+100}",
+            f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port + 100}",
         )
 
-    def safe_start(self, wait: int = 90):
+    def safe_start(self, wait: int = 90) -> None:
         try:
             self.start(wait=wait)
         except docker.errors.APIError as e:
             raise RuntimeError("Container already exists") from e
 
-    def stop(self):
+    def stop(self) -> None:
         if self.container:
             self.container.stop()
             self.container.remove()

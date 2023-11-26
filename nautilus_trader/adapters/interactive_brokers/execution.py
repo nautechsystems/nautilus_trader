@@ -46,6 +46,7 @@ from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -255,7 +256,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ):
                 report = await self._parse_ib_order_to_order_status_report(ib_order)
                 break
-        if report is None:  # TODO: Further testing
+        if report is None:
             self._log.warning(
                 f"Order {client_order_id=}, {venue_order_id} not found, Cancelling...",
             )
@@ -266,7 +267,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
         return report
 
-    async def _parse_ib_order_to_order_status_report(self, ib_order: IBOrder):
+    async def _parse_ib_order_to_order_status_report(self, ib_order: IBOrder) -> OrderStatusReport:
         self._log.debug(f"Trying OrderStatusReport for {ib_order.__dict__}")
         instrument = await self.instrument_provider.find_with_contract_id(
             ib_order.contract.conId,
@@ -640,7 +641,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             else:
                 self._log.error(f"VenueOrderId not found for {order.client_order_id}")
 
-    def _on_account_summary(self, tag: str, value: str, currency: str):
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        raise NotImplementedError(  # pragma: no cover
+            "implement the `_batch_cancel_orders` coroutine",  # pragma: no cover
+        )
+
+    def _on_account_summary(self, tag: str, value: str, currency: str) -> None:
         if not self._account_summary.get(currency):
             self._account_summary[currency] = {}
         try:
@@ -697,7 +703,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         order: Order,
         order_id: int | None = None,
         reason: str = "",
-    ):
+    ) -> None:
         if status == OrderStatus.SUBMITTED:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
@@ -738,11 +744,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
 
-    async def handle_order_status_report(self, ib_order: IBOrder):
+    async def handle_order_status_report(self, ib_order: IBOrder) -> None:
         report = await self._parse_ib_order_to_order_status_report(ib_order)
         self._send_order_status_report(report)
 
-    def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState):
+    def _on_open_order(self, order_ref: str, order: IBOrder, order_state: IBOrderState) -> None:
         if not order.orderRef:
             self._log.warning(
                 f"ClientOrderId not available, order={order.__dict__}, state={order_state.__dict__}",
@@ -765,7 +771,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         elif order_state.status in [
             "PreSubmitted",
             "Submitted",
-        ]:  # nautilus_order.status != OrderStatus.ACCEPTED and
+        ]:
             instrument = self.instrument_provider.find(nautilus_order.instrument_id)
             total_qty = (
                 Quantity.from_int(0)
@@ -801,7 +807,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 order_id=order.orderId,
             )
 
-    def _on_order_status(self, order_ref: str, order_status: str, reason: str = ""):
+    def _on_order_status(self, order_ref: str, order_status: str, reason: str = "") -> None:
         if order_status in ["ApiCancelled", "Cancelled"]:
             status = OrderStatus.CANCELED
         elif order_status == "PendingCancel":
@@ -839,7 +845,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         order_ref: str,
         execution: Execution,
         commission_report: CommissionReport,
-    ):
+    ) -> None:
         if not execution.orderRef:
             self._log.warning(f"ClientOrderId not available, order={execution.__dict__}")
             return
@@ -849,22 +855,23 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         instrument = self.instrument_provider.find(nautilus_order.instrument_id)
 
-        self.generate_order_filled(
-            strategy_id=nautilus_order.strategy_id,
-            instrument_id=nautilus_order.instrument_id,
-            client_order_id=nautilus_order.client_order_id,
-            venue_order_id=VenueOrderId(str(execution.orderId)),
-            venue_position_id=None,
-            trade_id=TradeId(execution.execId),
-            order_side=OrderSide[order_side_to_order_action[execution.side]],
-            order_type=nautilus_order.order_type,
-            last_qty=Quantity(execution.shares, precision=instrument.size_precision),
-            last_px=Price(execution.price, precision=instrument.price_precision),
-            quote_currency=instrument.quote_currency,
-            commission=Money(
-                commission_report.commission,
-                Currency.from_str(commission_report.currency),
-            ),
-            liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
-            ts_event=timestring_to_timestamp(execution.time).value,
-        )
+        if instrument:
+            self.generate_order_filled(
+                strategy_id=nautilus_order.strategy_id,
+                instrument_id=nautilus_order.instrument_id,
+                client_order_id=nautilus_order.client_order_id,
+                venue_order_id=VenueOrderId(str(execution.orderId)),
+                venue_position_id=None,
+                trade_id=TradeId(execution.execId),
+                order_side=OrderSide[order_side_to_order_action[execution.side]],
+                order_type=nautilus_order.order_type,
+                last_qty=Quantity(execution.shares, precision=instrument.size_precision),
+                last_px=Price(execution.price, precision=instrument.price_precision),
+                quote_currency=instrument.quote_currency,
+                commission=Money(
+                    commission_report.commission,
+                    Currency.from_str(commission_report.currency),
+                ),
+                liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
+                ts_event=timestring_to_timestamp(execution.time).value,
+            )

@@ -205,7 +205,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             tick_type="AllLast",
         )
 
-    async def _subscribe_bars(self, bar_type: BarType):
+    async def _subscribe_bars(self, bar_type: BarType) -> None:
         if not (instrument := self._cache.instrument(bar_type.instrument_id)):
             self._log.error(f"Cannot subscribe to {bar_type}, Instrument not found.")
             return
@@ -283,7 +283,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
         await self.instrument_provider.load_async(instrument_id)
         if instrument := self.instrument_provider.find(instrument_id):
             self._handle_data(instrument)
@@ -292,7 +292,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
         self._handle_instrument(instrument, correlation_id)
 
-    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
         )
@@ -364,7 +364,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         limit: int,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ):
+    ) -> list[QuoteTick | TradeTick]:
         if not start:
             limit = self._cache.tick_capacity
 
@@ -422,7 +422,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         bars: list[Bar] = []
         while (start and end > start) or (len(bars) < limit > 0):
-            bars_part = await self._client.get_historical_bars(
+            bars_part: list[Bar] = await self._client.get_historical_bars(
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
