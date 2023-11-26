@@ -45,5 +45,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
     cdef str _key_snapshots_positions
     cdef str _key_heartbeat
 
+    cdef object _backing
+
     cdef Serializer _serializer
     cdef object _redis

@@ -20,7 +20,6 @@ use std::{
 };
 
 use anyhow::Result;
-use nautilus_common::redis::get_redis_url;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use redis::{Commands, Connection};
@@ -88,4 +87,31 @@ impl CacheDatabase for RedisCacheDatabase {
             println!("{:?} {:?}", op.op_type, op.payload);
         }
     }
+}
+
+fn get_redis_url(config: &HashMap<String, Value>) -> String {
+    let host = config
+        .get("host")
+        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
+    let port = config.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let username = config
+        .get("username")
+        .map(|v| v.as_str().unwrap_or_default());
+    let password = config
+        .get("password")
+        .map(|v| v.as_str().unwrap_or_default());
+    let use_ssl = config.get("ssl").unwrap_or(&Value::Bool(false));
+
+    format!(
+        "redis{}://{}:{}@{}:{}",
+        if use_ssl.as_bool().unwrap_or(false) {
+            "s"
+        } else {
+            ""
+        },
+        username.unwrap_or(""),
+        password.unwrap_or(""),
+        host.unwrap(),
+        port.unwrap(),
+    )
 }

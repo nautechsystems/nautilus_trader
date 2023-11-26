@@ -17,29 +17,19 @@ use std::collections::HashMap;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::{prelude::*, types::PyDict, PyResult};
+use pyo3::{prelude::*, PyResult};
+use serde_json::Value;
 
 use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
 
 #[pymethods]
 impl RedisCacheDatabase {
     #[new]
-    fn py_new(trader_id: TraderId, config: &PyDict) -> PyResult<Self> {
-        let mut config_map = HashMap::new();
-        for (key, value) in config {
-            // Extract key and value as strings
-            let key_str = key.extract::<String>()?;
-            let value_str = value.extract::<String>()?;
+    fn py_new(trader_id: TraderId, config_json: Vec<u8>) -> PyResult<Self> {
+        let config: HashMap<String, Value> =
+            serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
 
-            // Convert the value to a serde_json::Value
-            let value_json: serde_json::Value =
-                serde_json::from_str(&value_str).map_err(to_pyvalue_err)?;
-
-            // Insert into the HashMap
-            config_map.insert(key_str, value_json);
-        }
-
-        match Self::new(trader_id, config_map) {
+        match Self::new(trader_id, config) {
             Ok(cache) => Ok(cache),
             Err(e) => Err(to_pyruntime_err(e.to_string())),
         }

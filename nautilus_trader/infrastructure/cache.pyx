@@ -16,7 +16,11 @@
 import warnings
 from typing import Optional
 
+import msgspec
+
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.core.nautilus_pyo3 import RedisCacheDatabase as RustRedisCacheDatabase
+from nautilus_trader.core.nautilus_pyo3 import TraderId as RustTraderId
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -194,6 +198,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 redis.exceptions.ConnectionError,
             ],
         )
+
+        # self._backing = RustRedisCacheDatabase(
+        #     trader_id=RustTraderId(trader_id.value),
+        #     config_json=msgspec.json.encode(config),
+        # )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
