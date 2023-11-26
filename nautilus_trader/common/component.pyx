@@ -23,6 +23,7 @@ import cython
 import msgspec
 import numpy as np
 
+from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.rust.common import ComponentState as PyComponentState
 
 cimport numpy as np
@@ -728,6 +729,12 @@ cdef class MessageBus:
         if config is None:
             config = MessageBusConfig()
         Condition.type(config, MessageBusConfig, "config")
+
+        if (snapshot_orders or snapshot_positions) and not config.stream:
+            raise InvalidConfiguration(
+                "Invalid `MessageBusConfig`: Cannot configure snapshots without providing a `stream` name. "
+                "This is because currently the message bus will write to the same snapshot keys as the cache.",
+            )
 
         self.trader_id = trader_id
         self.serializer = serializer
