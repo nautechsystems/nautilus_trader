@@ -459,22 +459,24 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::sync::Arc;
 
     use nautilus_core::{message::Message, uuid::UUID4};
     use rstest::*;
 
     use super::*;
-    use crate::handlers::MessageHandler;
+    use crate::handlers::{MessageHandler, SafeMessageCallback};
 
     fn stub_msgbus() -> MessageBus {
         MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
     }
 
-    fn stub_rust_callback() -> Rc<dyn Fn(Message)> {
-        Rc::new(|m: Message| {
-            format!("{m:?}");
-        })
+    fn stub_rust_callback() -> SafeMessageCallback {
+        SafeMessageCallback {
+            callback: Arc::new(|m: Message| {
+                format!("{m:?}");
+            }),
+        }
     }
 
     #[rstest]
