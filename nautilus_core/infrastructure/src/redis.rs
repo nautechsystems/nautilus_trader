@@ -22,22 +22,29 @@ use std::{
 use anyhow::{anyhow, Result};
 use nautilus_common::redis::get_redis_url;
 use nautilus_model::identifiers::trader_id::TraderId;
+use pyo3::prelude::*;
 use redis::{Commands, Connection};
 use serde_json::Value;
 
 use crate::cache::{CacheDatabase, DatabaseOperation};
 
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct RedisCacheDatabase {
-    _trader_id: TraderId,
-    read_conn: Connection,
+    pub trader_id: TraderId,
+    conn_read: Connection,
     tx: Sender<DatabaseOperation>,
 }
 
 impl CacheDatabase for RedisCacheDatabase {
-    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Self {
+    type DatabaseType = RedisCacheDatabase;
+
+    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Result<RedisCacheDatabase> {
         let redis_url = get_redis_url(&config);
-        let client = redis::Client::open(redis_url).unwrap();
-        let read_conn = client.get_connection().unwrap();
+        let client = redis::Client::open(redis_url)?;
+        let conn_read = client.get_connection().unwrap();
 
         let (tx, rx) = channel::<DatabaseOperation>();
 
@@ -45,24 +52,23 @@ impl CacheDatabase for RedisCacheDatabase {
             Self::handle_ops(trader_id, config, rx);
         });
 
-        RedisCacheDatabase {
-            _trader_id: trader_id,
-            read_conn,
+        Ok(RedisCacheDatabase {
+            trader_id,
+            conn_read,
             tx,
-        }
+        })
     }
 
-    fn read(&mut self, op_type: String) -> Vec<Vec<u8>> {
-        // TODO: Implement
-        let result: Vec<Vec<u8>> = self.read_conn.get(op_type).unwrap();
-        result
+    fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>> {
+        let result: Vec<Vec<u8>> = self.conn_read.get(op_type)?;
+        Ok(result)
     }
 
-    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
+    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<String> {
         let op = DatabaseOperation::new(op_type, payload);
         match self.tx.send(op) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(anyhow!("Failed to send to channel: {e}").to_string()),
+            Ok(_) => Ok("OK".to_string()),
+            Err(e) => Err(anyhow!("Failed to send to channel: {e}")),
         }
     }
 
@@ -73,7 +79,7 @@ impl CacheDatabase for RedisCacheDatabase {
     ) {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
-        let _conn = client.get_connection().unwrap();
+        let _conn_write = client.get_connection().unwrap();
 
         println!("{:?}", trader_id); // TODO: Temp
 
