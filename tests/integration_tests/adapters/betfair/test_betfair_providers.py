@@ -18,6 +18,7 @@ import sys
 
 import msgspec
 import pytest
+from betfair_parser.spec.betting import MarketCatalogue
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import MarketChange
 
@@ -104,34 +105,6 @@ class TestBetfairInstrumentProvider:
         instruments = self.provider.list_all()
         assert len(instruments) == 23908
 
-    # @pytest.mark.asyncio()
-    # async def test_search_instruments(self):
-    #     await self.provider.load_all_async(market_filter={"event_type_name": "Basketball"})
-    #     instruments = self.provider.search_instruments(
-    #         instrument_filter={"market_type": "MATCH_ODDS"},
-    #     )
-    #     assert len(instruments) == 104
-
-    # @pytest.mark.asyncio()
-    # async def test_get_betting_instrument(self):
-    #     await self.provider.load_all_async(market_filter={"market_id": ["1.180678317"]})
-    #     kw = {
-    #         "market_id": "1.180678317",
-    #         "selection_id": "11313157",
-    #         "handicap": "0.0",
-    #     }
-    #     instrument = self.provider.get_betting_instrument(**kw)
-    #     assert instrument.market_id == "1.180678317"
-    #
-    #     # Test throwing warning
-    #     kw["handicap"] = "-1000"
-    #     instrument = self.provider.get_betting_instrument(**kw)
-    #     assert instrument is None
-    #
-    #     # Test already in self._subscribed_instruments
-    #     instrument = self.provider.get_betting_instrument(**kw)
-    #     assert instrument is None
-
     def test_market_update_runner_removed(self) -> None:
         # Arrange
         raw = BetfairStreaming.market_definition_runner_removed()
@@ -151,4 +124,28 @@ class TestBetfairInstrumentProvider:
         # Assert
         result = [r.status for r in results[8:16]]
         expected = [MarketStatus.PRE_OPEN] * 7 + [MarketStatus.CLOSED]
+        assert result == expected
+
+    def test_list_market_catalogue_parsing(self):
+        # Arrange
+        raw = BetfairResponses.list_market_catalogue()
+        market_catalogue = msgspec.json.decode(msgspec.json.encode(raw), type=MarketCatalogue)
+
+        # Act
+        instruments = make_instruments(market_catalogue, currency="GBP")
+
+        # Assert
+        result = [ins.id.value for ins in instruments]
+        expected = [
+            "1.221718403-20075720-None.BETFAIR",
+            "1.221718403-10733147-None.BETFAIR",
+            "1.221718403-38666189-None.BETFAIR",
+            "1.221718403-11781146-None.BETFAIR",
+            "1.221718403-36709273-None.BETFAIR",
+            "1.221718403-51130740-None.BETFAIR",
+            "1.221718403-63132709-None.BETFAIR",
+            "1.221718403-18508590-None.BETFAIR",
+            "1.221718403-41921465-None.BETFAIR",
+        ]
+
         assert result == expected
