@@ -26,10 +26,9 @@ use pyo3::prelude::*;
 use redis::{Commands, Connection};
 use serde_json::Value;
 
-use crate::cache::{CacheDatabase, DatabaseOperation};
+use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
 const DELIMITER: char = ':';
-const ADD_GENERIC: &str = "ADD_GENERIC";
 
 #[cfg_attr(
     feature = "python",
@@ -38,7 +37,7 @@ const ADD_GENERIC: &str = "ADD_GENERIC";
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     conn: Connection,
-    tx: Sender<DatabaseOperation>,
+    tx: Sender<DatabaseCommand>,
 }
 
 impl CacheDatabase for RedisCacheDatabase {
@@ -53,7 +52,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let client = redis::Client::open(redis_url)?;
         let conn = client.get_connection().unwrap();
 
-        let (tx, rx) = channel::<DatabaseOperation>();
+        let (tx, rx) = channel::<DatabaseCommand>();
 
         thread::spawn(move || {
             Self::handle_ops(rx, trader_id, instance_id, config);
@@ -71,8 +70,13 @@ impl CacheDatabase for RedisCacheDatabase {
         Ok(result)
     }
 
-    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
-        let op = DatabaseOperation::new(op_type, payload);
+    fn write(
+        &mut self,
+        op_type: DatabaseOperation,
+        key: String,
+        payload: Vec<Vec<u8>>,
+    ) -> Result<(), String> {
+        let op = DatabaseCommand::new(op_type, key, Some(payload));
         match self.tx.send(op) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
@@ -80,7 +84,7 @@ impl CacheDatabase for RedisCacheDatabase {
     }
 
     fn handle_ops(
-        rx: Receiver<DatabaseOperation>,
+        rx: Receiver<DatabaseCommand>,
         trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, Value>,
@@ -92,15 +96,23 @@ impl CacheDatabase for RedisCacheDatabase {
 
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            match msg.op_type.as_str() {
-                ADD_GENERIC => add_generic(&mut conn, &trader_key, msg.payload[0].clone()).unwrap(),
-                _ => panic!("Unsupported `op_type` {}", msg.op_type),
+            match msg.op_type {
+                DatabaseOperation::Insert => {
+                    add(&mut conn, &trader_key, &msg.key, &msg.payload.unwrap()).unwrap()
+                }
+                _ => panic!("Unsupported `op_type`"),
             }
         }
     }
 }
 
-fn add_generic(conn: &mut Connection, key: &str, value: Vec<u8>) -> Result<(), String> {
+fn add(
+    conn: &mut Connection,
+    trader_key: &str,
+    key: &str,
+    value: &Vec<Vec<u8>>,
+) -> Result<(), String> {
+    let key = format!("{trader_key}{DELIMITER}{key}");
     conn.set(key, value)
         .map_err(|e| format!("Failed to set key-value in Redis: {e}"))
 }
