@@ -53,7 +53,6 @@ from nautilus_trader.adapters.interactive_brokers.client.common import AccountOr
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
-from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersErrorHandler
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
@@ -128,7 +127,6 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         self._client: EClient = EClient(wrapper=self)
         self._incoming_msg_queue: asyncio.Queue = asyncio.Queue()
-        self._error_handler = InteractiveBrokersErrorHandler(self)
 
         # Tasks
         self._watch_dog_task: asyncio.Task | None = None
@@ -318,14 +316,120 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._accounts = set()
 
     # -- Connectivity ---------------------------------------------------------------------------------
-    def error(
+    def error(  # noqa: C901 too complex
         self,
         req_id: int,
         error_code: int,
         error_string: str,
         advanced_order_reject_json: str = "",
-    ):
-        self.error_handler.process_error(req_id, error_code, error_string)
+    ) -> None:
+        warning_codes = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
+        is_warning = error_code in warning_codes or 2100 <= error_code < 2200
+        msg = f"{'Warning' if is_warning else 'Error'} {error_code} {req_id=}: {error_string}"
+
+        # 2104, 2158, 2106: Data connectivity restored
+        # 10197: No market data during competing live session
+        if req_id != -1:
+            # TODO: Order events & Cleanup/split the Error method
+            # Error 10147 req_id=195: OrderId 195 that needs to be cancelled is not found.  # Send cancel event
+            # Warning 202 req_id=2078: Order Canceled - reason:  # Send cancel event
+            # fields %s(b'4', b'2', b'10019', b'162', b'Historical Market Data Service error message:Trading TWS session is connected from a different IP address', b'')  # noqa
+            # fields %s(b'4', b'2', b'10036', b'10190', b'Max number of tick-by-tick requests has been reached.', b'')
+            # 10187: Failed to request historical ticks:No market data permissions for ISLAND STK
+            if subscription := self.subscriptions.get(req_id=req_id):
+                if error_code in [10189, 366, 102]:
+                    # --> 10189: Failed to request tick-by-tick data.BidAsk tick-by-tick requests are not supported for.
+                    # --> 366: No historical data query found for ticker id
+                    # --> 102: Duplicate ticker ID.
+                    # Although 10189 is triggered when the specified PriceType is actually not available.
+                    # However this can falsely occur during connectivity issues. So we will resubscribe here.
+                    self._log.warning(f"{error_code}: {error_string}")
+                    subscription.cancel()
+                    if iscoroutinefunction(subscription.handle):
+                        self.create_task(subscription.handle())
+                    else:
+                        subscription.handle()
+                elif error_code == 10182:
+                    # --> 10182: Failed to request live updates (disconnected).
+                    self._log.warning(f"{error_code}: {error_string}")
+                    if self.is_ib_ready.is_set():
+                        self._log.info(
+                            f"`is_ib_ready` cleared by {subscription.name}",
+                            LogColor.BLUE,
+                        )
+                        self.is_ib_ready.clear()
+            elif request := self.requests.get(req_id=req_id):
+                self._log.warning(f"{error_code}: {error_string}, {request}")
+                self._end_request(req_id, success=False)
+            elif req_id in self._order_id_to_order_ref:
+                if error_code == 321:
+                    # --> Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
+                    order_ref = self._order_id_to_order_ref.get(req_id, None)
+                    if order_ref:
+                        name = f"orderStatus-{order_ref.account}"
+                        if handler := self._event_subscriptions.get(name, None):
+                            handler(
+                                order_ref=self._order_id_to_order_ref[req_id].order_id,
+                                order_status="Rejected",
+                                reason=error_string,
+                            )
+                elif error_code in [201, 203, 10289, 10293]:
+                    # --> Warning 201 req_id= Order rejected - reason
+                    # --> Warning 203 The security <security> is not available or allowed for this account.
+                    # --> Warning 10289 You must set Cash Quantity for this order (Crypto)
+                    # --> 10293', b'Cryptocurrency Cash Quantity order cannot specify size'
+                    order_ref = self._order_id_to_order_ref.get(req_id, None)
+                    if order_ref:
+                        name = f"orderStatus-{order_ref.account}"
+                        if handler := self._event_subscriptions.get(name, None):
+                            handler(
+                                order_ref=self._order_id_to_order_ref[req_id].order_id,
+                                order_status="Rejected",
+                                reason=error_string,
+                            )
+                elif error_code == 202:
+                    # --> Warning 202 req_id= Order Canceled - reason
+                    order_ref = self._order_id_to_order_ref.get(req_id, None)
+                    if order_ref:
+                        name = f"orderStatus-{order_ref.account}"
+                        if handler := self._event_subscriptions.get(name, None):
+                            handler(
+                                order_ref=self._order_id_to_order_ref[req_id].order_id,
+                                order_status="Cancelled",
+                                reason=error_string,
+                            )
+            else:
+                self._log.warning(msg)
+                # Error 162: Historical Market Data Service error message:API historical data query cancelled: 1
+                # Error 366: No historical data query found for ticker id:1
+        elif error_code in (502, 503, 504, 10038, 10182, 1100, 2110):
+            # Client Errors
+            self._log.warning(msg)
+            if self.is_ib_ready.is_set():
+                self._log.info("`is_ib_ready` cleared by TWS notification event", LogColor.BLUE)
+                self.is_ib_ready.clear()
+        elif error_code in (1100, 2110):
+            # Connectivity between IB and TWS Lost
+            self._log.info(msg)
+            if self.is_ib_ready.is_set():
+                self._log.info("`is_ib_ready` cleared by TWS notification event", LogColor.BLUE)
+                self.is_ib_ready.clear()
+        elif error_code in (1101, 1102):
+            # Connectivity between IB and Trader Workstation has been restored
+            self._log.info(msg)
+            if not self.is_ib_ready.is_set():
+                self._log.info("`is_ib_ready` set by TWS notification event", LogColor.BLUE)
+                self.is_ib_ready.set()
+        else:
+            if is_warning:
+                self._log.info(msg)
+            else:
+                self._log.error(msg)
+        # Warning 110: The price does not conform to the minimum price variation for this contract.
+        #           TWS Global Configuration -> Display -> Ticker Row -> Allow Forex trading in 1/10 pips
+        # Error 321: Error validating request.-'bN' : cause - The API interface is currently in Read-Only mode.
+        # Warning 202: Order Canceled - reason:
+        # Error 201: Order rejected - reason:YOUR ORDER IS NOT ACCEPTED. IN ORDER TO OBTAIN THE DESIRED POSITION YOUR EQUITY WITH LOAN VALUE [23282.60 USD] MUST EXCEED THE INITIAL MARGIN [29386.40 USD]  # noqa
 
     async def _run_watch_dog(self):
         """
