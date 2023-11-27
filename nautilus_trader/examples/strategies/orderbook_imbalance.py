@@ -194,7 +194,6 @@ class OrderBookImbalance(Strategy):
             elif seconds_since_last_trigger < self.min_seconds_between_triggers:
                 self.log.info("Time since last order < min_seconds_between_triggers - skipping.")
             elif bid_size > ask_size:
-                print(book)
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
                     price=self.instrument.make_price(book.best_ask_price()),
@@ -208,7 +207,6 @@ class OrderBookImbalance(Strategy):
                 self.submit_order(order)
 
             else:
-                print(book)
                 order = self.order_factory.limit(
                     instrument_id=self.instrument.id,
                     price=self.instrument.make_price(book.best_bid_price()),
