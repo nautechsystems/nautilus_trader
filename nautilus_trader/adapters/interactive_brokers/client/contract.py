@@ -25,10 +25,11 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContractDetail
 
 class ContractHandler(EWrapper):
     """
-    Handles contracts in Interactive Brokers.
+    Handles contracts (instruments) for the InteractiveBrokersClient.
 
     This class provides methods to request contract details, matching contracts, and
-    option chains from the Interactive Brokers API.
+    option chains. The InteractiveBrokersInstrumentProvider class uses methods defined
+    in this class to request the data it needs.
 
     """
 

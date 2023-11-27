@@ -32,9 +32,8 @@ from nautilus_trader.model.position import Position
 
 class InteractiveBrokersAccountManager(EWrapper):
     """
-    A class responsible for managing Interactive Brokers accounts. It extends the
-    EWrapper interface, handling various account and position related requests and
-    responses.
+    Manages IB accounts for the InteractiveBrokersClient. It extends the EWrapper
+    interface, handling various account and position related requests and responses.
 
     Parameters
     ----------

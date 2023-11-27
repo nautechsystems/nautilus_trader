@@ -37,7 +37,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class InteractiveBrokersConnectionManager(EWrapper):
     """
-    Manages the connection to Interactive Brokers TWS or Gateway.
+    Manages the connection to TWS/Gateway for the InteractiveBrokersClient.
 
     This class is responsible for establishing and maintaining the socket connection,
     handling server communication, monitoring the connection's health, and managing
@@ -241,13 +241,13 @@ class InteractiveBrokersConnectionManager(EWrapper):
 
         """
         self._client.setConnState(EClient.CONNECTED)
-        if self._client.incoming_msg_reader_task:
-            self._client.incoming_msg_reader_task.cancel()
-        self._client.incoming_msg_reader_task = self._client.create_task(
-            self._client.run_incoming_msg_reader(),
+        if self._client.tws_incoming_msg_reader_task:
+            self._client.tws_incoming_msg_reader_task.cancel()
+        self._client.tws_incoming_msg_reader_task = self._client.create_task(
+            self._client.run_tws_incoming_msg_reader(),
         )
-        self._client.incoming_msg_queue_task = self._client.create_task(
-            self._client.run_incoming_msg_queue(),
+        self._client.internal_msg_queue_task = self._client.create_task(
+            self._client.run_internal_msg_queue(),
         )
         self._eclient.startApi()
 

@@ -29,6 +29,9 @@ from nautilus_trader.common.enums import LogColor
 
 
 class InteractiveBrokersOrderManager(EWrapper):
+    """
+    For the InteractiveBrokersClient.
+    """
 
     def __init__(self, client):
         self._client = client
@@ -49,7 +52,8 @@ class InteractiveBrokersOrderManager(EWrapper):
         Parameters
         ----------
         order : IBOrder
-            The order object containing details such as the order ID, contract details, and order specifics.
+            The order object containing details such as the order ID, contract
+            details, and order specifics.
 
         Returns
         -------
@@ -127,7 +131,7 @@ class InteractiveBrokersOrderManager(EWrapper):
         list[IBOrder]
 
         """
-        self._log.debug(f"Requesting Open Orders for {account_id}")
+        self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
         if not (request := self._client.requests.get(name=name)):
             request = self._client.requests.add(
@@ -136,7 +140,7 @@ class InteractiveBrokersOrderManager(EWrapper):
                 handle=self._eclient.reqOpenOrders,
             )
             request.handle()
-            all_orders = await self._client.await_request(request, 30)
+            all_orders: list[IBOrder] = await self._client.await_request(request, 30)
         else:
             all_orders = await self._client.await_request(request, 30)
         orders = []
@@ -240,9 +244,9 @@ class InteractiveBrokersOrderManager(EWrapper):
         mkt_cap_price: float,
     ) -> None:
         """
-        Give the up-to-date information of an order every time it changes.
+        Get the up-to-date information of an order every time it changes.
 
-        Often there are duplicate orderStatus messages.
+        Note: Often there are duplicate orderStatus messages.
 
         """
         self._client.logAnswer(current_fn_name(), vars())

@@ -90,10 +90,10 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.client_id = client_id
 
         self._eclient: EClient = EClient(wrapper=self)
-        self._incoming_msg_queue: asyncio.Queue = asyncio.Queue()
+        self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
         self._connection_attempt_counter = 0
 
-        # Managers and handlers handle different aspects of the client
+        # Managers and handlers to handle different aspects of the client
         self.connection_manager = InteractiveBrokersConnectionManager(self)
         self.account_manager = InteractiveBrokersAccountManager(self)
         self.market_data_manager = InteractiveBrokersMarketDataManager(self)
@@ -102,10 +102,10 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # Tasks
         self._watch_dog_task: asyncio.Task | None = None
-        self.incoming_msg_reader_task: asyncio.Task | None = None
-        self.incoming_msg_queue_task: asyncio.Task | None = None
+        self.tws_incoming_msg_reader_task: asyncio.Task | None = None
+        self.internal_msg_queue_task: asyncio.Task | None = None
 
-        # Event Flags
+        # Event flags
         self.is_ready: asyncio.Event = asyncio.Event()  # Client is fully functional
         self.is_ib_ready: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
 
@@ -278,16 +278,17 @@ class InteractiveBrokersClient(Component, EWrapper):
                 request.future.set_exception(exception)
         self.requests.remove(req_id=req_id)
 
-    async def run_incoming_msg_reader(self) -> None:
+    async def run_tws_incoming_msg_reader(self) -> None:
         """
-        Continuously read and process messages from TWS/Gateway.
+        Continuously read messages from TWS/Gateway and then put them in the internal
+        message queue for processing.
 
         Returns
         -------
         None
 
         """
-        self._log.debug("Incoming Message reader starting...")
+        self._log.debug("TWS incoming message reader starting...")
         buf = b""
         try:
             while self._eclient.conn and self._eclient.conn.isConnected():
@@ -295,20 +296,21 @@ class InteractiveBrokersClient(Component, EWrapper):
                 buf += data
                 while buf:
                     size, msg, buf = comm.read_msg(buf)
-                    self._log.debug(f"size:{size} msg.size:{len(msg)} msg:|{buf!s}| buf:||")
+                    self._log.debug(f"TWS incoming message reader received msg={buf!s}")
                     if msg:
-                        self._incoming_msg_queue.put_nowait(msg)
+                        # Place msg in the internal queue for processing
+                        self._internal_msg_queue.put_nowait(msg)
                     else:
-                        self._log.debug("More incoming packet(s) are needed.")
+                        self._log.debug("More incoming packets are needed.")
                         break
         except asyncio.CancelledError:
-            self._log.debug("Message reader was canceled.")
+            self._log.debug("TWS incoming message reader was canceled.")
         except Exception as e:
             self._log.exception("Unhandled exception in EReader worker", e)
         finally:
-            self._log.debug("Message reader stopped.")
+            self._log.debug("TWS incoming message reader stopped.")
 
-    async def run_incoming_msg_queue(self) -> None:
+    async def run_internal_msg_queue(self) -> None:
         """
         Continuously process messages from the internal incoming message queue.
 
@@ -318,28 +320,23 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         self._log.debug(
-            f"Incoming Msg queue processing starting (qsize={self._incoming_msg_queue.qsize()})...",
+            "Internal message queue starting...",
         )
         try:
             while (
                 self._eclient.conn
                 and self._eclient.conn.isConnected()
-                or not self._incoming_msg_queue.empty()
+                or not self._internal_msg_queue.empty()
             ):
-                msg = await self._incoming_msg_queue.get()
+                msg = await self._internal_msg_queue.get()
                 if not self._process_message(msg):
                     break
-                self._incoming_msg_queue.task_done()
-                self._log.debug(
-                    f"conn:{self._eclient.isConnected()} queue.sz:{self._eclient.msg_queue.qsize()}",
-                )
+                self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
-            if not self._incoming_msg_queue.empty():
-                self._log.warning(
-                    f"Msg queue processing stopped with {self._incoming_msg_queue.qsize()} item(s) on queue.",
-                )
-            else:
-                self._log.debug("Msg queue processing stopped.")
+            log_msg = f"Internal message queue processing stopped. (qsize={self._internal_msg_queue.qsize()})."
+            self._log.warning(log_msg) if not self._internal_msg_queue.empty() else self._log.debug(
+                log_msg,
+            )
         finally:
             self._eclient.disconnect()
 
@@ -408,7 +405,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     def _stop(self) -> None:
         """
-        Stop the client and cancel associated tasks.
+        Stop the client and cancel running tasks.
 
         Returns
         -------
@@ -422,14 +419,14 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # Cancel tasks
         if self._watch_dog_task:
-            self._log.debug("Canceling `watch_dog` task...")
+            self._log.debug("Stopping the watch dog...")
             self._watch_dog_task.cancel()
-        if self.incoming_msg_reader_task:
-            self._log.debug("Canceling `incoming_msg_reader` task...")
-            self.incoming_msg_reader_task.cancel()
-        if self.incoming_msg_queue_task:
-            self._log.debug("Canceling `incoming_msg_queue` task...")
-            self.incoming_msg_queue_task.cancel()
+        if self.tws_incoming_msg_reader_task:
+            self._log.debug("Stopping the TWS incoming message reader...")
+            self.tws_incoming_msg_reader_task.cancel()
+        if self.internal_msg_queue_task:
+            self._log.debug("Stopping the internal message queue...")
+            self.internal_msg_queue_task.cancel()
 
         self._eclient.disconnect()
         self.is_ready.clear()
@@ -495,8 +492,13 @@ class InteractiveBrokersClient(Component, EWrapper):
                 f"{BAD_LENGTH.msg()}:{len(msg)}:{msg}",
             )
             return False
-        fields = comm.read_fields(msg)
-        self._log.debug(f"fields {fields}")
+        fields: tuple[bytes] = comm.read_fields(msg)
+        self._log.debug(f"Incoming message fields: {fields}")
+
+        # The decoder identifies the message type based on its payload (e.g., open
+        # order, process real-time ticks, etc.) and then calls the corresponding
+        # method from the EWrapper. Many of those methods are overridden in the client
+        # manager and handler classes to support custom processing required for Nautilus.
         self._eclient.decoder.interpret(fields)
         return True
 
@@ -506,7 +508,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         Override the logging for ibapi EClient.sendMsg.
         """
         full_msg = comm.make_msg(msg)
-        self._log.debug(f"SENDING {current_fn_name(1)} {full_msg}")
+        self._log.debug(f"TWS API Sending: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 
     def logRequest(self, fnName, fnParams):
@@ -518,7 +520,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             del prms["self"]
         else:
             prms = fnParams
-        self._log.debug(f"REQUEST {fnName} {prms}")
+        self._log.debug(f"TWS API Request: function={fnName} data={prms}")
 
     def logAnswer(self, fnName, fnParams):
         """
@@ -529,4 +531,4 @@ class InteractiveBrokersClient(Component, EWrapper):
             del prms["self"]
         else:
             prms = fnParams
-        self._log.debug(f"ANSWER {fnName} {prms}")
+        self._log.debug(f"TWS API Response: function={fnName} data={prms}")

@@ -82,7 +82,7 @@ class TestInteractiveBrokersClient:
     def test_constructor_initializes_properties(self):
         # Assertions to verify initial state of various components
         assert isinstance(self.client._eclient, EClient)
-        assert isinstance(self.client._incoming_msg_queue, asyncio.Queue)
+        assert isinstance(self.client._internal_msg_queue, asyncio.Queue)
         assert self.client._connection_attempt_counter == 0
         assert isinstance(self.client.connection_manager, InteractiveBrokersConnectionManager)
         assert isinstance(self.client.account_manager, InteractiveBrokersAccountManager)
@@ -90,8 +90,8 @@ class TestInteractiveBrokersClient:
         assert isinstance(self.client.order_manager, InteractiveBrokersOrderManager)
         assert isinstance(self.client._error_handler, InteractiveBrokersErrorHandler)
         assert isinstance(self.client._watch_dog_task, asyncio.Task)
-        assert self.client.incoming_msg_reader_task is None
-        assert self.client.incoming_msg_queue_task is None
+        assert self.client.tws_incoming_msg_reader_task is None
+        assert self.client.internal_msg_queue_task is None
         assert not self.client.is_ready.is_set()
         assert not self.client.is_ib_ready.is_set()
         assert self.client.registered_nautilus_clients == set()
@@ -135,16 +135,16 @@ class TestInteractiveBrokersClient:
     async def test_stop(self):
         # Mocking the necessary attributes
         self.client._watch_dog_task = MagicMock()
-        self.client.incoming_msg_reader_task = MagicMock()
-        self.client.incoming_msg_queue_task = MagicMock()
+        self.client.tws_incoming_msg_reader_task = MagicMock()
+        self.client.internal_msg_queue_task = MagicMock()
         self.client._eclient.disconnect = MagicMock()
 
         self.client._stop()
 
         # Verify that the tasks were cancelled
         assert self.client._watch_dog_task.cancel.called
-        assert self.client.incoming_msg_reader_task.cancel.called
-        assert self.client.incoming_msg_queue_task.cancel.called
+        assert self.client.tws_incoming_msg_reader_task.cancel.called
+        assert self.client.internal_msg_queue_task.cancel.called
 
         # Verify that the client was disconnected
         assert self.client._eclient.disconnect.called

@@ -50,8 +50,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class InteractiveBrokersMarketDataManager(EWrapper):
     """
-    A market data manager class for handling market data subscriptions and data
-    processing using Interactive Brokers' API.
+    Handles market data subscriptions and data processing for the
+    InteractiveBrokersClient.
 
     This class handles real-time and historical market data subscription management,
     including subscribing and unsubscribing to ticks, bars, and other market data types.
