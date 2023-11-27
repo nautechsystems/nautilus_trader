@@ -178,7 +178,7 @@ impl MessageBus {
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
             thread::spawn(move || {
-                Self::handle_messages(trader_id.value.as_ref(), instance_id, config, rx);
+                Self::handle_messages(trader_id, instance_id, config, rx);
             });
             Some(tx)
         } else {
@@ -401,7 +401,7 @@ impl MessageBus {
     }
 
     fn handle_messages(
-        trader_id: &str,
+        trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, Value>,
         rx: Receiver<BusMessage>,

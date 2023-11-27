@@ -20,6 +20,7 @@ use std::{
 };
 
 use anyhow::Result;
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use redis::{Commands, Connection};
@@ -27,39 +28,46 @@ use serde_json::Value;
 
 use crate::cache::{CacheDatabase, DatabaseOperation};
 
+const DELIMITER: char = ':';
+const ADD_GENERIC: &str = "ADD_GENERIC";
+
 #[cfg_attr(
     feature = "python",
     pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
-    conn_read: Connection,
+    conn: Connection,
     tx: Sender<DatabaseOperation>,
 }
 
 impl CacheDatabase for RedisCacheDatabase {
     type DatabaseType = RedisCacheDatabase;
 
-    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Result<RedisCacheDatabase> {
+    fn new(
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
+    ) -> Result<RedisCacheDatabase> {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url)?;
-        let conn_read = client.get_connection().unwrap();
+        let conn = client.get_connection().unwrap();
 
         let (tx, rx) = channel::<DatabaseOperation>();
 
         thread::spawn(move || {
-            Self::handle_ops(trader_id, config, rx);
+            Self::handle_ops(rx, trader_id, instance_id, config);
         });
 
         Ok(RedisCacheDatabase {
             trader_id,
-            conn_read,
+            conn,
             tx,
         })
     }
 
     fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>> {
-        let result: Vec<Vec<u8>> = self.conn_read.get(op_type)?;
+        let result: Vec<Vec<u8>> = self.conn.get(op_type)?;
         Ok(result)
     }
 
@@ -72,21 +80,29 @@ impl CacheDatabase for RedisCacheDatabase {
     }
 
     fn handle_ops(
-        trader_id: TraderId,
-        config: HashMap<String, Value>,
         rx: Receiver<DatabaseOperation>,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
     ) {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
-        let _conn_write = client.get_connection().unwrap();
-
-        println!("{:?}", trader_id); // TODO: Temp
+        let mut conn = client.get_connection().unwrap();
+        let trader_key = get_key(&config, trader_id, instance_id);
 
         // Continue to receive and handle bus messages until channel is hung up
-        while let Ok(op) = rx.recv() {
-            println!("{:?} {:?}", op.op_type, op.payload);
+        while let Ok(msg) = rx.recv() {
+            match msg.op_type.as_str() {
+                ADD_GENERIC => add_generic(&mut conn, &trader_key, msg.payload[0].clone()).unwrap(),
+                _ => panic!("Unsupported `op_type` {}", msg.op_type),
+            }
         }
     }
+}
+
+fn add_generic(conn: &mut Connection, key: &str, value: Vec<u8>) -> Result<(), String> {
+    conn.set(key, value)
+        .map_err(|e| format!("Failed to set key-value in Redis: {e}"))
 }
 
 fn get_redis_url(config: &HashMap<String, Value>) -> String {
@@ -114,4 +130,18 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
         host.unwrap(),
         port.unwrap(),
     )
+}
+
+fn get_key(config: &HashMap<String, Value>, trader_id: TraderId, instance_id: UUID4) -> String {
+    let mut key = String::new();
+
+    key.push_str(trader_id.value.as_str());
+    key.push(DELIMITER);
+
+    if let Some(Value::Bool(true)) = config.get("use_instance_id") {
+        key.push_str(&format!("{instance_id}"));
+        key.push(DELIMITER);
+    }
+
+    key
 }

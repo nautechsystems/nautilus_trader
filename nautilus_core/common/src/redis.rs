@@ -16,6 +16,7 @@
 use std::{collections::HashMap, sync::mpsc::Receiver, time::Duration};
 
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
+use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
 use serde_json::Value;
 
@@ -56,7 +57,7 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
 }
 
 pub fn handle_messages_with_redis(
-    trader_id: &str,
+    trader_id: TraderId,
     instance_id: UUID4,
     config: HashMap<String, Value>,
     rx: Receiver<BusMessage>,
@@ -108,7 +109,11 @@ pub fn handle_messages_with_redis(
     }
 }
 
-fn get_stream_name(config: &HashMap<String, Value>, trader_id: &str, instance_id: UUID4) -> String {
+fn get_stream_name(
+    config: &HashMap<String, Value>,
+    trader_id: TraderId,
+    instance_id: UUID4,
+) -> String {
     let mut stream_name = String::new();
 
     if let Some(Value::String(s)) = config.get("stream") {
@@ -118,7 +123,7 @@ fn get_stream_name(config: &HashMap<String, Value>, trader_id: &str, instance_id
         }
     }
 
-    stream_name.push_str(trader_id);
+    stream_name.push_str(trader_id.value.as_str());
     stream_name.push(DELIMITER);
 
     if let Some(Value::Bool(true)) = config.get("use_instance_id") {

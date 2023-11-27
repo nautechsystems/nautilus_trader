@@ -16,6 +16,7 @@
 use std::{collections::HashMap, sync::mpsc::Receiver};
 
 use anyhow::Result;
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde_json::Value;
 
@@ -34,12 +35,17 @@ impl DatabaseOperation {
 pub trait CacheDatabase {
     type DatabaseType;
 
-    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Result<Self::DatabaseType>;
+    fn new(
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
+    ) -> Result<Self::DatabaseType>;
     fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>>;
     fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
     fn handle_ops(
-        trader_id: TraderId,
-        config: HashMap<String, Value>,
         rx: Receiver<DatabaseOperation>,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
     );
 }
