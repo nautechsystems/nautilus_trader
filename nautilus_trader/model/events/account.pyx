@@ -21,12 +21,12 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.uuid cimport UUID4
+from nautilus_trader.model.functions cimport account_type_from_str
+from nautilus_trader.model.functions cimport account_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport MarginBalance
-from nautilus_trader.model.objects cimport account_type_from_str
-from nautilus_trader.model.objects cimport account_type_to_str
 
 
 cdef class AccountState(Event):

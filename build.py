@@ -312,7 +312,8 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if platform.system() in ("Linux", "Darwin"):
+    if BUILD_MODE == "release" and platform.system() in ("Linux", "Darwin"):
+        # Only strip symbols for release builds
         _strip_unneeded_symbols()
 
 

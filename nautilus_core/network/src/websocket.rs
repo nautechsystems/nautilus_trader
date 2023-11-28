@@ -126,10 +126,13 @@ impl WebSocketClientInner {
         let mut request = url.into_client_request()?;
         let req_headers = request.headers_mut();
 
+        // Hacky solution to overcome the new `http` trait bounds
         for (key, val) in headers {
             let header_value = HeaderValue::from_str(&val).unwrap();
             let header_name = HeaderName::from_str(&key).unwrap();
-            req_headers.insert(header_name, header_value);
+            let header_name_string = header_name.to_string();
+            let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
+            req_headers.insert(header_name_str, header_value);
         }
 
         connect_async(request).await.map(|resp| resp.0.split())

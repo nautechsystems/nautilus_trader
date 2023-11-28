@@ -25,6 +25,7 @@ use strum::IntoEnumIterator;
 use crate::enums;
 
 pub mod data;
+pub mod events;
 pub mod identifiers;
 pub mod instruments;
 pub mod macros;
@@ -291,5 +292,9 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::instruments::futures_contract::FuturesContract>()?;
     m.add_class::<crate::instruments::options_contract::OptionsContract>()?;
     m.add_class::<crate::instruments::synthetic::SyntheticInstrument>()?;
+    // events
+    m.add_class::<crate::events::order::denied::OrderDenied>()?;
+    m.add_class::<crate::events::order::filled::OrderFilled>()?;
+    m.add_class::<crate::events::order::initialized::OrderInitialized>()?;
     Ok(())
 }

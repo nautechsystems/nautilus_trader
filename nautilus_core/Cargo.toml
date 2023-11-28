@@ -34,7 +34,7 @@ redis = { version = "0.23.3", features = ["tokio-comp", "keep-alive", "connectio
 rmp-serde = "1.1.2"
 rust_decimal = "1.33.1"
 rust_decimal_macros = "1.33.1"
-serde = { version = "1.0.192", features = ["derive"] }
+serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.50"

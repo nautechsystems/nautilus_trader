@@ -229,6 +229,10 @@ typedef struct MessageBus MessageBus;
 
 typedef struct TestClock TestClock;
 
+typedef struct PyCallableWrapper_t {
+    PyObject *ptr;
+} PyCallableWrapper_t;
+
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
  *
@@ -322,9 +326,7 @@ typedef struct TimeEventHandler_t {
     PyObject *callback_ptr;
 } TimeEventHandler_t;
 
-typedef struct PyCallableWrapper_t {
-    PyObject *ptr;
-} PyCallableWrapper_t;
+struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 
 struct TestClock_API test_clock_new(void);
 
@@ -513,6 +515,7 @@ void logger_log(struct Logger_API *logger,
  */
 struct MessageBus_API msgbus_new(const char *trader_id_ptr,
                                  const char *name_ptr,
+                                 const char *instance_id_ptr,
                                  const char *config_ptr);
 
 void msgbus_drop(struct MessageBus_API bus);
@@ -688,5 +691,3 @@ struct TimeEvent_t time_event_new(const char *name_ptr,
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
 
 struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);
-
-struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);

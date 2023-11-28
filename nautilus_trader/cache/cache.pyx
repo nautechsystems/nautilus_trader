@@ -81,6 +81,10 @@ cdef class Cache(CacheFacade):
         The database for the cache. If ``None`` then will bypass persistence.
     config : CacheConfig, optional
         The cache configuration.
+    snapshot_orders : bool, default False
+        If order state snapshots should be persisted.
+    snapshot_positions : bool, default False
+        If position state snapshots should be persisted.
 
     Raises
     ------
@@ -92,6 +96,8 @@ cdef class Cache(CacheFacade):
         self,
         Logger logger not None,
         CacheDatabase database: Optional[CacheDatabase] = None,
+        bint snapshot_orders: bool = False,
+        bint snapshot_positions: bool = False,
         config: Optional[CacheConfig] = None,
     ):
         if config is None:
@@ -105,8 +111,8 @@ cdef class Cache(CacheFacade):
         # Configuration
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
-        self.snapshot_orders = config.snapshot_orders
-        self.snapshot_positions = config.snapshot_positions
+        self.snapshot_orders = snapshot_orders
+        self.snapshot_positions = snapshot_positions
 
         # Caches
         self._general: dict[str, bytes] = {}
@@ -892,7 +898,7 @@ cdef class Cache(CacheFacade):
                 )
                 self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
 
-    cdef Money _calculate_unrealized_pnl(self, Position position):
+    cpdef Money calculate_unrealized_pnl(self, Position position):
         cdef QuoteTick quote = self.quote_tick(position.instrument_id)
         if quote is None:
             self._log.warning(
@@ -1658,7 +1664,7 @@ cdef class Cache(CacheFacade):
             self._database.snapshot_position_state(
                 position,
                 position.ts_last,
-                self._calculate_unrealized_pnl(position),
+                self.calculate_unrealized_pnl(position),
             )
 
     cpdef void snapshot_position(self, Position position):
@@ -1724,7 +1730,7 @@ cdef class Cache(CacheFacade):
         self._database.snapshot_position_state(
             position,
             ts_snapshot,
-            self._calculate_unrealized_pnl(position),
+            self.calculate_unrealized_pnl(position),
         )
 
     cpdef void snapshot_order_state(self, Order order):
@@ -1852,7 +1858,7 @@ cdef class Cache(CacheFacade):
             self._database.snapshot_position_state(
                 position,
                 position.ts_last,
-                self._calculate_unrealized_pnl(position),
+                self.calculate_unrealized_pnl(position),
             )
 
     cpdef void update_actor(self, Actor actor):

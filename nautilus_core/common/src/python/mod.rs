@@ -13,17 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod clock;
 pub mod timer;
 
 use pyo3::prelude::*;
 
+use crate::{enums, logging};
+
 /// Loaded as nautilus_pyo3.common
 #[pymodule]
 pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::enums::ComponentState>()?;
-    m.add_class::<crate::enums::ComponentTrigger>()?;
-    m.add_class::<crate::enums::LogColor>()?;
-    m.add_class::<crate::enums::LogLevel>()?;
-    m.add_class::<crate::enums::LogFormat>()?;
+    m.add_class::<enums::ComponentState>()?;
+    m.add_class::<enums::ComponentTrigger>()?;
+    m.add_class::<enums::LogColor>()?;
+    m.add_class::<enums::LogLevel>()?;
+    m.add_class::<enums::LogFormat>()?;
+    m.add_class::<logging::LogGuard>()?;
+    m.add_function(wrap_pyfunction!(logging::set_global_log_collector, m)?)?;
+
     Ok(())
 }

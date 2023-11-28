@@ -32,6 +32,15 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport contingency_type_to_str
+from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport time_in_force_to_str
+from nautilus_trader.model.functions cimport trailing_offset_type_from_str
+from nautilus_trader.model.functions cimport trailing_offset_type_to_str
+from nautilus_trader.model.functions cimport trigger_type_from_str
+from nautilus_trader.model.functions cimport trigger_type_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -40,15 +49,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport contingency_type_to_str
-from nautilus_trader.model.objects cimport liquidity_side_to_str
-from nautilus_trader.model.objects cimport order_side_to_str
-from nautilus_trader.model.objects cimport order_type_to_str
-from nautilus_trader.model.objects cimport time_in_force_to_str
-from nautilus_trader.model.objects cimport trailing_offset_type_from_str
-from nautilus_trader.model.objects cimport trailing_offset_type_to_str
-from nautilus_trader.model.objects cimport trigger_type_from_str
-from nautilus_trader.model.objects cimport trigger_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 
 

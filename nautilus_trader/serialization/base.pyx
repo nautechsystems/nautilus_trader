@@ -166,6 +166,7 @@ EXTERNAL_PUBLISHING_TYPES = (
     str,
     int,
     float,
+    bytes,
     SubmitOrder,
     SubmitOrderList,
     ModifyOrder,

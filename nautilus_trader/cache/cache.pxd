@@ -107,9 +107,9 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
     cdef readonly bint snapshot_orders
-    """If order state snapshots should be taken.\n\n:returns: `bool`"""
+    """If order state snapshots should be persisted.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions
-    """If position state snapshots should be taken.\n\n:returns: `bool`"""
+    """If position state snapshots should be persisted.\n\n:returns: `bool`"""
 
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
@@ -136,7 +136,7 @@ cdef class Cache(CacheFacade):
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
     cdef void _assign_position_id_to_contingencies(self, Order order)
-    cdef Money _calculate_unrealized_pnl(self, Position position)
+    cpdef Money calculate_unrealized_pnl(self, Position position)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)

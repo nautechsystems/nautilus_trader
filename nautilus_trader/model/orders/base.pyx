@@ -44,15 +44,15 @@ from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport contingency_type_to_str
+from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.objects cimport contingency_type_to_str
-from nautilus_trader.model.objects cimport order_side_to_str
-from nautilus_trader.model.objects cimport order_type_to_str
-from nautilus_trader.model.objects cimport position_side_to_str
-from nautilus_trader.model.objects cimport time_in_force_to_str
 
 
 VALID_STOP_ORDER_TYPES = {

@@ -15,13 +15,22 @@
 
 pub mod clock;
 pub mod enums;
-#[cfg(feature = "ffi")]
-pub mod ffi;
+pub mod factories;
 pub mod generators;
 pub mod handlers;
 pub mod logging;
 pub mod msgbus;
-#[cfg(feature = "python")]
-pub mod python;
 pub mod testing;
 pub mod timer;
+
+#[cfg(test)]
+pub mod stubs;
+
+#[cfg(feature = "ffi")]
+pub mod ffi;
+
+#[cfg(feature = "python")]
+pub mod python;
+
+#[cfg(feature = "redis-msgbus")]
+pub mod redis;

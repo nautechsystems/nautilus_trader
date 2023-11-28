@@ -32,13 +32,13 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.common.logging import nautilus_header
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
@@ -237,15 +237,20 @@ class NautilusKernel:
             )
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
+            instance_id=self._instance_id,
             clock=self._clock,
             logger=self._logger,
             serializer=msgbus_serializer,
+            snapshot_orders=config.snapshot_orders,
+            snapshot_positions=config.snapshot_positions,
             config=config.message_bus,
         )
 
         self._cache = Cache(
             database=cache_db,
             logger=self._logger,
+            snapshot_orders=config.snapshot_orders,
+            snapshot_positions=config.snapshot_positions,
             config=config.cache,
         )
 

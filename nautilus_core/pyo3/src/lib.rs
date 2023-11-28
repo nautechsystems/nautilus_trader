@@ -13,85 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},
 };
-use tracing::Level;
-use tracing_appender::{
-    non_blocking::WorkerGuard,
-    rolling::{RollingFileAppender, Rotation},
-};
-use tracing_subscriber::{fmt::Layer, prelude::*, EnvFilter, Registry};
-
-/// Guards the log collector and flushes it when dropped
-///
-/// This struct must be dropped when the application has completed operation
-/// it ensures that the any pending log lines are flushed before the application
-/// closes.
-#[pyclass]
-pub struct LogGuard {
-    #[allow(dead_code)]
-    guards: Vec<WorkerGuard>,
-}
-
-/// Sets the global log collector
-///
-/// stdout_level: Set the level for the stdout writer
-/// stderr_level: Set the level for the stderr writer
-/// file_level: Set the level, the directory and the prefix for the file writer
-///
-/// It also configures a top level filter based on module/component name.
-/// The format for the string is component1=info,component2=debug.
-/// For e.g. network=error,kernel=info
-///
-/// # Safety
-/// Should only be called once during an applications run, ideally at the
-/// beginning of the run.
-#[pyfunction]
-#[must_use]
-pub fn set_global_log_collector(
-    stdout_level: Option<String>,
-    stderr_level: Option<String>,
-    file_level: Option<(String, String, String)>,
-) -> LogGuard {
-    let mut guards = Vec::new();
-    let stdout_sub_builder = stdout_level.map(|stdout_level| {
-        let stdout_level = Level::from_str(&stdout_level).unwrap();
-        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        guards.push(guard);
-        Layer::default().with_writer(non_blocking.with_max_level(stdout_level))
-    });
-    let stderr_sub_builder = stderr_level.map(|stderr_level| {
-        let stderr_level = Level::from_str(&stderr_level).unwrap();
-        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
-        guards.push(guard);
-        Layer::default().with_writer(non_blocking.with_max_level(stderr_level))
-    });
-    let file_sub_builder = file_level.map(|(dir_path, file_prefix, file_level)| {
-        let file_level = Level::from_str(&file_level).unwrap();
-        let rolling_log = RollingFileAppender::new(Rotation::NEVER, dir_path, file_prefix);
-        let (non_blocking, guard) = tracing_appender::non_blocking(rolling_log);
-        guards.push(guard);
-        Layer::default()
-            .with_ansi(false) // turn off unicode colors when writing to file
-            .with_writer(non_blocking.with_max_level(file_level))
-    });
-
-    if let Err(e) = Registry::default()
-        .with(stderr_sub_builder)
-        .with(stdout_sub_builder)
-        .with(file_sub_builder)
-        .with(EnvFilter::from_default_env())
-        .try_init()
-    {
-        println!("Failed to set global default dispatcher because of error: {e}");
-    };
-
-    LogGuard { guards }
-}
 
 /// Need to modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
@@ -107,57 +32,42 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Set pyo3_nautilus to be recognized as a subpackage
     sys_modules.set_item(module_name, m)?;
 
-    m.add_class::<LogGuard>()?;
-    m.add_function(wrap_pyfunction!(set_global_log_collector, m)?)?;
-
-    // Core
     let n = "core";
     let submodule = pyo3::wrap_pymodule!(nautilus_core::python::core);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    // TODO: Currently experiencing the following issue when trying to add `common`
-    // error[E0631]: type mismatch in closure arguments
-    // = note: expected closure signature `fn(pyo3::Python<'_>) -> _`
-    //         found closure signature `fn(pyo3::marker::Python<'_>) -> _`
+    let n = "common";
+    let submodule = pyo3::wrap_pymodule!(nautilus_common::python::common);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
 
-    // Common
-    // let n = "common";
-    // let submodule = pyo3::wrap_pymodule!(nautilus_common::python::common);
-    // m.add_wrapped(submodule)?;
-    // sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
-    // re_export_module_attributes(m, n)?;
-
-    // Model
     let n = "model";
     let submodule = pyo3::wrap_pymodule!(nautilus_model::python::model);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    // Indicators
     let n = "indicators";
     let submodule = pyo3::wrap_pymodule!(nautilus_indicators::python::indicators);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    // Infrastructure
     let n = "infrastructure";
     let submodule = pyo3::wrap_pymodule!(nautilus_infrastructure::python::infrastructure);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    // Network
     let n = "network";
     let submodule = pyo3::wrap_pymodule!(nautilus_network::python::network);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    // Persistence
     let n = "persistence";
     let submodule = pyo3::wrap_pymodule!(nautilus_persistence::python::persistence);
     m.add_wrapped(submodule)?;

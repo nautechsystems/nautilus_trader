@@ -18,6 +18,7 @@ use pyo3::{prelude::*, pymodule};
 pub mod cache;
 
 #[pymodule]
-pub fn infrastructure(_: Python<'_>, _m: &PyModule) -> PyResult<()> {
+pub fn infrastructure(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<crate::redis::RedisCacheDatabase>()?;
     Ok(())
 }

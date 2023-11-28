@@ -9,7 +9,6 @@ documentation.workspace = true
 [lib]
 name = "nautilus_backtest"
 crate-type = ["rlib", "staticlib"]
-proc-macro = true
 
 [dependencies]
 nautilus-common = { path = "../common" }

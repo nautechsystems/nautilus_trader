@@ -45,13 +45,20 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache_database=CacheDatabaseConfig(type="in-memory"),
+    cache_database=CacheDatabaseConfig(type="redis"),
     # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),  # No yet for operational use
+    #     database=DatabaseConfig(),
     #     encoding="json",
+    #     stream="quoters",
+    #     use_instance_id=False,
     #     timestamps_as_iso8601=True,
     #     types_filter=[QuoteTick],
+    #     autotrim_mins=30,
     # ),
+    # heartbeat_interval=1.0,
+    # snapshot_orders=True,
+    # snapshot_positions=True,
+    # snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_API_KEY"

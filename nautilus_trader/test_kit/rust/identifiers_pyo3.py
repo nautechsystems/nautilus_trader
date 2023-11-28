@@ -34,7 +34,7 @@ class TestIdProviderPyo3:
 
     @staticmethod
     def trader_id() -> TraderId:
-        return TraderId("TESTER-000")
+        return TraderId("TESTER-001")
 
     @staticmethod
     def account_id() -> AccountId:
@@ -100,7 +100,7 @@ class TestIdProviderPyo3:
 
     @staticmethod
     def venue_order_id() -> VenueOrderId:
-        return VenueOrderId("1")
+        return VenueOrderId("123456")
 
     @staticmethod
     def trade_id() -> TradeId:

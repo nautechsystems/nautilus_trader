@@ -24,12 +24,11 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
-use redis::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use ustr::Ustr;
 
-use crate::handlers::MessageHandler;
+use crate::{handlers::MessageHandler, redis::handle_messages_with_redis};
 
 // Represents a subscription to a particular topic.
 //
@@ -94,9 +93,9 @@ impl Hash for Subscription {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BusMessage {
     /// The topic to publish on.
-    topic: String,
+    pub topic: String,
     /// The serialized payload for the message.
-    payload: Vec<u8>,
+    pub payload: Vec<u8>,
 }
 
 impl fmt::Display for BusMessage {
@@ -149,6 +148,8 @@ pub struct MessageBus {
     correlation_index: IndexMap<UUID4, MessageHandler>,
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
+    /// The instance ID associated with the message bus.
+    pub instance_id: UUID4,
     /// The name for the message bus.
     pub name: String,
     // The count of messages sent through the bus.
@@ -168,6 +169,7 @@ impl MessageBus {
     #[must_use]
     pub fn new(
         trader_id: TraderId,
+        instance_id: UUID4,
         name: Option<String>,
         config: Option<HashMap<String, Value>>,
     ) -> Self {
@@ -176,7 +178,7 @@ impl MessageBus {
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
             thread::spawn(move || {
-                Self::handle_messages(trader_id.value.as_ref(), config, rx);
+                Self::handle_messages(rx, trader_id, instance_id, config);
             });
             Some(tx)
         } else {
@@ -186,6 +188,7 @@ impl MessageBus {
         Self {
             tx,
             trader_id,
+            instance_id,
             name: name.unwrap_or_else(|| stringify!(MessageBus).to_owned()),
             sent_count: 0,
             req_count: 0,
@@ -397,69 +400,25 @@ impl MessageBus {
         }
     }
 
-    fn handle_messages(trader_id: &str, config: HashMap<String, Value>, rx: Receiver<BusMessage>) {
-        let _autotrim_mins = config
-            .get("autotrim_mins")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
-        let redis_url = get_redis_url(&config);
-        let client = redis::Client::open(redis_url).unwrap();
-        let stream = get_stream_name(&config);
-        let mut conn = client.get_connection().unwrap();
+    fn handle_messages(
+        rx: Receiver<BusMessage>,
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
+    ) {
+        let database_config = config
+            .get("database")
+            .expect("No `MessageBusConfig` `database` config specified");
+        let backing_type = database_config
+            .get("type")
+            .expect("No `MessageBusConfig` database config `type` specified")
+            .as_str()
+            .expect("`MessageBusConfig` database `type` must be a valid string");
 
-        // Continue to receive and handle bus messages until channel is hung up
-        while let Ok(msg) = rx.recv() {
-            let key = format!("{stream}{trader_id}:{}", &msg.topic);
-            let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
-            let result: Result<(), redis::RedisError> = conn.xadd(&key, "*", &items);
-
-            if let Err(e) = result {
-                eprintln!("Error publishing message: {e}");
-            }
+        match backing_type {
+            "redis" => handle_messages_with_redis(rx, trader_id, instance_id, config),
+            other => panic!("Unsupported message bus backing database type '{other}'"),
         }
-    }
-}
-
-pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
-    let empty = Value::Object(serde_json::Map::new());
-    let database = config.get("database").unwrap_or(&empty);
-
-    let host = database
-        .get("host")
-        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
-    let username = database
-        .get("username")
-        .map(|v| v.as_str().unwrap_or_default());
-    let password = database
-        .get("password")
-        .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
-
-    format!(
-        "redis{}://{}:{}@{}:{}",
-        if use_ssl.as_bool().unwrap_or(false) {
-            "s"
-        } else {
-            ""
-        },
-        username.unwrap_or(""),
-        password.unwrap_or(""),
-        host.unwrap(),
-        port.unwrap(),
-    )
-}
-
-pub fn get_stream_name(config: &HashMap<String, Value>) -> String {
-    match config.get("stream") {
-        Some(Value::String(s)) => {
-            if !s.is_empty() {
-                format!("{}:", s.trim_matches('"'))
-            } else {
-                s.to_string()
-            }
-        }
-        _ => "".to_string(),
     }
 }
 
@@ -500,28 +459,30 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
+    use std::sync::Arc;
 
-    use nautilus_core::message::Message;
+    use nautilus_core::{message::Message, uuid::UUID4};
     use rstest::*;
 
     use super::*;
-    use crate::handlers::MessageHandler;
+    use crate::handlers::{MessageHandler, SafeMessageCallback};
 
     fn stub_msgbus() -> MessageBus {
-        MessageBus::new(TraderId::from("trader-001"), None, None)
+        MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
     }
 
-    fn stub_rust_callback() -> Rc<dyn Fn(Message)> {
-        Rc::new(|m: Message| {
-            format!("{m:?}");
-        })
+    fn stub_rust_callback() -> SafeMessageCallback {
+        SafeMessageCallback {
+            callback: Arc::new(|m: Message| {
+                format!("{m:?}");
+            }),
+        }
     }
 
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::new(trader_id, None, None);
+        let msgbus = MessageBus::new(trader_id, UUID4::new(), None, None);
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));

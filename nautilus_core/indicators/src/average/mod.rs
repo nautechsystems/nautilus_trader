@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
@@ -23,6 +24,14 @@ use crate::{
     },
     indicator::MovingAverage,
 };
+
+pub mod ama;
+pub mod dema;
+pub mod ema;
+pub mod hma;
+pub mod rma;
+pub mod sma;
+pub mod wma;
 
 #[repr(C)]
 #[derive(
@@ -83,11 +92,3 @@ impl MovingAverageFactory {
         }
     }
 }
-
-pub mod ama;
-pub mod dema;
-pub mod ema;
-pub mod hma;
-pub mod rma;
-pub mod sma;
-pub mod wma;

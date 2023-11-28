@@ -26,6 +26,8 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::average::sma::SimpleMovingAverage>()?;
     m.add_class::<crate::average::ama::AdaptiveMovingAverage>()?;
     m.add_class::<crate::average::dema::DoubleExponentialMovingAverage>()?;
+    m.add_class::<crate::average::hma::HullMovingAverage>()?;
+    m.add_class::<crate::average::rma::WilderMovingAverage>()?;
     // ratio
     m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
     // momentum

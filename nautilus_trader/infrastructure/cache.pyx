@@ -16,7 +16,12 @@
 import warnings
 from typing import Optional
 
+import msgspec
+
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.core.nautilus_pyo3 import UUID4 as RustUUID4
+from nautilus_trader.core.nautilus_pyo3 import RedisCacheDatabase as RustRedisCacheDatabase
+from nautilus_trader.core.nautilus_pyo3 import TraderId as RustTraderId
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -37,6 +42,9 @@ from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.functions cimport currency_type_from_str
+from nautilus_trader.model.functions cimport currency_type_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -52,9 +60,6 @@ from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport currency_type_from_str
-from nautilus_trader.model.objects cimport currency_type_to_str
-from nautilus_trader.model.objects cimport order_type_to_str
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
@@ -193,6 +198,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 redis.exceptions.TimeoutError,
                 redis.exceptions.ConnectionError,
             ],
+        )
+
+        self._backing = RustRedisCacheDatabase(
+            trader_id=RustTraderId(trader_id.value),
+            instance_id=RustUUID4(logger.instance_id.value),
+            config_json=msgspec.json.encode(config),
         )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
@@ -741,7 +752,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(key, "key")
         Condition.not_none(value, "value")
 
-        self._redis.set(name=self._key_general + key, value=value)
+        # self._redis.set(name=self._key_general + key, value=value)
+        self._backing.insert(f"{_GENERAL}:{key}", [value])
         self._log.debug(f"Added general object {key}.")
 
     cpdef void add_currency(self, Currency currency):

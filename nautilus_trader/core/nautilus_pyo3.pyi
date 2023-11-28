@@ -628,6 +628,107 @@ class FuturesContract: ...
 class OptionsContract: ...
 class SyntheticInstrument: ...
 
+### Events
+class OrderDenied:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderDenied: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderFilled:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+        trade_id: TradeId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        last_qty: Quantity,
+        last_px: Price,
+        currency: Currency,
+        liquidity_side: LiquiditySide,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        position_id: PositionId | None = None,
+        commission: Money | None = None,
+    )-> None: ...
+    @property
+    def is_buy(self) -> bool: ...
+    @property
+    def is_sell(self) -> bool: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderFilled: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderInitialized:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        order_side: OrderSide,
+        order_type: OrderType,
+        quantity: Quantity,
+        time_in_force: TimeInForce,
+        post_only: bool,
+        reduce_only: bool,
+        quote_quantity: bool,
+        reconciliation: bool,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+        trigger_type: TriggerType | None = None,
+        limit_offset: Price | None = None,
+        trailing_offset: Price | None = None,
+        trailing_offset_type: TrailingOffsetType | None = None,
+        expire_time: int | None = None,
+        display_quantity: Quantity | None = None,
+        emulation_trigger: TriggerType | None = None,
+        trigger_instrument_id: InstrumentId | None = None,
+        contingency_type: ContingencyType | None = None,
+        order_list_id: OrderListId | None = None,
+        linked_order_ids: list[ClientOrderId] | None = None,
+        parent_order_id: ClientOrderId | None = None,
+        exec_algorithm_id: ExecAlgorithmId | None = None,
+        exec_algorithm_params: dict[str, str] | None = None,
+        exec_spawn_id: ClientOrderId | None = None,
+        tags: str | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderInitialized: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
+###################################################################################################
+# Infrastructure
+###################################################################################################
+
+class RedisCacheDatabase:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        config: dict[str, Any],
+    ) -> None: ...
+
 ###################################################################################################
 # Network
 ###################################################################################################
@@ -909,7 +1010,7 @@ class HullMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type = None
+        price_type: PriceType = None
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -923,6 +1024,34 @@ class HullMovingAverage:
     def has_inputs(self) -> bool: ...
     @property
     def value(self) -> float: ...
+
+    def update_raw(self, value: float) -> None: ...
+    def handle_quote_tick(self, tick: QuoteTick) -> None: ...
+    def handle_trade_tick(self, tick: TradeTick) -> None: ...
+    def handle_bar(self, bar: Bar) -> None: ...
+    def reset(self) -> None: ...
+
+
+class WilderMovingAverage:
+    def __init__(
+        self,
+        period: int,
+        price_type: PriceType = None,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def period(self) -> int: ...
+    @property
+    def count(self) -> int: ...
+    @property
+    def initialized(self) -> bool: ...
+    @property
+    def has_inputs(self) -> bool: ...
+    @property
+    def value(self) -> float: ...
+    @property
+    def alpha(self) -> float: ...
 
     def update_raw(self, value: float) -> None: ...
     def handle_quote_tick(self, tick: QuoteTick) -> None: ...

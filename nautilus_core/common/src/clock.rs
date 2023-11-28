@@ -66,6 +66,10 @@ pub trait Clock {
     fn cancel_timers(&mut self);
 }
 
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct TestClock {
     time: AtomicTime,
     timers: HashMap<String, TestTimer>,
@@ -249,6 +253,10 @@ impl Clock for TestClock {
     }
 }
 
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct LiveClock {
     internal: AtomicTime,
     timers: HashMap<String, TestTimer>,

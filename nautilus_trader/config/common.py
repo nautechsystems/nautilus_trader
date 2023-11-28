@@ -118,27 +118,11 @@ class CacheConfig(NautilusConfig, frozen=True):
         The maximum length for internal tick dequeues.
     bar_capacity : PositiveInt, default 10_000
         The maximum length for internal bar dequeues.
-    snapshot_orders : bool, default False
-        If order state snapshot lists should be persisted.
-        Snapshots will be taken at every order state update (when events are applied).
-    snapshot_positions : bool, default False
-        If position state snapshot lists should be persisted.
-        Snapshots will be taken at position opened, changed and closed (when events are applied).
-        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
-        be available in the cache.
-    snapshot_positions_interval : PositiveFloat, optional
-        The interval (seconds) at which additional position state snapshots are persisted.
-        If ``None`` then no additional snapshots will be taken.
-        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
-        be available in the cache.
 
     """
 
     tick_capacity: PositiveInt = 10_000
     bar_capacity: PositiveInt = 10_000
-    snapshot_orders: bool = False
-    snapshot_positions: bool = False
-    snapshot_positions_interval: PositiveFloat | None = None
 
 
 class CacheDatabaseConfig(NautilusConfig, frozen=True):
@@ -161,6 +145,10 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should use an SSL enabled connection.
     flush_on_start : bool, default False
         If database should be flushed on start.
+    use_trader_prefix : bool, default True
+        If a 'trader-' prefix is applied to keys.
+    use_instance_id : bool, default False
+        If the traders instance ID should be used for keys.
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
@@ -176,6 +164,8 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     password: str | None = None
     ssl: bool = False
     flush_on_start: bool = False
+    use_trader_prefix: bool = True
+    use_instance_id: bool = False
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
 
@@ -199,6 +189,10 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     ssl : bool, default False
         If database should use an SSL enabled connection.
 
+    Notes
+    -----
+    Requires Redis version 6.2.0 and above for correct operation.
+
     """
 
     type: str = "redis"
@@ -218,7 +212,9 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     database : DatabaseConfig, optional
         The configuration for the message bus backing database.
     stream : str, optional
-        The additional top level stream name for any external publishing (must have a `database` config).
+        The additional prefix for externally published stream names (must have a `database` config).
+    use_instance_id : bool, default False
+        If the traders instance ID should be used in stream names.
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
@@ -227,12 +223,17 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     types_filter : list[type], optional
         A list of serializable types *not* to publish externally.
     autotrim_mins : int, optional
-        The streams lookback window in minutes to be autotrimmed.
+        The lookback window in minutes for automatic stream trimming.
+        The actual window may extend up to one minute beyond the specified value since streams are
+        trimmed at most once every minute.
+        Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
+        in acommand syntax error.
 
     """
 
     database: DatabaseConfig | None = None
     stream: str | None = None
+    use_instance_id: bool = False
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
     types_filter: list[type] | None = None
@@ -287,6 +288,10 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_timestamp_on_close : bool, default True
         If time bar aggregators will timestamp `ts_event` on bar close.
         If False then will timestamp on bar open.
+    time_bars_interval_type : str, default 'left-open'
+        Determines the type of interval used for time aggregation.
+        - 'left-open': start time is excluded and end time is included (default).
+        - 'right-open': start time is included and end time is excluded.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     debug : bool, default False
@@ -296,6 +301,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     time_bars_build_with_no_updates: bool = True
     time_bars_timestamp_on_close: bool = True
+    time_bars_interval_type: str = "left-open"
     validate_data_sequence: bool = False
     debug: bool = False
 
@@ -797,6 +803,23 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If trading strategy state should be saved to the database on stop.
     loop_debug : bool, default False
         If the asyncio event loop should be in debug mode.
+    logging : LoggingConfig, optional
+        The logging config for the kernel.
+    tracing : TracingConfig, optional
+        The tracing (core logging) config for the kernel.
+    snapshot_orders : bool, default False
+        If order state snapshot lists should be persisted.
+        Snapshots will be taken at every order state update (when events are applied).
+    snapshot_positions : bool, default False
+        If position state snapshot lists should be persisted.
+        Snapshots will be taken at position opened, changed and closed (when events are applied).
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
+    snapshot_positions_interval : PositiveFloat, optional
+        The interval (seconds) at which additional position state snapshots are persisted.
+        If ``None`` then no additional snapshots will be taken.
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
     timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.
     timeout_reconciliation : PositiveFloat (seconds)
@@ -831,6 +854,9 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     loop_debug: bool = False
     logging: LoggingConfig | None = None
     tracing: TracingConfig | None = None
+    snapshot_orders: bool = False
+    snapshot_positions: bool = False
+    snapshot_positions_interval: PositiveFloat | None = None
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0

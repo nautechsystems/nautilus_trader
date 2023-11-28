@@ -19,86 +19,146 @@ use std::{
     thread,
 };
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
+use pyo3::prelude::*;
 use redis::{Commands, Connection};
 use serde_json::Value;
 
-use crate::cache::{CacheDatabase, DatabaseOperation};
+use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
+const DELIMITER: char = ':';
+const GENERAL: &str = "general";
+
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct RedisCacheDatabase {
-    _trader_id: TraderId,
-    read_conn: Connection,
-    tx: Sender<DatabaseOperation>,
+    pub trader_id: TraderId,
+    conn: Connection,
+    tx: Sender<DatabaseCommand>,
 }
 
 impl CacheDatabase for RedisCacheDatabase {
-    fn new(trader_id: TraderId, config: HashMap<String, Value>) -> Self {
-        let redis_url = get_redis_url(&config);
-        let client = redis::Client::open(redis_url).unwrap();
-        let read_conn = client.get_connection().unwrap();
+    type DatabaseType = RedisCacheDatabase;
 
-        let (tx, rx) = channel::<DatabaseOperation>();
+    fn new(
+        trader_id: TraderId,
+        instance_id: UUID4,
+        config: HashMap<String, Value>,
+    ) -> Result<RedisCacheDatabase> {
+        let redis_url = get_redis_url(&config);
+        let client = redis::Client::open(redis_url)?;
+        let conn = client.get_connection().unwrap();
+
+        let (tx, rx) = channel::<DatabaseCommand>();
 
         thread::spawn(move || {
-            Self::handle_ops(trader_id, config, rx);
+            Self::handle_ops(rx, trader_id, instance_id, config);
         });
 
-        RedisCacheDatabase {
-            _trader_id: trader_id,
-            read_conn,
+        Ok(RedisCacheDatabase {
+            trader_id,
+            conn,
             tx,
+        })
+    }
+
+    fn read(&mut self, key: String) -> Result<Vec<Vec<u8>>> {
+        let result: Vec<Vec<u8>> = self.conn.get(key)?;
+        Ok(result)
+    }
+
+    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
+        let op = DatabaseCommand::new(DatabaseOperation::Insert, key, Some(payload));
+        match self.tx.send(op) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
         }
     }
 
-    fn read(&mut self, op_type: String) -> Vec<Vec<u8>> {
-        // TODO: Implement
-        let result: Vec<Vec<u8>> = self.read_conn.get(op_type).unwrap();
-        result
-    }
-
-    fn write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
-        let op = DatabaseOperation::new(op_type, payload);
+    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
+        let op = DatabaseCommand::new(DatabaseOperation::Update, key, Some(payload));
         match self.tx.send(op) {
             Ok(_) => Ok(()),
-            Err(e) => Err(anyhow!("Failed to send to channel: {e}").to_string()),
+            Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
+        }
+    }
+
+    fn delete(&mut self, key: String) -> Result<(), String> {
+        let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
+        match self.tx.send(op) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
         }
     }
 
     fn handle_ops(
+        rx: Receiver<DatabaseCommand>,
         trader_id: TraderId,
+        instance_id: UUID4,
         config: HashMap<String, Value>,
-        rx: Receiver<DatabaseOperation>,
     ) {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
-        let _conn = client.get_connection().unwrap();
-
-        println!("{:?}", trader_id); // TODO: Temp
+        let mut conn = client.get_connection().unwrap();
+        let trader_key = get_trader_key(&config, trader_id, instance_id);
 
         // Continue to receive and handle bus messages until channel is hung up
-        while let Ok(op) = rx.recv() {
-            println!("{:?} {:?}", op.op_type, op.payload);
+        while let Ok(msg) = rx.recv() {
+            let collection = msg
+                .key
+                .split_once(DELIMITER)
+                .unwrap_or_else(|| panic!("Invalid `key` '{}'", msg.key));
+            let key = format!("{trader_key}{}", msg.key);
+
+            match msg.op_type {
+                DatabaseOperation::Insert => insert(
+                    &mut conn,
+                    collection.0,
+                    &key,
+                    &msg.payload.expect("Null `payload` for `insert`"),
+                )
+                .unwrap(),
+                _ => panic!("Unsupported `op_type`"),
+            }
         }
     }
 }
 
-// Consolidate this with the MessageBus version
-pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
-    let empty = Value::Object(serde_json::Map::new());
-    let database = config.get("database").unwrap_or(&empty);
+fn insert(
+    conn: &mut Connection,
+    collection: &str,
+    key: &str,
+    value: &Vec<Vec<u8>>,
+) -> Result<(), String> {
+    assert!(!value.is_empty(), "Empty `payload` for `insert`");
 
-    let host = database
+    match collection {
+        GENERAL => insert_general(conn, key, &value[0]),
+        _ => panic!("Collection '{collection}' not recognized"),
+    }
+}
+
+fn insert_general(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<(), String> {
+    conn.set(key, value)
+        .map_err(|e| format!("Failed to set key-value in Redis: {e}"))
+}
+
+fn get_redis_url(config: &HashMap<String, Value>) -> String {
+    let host = config
         .get("host")
         .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
-    let username = database
+    let port = config.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let username = config
         .get("username")
         .map(|v| v.as_str().unwrap_or_default());
-    let password = database
+    let password = config
         .get("password")
         .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
+    let use_ssl = config.get("ssl").unwrap_or(&Value::Bool(false));
 
     format!(
         "redis{}://{}:{}@{}:{}",
@@ -112,4 +172,26 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
         host.unwrap(),
         port.unwrap(),
     )
+}
+
+fn get_trader_key(
+    config: &HashMap<String, Value>,
+    trader_id: TraderId,
+    instance_id: UUID4,
+) -> String {
+    let mut key = String::new();
+
+    if let Some(Value::Bool(true)) = config.get("use_trader_prefix") {
+        key.push_str("trader-");
+    }
+
+    key.push_str(trader_id.value.as_str());
+    key.push(DELIMITER);
+
+    if let Some(Value::Bool(true)) = config.get("use_instance_id") {
+        key.push_str(&format!("{instance_id}"));
+        key.push(DELIMITER);
+    }
+
+    key
 }

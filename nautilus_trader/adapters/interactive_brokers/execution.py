@@ -41,8 +41,8 @@ from nautilus_trader.adapters.interactive_brokers.parsing.execution import times
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.common.msgbus import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.core.uuid import UUID4
@@ -697,7 +697,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         self._account_summary_loaded.set()
 
-    def _handle_order_event(
+    def _handle_order_event(  # noqa: C901
         self,
         status: OrderStatus,
         order: Order,
@@ -721,10 +721,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
             else:
-                self._log.debug(f"{order.client_order_id} already accepted.")
+                self._log.debug(f"Order {order.client_order_id} already accepted.")
+        elif status == OrderStatus.FILLED:
+            if order.status != OrderStatus.FILLED:
+                # TODO: self.generate_order_filled
+                self._log.debug(f"Order {order.client_order_id} is filled.")
         elif status == OrderStatus.PENDING_CANCEL:
             # TODO: self.generate_order_pending_cancel
-            self._log.warning(f"{order.client_order_id} is {status}")
+            self._log.warning(f"Order {order.client_order_id} is {status.name}")
         elif status == OrderStatus.CANCELED:
             if order.status != OrderStatus.CANCELED:
                 self.generate_order_canceled(
@@ -743,6 +747,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     reason=reason,
                     ts_event=self._clock.timestamp_ns(),
                 )
+        else:
+            self._log.warning(
+                f"Order {order.client_order_id} with status={status.name} is unknown or "
+                "not yet implemented.",
+            )
 
     async def handle_order_status_report(self, ib_order: IBOrder) -> None:
         report = await self._parse_ib_order_to_order_status_report(ib_order)
@@ -814,6 +823,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             status = OrderStatus.PENDING_CANCEL
         elif order_status == "Rejected":
             status = OrderStatus.REJECTED
+        elif order_status == "Filled":
+            status = OrderStatus.FILLED
         elif order_status == "Inactive":
             self._log.warning(
                 f"Order status is 'Inactive' because it is invalid or triggered an error for {order_ref=}",

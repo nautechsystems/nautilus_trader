@@ -59,6 +59,7 @@ cdef class DataEngine(Component):
     cdef readonly list _subscribed_synthetic_trades
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
+    cdef readonly str _time_bars_interval_type
     cdef readonly bint _validate_data_sequence
 
     cdef readonly bint debug
