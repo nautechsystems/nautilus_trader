@@ -13,6 +13,18 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod order;
-pub mod position;
-pub mod account;
+use crate::events::position::changed::PositionChanged;
+use crate::events::position::closed::PositionClosed;
+use crate::events::position::opened::PositionOpened;
+
+pub mod changed;
+pub mod closed;
+pub mod opened;
+
+pub mod state;
+
+pub enum PositionEvent {
+    PositionOpened(PositionOpened),
+    PositionChanged(PositionChanged),
+    PositionClosed(PositionClosed),
+}
