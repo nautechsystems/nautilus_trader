@@ -179,7 +179,7 @@ fn get_trader_key(
     trader_id: TraderId,
     instance_id: UUID4,
 ) -> String {
-    let mut key = String::new();
+    let mut key = "trader-".to_string();
 
     key.push_str(trader_id.value.as_str());
     key.push(DELIMITER);
