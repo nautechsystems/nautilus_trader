@@ -19,6 +19,7 @@ from typing import Optional
 import msgspec
 
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.core.nautilus_pyo3 import UUID4 as RustUUID4
 from nautilus_trader.core.nautilus_pyo3 import RedisCacheDatabase as RustRedisCacheDatabase
 from nautilus_trader.core.nautilus_pyo3 import TraderId as RustTraderId
 
@@ -199,10 +200,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
             ],
         )
 
-        # self._backing = RustRedisCacheDatabase(
-        #     trader_id=RustTraderId(trader_id.value),
-        #     config_json=msgspec.json.encode(config),
-        # )
+        self._backing = RustRedisCacheDatabase(
+            trader_id=RustTraderId(trader_id.value),
+            instance_id=RustUUID4(logger.instance_id.value),
+            config_json=msgspec.json.encode(config),
+        )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -750,7 +752,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(key, "key")
         Condition.not_none(value, "value")
 
-        self._redis.set(name=self._key_general + key, value=value)
+        # self._redis.set(name=self._key_general + key, value=value)
+        self._backing.insert(f"{_GENERAL}:{key}", [value])
         self._log.debug(f"Added general object {key}.")
 
     cpdef void add_currency(self, Currency currency):

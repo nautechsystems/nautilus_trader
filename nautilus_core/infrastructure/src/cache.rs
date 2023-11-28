@@ -53,12 +53,9 @@ pub trait CacheDatabase {
         config: HashMap<String, Value>,
     ) -> Result<Self::DatabaseType>;
     fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>>;
-    fn write(
-        &mut self,
-        op_type: DatabaseOperation,
-        key: String,
-        payload: Vec<Vec<u8>>,
-    ) -> Result<(), String>;
+    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
+    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
+    fn delete(&mut self, key: String) -> Result<(), String>;
     fn handle_ops(
         rx: Receiver<DatabaseCommand>,
         trader_id: TraderId,
