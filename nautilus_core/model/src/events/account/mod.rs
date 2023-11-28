@@ -13,18 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::events::position::{
-    changed::PositionChanged, closed::PositionClosed, opened::PositionOpened,
-};
-
-pub mod changed;
-pub mod closed;
-pub mod opened;
-
 pub mod state;
-
-pub enum PositionEvent {
-    PositionOpened(PositionOpened),
-    PositionChanged(PositionChanged),
-    PositionClosed(PositionClosed),
-}

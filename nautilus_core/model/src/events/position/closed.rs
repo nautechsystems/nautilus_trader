@@ -13,19 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-
 use nautilus_core::time::{TimedeltaNanos, UnixNanos};
-use crate::enums::{OrderSide, PositionSide};
-use crate::identifiers::account_id::AccountId;
-use crate::identifiers::client_order_id::ClientOrderId;
-use crate::identifiers::instrument_id::InstrumentId;
-use crate::identifiers::position_id::PositionId;
-use crate::identifiers::strategy_id::StrategyId;
-use crate::identifiers::trader_id::TraderId;
-use crate::types::currency::Currency;
-use crate::types::money::Money;
-use crate::types::price::Price;
-use crate::types::quantity::Quantity;
+
+use crate::{
+    enums::{OrderSide, PositionSide},
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
+    },
+    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+};
 #[repr(C)]
 #[derive(Clone, PartialEq, Debug)]
 pub struct PositionClosed {

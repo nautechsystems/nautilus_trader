@@ -13,18 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::events::position::{
-    changed::PositionChanged, closed::PositionClosed, opened::PositionOpened,
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+
+use crate::{
+    enums::AccountType,
+    identifiers::account_id::AccountId,
+    types::{
+        balance::{AccountBalance, MarginBalance},
+        currency::Currency,
+    },
 };
 
-pub mod changed;
-pub mod closed;
-pub mod opened;
-
-pub mod state;
-
-pub enum PositionEvent {
-    PositionOpened(PositionOpened),
-    PositionChanged(PositionChanged),
-    PositionClosed(PositionClosed),
+#[repr(C)]
+#[derive(Debug)]
+pub struct AccountState {
+    pub account_id: AccountId,
+    pub account_type: AccountType,
+    pub base_currency: Currency,
+    pub balances: Vec<AccountBalance>,
+    pub margins: Vec<MarginBalance>,
+    pub is_reported: bool,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
