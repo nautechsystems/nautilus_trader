@@ -57,10 +57,10 @@ pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
 }
 
 pub fn handle_messages_with_redis(
+    rx: Receiver<BusMessage>,
     trader_id: TraderId,
     instance_id: UUID4,
     config: HashMap<String, Value>,
-    rx: Receiver<BusMessage>,
 ) {
     let redis_url = get_redis_url(&config);
     let client = redis::Client::open(redis_url).unwrap();
