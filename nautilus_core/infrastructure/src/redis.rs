@@ -29,6 +29,7 @@ use serde_json::Value;
 use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
 const DELIMITER: char = ':';
+const GENERAL: &str = "general";
 
 #[cfg_attr(
     feature = "python",
@@ -70,13 +71,24 @@ impl CacheDatabase for RedisCacheDatabase {
         Ok(result)
     }
 
-    fn write(
-        &mut self,
-        op_type: DatabaseOperation,
-        key: String,
-        payload: Vec<Vec<u8>>,
-    ) -> Result<(), String> {
-        let op = DatabaseCommand::new(op_type, key, Some(payload));
+    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
+        let op = DatabaseCommand::new(DatabaseOperation::Insert, key, Some(payload));
+        match self.tx.send(op) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
+        }
+    }
+
+    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
+        let op = DatabaseCommand::new(DatabaseOperation::Update, key, Some(payload));
+        match self.tx.send(op) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
+        }
+    }
+
+    fn delete(&mut self, key: String) -> Result<(), String> {
+        let op = DatabaseCommand::new(DatabaseOperation::Delete, key, None);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to send to channel: {e}").to_string()),
@@ -92,27 +104,45 @@ impl CacheDatabase for RedisCacheDatabase {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
         let mut conn = client.get_connection().unwrap();
-        let trader_key = get_key(&config, trader_id, instance_id);
+        let trader_key = get_trader_key(&config, trader_id, instance_id);
 
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
+            let collection = msg
+                .key
+                .split_once(DELIMITER)
+                .unwrap_or_else(|| panic!("Invalid `key` '{}'", msg.key));
+            let key = format!("{trader_key}{}", msg.key);
+
             match msg.op_type {
-                DatabaseOperation::Insert => {
-                    add(&mut conn, &trader_key, &msg.key, &msg.payload.unwrap()).unwrap()
-                }
+                DatabaseOperation::Insert => insert(
+                    &mut conn,
+                    collection.0,
+                    &key,
+                    &msg.payload.expect("Null `payload` for `insert`"),
+                )
+                .unwrap(),
                 _ => panic!("Unsupported `op_type`"),
             }
         }
     }
 }
 
-fn add(
+fn insert(
     conn: &mut Connection,
-    trader_key: &str,
+    collection: &str,
     key: &str,
     value: &Vec<Vec<u8>>,
 ) -> Result<(), String> {
-    let key = format!("{trader_key}{DELIMITER}{key}");
+    assert!(!value.is_empty(), "Empty `payload` for `insert`");
+
+    match collection {
+        GENERAL => insert_general(conn, key, &value[0]),
+        _ => panic!("Collection '{collection}' not recognized"),
+    }
+}
+
+fn insert_general(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<(), String> {
     conn.set(key, value)
         .map_err(|e| format!("Failed to set key-value in Redis: {e}"))
 }
@@ -144,7 +174,11 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
     )
 }
 
-fn get_key(config: &HashMap<String, Value>, trader_id: TraderId, instance_id: UUID4) -> String {
+fn get_trader_key(
+    config: &HashMap<String, Value>,
+    trader_id: TraderId,
+    instance_id: UUID4,
+) -> String {
     let mut key = String::new();
 
     key.push_str(trader_id.value.as_str());

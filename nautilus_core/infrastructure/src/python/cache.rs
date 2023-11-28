@@ -23,10 +23,7 @@ use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::{prelude::*, PyResult};
 use serde_json::Value;
 
-use crate::{
-    cache::{CacheDatabase, DatabaseOperation},
-    redis::RedisCacheDatabase,
-};
+use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
 
 #[pymethods]
 impl RedisCacheDatabase {
@@ -51,7 +48,23 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "insert")]
     fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
-        match self.write(DatabaseOperation::Insert, key, payload) {
+        match self.insert(key, payload) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
+    }
+
+    #[pyo3(name = "update")]
+    fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
+        match self.insert(key, payload) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
+    }
+
+    #[pyo3(name = "delete")]
+    fn py_delete(&mut self, key: String) -> PyResult<()> {
+        match self.delete(key) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }
