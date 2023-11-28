@@ -2223,6 +2223,9 @@ dependencies = [
  "serde_json",
  "strum",
  "tempfile",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
  "ustr",
 ]
 
@@ -2362,9 +2365,6 @@ dependencies = [
  "nautilus-network",
  "nautilus-persistence",
  "pyo3",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
 ]
 
 [[package]]
