@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{Display, Formatter},
+};
 
 use anyhow::Result;
 use derive_builder::{self, Builder};
@@ -188,5 +191,104 @@ impl OrderInitialized {
             exec_spawn_id,
             tags,
         })
+    }
+}
+
+impl Display for OrderInitialized {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OrderInitialized(\
+            instrument_id={}, \
+            client_order_id={}, \
+            side={}, \
+            type={}, \
+            quantity={}, \
+            time_in_force={}, \
+            post_only={}, \
+            reduce_only={}, \
+            quote_quantity={}, \
+            price={}, \
+            emulation_trigger={}, \
+            trigger_instrument_id={}, \
+            contingency_type={}, \
+            order_list_id={}, \
+            linked_order_ids=[{}], \
+            parent_order_id={}, \
+            exec_algorithm_id={}, \
+            exec_algorithm_params={}, \
+            exec_spawn_id={}, \
+            tags={})",
+            self.instrument_id,
+            self.client_order_id,
+            self.order_side,
+            self.order_type,
+            self.quantity,
+            self.time_in_force,
+            self.post_only,
+            self.reduce_only,
+            self.quote_quantity,
+            self.price
+                .map(|price| format!("{}", price))
+                .unwrap_or("None".to_string()),
+            self.emulation_trigger
+                .map(|trigger| format!("{}", trigger))
+                .unwrap_or("None".to_string()),
+            self.trigger_instrument_id
+                .map(|instrument_id| format!("{}", instrument_id))
+                .unwrap_or("None".to_string()),
+            self.contingency_type
+                .map(|contingency_type| format!("{}", contingency_type))
+                .unwrap_or("None".to_string()),
+            self.order_list_id
+                .map(|order_list_id| format!("{}", order_list_id))
+                .unwrap_or("None".to_string()),
+            self.linked_order_ids
+                .as_ref()
+                .map(|linked_order_ids| linked_order_ids
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(", "))
+                .unwrap_or("None".to_string()),
+            self.parent_order_id
+                .map(|parent_order_id| format!("{}", parent_order_id))
+                .unwrap_or("None".to_string()),
+            self.exec_algorithm_id
+                .map(|exec_algorithm_id| format!("{}", exec_algorithm_id))
+                .unwrap_or("None".to_string()),
+            self.exec_algorithm_params
+                .as_ref()
+                .map(|exec_algorithm_params| format!("{:?}", exec_algorithm_params))
+                .unwrap_or("None".to_string()),
+            self.exec_spawn_id
+                .map(|exec_spawn_id| format!("{}", exec_spawn_id))
+                .unwrap_or("None".to_string()),
+            self.tags
+                .as_ref()
+                .map(|tags| format!("{}", tags))
+                .unwrap_or("None".to_string()),
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod test {
+    use rstest::rstest;
+
+    use crate::events::order::{initialized::OrderInitialized, stubs::*};
+    #[rstest]
+    fn test_order_initialized(order_initialized_buy_limit: OrderInitialized) {
+        let display = format!("{}", order_initialized_buy_limit);
+        assert_eq!(
+            display,
+            "OrderInitialized(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+            side=BUY, type=LIMIT, quantity=0.561, time_in_force=DAY, post_only=true, reduce_only=true, \
+            quote_quantity=false, price=22000, emulation_trigger=BID_ASK, trigger_instrument_id=BTCUSDT.COINBASE, \
+            contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], parent_order_id=None, \
+            exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None)");
     }
 }
