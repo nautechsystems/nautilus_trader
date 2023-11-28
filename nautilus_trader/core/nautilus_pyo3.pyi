@@ -645,6 +645,24 @@ class OrderDenied:
     def from_dict(cls, values: dict[str, str]) -> OrderDenied: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderRejected:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
 class OrderFilled:
     def __init__(
         self,
