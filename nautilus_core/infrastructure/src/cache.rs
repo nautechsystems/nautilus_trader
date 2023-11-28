@@ -52,7 +52,7 @@ pub trait CacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, Value>,
     ) -> Result<Self::DatabaseType>;
-    fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>>;
+    fn read(&mut self, key: String) -> Result<Vec<Vec<u8>>>;
     fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
     fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
     fn delete(&mut self, key: String) -> Result<(), String>;

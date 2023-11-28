@@ -145,8 +145,10 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should use an SSL enabled connection.
     flush_on_start : bool, default False
         If database should be flushed on start.
+    use_trader_prefix : bool, default True
+        If a 'trader-' prefix is applied to keys.
     use_instance_id : bool, default False
-        If the traders instance ID should be used in keys.
+        If the traders instance ID should be used for keys.
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
@@ -162,6 +164,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
     password: str | None = None
     ssl: bool = False
     flush_on_start: bool = False
+    use_trader_prefix: bool = True
     use_instance_id: bool = False
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False

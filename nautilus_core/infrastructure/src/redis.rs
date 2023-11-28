@@ -66,8 +66,8 @@ impl CacheDatabase for RedisCacheDatabase {
         })
     }
 
-    fn read(&mut self, op_type: String) -> Result<Vec<Vec<u8>>> {
-        let result: Vec<Vec<u8>> = self.conn.get(op_type)?;
+    fn read(&mut self, key: String) -> Result<Vec<Vec<u8>>> {
+        let result: Vec<Vec<u8>> = self.conn.get(key)?;
         Ok(result)
     }
 
@@ -179,7 +179,11 @@ fn get_trader_key(
     trader_id: TraderId,
     instance_id: UUID4,
 ) -> String {
-    let mut key = "trader-".to_string();
+    let mut key = String::new();
+
+    if let Some(Value::Bool(true)) = config.get("use_trader_prefix") {
+        key.push_str("trader-");
+    }
 
     key.push_str(trader_id.value.as_str());
     key.push(DELIMITER);
