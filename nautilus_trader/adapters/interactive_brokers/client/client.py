@@ -315,9 +315,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.is_ready.clear()
         self._accounts = set()
 
-    ##########################################################################
-    # Connectivity
-    ##########################################################################
+    # -- Connectivity ---------------------------------------------------------------------------------
     def error(  # noqa: C901 too complex
         self,
         req_id: int,
@@ -375,9 +373,11 @@ class InteractiveBrokersClient(Component, EWrapper):
                                 order_status="Rejected",
                                 reason=error_string,
                             )
-                elif error_code in [201, 203]:
+                elif error_code in [201, 203, 10289, 10293]:
                     # --> Warning 201 req_id= Order rejected - reason
                     # --> Warning 203 The security <security> is not available or allowed for this account.
+                    # --> Warning 10289 You must set Cash Quantity for this order (Crypto)
+                    # --> 10293', b'Cryptocurrency Cash Quantity order cannot specify size'
                     order_ref = self._order_id_to_order_ref.get(req_id, None)
                     if order_ref:
                         name = f"orderStatus-{order_ref.account}"
