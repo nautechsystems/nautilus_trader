@@ -21,7 +21,10 @@ use ustr::Ustr;
 
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
-    events::order::{denied::OrderDenied, filled::OrderFilled, initialized::OrderInitialized},
+    events::order::{
+        denied::OrderDenied, filled::OrderFilled, initialized::OrderInitialized,
+        rejected::OrderRejected,
+    },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
         order_list_id::OrderListId, strategy_id::StrategyId, stubs::*, trade_id::TradeId,
@@ -79,6 +82,30 @@ pub fn order_denied_max_submitted_rate(
         event_id,
         0,
         0,
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_rejected_insufficient_margin(
+    trader_id: TraderId,
+    account_id: AccountId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+) -> OrderRejected {
+    let event_id = UUID4::new();
+    OrderRejected::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        account_id,
+        Ustr::from("INSUFFICIENT_MARGIN"),
+        event_id,
+        0,
+        0,
+        false,
     )
     .unwrap()
 }
