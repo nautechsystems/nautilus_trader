@@ -17,6 +17,7 @@
    data.md
    adapters.md
    logging.md
+   message_bus.md
    advanced/index.md
 ```
 
