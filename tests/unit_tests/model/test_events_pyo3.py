@@ -18,6 +18,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 
 
@@ -101,4 +102,22 @@ def test_order_rejected():
         == "OrderRejected(trader_id=TESTER-001, strategy_id=S-001, "
         + "instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
         + "reason=INSUFFICIENT_MARGIN, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_triggered():
+    event = TestEventsProviderPyo3.order_triggered()
+    result_dict = OrderTriggered.to_dict(event)
+    order_triggered = OrderTriggered.from_dict(result_dict)
+    assert order_triggered == event
+    assert (
+        str(event)
+        == "OrderTriggered(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderTriggered(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
