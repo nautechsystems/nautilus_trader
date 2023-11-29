@@ -13,45 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use nautilus_core::time::UnixNanos;
 
 use crate::{
-    identifiers::instrument_id::InstrumentId,
-    types::{currency::Currency, money::Money},
+    enums::{OrderSide, PositionSide},
+    identifiers::{
+        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
+        position_id::PositionId, strategy_id::StrategyId, trader_id::TraderId,
+    },
+    types::{currency::Currency, price::Price, quantity::Quantity},
 };
 
-#[derive(Debug)]
-pub struct AccountBalance {
-    pub currency: Currency,
-    pub total: Money,
-    pub locked: Money,
-    pub free: Money,
-}
-
-impl Display for AccountBalance {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {} {}",
-            self.currency.code, self.total, self.locked, self.free,
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct MarginBalance {
-    pub initial: Money,
-    pub maintenance: Money,
-    pub currency: Currency,
+#[repr(C)]
+#[derive(Clone, PartialEq, Debug)]
+pub struct PositionOpened {
+    pub trader_id: TraderId,
+    pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
-}
-
-impl Display for MarginBalance {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {} {}",
-            self.currency.code, self.initial, self.maintenance, self.instrument_id,
-        )
-    }
+    pub position_id: PositionId,
+    pub account_id: AccountId,
+    pub opening_order_id: ClientOrderId,
+    pub entry: OrderSide,
+    pub side: PositionSide,
+    pub signed_qty: f64,
+    pub quantity: Quantity,
+    pub last_qty: Quantity,
+    pub last_px: Price,
+    pub currency: Currency,
+    pub avg_px_open: f64,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
