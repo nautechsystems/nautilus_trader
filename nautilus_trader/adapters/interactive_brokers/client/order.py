@@ -21,14 +21,13 @@ from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
 from ibapi.order_state import OrderState as IBOrderState
 from ibapi.utils import current_fn_name
-from ibapi.wrapper import EWrapper
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
 
 
-class InteractiveBrokersOrderManager(EWrapper):
+class InteractiveBrokersOrderManager:
     """
     For the InteractiveBrokersClient.
     """
@@ -61,7 +60,7 @@ class InteractiveBrokersOrderManager(EWrapper):
 
         """
         self.order_id_to_order_ref[order.orderId] = AccountOrderRef(
-            account_id=order.account_id,
+            account_id=order.account,
             order_id=order.orderRef.rsplit(":", 1)[0],
         )
         order.orderRef = f"{order.orderRef}:{order.orderId}"

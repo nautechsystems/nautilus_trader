@@ -26,7 +26,6 @@ from ibapi.common import SetOfString
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
 from ibapi.utils import current_fn_name
-from ibapi.wrapper import EWrapper
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -48,7 +47,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 # fmt: on
 
 
-class InteractiveBrokersMarketDataManager(EWrapper):
+class InteractiveBrokersMarketDataManager:
     """
     Handles market data subscriptions and data processing for the
     InteractiveBrokersClient.
@@ -311,7 +310,7 @@ class InteractiveBrokersMarketDataManager(EWrapper):
         else:
             duration = pd.Timedelta(self._client.clock.timestamp_ns() - last_bar.ts_event, "ns")
         bar_size_setting: str = bar_spec_to_bar_size(bar_type.spec)
-        self._client.reqHistoricalData(
+        self._eclient.reqHistoricalData(
             reqId=subscription.req_id,
             contract=contract,
             endDateTime="",
@@ -385,7 +384,7 @@ class InteractiveBrokersMarketDataManager(EWrapper):
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
-                    self._client.reqHistoricalData,
+                    self._eclient.reqHistoricalData,
                     reqId=req_id,
                     contract=contract,
                     endDateTime=end_date_time,
@@ -397,7 +396,7 @@ class InteractiveBrokersMarketDataManager(EWrapper):
                     keepUpToDate=False,
                     chartOptions=[],
                 ),
-                cancel=functools.partial(self._client.cancelHistoricalData, reqId=req_id),
+                cancel=functools.partial(self._eclient.cancelHistoricalData, reqId=req_id),
             )
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
@@ -452,7 +451,7 @@ class InteractiveBrokersMarketDataManager(EWrapper):
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
-                    self._client.reqHistoricalTicks,
+                    self._eclient.reqHistoricalTicks,
                     reqId=req_id,
                     contract=contract,
                     startDateTime=start_date_time,
@@ -463,7 +462,7 @@ class InteractiveBrokersMarketDataManager(EWrapper):
                     ignoreSize=False,
                     miscOptions=[],
                 ),
-                cancel=functools.partial(self._client.cancelHistoricalData, reqId=req_id),
+                cancel=functools.partial(self._eclient.cancelHistoricalData, reqId=req_id),
             )
             request.handle()
             return await self._client.await_request(request, timeout)

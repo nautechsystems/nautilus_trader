@@ -119,7 +119,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._client.registered_nautilus_clients.add(self.id)
 
         # Set Market Data Type
-        await self._client.set_market_data_type(self._market_data_type)
+        await self._client.market_data_manager.set_market_data_type(self._market_data_type)
 
         # Load instruments based on config
         await self.instrument_provider.initialize()
@@ -180,7 +180,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        await self._client.subscribe_ticks(
+        await self._client.market_data_manager.subscribe_ticks(
             instrument_id=instrument_id,
             contract=IBContract(**instrument.info["contract"]),
             tick_type="BidAsk",
@@ -199,7 +199,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             )
             return
 
-        await self._client.subscribe_ticks(
+        await self._client.market_data_manager.subscribe_ticks(
             instrument_id=instrument_id,
             contract=IBContract(**instrument.info["contract"]),
             tick_type="AllLast",
@@ -211,13 +211,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
 
         if bar_type.spec.timedelta.total_seconds() == 5:
-            await self._client.subscribe_realtime_bars(
+            await self._client.market_data_manager.subscribe_realtime_bars(
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
             )
         else:
-            await self._client.subscribe_historical_bars(
+            await self._client.market_data_manager.subscribe_historical_bars(
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,
@@ -261,16 +261,16 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         )
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        await self._client.unsubscribe_ticks(instrument_id, "BidAsk")
+        await self._client.market_data_manager.unsubscribe_ticks(instrument_id, "BidAsk")
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        await self._client.unsubscribe_ticks(instrument_id, "AllLast")
+        await self._client.market_data_manager.unsubscribe_ticks(instrument_id, "AllLast")
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         if bar_type.spec.timedelta == 5:
-            await self._client.unsubscribe_realtime_bars(bar_type)
+            await self._client.market_data_manager.unsubscribe_realtime_bars(bar_type)
         else:
-            await self._client.unsubscribe_historical_bars(bar_type)
+            await self._client.market_data_manager.unsubscribe_historical_bars(bar_type)
 
     async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
         pass  # Subscribed as part of orderbook
@@ -374,7 +374,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ticks: list[QuoteTick | TradeTick] = []
         while (start and end > start) or (len(ticks) < limit > 0):
             await self._client.is_running_async()
-            ticks_part = await self._client.get_historical_ticks(
+            ticks_part = await self._client.market_data_manager.get_historical_ticks(
                 contract,
                 tick_type,
                 end_date_time=end,
@@ -422,7 +422,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
         bars: list[Bar] = []
         while (start and end > start) or (len(bars) < limit > 0):
-            bars_part: list[Bar] = await self._client.get_historical_bars(
+            bars_part: list[Bar] = await self._client.market_data_manager.get_historical_bars(
                 bar_type=bar_type,
                 contract=IBContract(**instrument.info["contract"]),
                 use_rth=self._use_regular_trading_hours,

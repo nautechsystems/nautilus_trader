@@ -15,10 +15,8 @@
 
 from inspect import iscoroutinefunction
 
-from ibapi.wrapper import EWrapper
 
-
-class InteractiveBrokersErrorHandler(EWrapper):
+class InteractiveBrokersErrorHandler:
     """
     Handles errors and warnings for the InteractiveBrokersClient.
 
@@ -39,7 +37,10 @@ class InteractiveBrokersErrorHandler(EWrapper):
 
     def __init__(self, client):
         self._client = client
+        self._eclient = client._eclient
         self._log = client._log
+
+        self._eclient.error = self.error
 
     def _log_message(
         self,
@@ -228,4 +229,4 @@ class InteractiveBrokersErrorHandler(EWrapper):
         """
         Errors sent by the TWS are received here.
         """
-        self._error_handler.process_error(req_id, error_code, error_string)
+        self._process_error(req_id, error_code, error_string)

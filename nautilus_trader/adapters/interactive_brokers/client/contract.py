@@ -14,16 +14,16 @@
 # -------------------------------------------------------------------------------------------------
 
 import functools
+from typing import Any
 
 from ibapi.contract import ContractDetails
 from ibapi.utils import current_fn_name
-from ibapi.wrapper import EWrapper
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 
 
-class ContractHandler(EWrapper):
+class InteractiveBrokersContractManager:
     """
     Handles contracts (instruments) for the InteractiveBrokersClient.
 
@@ -38,7 +38,7 @@ class ContractHandler(EWrapper):
         self._eclient = client._eclient
         self._log = client._log
 
-    async def get_contract_details(self, contract: IBContract) -> IBContractDetails:
+    async def get_contract_details(self, contract: IBContract) -> list[IBContractDetails]:
         """
         Request details for a specific contract.
 
@@ -101,7 +101,7 @@ class ContractHandler(EWrapper):
             self._log.info(f"Request already exist for {request}")
             return None
 
-    async def get_option_chains(self, underlying: IBContract) -> list[IBContractDetails] | None:
+    async def get_option_chains(self, underlying: IBContract) -> Any | None:
         """
         Request option chains for a specific underlying contract.
 

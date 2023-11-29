@@ -185,6 +185,40 @@ class TestInteractiveBrokersClient:
             await self.client.is_running_async()
             mock_is_ready.wait.assert_not_called()  # Assert wait was not called since is_ready is already set
 
+    @patch("nautilus_trader.adapters.interactive_brokers.client.client.comm.read_msg")
+    def test_run_tws_incoming_msg_reader(self, mock_read_msg):
+        # Mock the data received from the connection
+        mock_data = b"mock_data"
+        self.mock_client.loop.run_in_executor.return_value = mock_data
+
+        # Mock the message and remaining buffer returned by read_msg
+        mock_msg = b"mock_msg"
+        mock_buf = b""
+        mock_read_msg.return_value = (len(mock_msg), mock_msg, mock_buf)
+
+        # Run the method until it has processed one message
+        self.loop.run_until_complete(self.mock_client.run_tws_incoming_msg_reader())
+
+        # Check that the message was added to the internal message queue
+        self.mock_client._internal_msg_queue.put_nowait.assert_called_once_with(mock_msg)
+
+    @patch("nautilus_trader.adapters.interactive_brokers.client.client.comm.read_msg")
+    def test_run_tws_incoming_msg_reader_add_to_queue(self, mock_read_msg):
+        # Mock the data received from the connection
+        mock_data = b"mock_data"
+        self.mock_client.loop.run_in_executor.return_value = mock_data
+
+        # Mock the message and remaining buffer returned by read_msg
+        mock_msg = b"mock_msg"
+        mock_buf = b""
+        mock_read_msg.return_value = (len(mock_msg), mock_msg, mock_buf)
+
+        # Run the method until it has processed one message
+        self.loop.run_until_complete(self.mock_client.run_tws_incoming_msg_reader())
+
+        # Check that the message was added to the internal message queue
+        assert self.mock_client._internal_msg_queue.get_nowait() == mock_msg
+
 
 # class MockConnection:
 #     def __init__(self, host, port):

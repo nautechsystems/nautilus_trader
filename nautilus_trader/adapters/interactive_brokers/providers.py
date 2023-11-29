@@ -108,7 +108,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         contract: IBContract,
     ) -> list[ContractDetails]:
         try:
-            details = await self._client.get_contract_details(contract=contract)
+            details = await self._client.contract_manager.get_contract_details(contract=contract)
             [qualified] = details
             self._log.info(
                 f"Contract qualified for {qualified.contract.localSymbol}."
@@ -139,7 +139,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
         elif contract.secType == "CONTFUT":
             # Get Active Month's Future
-            details = await self._client.get_contract_details(
+            details = await self._client.contract_manager.get_contract_details(
                 IBContract(
                     secType="FUT",
                     localSymbol=qualified.contract.localSymbol,
@@ -173,7 +173,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         max_expiry: pd.Timestamp,
     ) -> list[ContractDetails]:
         self._log.info(f"Building futures chain for {underlying.symbol}.{underlying.exchange}")
-        details = await self._client.get_contract_details(
+        details = await self._client.contract_manager.get_contract_details(
             IBContract(
                 secType="FUT",
                 symbol=underlying.symbol,
@@ -197,7 +197,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             expirations = [last_trading_date]
         else:
             try:
-                chains = await self._client.get_option_chains(underlying)
+                chains = await self._client.contract_manager.get_option_chains(underlying)
                 [chain] = [chain for chain in chains if chain[0] == (exchange or "SMART")]
             except ValueError as e:
                 self._log.error(
@@ -212,7 +212,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         details = []
         for expiration in expirations:
             [option_details] = (
-                await self._client.get_contract_details(
+                await self._client.contract_manager.get_contract_details(
                     IBContract(
                         secType="OPT",
                         symbol=underlying.symbol,

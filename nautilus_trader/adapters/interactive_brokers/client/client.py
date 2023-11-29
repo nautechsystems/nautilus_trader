@@ -17,13 +17,24 @@ import asyncio
 import functools
 from collections.abc import Callable
 from collections.abc import Coroutine
+from decimal import Decimal
 from typing import Any
 
 from ibapi import comm
 from ibapi.client import EClient
+from ibapi.commission_report import CommissionReport
 from ibapi.common import MAX_MSG_LEN
 from ibapi.common import NO_VALID_ID
+from ibapi.common import BarData
+from ibapi.common import SetOfFloat
+from ibapi.common import SetOfString
+from ibapi.common import TickAttribBidAsk
+from ibapi.common import TickAttribLast
+from ibapi.contract import ContractDetails
 from ibapi.errors import BAD_LENGTH
+from ibapi.execution import Execution
+from ibapi.order import Order as IBOrder
+from ibapi.order_state import OrderState as IBOrderState
 from ibapi.utils import current_fn_name
 from ibapi.wrapper import EWrapper
 
@@ -33,10 +44,12 @@ from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
 from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersConnectionManager
+from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersContractManager
 from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersErrorHandler
 from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersMarketDataManager
 from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersOrderManager
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
@@ -98,6 +111,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.account_manager = InteractiveBrokersAccountManager(self)
         self.market_data_manager = InteractiveBrokersMarketDataManager(self)
         self.order_manager = InteractiveBrokersOrderManager(self)
+        self.contract_manager = InteractiveBrokersContractManager(self)
         self._error_handler = InteractiveBrokersErrorHandler(self)
 
         # Tasks
@@ -288,7 +302,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         None
 
         """
-        self._log.debug("TWS incoming message reader starting...")
+        self._log.debug("Client TWS incoming message reader starting...")
         buf = b""
         try:
             while self._eclient.conn and self._eclient.conn.isConnected():
@@ -296,7 +310,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 buf += data
                 while buf:
                     size, msg, buf = comm.read_msg(buf)
-                    self._log.debug(f"TWS incoming message reader received msg={buf!s}")
+                    self._log.debug(f"Client TWS incoming message reader received msg={buf!s}")
                     if msg:
                         # Place msg in the internal queue for processing
                         self._internal_msg_queue.put_nowait(msg)
@@ -304,11 +318,11 @@ class InteractiveBrokersClient(Component, EWrapper):
                         self._log.debug("More incoming packets are needed.")
                         break
         except asyncio.CancelledError:
-            self._log.debug("TWS incoming message reader was canceled.")
+            self._log.debug("Client TWS incoming message reader was canceled.")
         except Exception as e:
             self._log.exception("Unhandled exception in EReader worker", e)
         finally:
-            self._log.debug("TWS incoming message reader stopped.")
+            self._log.debug("Client TWS incoming message reader stopped.")
 
     async def run_internal_msg_queue(self) -> None:
         """
@@ -379,7 +393,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             if success:
                 self._log.info(success, LogColor.GREEN)
 
-    def _next_req_id(self) -> int:
+    def next_req_id(self) -> int:
         """
         Generate the next sequential request ID.
 
@@ -503,6 +517,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         return True
 
     # -- EWrapper overrides -----------------------------------------------------------------------
+
+    # -- InteractiveBrokersClient -----------------------------------------------------------------
     def sendMsg(self, msg):
         """
         Override the logging for ibapi EClient.sendMsg.
@@ -532,3 +548,220 @@ class InteractiveBrokersClient(Component, EWrapper):
         else:
             prms = fnParams
         self._log.debug(f"TWS API Response: function={fnName} data={prms}")
+
+    # -- InteractiveBrokersConnectionManager -----------------------------------------------------
+    def connectionClosed(self) -> None:
+        self.connection_manager.connectionClosed()
+
+    # -- InteractiveBrokersErrorHandler -----------------------------------------------------------
+    def error(
+        self,
+        req_id: int,
+        error_code: int,
+        error_string: str,
+        advanced_order_reject_json: str = "",
+    ) -> None:
+        self._error_handler.error(req_id, error_code, error_string, advanced_order_reject_json)
+
+    # -- InteractiveBrokersAccountManager ---------------------------------------------------------
+    def accountSummary(
+        self,
+        req_id: int,
+        account_id: str,
+        tag: str,
+        value: str,
+        currency: str,
+    ) -> None:
+        self.account_manager.accountSummary(
+            req_id,
+            account_id,
+            tag,
+            value,
+            currency,
+        )
+
+    def managedAccounts(self, accounts_list: str) -> None:
+        self.account_manager.managedAccounts(accounts_list)
+
+    def positionEnd(self) -> None:
+        self.account_manager.positionEnd()
+
+    # -- InteractiveBrokersContractManager --------------------------------------------------------
+    def contractDetails(
+        self,
+        req_id: int,
+        contract_details: ContractDetails,
+    ) -> None:
+        self.contract_manager.contractDetails(req_id, contract_details)
+
+    def contractDetailsEnd(self, req_id: int) -> None:
+        self.contract_manager.contractDetailsEnd(req_id)
+
+    def symbolSamples(self, req_id: int, contract_descriptions: list) -> None:
+        self.contract_manager.symbolSamples(req_id, contract_descriptions)
+
+    # -- InteractiveBrokersMarketDataManager ------------------------------------------------------
+    def marketDataType(self, req_id: int, market_data_type: int) -> None:
+        self.market_data_manager.marketDataType(req_id, market_data_type)
+
+    def tickByTickBidAsk(
+        self,
+        req_id: int,
+        time: int,
+        bid_price: float,
+        ask_price: float,
+        bid_size: Decimal,
+        ask_size: Decimal,
+        tick_attrib_bid_ask: TickAttribBidAsk,
+    ) -> None:
+        self.market_data_manager.tickByTickBidAsk(
+            req_id,
+            time,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            tick_attrib_bid_ask,
+        )
+
+    def tickByTickAllLast(
+        self,
+        req_id: int,
+        tick_type: int,
+        time: int,
+        price: float,
+        size: Decimal,
+        tick_attrib_last: TickAttribLast,
+        exchange: str,
+        special_conditions: str,
+    ) -> None:
+        self.market_data_manager.tickByTickAllLast(
+            req_id,
+            tick_type,
+            time,
+            price,
+            size,
+            tick_attrib_last,
+            exchange,
+            special_conditions,
+        )
+
+    def realtimeBar(
+        self,
+        req_id: int,
+        time: int,
+        open_: float,
+        high: float,
+        low: float,
+        close: float,
+        volume: Decimal,
+        wap: Decimal,
+        count: int,
+    ) -> None:
+        self.market_data_manager.realtimeBar(
+            req_id,
+            time,
+            open_,
+            high,
+            low,
+            close,
+            volume,
+            wap,
+            count,
+        )
+
+    def historicalData(self, req_id: int, bar: BarData) -> None:
+        self.market_data_manager.historicalData(req_id, bar)
+
+    def historicalDataEnd(self, req_id: int, start: str, end: str) -> None:
+        self.market_data_manager.historicalDataEnd(req_id, start, end)
+
+    def historicalDataUpdate(self, req_id: int, bar: BarData) -> None:
+        self.market_data_manager.historicalDataUpdate(req_id, bar)
+
+    def historicalTicksBidAsk(
+        self,
+        req_id: int,
+        ticks: list,
+        done: bool,
+    ) -> None:
+        self.market_data_manager.historicalTicksBidAsk(req_id, ticks, done)
+
+    def historicalTicksLast(self, req_id: int, ticks: list, done: bool) -> None:
+        self.market_data_manager.historicalTicksLast(req_id, ticks, done)
+
+    def historicalTicks(self, req_id: int, ticks: list, done: bool) -> None:
+        self.market_data_manager.historicalTicks(req_id, ticks, done)
+
+    def securityDefinitionOptionParameter(
+        self,
+        req_id: int,
+        exchange: str,
+        underlying_con_id: int,
+        trading_class: str,
+        multiplier: str,
+        expirations: SetOfString,
+        strikes: SetOfFloat,
+    ) -> None:
+        self.market_data_manager.securityDefinitionOptionParameter(
+            req_id,
+            exchange,
+            underlying_con_id,
+            trading_class,
+            multiplier,
+            expirations,
+            strikes,
+        )
+
+    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
+        self.market_data_manager.securityDefinitionOptionParameterEnd(req_id)
+
+    # -- InteractiveBrokersOrderManager -----------------------------------------------------------
+    def nextValidId(self, order_id: int) -> None:
+        self.order_manager.nextValidId(order_id)
+
+    def openOrder(
+        self,
+        order_id: int,
+        contract: IBContract,
+        order: IBOrder,
+        order_state: IBOrderState,
+    ) -> None:
+        self.order_manager.openOrder(order_id, contract, order, order_state)
+
+    def openOrderEnd(self) -> None:
+        self.order_manager.openOrderEnd()
+
+    def orderStatus(
+        self,
+        order_id: int,
+        status: str,
+        filled: Decimal,
+        remaining: Decimal,
+        avg_fill_price: float,
+        perm_id: int,
+        parent_id: int,
+        last_fill_price: float,
+        client_id: int,
+        why_held: str,
+        mkt_cap_price: float,
+    ) -> None:
+        self.order_manager.orderStatus(
+            order_id,
+            status,
+            filled,
+            remaining,
+            avg_fill_price,
+            perm_id,
+            parent_id,
+            last_fill_price,
+            client_id,
+            why_held,
+            mkt_cap_price,
+        )
+
+    def execDetails(self, req_id: int, contract: IBContract, execution: Execution) -> None:
+        self.order_manager.execDetails(req_id, contract, execution)
+
+    def commissionReport(self, commission_report: CommissionReport) -> None:
+        self.order_manager.commissionReport(commission_report)

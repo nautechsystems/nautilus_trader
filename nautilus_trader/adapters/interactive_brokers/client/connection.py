@@ -18,6 +18,7 @@ import functools
 from inspect import iscoroutinefunction
 
 from ibapi import comm
+from ibapi import decoder
 from ibapi.client import EClient
 from ibapi.common import NO_VALID_ID
 from ibapi.connection import Connection
@@ -25,7 +26,6 @@ from ibapi.errors import CONNECT_FAIL
 from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
 from ibapi.utils import current_fn_name
-from ibapi.wrapper import EWrapper
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
@@ -35,7 +35,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 # fmt: on
 
 
-class InteractiveBrokersConnectionManager(EWrapper):
+class InteractiveBrokersConnectionManager:
     """
     Manages the connection to TWS/Gateway for the InteractiveBrokersClient.
 
@@ -79,6 +79,10 @@ class InteractiveBrokersConnectionManager(EWrapper):
         try:
             await self._connect_socket()
             await self._send_version_info()
+            self._eclient.decoder = decoder.Decoder(
+                wrapper=self._eclient.wrapper,
+                serverVersion=self._eclient.serverVersion(),
+            )
             await self._receive_server_info()
             self._setup_client()
             self._log.debug("Connection established successfully.")
@@ -240,7 +244,7 @@ class InteractiveBrokersConnectionManager(EWrapper):
         None
 
         """
-        self._client.setConnState(EClient.CONNECTED)
+        self._eclient.setConnState(EClient.CONNECTED)
         if self._client.tws_incoming_msg_reader_task:
             self._client.tws_incoming_msg_reader_task.cancel()
         self._client.tws_incoming_msg_reader_task = self._client.create_task(

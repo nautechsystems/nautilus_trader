@@ -19,7 +19,6 @@ from decimal import Decimal
 # fmt: off
 from ibapi.account_summary_tags import AccountSummaryTags
 from ibapi.utils import current_fn_name
-from ibapi.wrapper import EWrapper
 
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
@@ -30,7 +29,7 @@ from nautilus_trader.model.position import Position
 # fmt: on
 
 
-class InteractiveBrokersAccountManager(EWrapper):
+class InteractiveBrokersAccountManager:
     """
     Manages IB accounts for the InteractiveBrokersClient. It extends the EWrapper
     interface, handling various account and position related requests and responses.

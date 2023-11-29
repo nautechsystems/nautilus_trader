@@ -60,3 +60,4 @@ bench_data/
 
 !tests/integration_tests/adapters/betfair/responses/*.log
 **/test_db.sqlite
+.cursorignore
