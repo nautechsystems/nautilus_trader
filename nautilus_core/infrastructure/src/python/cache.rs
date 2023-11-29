@@ -15,7 +15,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pyvalue_err},
+    uuid::UUID4,
+};
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::{prelude::*, PyResult};
 use serde_json::Value;
@@ -25,11 +28,11 @@ use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
 #[pymethods]
 impl RedisCacheDatabase {
     #[new]
-    fn py_new(trader_id: TraderId, config_json: Vec<u8>) -> PyResult<Self> {
+    fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
         let config: HashMap<String, Value> =
             serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
 
-        match Self::new(trader_id, config) {
+        match Self::new(trader_id, instance_id, config) {
             Ok(cache) => Ok(cache),
             Err(e) => Err(to_pyruntime_err(e.to_string())),
         }
@@ -43,9 +46,25 @@ impl RedisCacheDatabase {
         }
     }
 
-    #[pyo3(name = "write")]
-    fn py_write(&mut self, op_type: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
-        match self.write(op_type, payload) {
+    #[pyo3(name = "insert")]
+    fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
+        match self.insert(key, payload) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
+    }
+
+    #[pyo3(name = "update")]
+    fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
+        match self.insert(key, payload) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(to_pyvalue_err(e)),
+        }
+    }
+
+    #[pyo3(name = "delete")]
+    fn py_delete(&mut self, key: String) -> PyResult<()> {
+        match self.delete(key) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }

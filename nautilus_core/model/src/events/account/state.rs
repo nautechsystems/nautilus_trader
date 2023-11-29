@@ -13,7 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod denied;
-pub mod filled;
-pub mod initialized;
-pub mod rejected;
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
+
+use crate::{
+    enums::AccountType,
+    identifiers::account_id::AccountId,
+    types::{
+        balance::{AccountBalance, MarginBalance},
+        currency::Currency,
+    },
+};
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct AccountState {
+    pub account_id: AccountId,
+    pub account_type: AccountType,
+    pub base_currency: Currency,
+    pub balances: Vec<AccountBalance>,
+    pub margins: Vec<MarginBalance>,
+    pub is_reported: bool,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
+}

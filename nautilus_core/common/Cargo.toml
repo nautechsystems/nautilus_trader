@@ -22,6 +22,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 ustr = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }

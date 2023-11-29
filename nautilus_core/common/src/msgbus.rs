@@ -178,7 +178,7 @@ impl MessageBus {
         let tx = if has_backing {
             let (tx, rx) = channel::<BusMessage>();
             thread::spawn(move || {
-                Self::handle_messages(trader_id.value.as_ref(), instance_id, config, rx);
+                Self::handle_messages(rx, trader_id, instance_id, config);
             });
             Some(tx)
         } else {
@@ -401,10 +401,10 @@ impl MessageBus {
     }
 
     fn handle_messages(
-        trader_id: &str,
+        rx: Receiver<BusMessage>,
+        trader_id: TraderId,
         instance_id: UUID4,
         config: HashMap<String, Value>,
-        rx: Receiver<BusMessage>,
     ) {
         let database_config = config
             .get("database")
@@ -416,7 +416,7 @@ impl MessageBus {
             .expect("`MessageBusConfig` database `type` must be a valid string");
 
         match backing_type {
-            "redis" => handle_messages_with_redis(trader_id, instance_id, config, rx),
+            "redis" => handle_messages_with_redis(rx, trader_id, instance_id, config),
             other => panic!("Unsupported message bus backing database type '{other}'"),
         }
     }
