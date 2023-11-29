@@ -13,45 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::{Display, Formatter};
+use nautilus_core::{time::UnixNanos, uuid::UUID4};
 
 use crate::{
-    identifiers::instrument_id::InstrumentId,
-    types::{currency::Currency, money::Money},
+    enums::AccountType,
+    identifiers::account_id::AccountId,
+    types::{
+        balance::{AccountBalance, MarginBalance},
+        currency::Currency,
+    },
 };
 
+#[repr(C)]
 #[derive(Debug)]
-pub struct AccountBalance {
-    pub currency: Currency,
-    pub total: Money,
-    pub locked: Money,
-    pub free: Money,
-}
-
-impl Display for AccountBalance {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {} {}",
-            self.currency.code, self.total, self.locked, self.free,
-        )
-    }
-}
-
-#[derive(Debug)]
-pub struct MarginBalance {
-    pub initial: Money,
-    pub maintenance: Money,
-    pub currency: Currency,
-    pub instrument_id: InstrumentId,
-}
-
-impl Display for MarginBalance {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} {} {} {}",
-            self.currency.code, self.initial, self.maintenance, self.instrument_id,
-        )
-    }
+pub struct AccountState {
+    pub account_id: AccountId,
+    pub account_type: AccountType,
+    pub base_currency: Currency,
+    pub balances: Vec<AccountBalance>,
+    pub margins: Vec<MarginBalance>,
+    pub is_reported: bool,
+    pub event_id: UUID4,
+    pub ts_event: UnixNanos,
+    pub ts_init: UnixNanos,
 }
