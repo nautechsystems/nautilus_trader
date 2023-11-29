@@ -17,6 +17,7 @@
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
+from nautilus_trader.core.nautilus_pyo3 import OrderRejected
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 
 
@@ -82,4 +83,22 @@ def test_order_initialized():
         + "contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], "
         + "parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, "
         + "tags=ENTRY, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )
+
+
+def test_order_rejected():
+    event = TestEventsProviderPyo3.order_rejected_insufficient_margin()
+    result_dict = OrderRejected.to_dict(event)
+    order_denied = OrderRejected.from_dict(result_dict)
+    assert order_denied == event
+    assert (
+        str(event)
+        == "OrderRejected(instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
+        + "account_id=SIM-000, reason=INSUFFICIENT_MARGIN, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderRejected(trader_id=TESTER-001, strategy_id=S-001, "
+        + "instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
+        + "reason=INSUFFICIENT_MARGIN, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
