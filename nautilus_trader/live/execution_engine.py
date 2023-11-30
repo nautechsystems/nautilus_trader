@@ -611,6 +611,14 @@ class LiveExecutionEngine(ExecutionEngine):
             # Add to cache without determining any position ID initially
             self._cache.add_order(order)
 
+        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile order {order.client_order_id}: "
+                f"instrument {order.instrument_id} not found.",
+            )
+            return False  # Failed
+
         if report.order_status == OrderStatus.REJECTED:
             if order.status != OrderStatus.REJECTED:
                 self._generate_order_rejected(order, report)
@@ -638,6 +646,9 @@ class LiveExecutionEngine(ExecutionEngine):
             if order.status != OrderStatus.CANCELED and order.is_open:
                 if report.ts_triggered > 0:
                     self._generate_order_triggered(order, report)
+                # Reconcile all trades
+                for trade in trades:
+                    self._reconcile_trade_report(order, trade, instrument)
                 self._generate_order_canceled(order, report)
             return True  # Reconciled
 
@@ -649,13 +660,6 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         # Order has some fills from this point
-        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot reconcile order {order.client_order_id}: "
-                f"instrument {order.instrument_id} not found.",
-            )
-            return False  # Failed
 
         # Reconcile all trades
         for trade in trades:
