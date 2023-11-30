@@ -23,7 +23,7 @@ use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
         denied::OrderDenied, filled::OrderFilled, initialized::OrderInitialized,
-        rejected::OrderRejected, triggered::OrderTriggered,
+        rejected::OrderRejected, submitted::OrderSubmitted, triggered::OrderTriggered,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
@@ -39,8 +39,8 @@ pub fn order_filled(
     strategy_id_ema_cross: StrategyId,
     instrument_id_btc_usdt: InstrumentId,
     client_order_id: ClientOrderId,
+    uuid4: UUID4,
 ) -> OrderFilled {
-    let event_id = UUID4::new();
     OrderFilled::new(
         trader_id,
         strategy_id_ema_cross,
@@ -55,7 +55,7 @@ pub fn order_filled(
         Price::from_str("22000").unwrap(),
         Currency::from_str("USDT").unwrap(),
         LiquiditySide::Taker,
-        event_id,
+        uuid4,
         0,
         0,
         false,
@@ -71,15 +71,15 @@ pub fn order_denied_max_submitted_rate(
     strategy_id_ema_cross: StrategyId,
     instrument_id_btc_usdt: InstrumentId,
     client_order_id: ClientOrderId,
+    uuid4: UUID4,
 ) -> OrderDenied {
-    let event_id = UUID4::new();
     OrderDenied::new(
         trader_id,
         strategy_id_ema_cross,
         instrument_id_btc_usdt,
         client_order_id,
         Ustr::from("Exceeded MAX_ORDER_SUBMIT_RATE"),
-        event_id,
+        uuid4,
         0,
         0,
     )
@@ -93,8 +93,8 @@ pub fn order_rejected_insufficient_margin(
     strategy_id_ema_cross: StrategyId,
     instrument_id_btc_usdt: InstrumentId,
     client_order_id: ClientOrderId,
+    uuid4: UUID4,
 ) -> OrderRejected {
-    let event_id = UUID4::new();
     OrderRejected::new(
         trader_id,
         strategy_id_ema_cross,
@@ -102,7 +102,7 @@ pub fn order_rejected_insufficient_margin(
         client_order_id,
         account_id,
         Ustr::from("INSUFFICIENT_MARGIN"),
-        event_id,
+        uuid4,
         0,
         0,
         false,
@@ -116,8 +116,8 @@ pub fn order_initialized_buy_limit(
     strategy_id_ema_cross: StrategyId,
     instrument_id_btc_usdt: InstrumentId,
     client_order_id: ClientOrderId,
+    uuid4: UUID4,
 ) -> OrderInitialized {
-    let event_id = UUID4::new();
     let order_list_id = OrderListId::new("1").unwrap();
     let linked_order_ids = vec![ClientOrderId::new("O-2020872378424").unwrap()];
     OrderInitialized::new(
@@ -133,7 +133,7 @@ pub fn order_initialized_buy_limit(
         true,
         false,
         false,
-        event_id,
+        uuid4,
         0,
         0,
         Some(Price::from_str("22000").unwrap()),
@@ -159,6 +159,28 @@ pub fn order_initialized_buy_limit(
 }
 
 #[fixture]
+pub fn order_submitted(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    uuid4: UUID4,
+) -> OrderSubmitted {
+    OrderSubmitted::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        account_id,
+        uuid4,
+        0,
+        0,
+    )
+    .unwrap()
+}
+
+#[fixture]
 pub fn order_triggered(
     trader_id: TraderId,
     strategy_id_ema_cross: StrategyId,
@@ -166,14 +188,14 @@ pub fn order_triggered(
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
     account_id: AccountId,
+    uuid4: UUID4,
 ) -> OrderTriggered {
-    let event_id = UUID4::new();
     OrderTriggered::new(
         trader_id,
         strategy_id_ema_cross,
         instrument_id_btc_usdt,
         client_order_id,
-        event_id,
+        uuid4,
         0,
         0,
         false,
