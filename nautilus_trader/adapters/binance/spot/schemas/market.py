@@ -104,6 +104,15 @@ class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
     price: str
 
 
+class BinanceSpotPriceIndex(msgspec.Struct, frozen=True):
+    """
+    HTTP response from `Binance Spot/Margin` GET /sapi/v1/margin/priceIndex.
+    """
+
+    calcTime: int
+    price: str
+    symbol: str
+
 ################################################################################
 # WebSocket messages
 ################################################################################

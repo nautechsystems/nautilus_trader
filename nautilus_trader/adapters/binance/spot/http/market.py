@@ -27,6 +27,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotPermissions
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotAvgPrice
 from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotExchangeInfo
+from nautilus_trader.adapters.binance.spot.schemas.market import BinanceSpotPriceIndex
 from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
 
 
@@ -130,6 +131,55 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
         return self._get_resp_decoder.decode(raw)
 
 
+class BinanceSpotPriceIndexHttp(BinanceHttpEndpoint):
+    """
+    Endpoint of current price index of a symbol.
+
+    `GET /sapi/v1/margin/priceIndex`
+
+    References
+    ----------
+    https://binance-docs.github.io/apidocs/spot/en/#query-margin-priceindex-market_data
+
+    """
+
+    def __init__(
+        self,
+        client: BinanceHttpClient,
+        base_endpoint: str,
+    ):
+        methods = {
+            HttpMethod.GET: BinanceSecurityType.NONE,
+        }
+        #url_path = base_endpoint + "priceIndex"
+        url_path = "/sapi/v1/margin/priceIndex"
+
+        super().__init__(
+            client,
+            methods,
+            url_path,
+        )
+        self._get_resp_decoder = msgspec.json.Decoder(BinanceSpotPriceIndex)
+
+    class GetParameters(msgspec.Struct, omit_defaults=True, frozen=True):
+        """
+        GET priceIndex parameters.
+
+        Parameters
+        ----------
+        symbol : BinanceSymbol
+            Specify trading pair to get price index for.
+
+        """
+
+        symbol: BinanceSymbol = None
+
+    async def _get(self, parameters: GetParameters) -> BinanceSpotPriceIndex:
+        method_type = HttpMethod.GET
+        raw = await self._method(method_type, parameters)
+        return self._get_resp_decoder.decode(raw)
+
+
 class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
     """
     Provides access to the `Binance Spot` Market HTTP REST API.
@@ -160,6 +210,7 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
 
         self._endpoint_spot_exchange_info = BinanceSpotExchangeInfoHttp(client, self.base_endpoint)
         self._endpoint_spot_average_price = BinanceSpotAvgPriceHttp(client, self.base_endpoint)
+        self._endpoint_spot_price_index = BinanceSpotPriceIndexHttp(client, self.base_endpoint)
 
     async def query_spot_exchange_info(
         self,
@@ -186,6 +237,16 @@ class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
         """
         return await self._endpoint_spot_average_price._get(
             parameters=self._endpoint_spot_average_price.GetParameters(
+                symbol=BinanceSymbol(symbol),
+            ),
+        )
+
+    async def query_spot_index_price(self, symbol: str) -> BinanceSpotPriceIndex:
+        """
+        Check index price for a provided symbol on the Spot exchange.
+        """
+        return await self._endpoint_spot_price_index._get(
+            parameters=self._endpoint_spot_price_index.GetParameters(
                 symbol=BinanceSymbol(symbol),
             ),
         )
