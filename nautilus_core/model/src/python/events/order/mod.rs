@@ -17,4 +17,5 @@ pub mod denied;
 pub mod filled;
 pub mod initialized;
 pub mod rejected;
+pub mod submitted;
 pub mod triggered;
