@@ -25,6 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderListId
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
 from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import Price
@@ -121,4 +122,20 @@ class TestEventsProviderPyo3:
             tags="ENTRY",
             ts_init=0,
             ts_event=0,
+        )
+
+    @staticmethod
+    def order_triggered() -> OrderTriggered:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderTriggered(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            reconciliation=False,
         )

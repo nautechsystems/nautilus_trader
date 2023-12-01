@@ -23,7 +23,7 @@ use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
         denied::OrderDenied, filled::OrderFilled, initialized::OrderInitialized,
-        rejected::OrderRejected,
+        rejected::OrderRejected, triggered::OrderTriggered,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
@@ -154,6 +154,31 @@ pub fn order_initialized_buy_limit(
         None,
         None,
         None,
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_triggered(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+) -> OrderTriggered {
+    let event_id = UUID4::new();
+    OrderTriggered::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        event_id,
+        0,
+        0,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
     )
     .unwrap()
 }
