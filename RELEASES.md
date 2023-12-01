@@ -28,6 +28,7 @@ Released on TBD (UTC).
 - Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek
 - Fixed conversion of fixed precision integers to floats (should be dividing to avoid rounding errors), thanks for reporting @filipmacek
 - Fixed daily timestamp parsing for Interactive Brokers, thanks @benjaminsingleton
+- Fixed live reconciliation trade processing for partially filled then canceled orders
 
 ---
 

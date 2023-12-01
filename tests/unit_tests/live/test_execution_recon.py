@@ -554,3 +554,5 @@ class TestLiveExecutionReconciliation:
         order = self.cache.orders()[0]
         assert order.status == OrderStatus.CANCELED
         assert order.last_trade_id == TradeId("1")
+        assert order.quantity == Quantity.from_int(10_000)
+        assert order.filled_qty == Quantity.from_int(5_000)
