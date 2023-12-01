@@ -262,7 +262,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         req_id: int,
         success: bool = True,
-        exception: asyncio.TimeoutError | None = None,
+        exception: type | BaseException | None = None,
     ) -> None:
         """
         End a request with a specified result or exception.
@@ -289,7 +289,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                 request.future.set_result(request.result)
             else:
                 request.cancel()
-                request.future.set_exception(exception)
+                if exception:
+                    request.future.set_exception(exception)
         self.requests.remove(req_id=req_id)
 
     async def run_tws_incoming_msg_reader(self) -> None:
@@ -310,7 +311,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 buf += data
                 while buf:
                     size, msg, buf = comm.read_msg(buf)
-                    self._log.debug(f"Client TWS incoming message reader received msg={buf!s}")
+                    self._log.debug(f"Msg received: {buf!s}")
                     if msg:
                         # Place msg in the internal queue for processing
                         self._internal_msg_queue.put_nowait(msg)
@@ -507,7 +508,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             return False
         fields: tuple[bytes] = comm.read_fields(msg)
-        self._log.debug(f"Incoming message fields: {fields}")
+        self._log.debug(f"Msg received fields: {fields}")
 
         # The decoder identifies the message type based on its payload (e.g., open
         # order, process real-time ticks, etc.) and then calls the corresponding

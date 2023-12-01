@@ -16,6 +16,7 @@
 import asyncio
 import functools
 from inspect import iscoroutinefunction
+from typing import TYPE_CHECKING
 
 from ibapi import comm
 from ibapi import decoder
@@ -34,6 +35,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 # fmt: on
 
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
+
 
 class InteractiveBrokersConnectionManager:
     """
@@ -45,7 +49,7 @@ class InteractiveBrokersConnectionManager:
 
     """
 
-    def __init__(self, client):
+    def __init__(self, client: InteractiveBrokersClient):
         self._client = client
         self._eclient: EClient = client._eclient
         self._log = client._log
@@ -181,7 +185,12 @@ class InteractiveBrokersConnectionManager:
         else:
             raise ConnectionError("Failed to receive server version information.")
 
-    def _process_received_buffer(self, buf, retries_remaining, fields) -> None:
+    def _process_received_buffer(
+        self,
+        buf: bytes,
+        retries_remaining: int,
+        fields: list[str],
+    ) -> None:
         """
         Process the received buffer from TWS API. Reads the received message and
         extracts fields from it. Handles situations where the connection might be lost
@@ -211,7 +220,7 @@ class InteractiveBrokersConnectionManager:
         else:
             self._log.debug(f"Received empty buffer (retries_remaining={retries_remaining})")
 
-    def _process_server_version(self, fields) -> None:
+    def _process_server_version(self, fields: list[str]) -> None:
         """
         Process and log the server version information. Extracts and sets the server
         version and connection time from the received fields. Logs the server version

@@ -14,6 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from inspect import iscoroutinefunction
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 
 
 class InteractiveBrokersErrorHandler:
@@ -35,7 +40,7 @@ class InteractiveBrokersErrorHandler:
     CONNECTIVITY_RESTORED_CODES = {1101, 1102}
     ORDER_REJECTION_CODES = {201, 203, 321, 10289, 10293}
 
-    def __init__(self, client):
+    def __init__(self, client: InteractiveBrokersClient):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -136,6 +141,8 @@ class InteractiveBrokersErrorHandler:
 
         """
         subscription = self._client.subscriptions.get(req_id=req_id)
+        if not subscription:
+            return
         if error_code in [10189, 366, 102]:
             # Handle specific subscription-related error codes
             self._log.warning(f"{error_code}: {error_string}")
@@ -203,7 +210,7 @@ class InteractiveBrokersErrorHandler:
             self._log.warning(f"Order reference not found for req_id {req_id}")
             return
 
-        name = f"orderStatus-{order_ref.account}"
+        name = f"orderStatus-{order_ref.account_id}"
         handler = self._client.event_subscriptions.get(name, None)
 
         if error_code in self.ORDER_REJECTION_CODES:

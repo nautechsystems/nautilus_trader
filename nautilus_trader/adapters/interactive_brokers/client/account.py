@@ -15,6 +15,7 @@
 
 import functools
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 # fmt: off
 from ibapi.account_summary_tags import AccountSummaryTags
@@ -27,6 +28,8 @@ from nautilus_trader.model.position import Position
 
 
 # fmt: on
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 
 
 class InteractiveBrokersAccountManager:
@@ -41,7 +44,7 @@ class InteractiveBrokersAccountManager:
 
     """
 
-    def __init__(self, client):
+    def __init__(self, client: InteractiveBrokersClient):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -87,6 +90,8 @@ class InteractiveBrokersAccountManager:
                 ),
             )
         # Allow fetching all tags upon request even if already subscribed
+        if not subscription:
+            return None
         subscription.handle()
 
     def unsubscribe_account_summary(self, account_id: str) -> None:
@@ -136,7 +141,7 @@ class InteractiveBrokersAccountManager:
         if request := self._client.requests.get(name="OpenPositions"):
             request.result.append(IBPosition(account_id, contract, position, avg_cost))
 
-    async def get_positions(self, account_id: str) -> Position:
+    async def get_positions(self, account_id: str) -> Position | None:
         """
         Fetch open positions for a specified account.
 
@@ -147,11 +152,7 @@ class InteractiveBrokersAccountManager:
 
         Returns
         -------
-        None
-
-        Returns
-        -------
-            A list of Position objects representing open positions for the specified account.
+        Position | None
 
         """
         self._log.debug(f"Requesting Open Positions for {account_id}")
@@ -162,10 +163,14 @@ class InteractiveBrokersAccountManager:
                 name=name,
                 handle=self._eclient.reqPositions,
             )
+            if not request:
+                return None
             request.handle()
             all_positions = await self._client.await_request(request, 30)
         else:
             all_positions = await self._client.await_request(request, 30)
+        if not all_positions:
+            return None
         positions = []
         for position in all_positions:
             if position.account == account_id:

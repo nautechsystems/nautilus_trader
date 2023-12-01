@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 # fmt: off
 from ibapi.commission_report import CommissionReport
@@ -27,12 +28,21 @@ from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
 
 
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
+
 class InteractiveBrokersOrderManager:
     """
-    For the InteractiveBrokersClient.
+    Manages orders for the InteractiveBrokersClient.
+
+    This class enables the execution and management of trades. It maintains an internal
+    state that tracks the relationship between Nautilus orders and IB API orders,
+    ensuring that actions such as placing, modifying, and canceling orders are correctly
+    reflected in both systems.
+
     """
 
-    def __init__(self, client):
+    def __init__(self, client: InteractiveBrokersClient):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -132,20 +142,23 @@ class InteractiveBrokersOrderManager:
         """
         self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
+        orders: list[IBOrder] = []
         if not (request := self._client.requests.get(name=name)):
             request = self._client.requests.add(
                 req_id=self._client.next_req_id(),
                 name=name,
                 handle=self._eclient.reqOpenOrders,
             )
+            if not request:
+                return orders
             request.handle()
-            all_orders: list[IBOrder] = await self._client.await_request(request, 30)
+            all_orders: list[IBOrder] | None = await self._client.await_request(request, 30)
         else:
             all_orders = await self._client.await_request(request, 30)
-        orders = []
-        for order in all_orders:
-            if order.account_id == account_id:
-                orders.append(order)
+        if all_orders:
+            for order in all_orders:
+                if order.account_id == account_id:
+                    orders.append(order)
         return orders
 
     def next_order_id(self):

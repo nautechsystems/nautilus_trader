@@ -14,8 +14,9 @@
 # -------------------------------------------------------------------------------------------------
 
 import functools
+from collections.abc import Callable
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import pytz
@@ -28,6 +29,7 @@ from ibapi.common import TickAttribLast
 from ibapi.utils import current_fn_name
 
 # fmt: off
+from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import generate_trade_id
@@ -45,6 +47,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 # fmt: on
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 
 
 class InteractiveBrokersMarketDataManager:
@@ -59,7 +63,7 @@ class InteractiveBrokersMarketDataManager:
 
     """
 
-    def __init__(self, client):
+    def __init__(self, client: InteractiveBrokersClient):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -85,15 +89,14 @@ class InteractiveBrokersMarketDataManager:
         self._log.info(f"Setting Market DataType to {MarketDataTypeEnum.to_str(market_data_type)}")
         self._eclient.reqMarketDataType(market_data_type)
 
-    async def _manage_subscription(
+    async def _subscribe(
         self,
-        action: Literal["subscribe", "unsubscribe"],
-        subscription_method,
-        cancellation_method,
-        name,
-        *args,
-        **kwargs,
-    ) -> None:
+        name: str | tuple,
+        subscription_method: Callable,
+        cancellation_method: Callable,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Subscription | None:
         """
         Manage the subscription and unsubscription process for market data. This
         internal method is responsible for handling the logic to subscribe or
@@ -102,14 +105,12 @@ class InteractiveBrokersMarketDataManager:
 
         Parameters
         ----------
-        action : Literal["subscribe", "subscribe"]
-            The action to perform, either 'subscribe' or 'unsubscribe'.
+        name : Any
+            A unique identifier for the subscription.
         subscription_method : Callable
             The method to call for subscribing to market data.
         cancellation_method : Callable
             The method to call for unsubscribing from market data.
-        name : Any
-            A unique identifier for the subscription.
         *args
             Variable length argument list for the subscription method.
         **kwargs
@@ -120,25 +121,51 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        if action == "subscribe":
-            if not (subscription := self._client.subscriptions.get(name=name)):
-                req_id = self._client.next_req_id()
-                subscription = self._client.subscriptions.add(
-                    req_id=req_id,
-                    name=name,
-                    handle=functools.partial(subscription_method, reqId=req_id, *args, **kwargs),
-                    cancel=functools.partial(cancellation_method, reqId=req_id),
-                )
-                subscription.handle()
-            else:
-                self._log.info(f"Subscription already exists for {subscription}")
-        elif action == "unsubscribe":
-            if subscription := self._client.subscriptions.get(name=name):
-                self._client.subscriptions.remove(subscription.req_id)
-                cancellation_method(reqId=subscription.req_id)
-                self._log.debug(f"Unsubscribed from {subscription}")
-            else:
-                self._log.debug(f"Subscription doesn't exist for {name}")
+        if not (subscription := self._client.subscriptions.get(name=name)):
+            req_id = self._client.next_req_id()
+            subscription = self._client.subscriptions.add(
+                req_id=req_id,
+                name=name,
+                handle=functools.partial(subscription_method, req_id, *args, **kwargs),
+                cancel=functools.partial(cancellation_method, req_id),
+            )
+            if not subscription:
+                return None
+            subscription.handle()
+            return subscription
+        else:
+            self._log.info(f"Subscription already exists for {subscription}")
+            return None
+
+    async def _unsubscribe(
+        self,
+        name: str | tuple,
+        cancellation_method: Callable,
+    ) -> None:
+        """
+        Manage the unsubscription process for market data. This internal method is
+        responsible for handling the logic to unsubscribe to different market data types
+        (ticks, bars, etc.). It uses the provided cancellation method to control the
+        data flow.
+
+        Parameters
+        ----------
+        cancellation_method : Callable
+            The method to call for unsubscribing from market data.
+        name : Any
+            A unique identifier for the subscription.
+
+        Returns
+        -------
+        None
+
+        """
+        if subscription := self._client.subscriptions.get(name=name):
+            self._client.subscriptions.remove(subscription.req_id)
+            cancellation_method(reqId=subscription.req_id)
+            self._log.debug(f"Unsubscribed from {subscription}")
+        else:
+            self._log.debug(f"Subscription doesn't exist for {name}")
 
     async def subscribe_ticks(
         self,
@@ -164,11 +191,10 @@ class InteractiveBrokersMarketDataManager:
 
         """
         name = (str(instrument_id), tick_type)
-        await self._manage_subscription(
-            "subscribe",
+        await self._subscribe(
+            name,
             self._eclient.reqTickByTickData,
             self._eclient.cancelTickByTickData,
-            name,
             contract,
             tick_type,
             0,
@@ -192,12 +218,7 @@ class InteractiveBrokersMarketDataManager:
 
         """
         name = (str(instrument_id), tick_type)
-        await self._manage_subscription(
-            "unsubscribe",
-            None,
-            self._eclient.cancelTickByTickData,
-            name,
-        )
+        await self._unsubscribe(name, self._eclient.cancelTickByTickData)
 
     async def subscribe_realtime_bars(
         self,
@@ -223,11 +244,10 @@ class InteractiveBrokersMarketDataManager:
 
         """
         name = str(bar_type)
-        await self._manage_subscription(
-            "subscribe",
+        await self._subscribe(
+            name,
             self._eclient.reqRealTimeBars,
             self._eclient.cancelRealTimeBars,
-            name,
             contract,
             bar_type.spec.step,
             what_to_show(bar_type),
@@ -249,12 +269,8 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        await self._manage_subscription(
-            "unsubscribe",
-            None,
-            self._eclient.cancelRealTimeBars,
-            str(bar_type),
-        )
+        name = str(bar_type)
+        await self._unsubscribe(name, self._eclient.cancelRealTimeBars)
 
     async def subscribe_historical_bars(
         self,
@@ -283,25 +299,18 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        if not (subscription := self._client.subscriptions.get(name=str(bar_type))):
-            req_id = self._client.next_req_id()
-            subscription = self._client.subscriptions.add(
-                req_id=req_id,
-                name=str(bar_type),
-                handle=functools.partial(
-                    self.subscribe_historical_bars,
-                    bar_type=bar_type,
-                    contract=contract,
-                    use_rth=use_rth,
-                    handle_revised_bars=handle_revised_bars,
-                ),
-                cancel=functools.partial(
-                    self._eclient.cancelHistoricalData,
-                    reqId=req_id,
-                ),
-            )
-        else:
-            self._log.info(f"Subscription already exist for {subscription}")
+        name = str(bar_type)
+        subscription = await self._subscribe(
+            name,
+            self.subscribe_historical_bars,
+            self._eclient.cancelHistoricalData,
+            bar_type,
+            contract,
+            use_rth,
+            handle_revised_bars,
+        )
+        if not subscription:
+            return
 
         # Check and download the gaps or approx 300 bars whichever is less
         last_bar: Bar = self._client.cache.bar(bar_type)
@@ -337,12 +346,8 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        await self._manage_subscription(
-            "unsubscribe",
-            None,
-            self._eclient.cancelHistoricalData,
-            str(bar_type),
-        )
+        name = str(bar_type)
+        await self._unsubscribe(name, self._eclient.cancelHistoricalData)
 
     async def get_historical_bars(
         self,
@@ -352,7 +357,7 @@ class InteractiveBrokersMarketDataManager:
         end_date_time: str,
         duration: str,
         timeout: int = 60,
-    ) -> list[Bar]:
+    ) -> list[Bar] | None:
         """
         Request and retrieve historical bar data for a specified bar type.
 
@@ -398,6 +403,8 @@ class InteractiveBrokersMarketDataManager:
                 ),
                 cancel=functools.partial(self._eclient.cancelHistoricalData, reqId=req_id),
             )
+            if not request:
+                return None
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
             return await self._client.await_request(request, timeout)
@@ -413,7 +420,7 @@ class InteractiveBrokersMarketDataManager:
         end_date_time: pd.Timestamp | str = "",
         use_rth: bool = True,
         timeout: int = 60,
-    ) -> list[QuoteTick | TradeTick]:
+    ) -> list[QuoteTick | TradeTick] | None:
         """
         Request and retrieve historical tick data for a specified contract and tick
         type.
@@ -464,6 +471,8 @@ class InteractiveBrokersMarketDataManager:
                 ),
                 cancel=functools.partial(self._eclient.cancelHistoricalData, reqId=req_id),
             )
+            if not request:
+                return None
             request.handle()
             return await self._client.await_request(request, timeout)
         else:
@@ -814,9 +823,9 @@ class InteractiveBrokersMarketDataManager:
             )
             if bar:
                 request.result.append(bar)
-        elif request := self._client.subscriptions.get(req_id=req_id):
+        elif subscription := self._client.subscriptions.get(req_id=req_id):
             bar = self._process_bar_data(
-                bar_type_str=request.name,
+                bar_type_str=str(subscription.name),
                 bar=bar,
                 handle_revised_bars=False,
                 historical=True,
@@ -851,9 +860,9 @@ class InteractiveBrokersMarketDataManager:
         if not (subscription := self._client.subscriptions.get(req_id=req_id)):
             return
         if bar := self._process_bar_data(
-            bar_type_str=subscription.name,
+            bar_type_str=str(subscription.name),
             bar=bar,
-            handle_revised_bars=subscription.handle.keywords.get("handle_revised_bars", False),
+            handle_revised_bars=subscription.handle().keywords.get("handle_revised_bars", False),
         ):
             if bar.is_single_price() and bar.open.as_double() == 0:
                 self._log.debug(f"Ignoring Zero priced {bar=}")
@@ -866,6 +875,9 @@ class InteractiveBrokersMarketDataManager:
         ticks: list,
         done: bool,
     ) -> None:
+        """
+        Return the requested historic bid/ask ticks.
+        """
         self._client.logAnswer(current_fn_name(), vars())
         if not done:
             return
@@ -889,12 +901,18 @@ class InteractiveBrokersMarketDataManager:
             self._client.end_request(req_id)
 
     def historicalTicksLast(self, req_id: int, ticks: list, done: bool) -> None:
+        """
+        Return the requested historic trade ticks.
+        """
         self._client.logAnswer(current_fn_name(), vars())
         if not done:
             return
         self._process_trade_ticks(req_id, ticks)
 
     def historicalTicks(self, req_id: int, ticks: list, done: bool) -> None:
+        """
+        Return the requested historic ticks.
+        """
         self._client.logAnswer(current_fn_name(), vars())
         if not done:
             return

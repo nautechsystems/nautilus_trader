@@ -14,13 +14,17 @@
 # -------------------------------------------------------------------------------------------------
 
 import functools
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ibapi.contract import ContractDetails
 from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 
 
 class InteractiveBrokersContractManager:
@@ -33,12 +37,12 @@ class InteractiveBrokersContractManager:
 
     """
 
-    def __init__(self, client):
+    def __init__(self, client: InteractiveBrokersClient):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
 
-    async def get_contract_details(self, contract: IBContract) -> list[IBContractDetails]:
+    async def get_contract_details(self, contract: IBContract) -> list[IBContractDetails] | None:
         """
         Request details for a specific contract.
 
@@ -49,7 +53,7 @@ class InteractiveBrokersContractManager:
 
         Returns
         -------
-        IBContractDetails
+        IBContractDetails | None
 
         """
         name = str(contract)
@@ -64,6 +68,8 @@ class InteractiveBrokersContractManager:
                     contract=contract,
                 ),
             )
+            if not request:
+                return None
             request.handle()
             return await self._client.await_request(request, 10)
         else:
@@ -95,6 +101,8 @@ class InteractiveBrokersContractManager:
                     pattern=pattern,
                 ),
             )
+            if not request:
+                return None
             request.handle()
             return await self._client.await_request(request, 20)
         else:
@@ -130,6 +138,8 @@ class InteractiveBrokersContractManager:
                     underlyingConId=underlying.conId,
                 ),
             )
+            if not request:
+                return None
             request.handle()
             return await self._client.await_request(request, 20)
         else:
