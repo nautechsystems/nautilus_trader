@@ -679,7 +679,7 @@ cdef class RiskEngine(Component):
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER {max_notional.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional={max_notional.to_str()}, notional={notional.to_str()}",
                 )
                 return False  # Denied
 
@@ -691,7 +691,7 @@ cdef class RiskEngine(Component):
             ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT {instrument.min_notional.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional={instrument.min_notional.to_str()} , notional={notional.to_str()}",
                 )
                 return False  # Denied
 
@@ -703,7 +703,7 @@ cdef class RiskEngine(Component):
             ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT {instrument.max_notional.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional={instrument.max_notional.to_str()}, notional={notional.to_str()}",
                 )
                 return False  # Denied
 
@@ -712,7 +712,7 @@ cdef class RiskEngine(Component):
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {order_balance_impact.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, notional={order_balance_impact.to_str()}",
                 )
                 return False  # Denied
 
@@ -727,7 +727,7 @@ cdef class RiskEngine(Component):
                 if free is not None and cum_notional_buy._mem.raw >= free._mem.raw:
                     self._deny_order(
                         order=order,
-                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {cum_notional_buy.to_str()}",
+                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_buy.to_str()}",
                     )
                     return False  # Denied
             elif order.is_sell_c():
@@ -739,7 +739,7 @@ cdef class RiskEngine(Component):
                     if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
                         self._deny_order(
                             order=order,
-                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {cum_notional_sell.to_str()}",
+                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
                         )
                         return False  # Denied
                 elif base_currency is not None:
@@ -751,7 +751,7 @@ cdef class RiskEngine(Component):
                     if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
                         self._deny_order(
                             order=order,
-                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {cum_notional_sell.to_str()}",
+                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
                         )
                         return False  # Denied
 
