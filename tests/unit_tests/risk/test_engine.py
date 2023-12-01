@@ -1178,6 +1178,76 @@ class TestRiskEngineWithCashAccount:
         assert order2.status == OrderStatus.DENIED
         assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
 
+    def test_submit_order_list_sells_when_multi_currency_cash_account_over_cumulative_notional(
+        self,
+    ):
+        # Arrange - change account
+        exec_client = MockExecutionClient(
+            client_id=ClientId(self.venue.value),
+            venue=self.venue,
+            account_type=AccountType.CASH,
+            base_currency=None,  # <-- Multi-currency
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        self.exec_engine.deregister_client(self.exec_client)
+        self.exec_engine.register_client(exec_client)
+        self.cache.reset()  # Clear accounts
+        self.cache.add_instrument(AUDUSD_SIM)  # Re-add instrument
+        self.portfolio.update_account(TestEventStubs.cash_account_state(base_currency=None))
+
+        # Prepare market
+        quote = TestDataStubs.quote_tick(AUDUSD_SIM)
+        self.cache.add_quote_tick(quote)
+
+        self.exec_engine.start()
+
+        strategy = Strategy()
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+
+        order1 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(5_000),
+        )
+
+        order2 = strategy.order_factory.market(
+            AUDUSD_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(5_000),
+        )
+
+        order_list = OrderList(
+            order_list_id=OrderListId("1"),
+            orders=[order1, order2],
+        )
+
+        submit_order = SubmitOrderList(
+            self.trader_id,
+            strategy.id,
+            order_list,
+            UUID4(),
+            self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.risk_engine.execute(submit_order)
+
+        # Assert
+        assert order1.status == OrderStatus.DENIED
+        assert order2.status == OrderStatus.DENIED
+        assert self.exec_engine.command_count == 0  # <-- Command never reaches engine
+
     def test_submit_order_when_reducing_and_buy_order_adds_then_denies(self):
         # Arrange
         self.risk_engine.set_max_notional_per_order(AUDUSD_SIM.id, 1_000_000)
