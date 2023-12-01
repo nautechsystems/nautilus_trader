@@ -1857,3 +1857,111 @@ class TestStrategy:
         assert bracket.orders[1].status == OrderStatus.ACCEPTED
         assert bracket.orders[2].status == OrderStatus.PENDING_UPDATE
         assert bracket.orders[1].quantity == new_quantity
+
+    @pytest.mark.parametrize(
+        ("contingency_type"),
+        [
+            ContingencyType.OCO,
+            ContingencyType.OUO,
+        ],
+    )
+    def test_managed_contingenies_when_filled_sl_then_cancels_contingent_order(
+        self,
+        contingency_type: ContingencyType,
+    ) -> None:
+        # Arrange
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        bracket = strategy.order_factory.bracket(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_trigger_price=Price.from_str("90.101"),
+            entry_price=Price.from_str("90.100"),
+            sl_trigger_price=Price.from_str("90.000"),
+            tp_price=Price.from_str("90.500"),
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
+            contingency_type=contingency_type,
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        strategy.submit_order_list(bracket)
+
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, USDJPY_SIM))
+        self.exec_engine.process(TestEventStubs.order_filled(sl_order, USDJPY_SIM))
+        self.exchange.process(0)
+
+        # Assert
+        assert entry_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.FILLED
+        assert tp_order.status == OrderStatus.CANCELED
+
+    @pytest.mark.parametrize(
+        ("contingency_type"),
+        [
+            ContingencyType.OCO,
+            ContingencyType.OUO,
+        ],
+    )
+    def test_managed_contingenies_when_filled_tp_then_cancels_contingent_order(
+        self,
+        contingency_type: ContingencyType,
+    ) -> None:
+        # Arrange
+        config = StrategyConfig(
+            manage_contingent_orders=True,
+            manage_gtd_expiry=True,
+        )
+        strategy = Strategy(config=config)
+        strategy.register(
+            trader_id=self.trader_id,
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+            logger=self.logger,
+        )
+        strategy.start()
+
+        bracket = strategy.order_factory.bracket(
+            USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            entry_trigger_price=Price.from_str("90.101"),
+            entry_price=Price.from_str("90.100"),
+            sl_trigger_price=Price.from_str("90.000"),
+            tp_price=Price.from_str("90.500"),
+            entry_order_type=OrderType.LIMIT_IF_TOUCHED,
+            contingency_type=contingency_type,
+        )
+
+        entry_order = bracket.orders[0]
+        sl_order = bracket.orders[1]
+        tp_order = bracket.orders[2]
+
+        strategy.submit_order_list(bracket)
+
+        self.exec_engine.process(TestEventStubs.order_filled(entry_order, USDJPY_SIM))
+        self.exec_engine.process(TestEventStubs.order_filled(tp_order, USDJPY_SIM))
+        self.exchange.process(0)
+
+        # Assert
+        assert entry_order.status == OrderStatus.FILLED
+        assert tp_order.status == OrderStatus.FILLED
+        assert sl_order.status == OrderStatus.CANCELED
