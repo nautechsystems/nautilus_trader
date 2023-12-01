@@ -100,15 +100,7 @@ mod tests {
     #[rstest]
     fn test_order_rejected_display(order_rejected_insufficient_margin: OrderRejected) {
         let display = format!("{}", order_rejected_insufficient_margin);
-        assert_eq!(
-            display,
-            format!(
-                "OrderRejected(instrument_id={}, client_order_id={}, reason={}, ts_event={})",
-                order_rejected_insufficient_margin.instrument_id,
-                order_rejected_insufficient_margin.client_order_id,
-                order_rejected_insufficient_margin.reason,
-                order_rejected_insufficient_margin.ts_event
-            )
-        );
+        assert_eq!(display, "OrderRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, \
+        reason=INSUFFICIENT_MARGIN, ts_event=0)");
     }
 }
