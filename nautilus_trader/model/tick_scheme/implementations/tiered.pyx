@@ -151,5 +151,3 @@ TOPIX100_TICK_SCHEME = TieredTickScheme(
     ],
     max_ticks_per_tier=10_000,
 )
-
-register_tick_scheme(TOPIX100_TICK_SCHEME)

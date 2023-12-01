@@ -16,8 +16,12 @@
 Defines a scheme for modeling the tick space for various instruments.
 """
 
-# Required to register tick schemes
-from nautilus_trader.model.tick_scheme.base import get_tick_scheme  # noqa: F401
-from nautilus_trader.model.tick_scheme.base import list_tick_schemes  # noqa: F401
-from nautilus_trader.model.tick_scheme.base import register_tick_scheme  # noqa: F401
-from nautilus_trader.model.tick_scheme.implementations import *  # noqa: F403
+from nautilus_trader.model.tick_scheme.base import register_tick_scheme
+from nautilus_trader.model.tick_scheme.implementations.fixed import FOREX_3DECIMAL_TICK_SCHEME
+from nautilus_trader.model.tick_scheme.implementations.fixed import FOREX_5DECIMAL_TICK_SCHEME
+from nautilus_trader.model.tick_scheme.implementations.tiered import TOPIX100_TICK_SCHEME
+
+
+register_tick_scheme(TOPIX100_TICK_SCHEME)
+register_tick_scheme(FOREX_3DECIMAL_TICK_SCHEME)
+register_tick_scheme(FOREX_5DECIMAL_TICK_SCHEME)
