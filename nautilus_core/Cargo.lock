@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "cbindgen",
  "nautilus-common",
@@ -2199,7 +2199,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2222,7 +2222,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "nautilus-core",
@@ -2254,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "nautilus-common",
@@ -2271,7 +2271,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2323,7 +2323,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2347,7 +2347,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "nautilus-common",
  "nautilus-core",
@@ -4434,7 +4434,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "tungstenite"
 version = "0.20.1"
-source = "git+https://github.com/snapview/tungstenite-rs#fc17f7341dada53cf03ce1f4c8c29da318e292cb"
+source = "git+https://github.com/snapview/tungstenite-rs#0f6e6517e62e72502c3720a028efe8c5c653b8e7"
 dependencies = [
  "byteorder",
  "bytes",
