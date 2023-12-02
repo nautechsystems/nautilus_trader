@@ -26,12 +26,12 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.model.currency import Currency
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.model.objects import Currency
 
 
 CLIENTS: dict[str, BetfairHttpClient] = {}
@@ -190,7 +190,7 @@ class BetfairLiveDataClientFactory(LiveDataClientFactory):
             clock=clock,
             logger=logger,
             instrument_provider=provider,
-            account_currency=config.account_currency,
+            account_currency=Currency.from_str(config.account_currency),
         )
         return data_client
 
@@ -251,7 +251,7 @@ class BetfairLiveExecClientFactory(LiveExecClientFactory):
         exec_client = BetfairExecutionClient(
             loop=loop,
             client=client,
-            base_currency=Currency.from_str(config.account_currency),
+            account_currency=Currency.from_str(config.account_currency),
             msgbus=msgbus,
             cache=cache,
             clock=clock,

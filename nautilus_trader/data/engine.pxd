@@ -14,8 +14,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.cache.cache cimport Cache
+from nautilus_trader.common.clock cimport TimeEvent
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.timer cimport TimeEvent
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
@@ -24,18 +24,18 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.status cimport InstrumentClose
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport Ticker
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -59,6 +59,7 @@ cdef class DataEngine(Component):
     cdef readonly list _subscribed_synthetic_trades
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
+    cdef readonly str _time_bars_interval_type
     cdef readonly bint _validate_data_sequence
 
     cdef readonly bint debug

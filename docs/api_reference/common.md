@@ -86,10 +86,9 @@
    :member-order: bysource
 ```
 
-## Timer
-
+## Message Bus
 ```{eval-rst}
-.. automodule:: nautilus_trader.common.timer
+.. automodule:: nautilus_trader.common.msgbus
    :show-inheritance:
    :inherited-members:
    :members:

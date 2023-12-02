@@ -15,7 +15,7 @@
 
 from typing import Final
 
-from nautilus_trader.model.currency import Currency
+from nautilus_trader.model.objects import Currency
 
 
 # Fiat currencies

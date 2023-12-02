@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.enums_c cimport OrderType
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.model.events.order cimport OrderInitialized
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder

@@ -123,7 +123,6 @@ class TestBacktestNode:
         #     == "BacktestResult(trader_id='BACKTESTER-000', machine_id='CJDS-X99-Ubuntu', run_config_id='e7647ae948f030bbd50e0b6cb58f67ae', instance_id='ecdf513e-9b07-47d5-9742-3b984a27bb52', run_id='d4d7a09c-fac7-4240-b80a-fd7a7d8f217c', run_started=1648796370520892000, run_finished=1648796371603767000, backtest_start=1580398089820000000, backtest_end=1580504394500999936, elapsed_time=106304.680999, iterations=100000, total_events=192, total_orders=96, total_positions=48, stats_pnls={'USD': {'PnL': -3634.12, 'PnL%': Decimal('-0.36341200'), 'Max Winner': 2673.19, 'Avg Winner': 530.0907692307693, 'Min Winner': 123.13, 'Min Loser': -16.86, 'Avg Loser': -263.9497142857143, 'Max Loser': -616.84, 'Expectancy': -48.89708333333337, 'Win Rate': 0.2708333333333333}}, stats_returns={'Annual Volatility (Returns)': 0.01191492048585753, 'Average (Return)': -3.3242292920660964e-05, 'Average Loss (Return)': -0.00036466955522398476, 'Average Win (Return)': 0.0007716524869588397, 'Sharpe Ratio': -0.7030729097982443, 'Sortino Ratio': -1.492072178035927, 'Profit Factor': 0.8713073377919724, 'Risk Return Ratio': -0.04428943030649289})"  # noqa
         # )
 
-    # TODO: Make catalog path absolute (will only work when running tests from 'top level')
     def test_node_config_from_raw(self):
         # Arrange
         raw = msgspec.json.encode(

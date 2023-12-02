@@ -20,6 +20,7 @@ import pytest
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.executor import TaskId
@@ -46,7 +47,6 @@ from nautilus_trader.model.identifiers import ComponentId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.test_kit.mocks.actors import KaboomActor
 from nautilus_trader.test_kit.mocks.actors import MockActor

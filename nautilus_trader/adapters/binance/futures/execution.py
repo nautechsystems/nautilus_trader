@@ -38,6 +38,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
@@ -50,7 +51,6 @@ from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.orders import Order
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
@@ -62,7 +62,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -135,7 +135,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
         }
 
-        # Websocket futures schema decoders
+        # WebSocket futures schema decoders
         self._decoder_futures_user_msg_wrapper = msgspec.json.Decoder(BinanceFuturesUserMsgWrapper)
         self._decoder_futures_order_update_wrapper = msgspec.json.Decoder(
             BinanceFuturesOrderUpdateWrapper,

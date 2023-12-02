@@ -20,7 +20,7 @@ use std::{
 
 use nautilus_core::{
     ffi::{
-        parsing::optional_bytes_to_json,
+        parsing::{optional_bytes_to_json, u8_as_bool},
         string::{cstr_to_string, optional_cstr_to_string, str_to_cstr},
     },
     uuid::UUID4,
@@ -65,6 +65,10 @@ impl DerefMut for Logger_API {
 /// - Assumes `trader_id_ptr` is a valid C string pointer.
 /// - Assumes `machine_id_ptr` is a valid C string pointer.
 /// - Assumes `instance_id_ptr` is a valid C string pointer.
+/// - Assumes `directory_ptr` is a valid C string pointer or NULL.
+/// - Assumes `file_name_ptr` is a valid C string pointer or NULL.
+/// - Assumes `file_format_ptr` is a valid C string pointer or NULL.
+/// - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
 #[no_mangle]
 pub unsafe extern "C" fn logger_new(
     trader_id_ptr: *const c_char,
@@ -77,6 +81,7 @@ pub unsafe extern "C" fn logger_new(
     file_name_ptr: *const c_char,
     file_format_ptr: *const c_char,
     component_levels_ptr: *const c_char,
+    is_colored: u8,
     is_bypassed: u8,
 ) -> Logger_API {
     Logger_API(Box::new(Logger::new(
@@ -84,7 +89,7 @@ pub unsafe extern "C" fn logger_new(
         String::from(&cstr_to_string(machine_id_ptr)),
         UUID4::from(cstr_to_string(instance_id_ptr).as_str()),
         level_stdout,
-        if file_logging != 0 {
+        if u8_as_bool(file_logging) {
             Some(level_file)
         } else {
             None
@@ -93,7 +98,8 @@ pub unsafe extern "C" fn logger_new(
         optional_cstr_to_string(file_name_ptr),
         optional_cstr_to_string(file_format_ptr),
         optional_bytes_to_json(component_levels_ptr),
-        is_bypassed != 0,
+        u8_as_bool(is_colored),
+        u8_as_bool(is_bypassed),
     )))
 }
 
@@ -115,6 +121,11 @@ pub extern "C" fn logger_get_machine_id_cstr(logger: &Logger_API) -> *const c_ch
 #[no_mangle]
 pub extern "C" fn logger_get_instance_id(logger: &Logger_API) -> UUID4 {
     logger.instance_id
+}
+
+#[no_mangle]
+pub extern "C" fn logger_is_colored(logger: &Logger_API) -> u8 {
+    u8::from(logger.is_colored)
 }
 
 #[no_mangle]

@@ -10,9 +10,18 @@ documentation.workspace = true
 name = "nautilus_persistence"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
+[[bin]]
+name = "init-db"
+path = "src/bin/init_db.rs"
+
+[[bin]]
+name = "drop-db"
+path = "src/bin/drop_db.rs"
+
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model" }
+nautilus-model = { path = "../model", features = ["stubs"]}
+anyhow = { workspace = true }
 chrono = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -21,7 +30,9 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "32.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
+datafusion = { version = "33.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
+dotenv = "0.15.0"
+sqlx = { version = "0.7.3", features = ["sqlite","postgres","any","runtime-tokio"] }
 
 [features]
 extension-module = [

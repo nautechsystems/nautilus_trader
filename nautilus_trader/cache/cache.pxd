@@ -22,16 +22,16 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.ticker cimport Ticker
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport PositionSide
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport Ticker
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -42,9 +42,9 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.position cimport Position
@@ -107,9 +107,9 @@ cdef class Cache(CacheFacade):
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
     cdef readonly bint snapshot_orders
-    """If order state snapshots should be taken.\n\n:returns: `bool`"""
+    """If order state snapshots should be persisted.\n\n:returns: `bool`"""
     cdef readonly bint snapshot_positions
-    """If position state snapshots should be taken.\n\n:returns: `bool`"""
+    """If position state snapshots should be persisted.\n\n:returns: `bool`"""
 
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
@@ -136,7 +136,7 @@ cdef class Cache(CacheFacade):
     cdef list _get_orders_for_ids(self, set client_order_ids, OrderSide side)
     cdef list _get_positions_for_ids(self, set position_ids, PositionSide side)
     cdef void _assign_position_id_to_contingencies(self, Order order)
-    cdef Money _calculate_unrealized_pnl(self, Position position)
+    cpdef Money calculate_unrealized_pnl(self, Position position)
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id)
     cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)

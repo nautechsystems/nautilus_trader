@@ -17,12 +17,12 @@ from libc.stdint cimport int64_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport FIXED_SCALAR
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TrailingOffsetType
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport trailing_offset_type_to_str
-from nautilus_trader.model.enums_c cimport trigger_type_to_str
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TrailingOffsetType
+from nautilus_trader.core.rust.model cimport TriggerType
+from nautilus_trader.model.functions cimport trailing_offset_type_to_str
+from nautilus_trader.model.functions cimport trigger_type_to_str
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
 

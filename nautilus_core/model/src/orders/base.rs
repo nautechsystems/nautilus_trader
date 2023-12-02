@@ -27,10 +27,12 @@ use crate::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEvent,
-        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated,
+        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
+        denied::OrderDenied, emulated::OrderEmulated, event::OrderEvent, expired::OrderExpired,
+        filled::OrderFilled, initialized::OrderInitialized, modified_rejected::OrderModifyRejected,
+        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
+        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
+        triggered::OrderTriggered, updated::OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
@@ -201,7 +203,7 @@ pub trait Order {
 
     fn events(&self) -> Vec<&OrderEvent>;
     fn last_event(&self) -> &OrderEvent {
-        // SAFETY: `Order` specification guarantees at least one event (`OrderInitialized`)
+        // SAFETY: Unwrap safe as `Order` specification guarantees at least one event (`OrderInitialized`)
         self.events().last().unwrap()
     }
 
@@ -654,8 +656,8 @@ mod tests {
     use crate::{
         enums::{OrderSide, OrderStatus, PositionSide},
         events::order::{
-            OrderAcceptedBuilder, OrderDeniedBuilder, OrderEvent, OrderFilledBuilder,
-            OrderInitializedBuilder, OrderSubmittedBuilder,
+            accepted::OrderAcceptedBuilder, denied::OrderDeniedBuilder, filled::OrderFilledBuilder,
+            initialized::OrderInitializedBuilder, submitted::OrderSubmittedBuilder,
         },
         orders::market::MarketOrder,
     };

@@ -15,6 +15,7 @@
 
 import copy
 import pickle
+import time
 import uuid
 from collections import deque
 from decimal import Decimal
@@ -33,20 +34,17 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.core.rust.core cimport unix_timestamp
-from nautilus_trader.core.rust.core cimport unix_timestamp_us
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PositionSide
+from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport PositionSide
-from nautilus_trader.model.enums_c cimport PriceType
-from nautilus_trader.model.enums_c cimport TriggerType
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -62,6 +60,7 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -82,6 +81,10 @@ cdef class Cache(CacheFacade):
         The database for the cache. If ``None`` then will bypass persistence.
     config : CacheConfig, optional
         The cache configuration.
+    snapshot_orders : bool, default False
+        If order state snapshots should be persisted.
+    snapshot_positions : bool, default False
+        If position state snapshots should be persisted.
 
     Raises
     ------
@@ -93,6 +96,8 @@ cdef class Cache(CacheFacade):
         self,
         Logger logger not None,
         CacheDatabase database: Optional[CacheDatabase] = None,
+        bint snapshot_orders: bool = False,
+        bint snapshot_positions: bool = False,
         config: Optional[CacheConfig] = None,
     ):
         if config is None:
@@ -106,8 +111,8 @@ cdef class Cache(CacheFacade):
         # Configuration
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
-        self.snapshot_orders = config.snapshot_orders
-        self.snapshot_positions = config.snapshot_positions
+        self.snapshot_orders = snapshot_orders
+        self.snapshot_positions = snapshot_positions
 
         # Caches
         self._general: dict[str, bytes] = {}
@@ -343,13 +348,13 @@ cdef class Cache(CacheFacade):
         self.clear_index()
 
         self._log.debug(f"Building index...")
-        cdef double ts = unix_timestamp()
+        cdef double ts = time.time()
 
         self._build_index_venue_account()
         self._build_indexes_from_orders()
         self._build_indexes_from_positions()
 
-        self._log.debug(f"Index built in {unix_timestamp() - ts:.3f}s.")
+        self._log.debug(f"Index built in {time.time() - ts:.3f}s.")
 
     cpdef bint check_integrity(self):
         """
@@ -370,7 +375,7 @@ cdef class Cache(CacheFacade):
         # As there should be a bi-directional one-to-one relationship between
         # caches and indexes, each cache and index must be checked individually
 
-        cdef uint64_t timestamp_us = unix_timestamp_us()
+        cdef uint64_t timestamp_us = time.time_ns() // 1000
         self._log.info("Checking data integrity...")
 
         # Needed type defs
@@ -632,7 +637,7 @@ cdef class Cache(CacheFacade):
                 error_count += 1
 
         # Finally
-        cdef uint64_t total_us = round(unix_timestamp_us() - timestamp_us)
+        cdef uint64_t total_us = round((time.time_ns() // 1000) - timestamp_us)
         if error_count == 0:
             self._log.info(
                 f"Integrity check passed in {total_us}μs.",
@@ -893,7 +898,7 @@ cdef class Cache(CacheFacade):
                 )
                 self._log.info(f"Assigned {order.position_id!r} to {client_order_id!r}.")
 
-    cdef Money _calculate_unrealized_pnl(self, Position position):
+    cpdef Money calculate_unrealized_pnl(self, Position position):
         cdef QuoteTick quote = self.quote_tick(position.instrument_id)
         if quote is None:
             self._log.warning(
@@ -1659,7 +1664,7 @@ cdef class Cache(CacheFacade):
             self._database.snapshot_position_state(
                 position,
                 position.ts_last,
-                self._calculate_unrealized_pnl(position),
+                self.calculate_unrealized_pnl(position),
             )
 
     cpdef void snapshot_position(self, Position position):
@@ -1725,7 +1730,7 @@ cdef class Cache(CacheFacade):
         self._database.snapshot_position_state(
             position,
             ts_snapshot,
-            self._calculate_unrealized_pnl(position),
+            self.calculate_unrealized_pnl(position),
         )
 
     cpdef void snapshot_order_state(self, Order order):
@@ -1853,7 +1858,7 @@ cdef class Cache(CacheFacade):
             self._database.snapshot_position_state(
                 position,
                 position.ts_last,
-                self._calculate_unrealized_pnl(position),
+                self.calculate_unrealized_pnl(position),
             )
 
     cpdef void update_actor(self, Actor actor):

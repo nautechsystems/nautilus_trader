@@ -19,9 +19,9 @@ import pandas as pd
 import pyarrow as pa
 from pyarrow import RecordBatch
 
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Currency
 
 
 def serialize(state: AccountState) -> RecordBatch:

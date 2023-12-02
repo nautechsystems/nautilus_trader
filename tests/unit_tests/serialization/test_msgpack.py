@@ -16,6 +16,8 @@
 from base64 import b64encode
 from decimal import Decimal
 
+import msgspec
+
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.factories import OrderFactory
@@ -81,7 +83,7 @@ from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.model.orders import TrailingStopLimitOrder
 from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.model.position import Position
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -92,7 +94,7 @@ ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 BTCUSDT_220325 = TestInstrumentProvider.btcusdt_future_binance()
 
 
-class TestMsgPackSerializer:
+class TestMsgSpecSerializer:
     def setup(self):
         # Fixture Setup
         self.trader_id = TestIdStubs.trader_id()
@@ -107,7 +109,7 @@ class TestMsgPackSerializer:
             clock=TestClock(),
         )
 
-        self.serializer = MsgPackSerializer()
+        self.serializer = MsgSpecSerializer(encoding=msgspec.msgpack)
 
     def test_serialize_and_deserialize_fx_instrument(self):
         # Arrange, Act

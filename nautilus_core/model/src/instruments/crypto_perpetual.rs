@@ -212,58 +212,13 @@ impl Instrument for CryptoPerpetual {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use std::str::FromStr;
-
-    use rstest::fixture;
-    use rust_decimal::Decimal;
-
-    use crate::{
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-        instruments::crypto_perpetual::CryptoPerpetual,
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
-        CryptoPerpetual::new(
-            InstrumentId::from("ETHUSDT-PERP.BINANCE"),
-            Symbol::from("ETHUSDT"),
-            Currency::from("ETH"),
-            Currency::from("USDT"),
-            Currency::from("USDT"),
-            2,
-            0,
-            Price::from("0.01"),
-            Quantity::from("0.001"),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            None,
-            Some(Quantity::from("10000.0")),
-            Some(Quantity::from("0.001")),
-            None,
-            Some(Money::new(10.00, Currency::from("USDT")).unwrap()),
-            Some(Price::from("15000.00")),
-            Some(Price::from("1.0")),
-        )
-        .unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::instruments::crypto_perpetual::CryptoPerpetual;
+    use crate::instruments::{crypto_perpetual::CryptoPerpetual, stubs::*};
 
     #[rstest]
     fn test_equality(crypto_perpetual_ethusdt: CryptoPerpetual) {

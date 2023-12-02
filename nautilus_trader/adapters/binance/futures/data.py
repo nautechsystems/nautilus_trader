@@ -28,6 +28,7 @@ from nautilus_trader.adapters.binance.futures.types import BinanceFuturesMarkPri
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
@@ -37,7 +38,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BinanceFuturesDataClient(BinanceCommonDataClient):
@@ -49,7 +49,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     client : BinanceHttpClient
-        The binance HTTP client.
+        The Binance HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache

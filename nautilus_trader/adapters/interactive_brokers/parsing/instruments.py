@@ -20,12 +20,12 @@ from decimal import Decimal
 
 import msgspec
 import pandas as pd
+from ibapi.contract import ContractDetails
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import asset_class_from_str
@@ -38,6 +38,7 @@ from nautilus_trader.model.instruments import Equity
 from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.instruments import OptionsContract
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -116,6 +117,12 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "BOND": "BOND",
     }
     return asset_class_from_str(mapping.get(sec_type, sec_type))
+
+
+def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContractDetails:
+    details.contract = IBContract(**details.contract.__dict__)
+    details = IBContractDetails(**details.__dict__)
+    return details
 
 
 def parse_instrument(
@@ -280,7 +287,7 @@ def parse_crypto_contract(
         base_currency=Currency.from_str(details.contract.symbol),
         quote_currency=Currency.from_str(details.contract.currency),
         settlement_currency=Currency.from_str(details.contract.currency),
-        is_inverse=False,  # No inverse instruments trade on InteractiveBrokers?
+        is_inverse=True,
         price_precision=price_precision,
         size_precision=size_precision,
         price_increment=Price(details.minTick, price_precision),
@@ -315,7 +322,7 @@ def ib_contract_to_instrument_id(contract: IBContract) -> InstrumentId:
 
     security_type = contract.secType
     if security_type == "STK":
-        symbol = contract.localSymbol.replace(" ", "-")
+        symbol = (contract.localSymbol or contract.symbol).replace(" ", "-")
         venue = contract.primaryExchange if contract.exchange == "SMART" else contract.exchange
     elif security_type == "OPT":
         symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")

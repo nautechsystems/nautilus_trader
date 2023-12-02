@@ -13,9 +13,11 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
+indexmap = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
+rstest = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
@@ -25,8 +27,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 chrono = { workspace = true }
 derive_builder = "0.12.0"
-evalexpr = "11.1.0"
-indexmap = "2.1.0"
+evalexpr = "11.2.0"
 tabled = "0.12.2"
 thousands = "0.2.0"
 
@@ -37,13 +38,13 @@ extension-module = [
 ]
 ffi = ["cbindgen"]
 python = ["pyo3"]
+stubs = ["rstest"]
 default = ["ffi", "python"]
 
 [dev-dependencies]
 criterion = { workspace = true }
 float-cmp = { workspace = true }
 iai = { workspace = true }
-rstest = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

@@ -17,14 +17,14 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport AggressorSide
-from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.instruments.base cimport Instrument
 
 

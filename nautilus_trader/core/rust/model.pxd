@@ -97,7 +97,7 @@ cdef extern from "../includes/model.h":
 
     # The order book type, representing the type of levels granularity and delta updating heuristics.
     cpdef enum BookType:
-        # Top-of-book best bid/offer, one level per side.
+        # Top-of-book best bid/ask, one level per side.
         L1_MBP # = 1,
         # Market by price, one order per level (aggregated).
         L2_MBP # = 2,
@@ -710,6 +710,204 @@ cdef extern from "../includes/model.h":
 
     Data_t data_clone(const Data_t *data);
 
+    void interned_string_stats();
+
+    # # Safety
+    #
+    # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
+                                                     uint8_t price_precision,
+                                                     const char *components_ptr,
+                                                     const char *formula_ptr,
+                                                     uint64_t ts_event,
+                                                     uint64_t ts_init);
+
+    void synthetic_instrument_drop(SyntheticInstrument_API synth);
+
+    InstrumentId_t synthetic_instrument_id(const SyntheticInstrument_API *synth);
+
+    uint8_t synthetic_instrument_price_precision(const SyntheticInstrument_API *synth);
+
+    Price_t synthetic_instrument_price_increment(const SyntheticInstrument_API *synth);
+
+    const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
+
+    const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
+
+    uintptr_t synthetic_instrument_components_count(const SyntheticInstrument_API *synth);
+
+    uint64_t synthetic_instrument_ts_event(const SyntheticInstrument_API *synth);
+
+    uint64_t synthetic_instrument_ts_init(const SyntheticInstrument_API *synth);
+
+    # # Safety
+    #
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
+                                                  const char *formula_ptr);
+
+    # # Safety
+    #
+    # - Assumes `formula_ptr` is a valid C string pointer.
+    void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
+                                             const char *formula_ptr);
+
+    Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
+
+    BarSpecification_t bar_specification_new(uintptr_t step,
+                                             uint8_t aggregation,
+                                             uint8_t price_type);
+
+    # Returns a [`BarSpecification`] as a C string pointer.
+    const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
+
+    uint64_t bar_specification_hash(const BarSpecification_t *bar_spec);
+
+    uint8_t bar_specification_eq(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_lt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_le(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_gt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    uint8_t bar_specification_ge(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
+
+    BarType_t bar_type_new(InstrumentId_t instrument_id,
+                           BarSpecification_t spec,
+                           uint8_t aggregation_source);
+
+    # Returns any [`BarType`] parsing error from the provided C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    const char *bar_type_check_parsing(const char *ptr);
+
+    # Returns a [`BarType`] from a C string pointer.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    BarType_t bar_type_from_cstr(const char *ptr);
+
+    uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_le(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_gt(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint8_t bar_type_ge(const BarType_t *lhs, const BarType_t *rhs);
+
+    uint64_t bar_type_hash(const BarType_t *bar_type);
+
+    # Returns a [`BarType`] as a C string pointer.
+    const char *bar_type_to_cstr(const BarType_t *bar_type);
+
+    Bar_t bar_new(BarType_t bar_type,
+                  Price_t open,
+                  Price_t high,
+                  Price_t low,
+                  Price_t close,
+                  Quantity_t volume,
+                  uint64_t ts_event,
+                  uint64_t ts_init);
+
+    Bar_t bar_new_from_raw(BarType_t bar_type,
+                           int64_t open,
+                           int64_t high,
+                           int64_t low,
+                           int64_t close,
+                           uint8_t price_prec,
+                           uint64_t volume,
+                           uint8_t size_prec,
+                           uint64_t ts_event,
+                           uint64_t ts_init);
+
+    uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
+
+    uint64_t bar_hash(const Bar_t *bar);
+
+    # Returns a [`Bar`] as a C string.
+    const char *bar_to_cstr(const Bar_t *bar);
+
+    OrderBookDelta_t orderbook_delta_new(InstrumentId_t instrument_id,
+                                         BookAction action,
+                                         BookOrder_t order,
+                                         uint8_t flags,
+                                         uint64_t sequence,
+                                         uint64_t ts_event,
+                                         uint64_t ts_init);
+
+    uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
+
+    uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
+
+    BookOrder_t book_order_from_raw(OrderSide order_side,
+                                    int64_t price_raw,
+                                    uint8_t price_prec,
+                                    uint64_t size_raw,
+                                    uint8_t size_prec,
+                                    uint64_t order_id);
+
+    uint8_t book_order_eq(const BookOrder_t *lhs, const BookOrder_t *rhs);
+
+    uint64_t book_order_hash(const BookOrder_t *order);
+
+    double book_order_exposure(const BookOrder_t *order);
+
+    double book_order_signed_size(const BookOrder_t *order);
+
+    # Returns a [`BookOrder`] display string as a C string pointer.
+    const char *book_order_display_to_cstr(const BookOrder_t *order);
+
+    # Returns a [`BookOrder`] debug string as a C string pointer.
+    const char *book_order_debug_to_cstr(const BookOrder_t *order);
+
+    QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
+                               int64_t bid_price_raw,
+                               int64_t ask_price_raw,
+                               uint8_t bid_price_prec,
+                               uint8_t ask_price_prec,
+                               uint64_t bid_size_raw,
+                               uint64_t ask_size_raw,
+                               uint8_t bid_size_prec,
+                               uint8_t ask_size_prec,
+                               uint64_t ts_event,
+                               uint64_t ts_init);
+
+    uint8_t quote_tick_eq(const QuoteTick_t *lhs, const QuoteTick_t *rhs);
+
+    uint64_t quote_tick_hash(const QuoteTick_t *delta);
+
+    # Returns a [`QuoteTick`] as a C string pointer.
+    const char *quote_tick_to_cstr(const QuoteTick_t *tick);
+
+    Ticker ticker_new(InstrumentId_t instrument_id, uint64_t ts_event, uint64_t ts_init);
+
+    # Returns a [`Ticker`] as a C string pointer.
+    const char *ticker_to_cstr(const Ticker *ticker);
+
+    TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
+                               int64_t price_raw,
+                               uint8_t price_prec,
+                               uint64_t size_raw,
+                               uint8_t size_prec,
+                               AggressorSide aggressor_side,
+                               TradeId_t trade_id,
+                               uint64_t ts_event,
+                               uint64_t ts_init);
+
+    uint8_t trade_tick_eq(const TradeTick_t *lhs, const TradeTick_t *rhs);
+
+    uint64_t trade_tick_hash(const TradeTick_t *delta);
+
+    # Returns a [`TradeTick`] as a C string pointer.
+    const char *trade_tick_to_cstr(const TradeTick_t *tick);
+
     const char *account_type_to_cstr(AccountType value);
 
     # Returns an enum from a Python string.
@@ -909,204 +1107,6 @@ cdef extern from "../includes/model.h":
     # # Safety
     # - Assumes `ptr` is a valid C string pointer.
     TriggerType trigger_type_from_cstr(const char *ptr);
-
-    void interned_string_stats();
-
-    # # Safety
-    #
-    # - Assumes `components_ptr` is a valid C string pointer of a JSON format list of strings.
-    # - Assumes `formula_ptr` is a valid C string pointer.
-    SyntheticInstrument_API synthetic_instrument_new(Symbol_t symbol,
-                                                     uint8_t price_precision,
-                                                     const char *components_ptr,
-                                                     const char *formula_ptr,
-                                                     uint64_t ts_event,
-                                                     uint64_t ts_init);
-
-    void synthetic_instrument_drop(SyntheticInstrument_API synth);
-
-    InstrumentId_t synthetic_instrument_id(const SyntheticInstrument_API *synth);
-
-    uint8_t synthetic_instrument_price_precision(const SyntheticInstrument_API *synth);
-
-    Price_t synthetic_instrument_price_increment(const SyntheticInstrument_API *synth);
-
-    const char *synthetic_instrument_formula_to_cstr(const SyntheticInstrument_API *synth);
-
-    const char *synthetic_instrument_components_to_cstr(const SyntheticInstrument_API *synth);
-
-    uintptr_t synthetic_instrument_components_count(const SyntheticInstrument_API *synth);
-
-    uint64_t synthetic_instrument_ts_event(const SyntheticInstrument_API *synth);
-
-    uint64_t synthetic_instrument_ts_init(const SyntheticInstrument_API *synth);
-
-    # # Safety
-    #
-    # - Assumes `formula_ptr` is a valid C string pointer.
-    uint8_t synthetic_instrument_is_valid_formula(const SyntheticInstrument_API *synth,
-                                                  const char *formula_ptr);
-
-    # # Safety
-    #
-    # - Assumes `formula_ptr` is a valid C string pointer.
-    void synthetic_instrument_change_formula(SyntheticInstrument_API *synth,
-                                             const char *formula_ptr);
-
-    Price_t synthetic_instrument_calculate(SyntheticInstrument_API *synth, const CVec *inputs_ptr);
-
-    BarSpecification_t bar_specification_new(uintptr_t step,
-                                             uint8_t aggregation,
-                                             uint8_t price_type);
-
-    # Returns a [`BarSpecification`] as a C string pointer.
-    const char *bar_specification_to_cstr(const BarSpecification_t *bar_spec);
-
-    uint64_t bar_specification_hash(const BarSpecification_t *bar_spec);
-
-    uint8_t bar_specification_eq(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_lt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_le(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_gt(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    uint8_t bar_specification_ge(const BarSpecification_t *lhs, const BarSpecification_t *rhs);
-
-    BarType_t bar_type_new(InstrumentId_t instrument_id,
-                           BarSpecification_t spec,
-                           uint8_t aggregation_source);
-
-    # Returns any [`BarType`] parsing error from the provided C string pointer.
-    #
-    # # Safety
-    #
-    # - Assumes `ptr` is a valid C string pointer.
-    const char *bar_type_check_parsing(const char *ptr);
-
-    # Returns a [`BarType`] from a C string pointer.
-    #
-    # # Safety
-    #
-    # - Assumes `ptr` is a valid C string pointer.
-    BarType_t bar_type_from_cstr(const char *ptr);
-
-    uint8_t bar_type_eq(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_lt(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_le(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_gt(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint8_t bar_type_ge(const BarType_t *lhs, const BarType_t *rhs);
-
-    uint64_t bar_type_hash(const BarType_t *bar_type);
-
-    # Returns a [`BarType`] as a C string pointer.
-    const char *bar_type_to_cstr(const BarType_t *bar_type);
-
-    Bar_t bar_new(BarType_t bar_type,
-                  Price_t open,
-                  Price_t high,
-                  Price_t low,
-                  Price_t close,
-                  Quantity_t volume,
-                  uint64_t ts_event,
-                  uint64_t ts_init);
-
-    Bar_t bar_new_from_raw(BarType_t bar_type,
-                           int64_t open,
-                           int64_t high,
-                           int64_t low,
-                           int64_t close,
-                           uint8_t price_prec,
-                           uint64_t volume,
-                           uint8_t size_prec,
-                           uint64_t ts_event,
-                           uint64_t ts_init);
-
-    uint8_t bar_eq(const Bar_t *lhs, const Bar_t *rhs);
-
-    uint64_t bar_hash(const Bar_t *bar);
-
-    # Returns a [`Bar`] as a C string.
-    const char *bar_to_cstr(const Bar_t *bar);
-
-    OrderBookDelta_t orderbook_delta_new(InstrumentId_t instrument_id,
-                                         BookAction action,
-                                         BookOrder_t order,
-                                         uint8_t flags,
-                                         uint64_t sequence,
-                                         uint64_t ts_event,
-                                         uint64_t ts_init);
-
-    uint8_t orderbook_delta_eq(const OrderBookDelta_t *lhs, const OrderBookDelta_t *rhs);
-
-    uint64_t orderbook_delta_hash(const OrderBookDelta_t *delta);
-
-    BookOrder_t book_order_from_raw(OrderSide order_side,
-                                    int64_t price_raw,
-                                    uint8_t price_prec,
-                                    uint64_t size_raw,
-                                    uint8_t size_prec,
-                                    uint64_t order_id);
-
-    uint8_t book_order_eq(const BookOrder_t *lhs, const BookOrder_t *rhs);
-
-    uint64_t book_order_hash(const BookOrder_t *order);
-
-    double book_order_exposure(const BookOrder_t *order);
-
-    double book_order_signed_size(const BookOrder_t *order);
-
-    # Returns a [`BookOrder`] display string as a C string pointer.
-    const char *book_order_display_to_cstr(const BookOrder_t *order);
-
-    # Returns a [`BookOrder`] debug string as a C string pointer.
-    const char *book_order_debug_to_cstr(const BookOrder_t *order);
-
-    QuoteTick_t quote_tick_new(InstrumentId_t instrument_id,
-                               int64_t bid_price_raw,
-                               int64_t ask_price_raw,
-                               uint8_t bid_price_prec,
-                               uint8_t ask_price_prec,
-                               uint64_t bid_size_raw,
-                               uint64_t ask_size_raw,
-                               uint8_t bid_size_prec,
-                               uint8_t ask_size_prec,
-                               uint64_t ts_event,
-                               uint64_t ts_init);
-
-    uint8_t quote_tick_eq(const QuoteTick_t *lhs, const QuoteTick_t *rhs);
-
-    uint64_t quote_tick_hash(const QuoteTick_t *delta);
-
-    # Returns a [`QuoteTick`] as a C string pointer.
-    const char *quote_tick_to_cstr(const QuoteTick_t *tick);
-
-    Ticker ticker_new(InstrumentId_t instrument_id, uint64_t ts_event, uint64_t ts_init);
-
-    # Returns a [`Ticker`] as a C string pointer.
-    const char *ticker_to_cstr(const Ticker *ticker);
-
-    TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
-                               int64_t price_raw,
-                               uint8_t price_prec,
-                               uint64_t size_raw,
-                               uint8_t size_prec,
-                               AggressorSide aggressor_side,
-                               TradeId_t trade_id,
-                               uint64_t ts_event,
-                               uint64_t ts_init);
-
-    uint8_t trade_tick_eq(const TradeTick_t *lhs, const TradeTick_t *rhs);
-
-    uint64_t trade_tick_hash(const TradeTick_t *delta);
-
-    # Returns a [`TradeTick`] as a C string pointer.
-    const char *trade_tick_to_cstr(const TradeTick_t *tick);
 
     # # Safety
     #

@@ -16,7 +16,12 @@
 import warnings
 from typing import Optional
 
+import msgspec
+
 from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.core.nautilus_pyo3 import UUID4 as RustUUID4
+from nautilus_trader.core.nautilus_pyo3 import RedisCacheDatabase as RustRedisCacheDatabase
+from nautilus_trader.core.nautilus_pyo3 import TraderId as RustTraderId
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -25,22 +30,21 @@ from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.database cimport CacheDatabase
 from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.enums_c cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
+from nautilus_trader.core.rust.common cimport LogColor
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport currency_type_from_str
-from nautilus_trader.model.enums_c cimport currency_type_to_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderFilled
 from nautilus_trader.model.events.order cimport OrderInitialized
+from nautilus_trader.model.functions cimport currency_type_from_str
+from nautilus_trader.model.functions cimport currency_type_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
@@ -53,6 +57,7 @@ from nautilus_trader.model.identifiers cimport TraderId
 from nautilus_trader.model.identifiers cimport VenueOrderId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
@@ -126,7 +131,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
     precision when persisted. One way to solve this is to ensure the serializer
     converts timestamp int64's to strings on the way into Redis, and converts
     timestamp strings back to int64's on the way out. One way to achieve this is
-    to set the `timestamps_as_str` flag to true for the `MsgPackSerializer`, as
+    to set the `timestamps_as_str` flag to true for the `MsgSpecSerializer`, as
     per the default implementations for both `TradingNode` and `BacktestEngine`.
     """
 
@@ -173,7 +178,6 @@ cdef class RedisCacheDatabase(CacheDatabase):
         self._key_snapshots_positions = f"{self._key_trader}:{_SNAPSHOTS_POSITIONS}:"
         self._key_heartbeat = f"{self._key_trader}:{_HEARTBEAT}"
 
-        # Serializers
         self._serializer = serializer
 
         # Redis client
@@ -194,6 +198,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
                 redis.exceptions.TimeoutError,
                 redis.exceptions.ConnectionError,
             ],
+        )
+
+        self._backing = RustRedisCacheDatabase(
+            trader_id=RustTraderId(trader_id.value),
+            instance_id=RustUUID4(logger.instance_id.value),
+            config_json=msgspec.json.encode(config),
         )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
@@ -742,7 +752,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(key, "key")
         Condition.not_none(value, "value")
 
-        self._redis.set(name=self._key_general + key, value=value)
+        # self._redis.set(name=self._key_general + key, value=value)
+        self._backing.insert(f"{_GENERAL}:{key}", [value])
         self._log.debug(f"Added general object {key}.")
 
     cpdef void add_currency(self, Currency currency):

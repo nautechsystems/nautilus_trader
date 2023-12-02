@@ -22,6 +22,7 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
@@ -34,7 +35,6 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -131,6 +131,7 @@ class VolatilityMarketMaker(Strategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
+
         # self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging

@@ -26,13 +26,13 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.status cimport InstrumentClose
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.data.ticker cimport Ticker
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport Ticker
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -162,8 +162,60 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
 }
 
 
+EXTERNAL_PUBLISHING_TYPES = (
+    str,
+    int,
+    float,
+    bytes,
+    SubmitOrder,
+    SubmitOrderList,
+    ModifyOrder,
+    CancelOrder,
+    ComponentStateChanged,
+    TradingStateChanged,
+    AccountState,
+    OrderAccepted,
+    OrderCancelRejected,
+    OrderCanceled,
+    OrderDenied,
+    OrderEmulated,
+    OrderExpired,
+    OrderFilled,
+    OrderInitialized,
+    OrderPendingCancel,
+    OrderPendingUpdate,
+    OrderReleased,
+    OrderRejected,
+    OrderSubmitted,
+    OrderTriggered,
+    OrderModifyRejected,
+    OrderUpdated,
+    PositionOpened,
+    PositionChanged,
+    PositionClosed,
+    Instrument,
+    SyntheticInstrument,
+    BettingInstrument,
+    Equity,
+    FuturesContract,
+    OptionsContract,
+    CurrencyPair,
+    CryptoPerpetual,
+    CryptoFuture,
+    TradeTick,
+    Ticker,
+    QuoteTick,
+    Bar,
+    InstrumentStatus,
+    VenueStatus,
+    InstrumentClose,
+    BinanceBar,
+    BinanceTicker,
+)
+
+
 cpdef void register_serializable_object(
-    obj,
+    obj: type,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
 ):
@@ -172,8 +224,8 @@ cpdef void register_serializable_object(
 
     Parameters
     ----------
-    obj : object
-        The object to register.
+    obj : type
+        The object type to register.
     to_dict : Callable[[Any], dict[str, Any]]
         The delegate to instantiate a dict of primitive types from the object.
     from_dict : Callable[[dict[str, Any]], Any]

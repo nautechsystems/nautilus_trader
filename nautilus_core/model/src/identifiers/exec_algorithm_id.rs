@@ -63,28 +63,14 @@ impl From<&str> for ExecAlgorithmId {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use rstest::fixture;
-
-    use super::ExecAlgorithmId;
-
-    #[fixture]
-    pub fn exec_algorithm_id() -> ExecAlgorithmId {
-        ExecAlgorithmId::from("001")
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::{stubs::*, ExecAlgorithmId};
+    use super::*;
+    use crate::identifiers::stubs::*;
 
     #[rstest]
     fn test_string_reprs(exec_algorithm_id: ExecAlgorithmId) {

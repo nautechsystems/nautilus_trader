@@ -9,18 +9,22 @@ documentation.workspace = true
 [lib]
 name = "nautilus_common"
 crate-type = ["rlib", "staticlib"]
-proc-macro = true
 
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model" }
+nautilus-model = { path = "../model", features = ["stubs"]}
 anyhow = { workspace = true }
 chrono = { workspace = true }
+indexmap = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+redis = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-pyo3 = { workspace = true, optional = true }
 strum = { workspace = true }
 ustr = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = "0.2.3"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = { workspace = true }
@@ -34,7 +38,9 @@ extension-module = [
 ]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-default = ["ffi", "python"]
+redis-msgbus = ["redis"]
+default = ["ffi", "python", "redis-msgbus"]
+
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }

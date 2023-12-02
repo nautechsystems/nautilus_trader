@@ -15,10 +15,10 @@
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.common.enums_c cimport ComponentState
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.model cimport TradingState
 from nautilus_trader.core.uuid cimport UUID4
-from nautilus_trader.model.enums_c cimport TradingState
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport Identifier
 from nautilus_trader.model.identifiers cimport TraderId

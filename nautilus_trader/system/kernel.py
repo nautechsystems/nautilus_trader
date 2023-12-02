@@ -32,6 +32,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
@@ -67,13 +68,12 @@ from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
 from nautilus_trader.model.identifiers import TraderId
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.writer import StreamingFeatherWriter
 from nautilus_trader.portfolio.base import PortfolioFacade
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
-from nautilus_trader.serialization.msgpack.serializer import MsgPackSerializer
+from nautilus_trader.serialization.serializer import MsgSpecSerializer
 from nautilus_trader.trading.controller import Controller
 from nautilus_trader.trading.strategy import Strategy
 from nautilus_trader.trading.trader import Trader
@@ -177,6 +177,7 @@ class NautilusKernel:
             file_name=logging.log_file_name,
             file_format=logging.log_file_format,
             component_levels=logging.log_component_levels,
+            colors=logging.log_colors,
             bypass=False if self._environment == Environment.LIVE else logging.bypass_logging,
         )
 
@@ -206,10 +207,12 @@ class NautilusKernel:
         if config.cache_database is None or config.cache_database.type == "in-memory":
             cache_db = None
         elif config.cache_database.type == "redis":
+            encoding = config.cache_database.encoding.lower()
             cache_db = RedisCacheDatabase(
                 trader_id=self._trader_id,
                 logger=self._logger,
-                serializer=MsgPackSerializer(
+                serializer=MsgSpecSerializer(
+                    encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                     timestamps_as_str=True,  # Hardcoded for now
                     timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
                 ),
@@ -224,15 +227,30 @@ class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
+        msgbus_serializer = None
+        if config.message_bus:
+            encoding = config.message_bus.encoding.lower()
+            msgbus_serializer = MsgSpecSerializer(
+                encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
+                timestamps_as_str=True,  # Hardcoded for now
+                timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
+            )
         self._msgbus = MessageBus(
             trader_id=self._trader_id,
+            instance_id=self._instance_id,
             clock=self._clock,
             logger=self._logger,
+            serializer=msgbus_serializer,
+            snapshot_orders=config.snapshot_orders,
+            snapshot_positions=config.snapshot_positions,
+            config=config.message_bus,
         )
 
         self._cache = Cache(
             database=cache_db,
             logger=self._logger,
+            snapshot_orders=config.snapshot_orders,
+            snapshot_positions=config.snapshot_positions,
             config=config.cache,
         )
 

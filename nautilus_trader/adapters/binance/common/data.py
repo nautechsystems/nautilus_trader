@@ -41,6 +41,7 @@ from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -71,7 +72,6 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BinanceCommonDataClient(LiveMarketDataClient):

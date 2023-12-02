@@ -49,7 +49,7 @@ impl UUID4 {
 
     #[must_use]
     pub fn to_cstr(&self) -> &CStr {
-        // SAFETY: unwrap is safe here as we always store valid C strings
+        // SAFETY: Unwrap safe as we always store valid C strings
         CStr::from_bytes_with_nul(&self.value).unwrap()
     }
 }

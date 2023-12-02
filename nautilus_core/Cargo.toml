@@ -5,6 +5,7 @@ members = [
     "common",
     "core",
     "indicators",
+    "infrastructure",
     "model",
     "network",
     "network/tokio-tungstenite",
@@ -13,8 +14,8 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.73.0"
-version = "0.11.0"
+rust-version = "1.74.0"
+version = "0.12.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -24,21 +25,23 @@ documentation = "https://docs.nautilustrader.io"
 anyhow = "1.0.75"
 chrono = "0.4.31"
 futures = "0.3.29"
+indexmap = "2.1.0"
 once_cell = "1.18.0"
-pyo3 = { version = "0.19.2", features = ["rust_decimal"] }
-pyo3-asyncio = { version = "0.19.0", features = ["tokio-runtime", "tokio", "attributes"] }
+pyo3 = { version = "0.20.0", features = ["rust_decimal"] }
+pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
+redis = { version = "0.23.3", features = ["tokio-comp", "tls-rustls", "tokio-rustls-comp", "keep-alive", "connection-manager"] }
 rmp-serde = "1.1.2"
-rust_decimal = "1.32.0"
-rust_decimal_macros = "1.32.0"
-serde = { version = "1.0.190", features = ["derive"] }
+rust_decimal = "1.33.1"
+rust_decimal_macros = "1.33.1"
+serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 strum = { version = "0.25.0", features = ["derive"] }
 thiserror = "1.0.50"
 tracing = "0.1.40"
-tokio = { version = "1.33.0", features = ["full"] }
+tokio = { version = "1.34.0", features = ["full"] }
 ustr = { git = "https://github.com/anderslanglands/ustr", features = ["serde"] }
-uuid = { version = "1.5.0", features = ["v4"] }
+uuid = { version = "1.6.1", features = ["v4"] }
 
 # dev-dependencies
 criterion = "0.5.1"

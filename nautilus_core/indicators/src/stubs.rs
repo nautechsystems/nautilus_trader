@@ -28,8 +28,8 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, sma::SimpleMovingAverage, wma::WeightedMovingAverage,
-        MovingAverageType,
+        ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
+        sma::SimpleMovingAverage, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::rsi::RelativeStrengthIndex,
     ratio::efficiency_ratio::EfficiencyRatio,
@@ -98,7 +98,6 @@ pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> B
 ////////////////////////////////////////////////////////////////////////////////
 // Average
 ////////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn indicator_ama_10() -> AdaptiveMovingAverage {
     AdaptiveMovingAverage::new(10, 2, 30, Some(PriceType::Mid)).unwrap()
@@ -115,6 +114,16 @@ pub fn indicator_ema_10() -> ExponentialMovingAverage {
 }
 
 #[fixture]
+pub fn indicator_hma_10() -> HullMovingAverage {
+    HullMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn indicator_rma_10() -> WilderMovingAverage {
+    WilderMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
 pub fn indicator_dema_10() -> DoubleExponentialMovingAverage {
     DoubleExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
 }
@@ -128,7 +137,6 @@ pub fn indicator_wma_10() -> WeightedMovingAverage {
 ////////////////////////////////////////////////////////////////////////////////
 // Ratios
 ////////////////////////////////////////////////////////////////////////////////
-
 #[fixture]
 pub fn efficiency_ratio_10() -> EfficiencyRatio {
     EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()

@@ -18,6 +18,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
@@ -27,6 +28,9 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
@@ -34,9 +38,6 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport OrderStatus
-from nautilus_trader.model.enums_c cimport TriggerType
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEvent
 from nautilus_trader.model.events.order cimport OrderExpired
@@ -52,7 +53,6 @@ from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderManager:
@@ -72,7 +72,7 @@ cdef class OrderManager:
     component_name : str
         The component name for the order manager.
     active_local : str
-        If the manager if for active local orders.
+        If the manager is for active local orders.
     submit_order_handler : Callable[[SubmitOrder], None], optional
         The handler to call when submitting orders.
     cancel_order_handler : Callable[[Order], None], optional

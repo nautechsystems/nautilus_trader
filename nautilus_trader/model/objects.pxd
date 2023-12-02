@@ -17,10 +17,11 @@ from libc.stdint cimport int64_t
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.rust.model cimport Currency_t
+from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport Money_t
 from nautilus_trader.core.rust.model cimport Price_t
 from nautilus_trader.core.rust.model cimport Quantity_t
-from nautilus_trader.model.currency cimport Currency
 from nautilus_trader.model.identifiers cimport InstrumentId
 
 
@@ -148,6 +149,27 @@ cdef class Money:
     cpdef str to_str(self)
     cpdef object as_decimal(self)
     cpdef double as_double(self)
+
+
+cdef class Currency:
+    cdef Currency_t _mem
+
+    cdef uint8_t get_precision(self)
+
+    @staticmethod
+    cdef void register_c(Currency currency, bint overwrite=*)
+
+    @staticmethod
+    cdef Currency from_internal_map_c(str code)
+
+    @staticmethod
+    cdef Currency from_str_c(str code, bint strict=*)
+
+    @staticmethod
+    cdef bint is_fiat_c(str code)
+
+    @staticmethod
+    cdef bint is_crypto_c(str code)
 
 
 cdef class AccountBalance:

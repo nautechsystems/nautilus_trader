@@ -51,6 +51,7 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
@@ -66,7 +67,6 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.execution.reports import TradeReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
@@ -80,9 +80,9 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.orders import Order
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BetfairExecutionClient(LiveExecutionClient):
@@ -95,7 +95,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         The event loop for the client.
     client : BetfairHttpClient
         The Betfair HttpClient.
-    base_currency : Currency
+    account_currency : Currency
         The account base currency for the client.
     msgbus : MessageBus
         The message bus for the client.
@@ -114,7 +114,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self,
         loop: asyncio.AbstractEventLoop,
         client: BetfairHttpClient,
-        base_currency: Currency,
+        account_currency: Currency,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -127,7 +127,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             venue=BETFAIR_VENUE,
             oms_type=OmsType.NETTING,
             account_type=AccountType.BETTING,
-            base_currency=base_currency,
+            base_currency=account_currency,
             instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
@@ -545,9 +545,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle an update from the order stream socket.
         """
+        self._log.debug(f"raw_exec: {raw.decode()}")
         update = stream_decode(raw)
-
-        self._log.debug(f"Exec update: {raw.decode()}")
 
         if isinstance(update, OCM):
             self.create_task(self._handle_order_stream_update(update))
@@ -584,8 +583,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             for selection in market.orc or []:
                 instrument_id = betfair_instrument_id(
                     market_id=market.id,
-                    selection_id=str(selection.id),
-                    selection_handicap=str(selection.hc or 0.0),
+                    selection_id=selection.id,
+                    selection_handicap=selection.hc,
                 )
                 orders = self._cache.orders(instrument_id=instrument_id)
                 venue_orders = {o.venue_order_id: o for o in orders}

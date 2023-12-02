@@ -16,7 +16,7 @@
 The `LiveDataClient` class is responsible for interfacing with a particular API which
 may be presented directly by an exchange, or broker intermediary.
 
-It could also be possible to write clients for specialized data publishers.
+It could also be possible to write clients for specialized data providers.
 
 """
 
@@ -32,6 +32,7 @@ import pandas as pd
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -45,7 +46,6 @@ from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class LiveDataClient(DataClient):

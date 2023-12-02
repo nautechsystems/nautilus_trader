@@ -13,96 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, ops::Deref};
 
 use nautilus_core::{
     correctness::check_valid_string,
-    datetime::{nanos_to_micros, nanos_to_millis, nanos_to_secs},
-    time::{duration_since_unix_epoch, UnixNanos},
+    time::{AtomicTime, ClockMode, UnixNanos},
 };
-use pyo3::{prelude::*, AsPyPointer};
 
-use crate::timer::{TestTimer, TimeEvent, TimeEventHandler};
-
-const ONE_NANOSECOND: Duration = Duration::from_nanos(1);
-
-pub struct MonotonicClock {
-    /// The last recorded duration value for the clock.
-    last: Duration,
-}
-
-/// Provides a monotonic clock.
-///
-/// Always produces unique and monotonically increasing timestamps.
-impl MonotonicClock {
-    /// Returns a monotonic `Duration` since the UNIX epoch, ensuring that the returned value is
-    /// always greater than the previously returned value.
-    fn monotonic_duration_since_unix_epoch(&mut self) -> Duration {
-        let now = duration_since_unix_epoch();
-        let output = if now <= self.last {
-            self.last + ONE_NANOSECOND
-        } else {
-            now
-        };
-        self.last = output;
-        output
-    }
-
-    /// Initializes a new `MonotonicClock` instance.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            last: duration_since_unix_epoch(),
-        }
-    }
-
-    /// Returns the current seconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_secs(&mut self) -> f64 {
-        self.monotonic_duration_since_unix_epoch().as_secs_f64()
-    }
-
-    /// Returns the current milliseconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_millis(&mut self) -> u64 {
-        self.monotonic_duration_since_unix_epoch().as_millis() as u64
-    }
-
-    /// Returns the current microseconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_micros(&mut self) -> u64 {
-        self.monotonic_duration_since_unix_epoch().as_micros() as u64
-    }
-
-    /// Returns the current nanoseconds since the UNIX epoch (unique and monotonic).
-    pub fn unix_timestamp_nanos(&mut self) -> u64 {
-        self.monotonic_duration_since_unix_epoch().as_nanos() as u64
-    }
-}
-
-impl Default for MonotonicClock {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use crate::{
+    handlers::EventHandler,
+    timer::{TestTimer, TimeEvent, TimeEventHandler},
+};
 
 /// Represents a type of clock.
 ///
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
-    /// Return a new [Clock].
-    fn new() -> Self;
-
-    /// Return the current UNIX time in seconds.
-    fn timestamp(&mut self) -> f64;
-
-    /// Return the current UNIX time in milliseconds (ms).
-    fn timestamp_ms(&mut self) -> u64;
-
-    /// Return the current UNIX time in microseconds (us).
-    fn timestamp_us(&mut self) -> u64;
-
-    /// Return the current UNIX time in nanoseconds (ns).
-    fn timestamp_ns(&mut self) -> u64;
-
     /// Return the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
 
@@ -111,64 +38,74 @@ pub trait Clock {
 
     /// Register a default event handler for the clock. If a `Timer`
     /// does not have an event handler, then this handler is used.
-    fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>);
-
-    fn register_default_handler_py(&mut self, callback_py: PyObject);
+    fn register_default_handler(&mut self, callback: EventHandler);
 
     /// Set a `Timer` to alert at a particular time. Optional
     /// callback gets used to handle generated events.
-    fn set_time_alert_ns_py(
+    fn set_time_alert_ns(
         &mut self,
         name: String,
         alert_time_ns: UnixNanos,
-        callback_py: Option<PyObject>,
+        callback: Option<EventHandler>,
     );
 
     /// Set a `Timer` to start alerting at every interval
     /// between start and stop time. Optional callback gets
     /// used to handle generated event.
-    fn set_timer_ns_py(
+    fn set_timer_ns(
         &mut self,
         name: String,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback_py: Option<PyObject>,
+        callback: Option<EventHandler>,
     );
 
-    fn next_time_ns(&mut self, name: &str) -> UnixNanos;
+    fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
 }
 
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct TestClock {
-    time_ns: UnixNanos,
+    time: AtomicTime,
     timers: HashMap<String, TestTimer>,
-    default_callback: Option<Box<dyn Fn(TimeEvent)>>,
-    default_callback_py: Option<PyObject>,
-    _callbacks: HashMap<String, Box<dyn Fn(TimeEvent)>>,
-    callbacks_py: HashMap<String, PyObject>,
+    default_callback: Option<EventHandler>,
+    callbacks: HashMap<String, EventHandler>,
 }
 
 impl TestClock {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            time: AtomicTime::new(ClockMode::STATIC, 0),
+            timers: HashMap::new(),
+            default_callback: None,
+            callbacks: HashMap::new(),
+        }
+    }
+
+    pub fn get_time_clone(&self) -> AtomicTime {
+        self.time.clone()
+    }
+
     #[must_use]
     pub fn get_timers(&self) -> &HashMap<String, TestTimer> {
         &self.timers
     }
 
-    pub fn set_time(&mut self, to_time_ns: UnixNanos) {
-        self.time_ns = to_time_ns;
-    }
-
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
         assert!(
-            to_time_ns >= self.time_ns,
+            to_time_ns >= self.time.get_time_ns(),
             "`to_time_ns` was < `self._time_ns`"
         );
 
         if set_time {
-            self.time_ns = to_time_ns;
+            self.time.set_time(to_time_ns);
         }
 
         let mut timers: Vec<TimeEvent> = self
@@ -184,56 +121,43 @@ impl TestClock {
 
     /// Assumes time events are sorted by their `ts_event`.
     #[must_use]
-    pub fn match_handlers_py(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
+    pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
         events
             .into_iter()
             .map(|event| {
-                let callback_py = self
-                    .callbacks_py
+                let handler = self
+                    .callbacks
                     .get(event.name.as_str())
                     .cloned()
                     .unwrap_or_else(|| {
                         // If callback_py is None, use the default_callback_py
                         // TODO: clone for now
-                        self.default_callback_py.clone().unwrap()
+                        self.default_callback.clone().unwrap()
                     });
                 TimeEventHandler {
                     event,
-                    callback_ptr: callback_py.as_ptr(),
+                    callback_ptr: handler.as_ptr(),
                 }
             })
             .collect()
     }
 }
 
+impl Default for TestClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for TestClock {
+    type Target = AtomicTime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.time
+    }
+}
+
 impl Clock for TestClock {
-    fn new() -> Self {
-        Self {
-            time_ns: 0,
-            timers: HashMap::new(),
-            default_callback: None,
-            default_callback_py: None,
-            _callbacks: HashMap::new(), // TBC
-            callbacks_py: HashMap::new(),
-        }
-    }
-
-    fn timestamp(&mut self) -> f64 {
-        nanos_to_secs(self.time_ns)
-    }
-
-    fn timestamp_ms(&mut self) -> u64 {
-        nanos_to_millis(self.time_ns)
-    }
-
-    fn timestamp_us(&mut self) -> u64 {
-        nanos_to_micros(self.time_ns)
-    }
-
-    fn timestamp_ns(&mut self) -> u64 {
-        self.time_ns
-    }
-
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -249,56 +173,55 @@ impl Clock for TestClock {
             .count()
     }
 
-    fn register_default_handler(&mut self, callback: Box<dyn Fn(TimeEvent)>) {
+    fn register_default_handler(&mut self, callback: EventHandler) {
         self.default_callback = Some(callback);
     }
 
-    fn register_default_handler_py(&mut self, callback_py: PyObject) {
-        self.default_callback_py = Some(callback_py);
-    }
-
-    fn set_time_alert_ns_py(
+    fn set_time_alert_ns(
         &mut self,
         name: String,
         alert_time_ns: UnixNanos,
-        callback_py: Option<PyObject>,
+        callback: Option<EventHandler>,
     ) {
         check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
-            callback_py.is_some() | self.default_callback_py.is_some(),
+            callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
-        match callback_py {
-            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
+        match callback {
+            Some(callback_py) => self.callbacks.insert(name.clone(), callback_py),
             None => None,
         };
 
+        // TODO: should the atomic clock be shared
+        // currently share timestamp nanoseconds
+        let time_ns = self.time.get_time_ns();
         let timer = TestTimer::new(
             name.clone(),
-            alert_time_ns - self.time_ns,
-            self.time_ns,
+            alert_time_ns - time_ns,
+            time_ns,
             Some(alert_time_ns),
         );
         self.timers.insert(name, timer);
     }
 
-    fn set_timer_ns_py(
+    fn set_timer_ns(
         &mut self,
         name: String,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback_py: Option<PyObject>,
+        callback: Option<EventHandler>,
     ) {
         check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
-            callback_py.is_some() | self.default_callback_py.is_some(),
+            callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
-        match callback_py {
-            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
+        match callback {
+            Some(callback_py) => self.callbacks.insert(name.clone(), callback_py),
             None => None,
         };
 
@@ -306,7 +229,7 @@ impl Clock for TestClock {
         self.timers.insert(name, timer);
     }
 
-    fn next_time_ns(&mut self, name: &str) -> UnixNanos {
+    fn next_time_ns(&self, name: &str) -> UnixNanos {
         let timer = self.timers.get(name);
         match timer {
             None => 0,
@@ -330,43 +253,44 @@ impl Clock for TestClock {
     }
 }
 
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct LiveClock {
-    internal: MonotonicClock,
+    internal: AtomicTime,
     timers: HashMap<String, TestTimer>,
-    default_callback: Option<Box<dyn Fn(TimeEvent)>>,
-    default_callback_py: Option<PyObject>,
-    _callbacks: HashMap<String, Box<dyn Fn(TimeEvent)>>, // TBC
-    callbacks_py: HashMap<String, PyObject>,
+    default_callback: Option<EventHandler>,
+    callbacks: HashMap<String, EventHandler>,
+}
+
+impl LiveClock {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            internal: AtomicTime::new(ClockMode::LIVE, 0),
+            timers: HashMap::new(),
+            default_callback: None,
+            callbacks: HashMap::new(),
+        }
+    }
+}
+
+impl Default for LiveClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Deref for LiveClock {
+    type Target = AtomicTime;
+
+    fn deref(&self) -> &Self::Target {
+        &self.internal
+    }
 }
 
 impl Clock for LiveClock {
-    fn new() -> Self {
-        Self {
-            internal: MonotonicClock::default(),
-            timers: HashMap::new(),
-            default_callback: None,
-            default_callback_py: None,
-            _callbacks: HashMap::new(),
-            callbacks_py: HashMap::new(),
-        }
-    }
-
-    fn timestamp(&mut self) -> f64 {
-        self.internal.unix_timestamp_secs()
-    }
-
-    fn timestamp_ms(&mut self) -> u64 {
-        self.internal.unix_timestamp_millis()
-    }
-
-    fn timestamp_us(&mut self) -> u64 {
-        self.internal.unix_timestamp_micros()
-    }
-
-    fn timestamp_ns(&mut self) -> u64 {
-        self.internal.unix_timestamp_nanos()
-    }
-
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -382,32 +306,28 @@ impl Clock for LiveClock {
             .count()
     }
 
-    fn register_default_handler(&mut self, handler: Box<dyn Fn(TimeEvent)>) {
+    fn register_default_handler(&mut self, handler: EventHandler) {
         self.default_callback = Some(handler);
     }
 
-    fn register_default_handler_py(&mut self, callback_py: PyObject) {
-        self.default_callback_py = Some(callback_py);
-    }
-
-    fn set_time_alert_ns_py(
+    fn set_time_alert_ns(
         &mut self,
         name: String,
         mut alert_time_ns: UnixNanos,
-        callback_py: Option<PyObject>,
+        callback: Option<EventHandler>,
     ) {
         check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
-            callback_py.is_some() | self.default_callback_py.is_some(),
+            callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
-        match callback_py {
-            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
+        match callback {
+            Some(callback_py) => self.callbacks.insert(name.clone(), callback_py),
             None => None,
         };
 
-        let ts_now = self.timestamp_ns();
+        let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let timer = TestTimer::new(
             name.clone(),
@@ -418,22 +338,22 @@ impl Clock for LiveClock {
         self.timers.insert(name, timer);
     }
 
-    fn set_timer_ns_py(
+    fn set_timer_ns(
         &mut self,
         name: String,
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback_py: Option<PyObject>,
+        callback: Option<EventHandler>,
     ) {
         check_valid_string(&name, "`Timer` name").unwrap();
         assert!(
-            callback_py.is_some() | self.default_callback_py.is_some(),
+            callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`"
         );
 
-        match callback_py {
-            Some(callback_py) => self.callbacks_py.insert(name.clone(), callback_py),
+        match callback {
+            Some(callback) => self.callbacks.insert(name.clone(), callback),
             None => None,
         };
 
@@ -441,7 +361,7 @@ impl Clock for LiveClock {
         self.timers.insert(name, timer);
     }
 
-    fn next_time_ns(&mut self, name: &str) -> UnixNanos {
+    fn next_time_ns(&self, name: &str) -> UnixNanos {
         let timer = self.timers.get(name);
         match timer {
             None => 0,
@@ -475,52 +395,21 @@ pub mod stubs {
     use super::*;
 
     #[fixture]
-    pub fn monotonic_clock() -> MonotonicClock {
-        MonotonicClock::new()
-    }
-
-    #[fixture]
     pub fn test_clock() -> TestClock {
         TestClock::new()
     }
 }
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::types::PyList;
+    use pyo3::{prelude::*, types::PyList};
     use rstest::*;
     use stubs::*;
 
     use super::*;
-
-    #[rstest]
-    fn test_monotonic_clock_increasing(mut monotonic_clock: MonotonicClock) {
-        let secs1 = monotonic_clock.unix_timestamp_secs();
-        let secs2 = monotonic_clock.unix_timestamp_secs();
-        assert!(secs2 >= secs1);
-
-        let millis1 = monotonic_clock.unix_timestamp_millis();
-        let millis2 = monotonic_clock.unix_timestamp_millis();
-        assert!(millis2 >= millis1);
-
-        let micros1 = monotonic_clock.unix_timestamp_micros();
-        let micros2 = monotonic_clock.unix_timestamp_micros();
-        assert!(micros2 >= micros1);
-
-        let nanos1 = monotonic_clock.unix_timestamp_nanos();
-        let nanos2 = monotonic_clock.unix_timestamp_nanos();
-        assert!(nanos2 >= nanos1);
-    }
-
-    #[rstest]
-    fn test_monotonic_clock_beyond_unix_epoch(mut monotonic_clock: MonotonicClock) {
-        assert!(monotonic_clock.unix_timestamp_secs() > 1_650_000_000.0);
-        assert!(monotonic_clock.unix_timestamp_millis() > 1_650_000_000_000);
-        assert!(monotonic_clock.unix_timestamp_micros() > 1_650_000_000_000_000);
-        assert!(monotonic_clock.unix_timestamp_nanos() > 1_650_000_000_000_000_000);
-    }
 
     #[rstest]
     fn test_set_timer_ns_py(mut test_clock: TestClock) {
@@ -529,9 +418,10 @@ mod tests {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            test_clock.register_default_handler_py(py_append);
+            let handler = EventHandler::new(Some(py_append), None);
+            test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
+            test_clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
 
             assert_eq!(test_clock.timer_names(), ["TEST_TIME1"]);
             assert_eq!(test_clock.timer_count(), 1);
@@ -545,9 +435,10 @@ mod tests {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            test_clock.register_default_handler_py(py_append);
+            let handler = EventHandler::new(Some(py_append), None);
+            test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
+            test_clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
             test_clock.cancel_timer(String::from("TEST_TIME1").as_str());
 
             assert!(test_clock.timer_names().is_empty());
@@ -562,9 +453,10 @@ mod tests {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            test_clock.register_default_handler_py(py_append);
+            let handler = EventHandler::new(Some(py_append), None);
+            test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 10, 0, None, None);
+            test_clock.set_timer_ns(String::from("TEST_TIME1"), 10, 0, None, None);
             test_clock.cancel_timers();
 
             assert!(test_clock.timer_names().is_empty());
@@ -579,9 +471,10 @@ mod tests {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            test_clock.register_default_handler_py(py_append);
+            let handler = EventHandler::new(Some(py_append), None);
+            test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 1, 1, Some(3), None);
+            test_clock.set_timer_ns(String::from("TEST_TIME1"), 1, 1, Some(3), None);
             test_clock.advance_time(2, true);
 
             assert_eq!(test_clock.timer_names(), ["TEST_TIME1"]);
@@ -596,14 +489,15 @@ mod tests {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            test_clock.register_default_handler_py(py_append);
+            let handler = EventHandler::new(Some(py_append), None);
+            test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+            test_clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
             test_clock.advance_time(3, true);
 
             assert_eq!(test_clock.timer_names().len(), 1);
             assert_eq!(test_clock.timer_count(), 1);
-            assert_eq!(test_clock.time_ns, 3);
+            assert_eq!(test_clock.get_time_ns(), 3);
         });
     }
 
@@ -614,14 +508,15 @@ mod tests {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            test_clock.register_default_handler_py(py_append);
+            let handler = EventHandler::new(Some(py_append), None);
+            test_clock.register_default_handler(handler);
 
-            test_clock.set_timer_ns_py(String::from("TEST_TIME1"), 2, 0, Some(3), None);
+            test_clock.set_timer_ns(String::from("TEST_TIME1"), 2, 0, Some(3), None);
             test_clock.advance_time(3, false);
 
             assert_eq!(test_clock.timer_names().len(), 1);
             assert_eq!(test_clock.timer_count(), 1);
-            assert_eq!(test_clock.time_ns, 0);
+            assert_eq!(test_clock.get_time_ns(), 0);
         });
     }
 }

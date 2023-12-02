@@ -45,22 +45,25 @@ pub struct WebSocketConfig {
     handler: PyObject,
     headers: Vec<(String, String)>,
     heartbeat: Option<u64>,
+    heartbeat_msg: Option<String>,
 }
 
 #[pymethods]
 impl WebSocketConfig {
     #[new]
-    fn new(
+    fn py_new(
         url: String,
         handler: PyObject,
         headers: Vec<(String, String)>,
         heartbeat: Option<u64>,
+        heartbeat_msg: Option<String>,
     ) -> Self {
         Self {
             url,
             handler,
             headers,
             heartbeat,
+            heartbeat_msg,
         }
     }
 }
@@ -95,6 +98,7 @@ impl WebSocketClientInner {
             handler,
             heartbeat,
             headers,
+            heartbeat_msg,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
@@ -102,7 +106,8 @@ impl WebSocketClientInner {
         // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Self::spawn_read_task(reader, handler.clone());
 
-        let heartbeat_task = Self::spawn_heartbeat_task(*heartbeat, writer.clone());
+        let heartbeat_task =
+            Self::spawn_heartbeat_task(*heartbeat, heartbeat_msg.clone(), writer.clone());
 
         Ok(Self {
             config,
@@ -121,10 +126,13 @@ impl WebSocketClientInner {
         let mut request = url.into_client_request()?;
         let req_headers = request.headers_mut();
 
+        // Hacky solution to overcome the new `http` trait bounds
         for (key, val) in headers {
             let header_value = HeaderValue::from_str(&val).unwrap();
             let header_name = HeaderName::from_str(&key).unwrap();
-            req_headers.insert(header_name, header_value);
+            let header_name_string = header_name.to_string();
+            let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
+            req_headers.insert(header_name_str, header_value);
         }
 
         connect_async(request).await.map(|resp| resp.0.split())
@@ -133,6 +141,7 @@ impl WebSocketClientInner {
     /// Optionally spawn a hearbeat task to periodically ping the server.
     pub fn spawn_heartbeat_task(
         heartbeat: Option<u64>,
+        message: Option<String>,
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
         heartbeat.map(|duration| {
@@ -142,7 +151,11 @@ impl WebSocketClientInner {
                     sleep(duration).await;
                     debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
-                    match guard.send(Message::Ping(vec![])).await {
+                    let guard_send_response = match message.clone() {
+                        Some(msg) => guard.send(Message::Text(msg)).await,
+                        None => guard.send(Message::Ping(vec![])).await,
+                    };
+                    match guard_send_response {
                         Ok(()) => debug!("Sent heartbeat"),
                         Err(e) => error!("Failed to send heartbeat: {e}"),
                     }
@@ -235,8 +248,11 @@ impl WebSocketClientInner {
         drop(guard);
 
         self.read_task = Self::spawn_read_task(reader, self.config.handler.clone());
-        self.heartbeat_task =
-            Self::spawn_heartbeat_task(self.config.heartbeat, self.writer.clone());
+        self.heartbeat_task = Self::spawn_heartbeat_task(
+            self.config.heartbeat,
+            self.config.heartbeat_msg.clone(),
+            self.writer.clone(),
+        );
 
         Ok(())
     }
@@ -396,6 +412,21 @@ impl WebSocketClient {
 
 #[pymethods]
 impl WebSocketClient {
+    /// Check if the client is still alive.
+    ///
+    /// Even if the connection is disconnected the client will still be alive
+    /// and trying to reconnect. Only when reconnect fails the client will
+    /// terminate.
+    ///
+    /// This is particularly useful for checking why a `send` failed. It could
+    /// because the connection disconnected and the client is still alive
+    /// and reconnecting. In such cases the send can be retried after some
+    /// delay.
+    #[getter]
+    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+        !slf.controller_task.is_finished()
+    }
+
     /// Create a websocket client.
     ///
     /// # Safety
@@ -445,22 +476,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Check if the client is still alive.
-    ///
-    /// Even if the connection is disconnected the client will still be alive
-    /// and try to reconnect. Only when reconnect fails the client will
-    /// terminate.
-    ///
-    /// This is particularly useful for check why a `send` failed. It could
-    /// because the connection disconnected and the client is still alive
-    /// and reconnecting. In such cases the send can be retried after some
-    /// delay.
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
-        !slf.controller_task.is_finished()
-    }
-
-    /// Send text data to the connection.
+    /// Send text data to the server.
     ///
     /// # Safety
     ///
@@ -481,7 +497,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Send bytes data to the connection.
+    /// Send bytes data to the server.
     ///
     /// # Safety
     ///
@@ -636,10 +652,11 @@ counter = Counter()",
             (counter, handler)
         });
 
-        let config = WebSocketConfig::new(
+        let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
             handler.clone(),
             vec![(header_key, header_value)],
+            None,
             None,
         );
         let client = WebSocketClient::connect(config, None, None, None)
@@ -695,6 +712,73 @@ counter = Counter()",
         });
         assert_eq!(count_value, success_count);
         assert_eq!(success_count, N + N);
+
+        // Shutdown client and wait for read task to terminate
+        client.disconnect().await;
+        sleep(Duration::from_secs(1)).await;
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    #[traced_test]
+    async fn message_ping_test() {
+        prepare_freethreaded_python();
+
+        let header_key = "hello-custom-key".to_string();
+        let header_value = "hello-custom-value".to_string();
+
+        let (checker, handler) = Python::with_gil(|py| {
+            let pymod = PyModule::from_code(
+                py,
+                r"
+class Checker:
+    def __init__(self):
+        self.check = False
+
+    def handler(self, bytes):
+        if bytes.decode() == 'heartbeat message':
+            self.check = True
+
+    def get_check(self):
+        return self.check
+
+checker = Checker()",
+                "",
+                "",
+            )
+            .unwrap();
+
+            let checker = pymod.getattr("checker").unwrap().into_py(py);
+            let handler = checker.getattr(py, "handler").unwrap().into_py(py);
+
+            (checker, handler)
+        });
+
+        // Initialize test server and config
+        let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
+        let config = WebSocketConfig::py_new(
+            format!("ws://127.0.0.1:{}", server.port),
+            handler.clone(),
+            vec![(header_key, header_value)],
+            Some(1),
+            Some("heartbeat message".to_string()),
+        );
+        let client = WebSocketClient::connect(config, None, None, None)
+            .await
+            .unwrap();
+
+        // Check if ping message has the correct message
+        sleep(Duration::from_secs(2)).await;
+        let check_value: bool = Python::with_gil(|py| {
+            checker
+                .getattr(py, "get_check")
+                .unwrap()
+                .call0(py)
+                .unwrap()
+                .extract(py)
+                .unwrap()
+        });
+        assert!(check_value);
 
         // Shutdown client and wait for read task to terminate
         client.disconnect().await;

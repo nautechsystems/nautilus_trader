@@ -15,8 +15,12 @@
 
 use std::fmt::{Display, Formatter};
 
-use crate::types::{currency::Currency, money::Money};
+use crate::{
+    identifiers::instrument_id::InstrumentId,
+    types::{currency::Currency, money::Money},
+};
 
+#[derive(Debug)]
 pub struct AccountBalance {
     pub currency: Currency,
     pub total: Money,
@@ -30,6 +34,24 @@ impl Display for AccountBalance {
             f,
             "{} {} {} {}",
             self.currency.code, self.total, self.locked, self.free,
+        )
+    }
+}
+
+#[derive(Debug)]
+pub struct MarginBalance {
+    pub initial: Money,
+    pub maintenance: Money,
+    pub currency: Currency,
+    pub instrument_id: InstrumentId,
+}
+
+impl Display for MarginBalance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {} {} {}",
+            self.currency.code, self.initial, self.maintenance, self.instrument_id,
         )
     }
 }

@@ -64,6 +64,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ins
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.data import Data
@@ -74,7 +75,6 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 # fmt: on
@@ -315,9 +315,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.is_ready.clear()
         self._accounts = set()
 
-    ##########################################################################
-    # Connectivity
-    ##########################################################################
+    # -- Connectivity ---------------------------------------------------------------------------------
     def error(  # noqa: C901 too complex
         self,
         req_id: int,
@@ -375,9 +373,11 @@ class InteractiveBrokersClient(Component, EWrapper):
                                 order_status="Rejected",
                                 reason=error_string,
                             )
-                elif error_code in [201, 203]:
+                elif error_code in [201, 203, 10289, 10293]:
                     # --> Warning 201 req_id= Order rejected - reason
                     # --> Warning 203 The security <security> is not available or allowed for this account.
+                    # --> Warning 10289 You must set Cash Quantity for this order (Crypto)
+                    # --> 10293', b'Cryptocurrency Cash Quantity order cannot specify size'
                     order_ref = self._order_id_to_order_ref.get(req_id, None)
                     if order_ref:
                         name = f"orderStatus-{order_ref.account}"
@@ -1089,6 +1089,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         use_rth: bool,
         end_date_time: str,
         duration: str,
+        timeout: int = 60,
     ):
         name = str(bar_type)
         if not (request := self.requests.get(name=name)):
@@ -1114,7 +1115,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._await_request(request, 20)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
 
@@ -1259,13 +1260,54 @@ class InteractiveBrokersClient(Component, EWrapper):
         )
         return bar
 
-    @staticmethod
-    def _ib_bar_to_ts_init(bar: BarData, bar_type: BarType) -> int:
-        ts_init = (
-            pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc).value
-            + pd.Timedelta(bar_type.spec.timedelta).value
-        )
-        return ts_init
+    def _convert_ib_bar_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Convert the date from BarData to unix nanoseconds.
+
+        If the bar type's aggregation is 14 (daily), the bar date is always returned
+        in the YYYYMMDD format from IB. For all other aggregations, the bar date is
+        returned in system time.
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be converted.
+        bar_type : BarType
+            The type of the bar which includes the aggregation info.
+
+        Returns
+        -------
+        int
+
+        """
+        if bar_type.spec.aggregation == 14:
+            # Day bars are always returned with bar date in YYYYMMDD format
+            ts = pd.to_datetime(bar.date, format="%Y%m%d", utc=True)
+        else:
+            ts = pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc)
+
+        return ts.value
+
+    def _ib_bar_to_ts_init(self, bar: BarData, bar_type: BarType) -> int:
+        """
+        Convert the date from BarData to unix nanoseconds adjusted by the timedelta of
+        the BarType, so that ts_init is set to the end of the bar period and not the
+        start.
+
+        Parameters
+        ----------
+        bar : BarData
+            The bar data to be converted.
+        bar_type : BarType
+            The type of the bar, which includes timedelta.
+
+        Returns
+        -------
+        int
+
+        """
+        ts = self._convert_ib_bar_to_unix_nanos(bar, bar_type)
+        return ts + pd.Timedelta(bar_type.spec.timedelta).value
 
     def _ib_bar_to_nautilus_bar(
         self,
@@ -1276,6 +1318,8 @@ class InteractiveBrokersClient(Component, EWrapper):
     ) -> Bar:
         instrument = self._cache.instrument(bar_type.instrument_id)
 
+        ts_event = self._convert_ib_bar_to_unix_nanos(bar, bar_type)
+
         bar = Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
@@ -1283,7 +1327,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             low=instrument.make_price(bar.low),
             close=instrument.make_price(bar.close),
             volume=instrument.make_qty(0 if bar.volume == -1 else bar.volume),
-            ts_event=pd.Timestamp.fromtimestamp(int(bar.date), tz=pytz.utc).value,
+            ts_event=ts_event,
             ts_init=ts_init,
             is_revision=is_revision,
         )
@@ -1294,9 +1338,16 @@ class InteractiveBrokersClient(Component, EWrapper):
         self,
         contract: IBContract,
         tick_type: str,
-        end_date_time: pd.Timestamp,
-        use_rth: bool,
+        start_date_time: pd.Timestamp | str = "",
+        end_date_time: pd.Timestamp | str = "",
+        use_rth: bool = True,
+        timeout: int = 60,
     ):
+        if isinstance(start_date_time, pd.Timestamp):
+            start_date_time = start_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+        if isinstance(end_date_time, pd.Timestamp):
+            end_date_time = end_date_time.strftime("%Y%m%d %H:%M:%S %Z")
+
         name = (str(ib_contract_to_instrument_id(contract)), tick_type)
         if not (request := self.requests.get(name=name)):
             req_id = self._next_req_id()
@@ -1307,8 +1358,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     self._client.reqHistoricalTicks,
                     reqId=req_id,
                     contract=contract,
-                    startDateTime="",
-                    endDateTime=end_date_time.strftime("%Y%m%d %H:%M:%S %Z"),
+                    startDateTime=start_date_time,
+                    endDateTime=end_date_time,
                     numberOfTicks=1000,
                     whatToShow=tick_type,
                     useRth=use_rth,
@@ -1318,13 +1369,19 @@ class InteractiveBrokersClient(Component, EWrapper):
                 cancel=functools.partial(self._client.cancelHistoricalData, reqId=req_id),
             )
             request.handle()
-            return await self._await_request(request, 20)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
 
-    def historicalTicksBidAsk(self, req_id: int, ticks: list, done: bool):
+    def historicalTicksBidAsk(
+        self,
+        req_id: int,
+        ticks: list,
+        done: bool,
+    ):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
-
+        if not done:
+            return
         if request := self.requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
             instrument = self._cache.instrument(instrument_id)
@@ -1335,8 +1392,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                     instrument_id=instrument_id,
                     bid_price=instrument.make_price(tick.priceBid),
                     ask_price=instrument.make_price(tick.priceAsk),
-                    bid_size=instrument.make_price(tick.sizeBid),
-                    ask_size=instrument.make_price(tick.sizeAsk),
+                    bid_size=instrument.make_qty(tick.sizeBid),
+                    ask_size=instrument.make_qty(tick.sizeAsk),
                     ts_event=ts_event,
                     ts_init=ts_event,
                 )
@@ -1344,12 +1401,16 @@ class InteractiveBrokersClient(Component, EWrapper):
 
             self._end_request(req_id)
 
-    def historicalTicksLast(self, req_id: int, ticks: list, done: bool):
+    def historicalTicksLast(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
+        if not done:
+            return
         self._process_trade_ticks(req_id, ticks)
 
-    def historicalTicks(self, req_id: int, ticks: list, done: bool):
+    def historicalTicks(self, req_id: int, ticks: list, done: bool):  # : Override the EWrapper
         self.logAnswer(current_fn_name(), vars())
+        if not done:
+            return
         self._process_trade_ticks(req_id, ticks)
 
     def _process_trade_ticks(self, req_id: int, ticks: list):

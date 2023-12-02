@@ -1350,3 +1350,53 @@ class TestTimeBarAggregator:
         assert handler[0].ts_init == 60_000_000_000  # <-- bar close
         assert handler[1].ts_event == 60_000_000_000  # <-- bar open
         assert handler[1].ts_init == 120_000_000_000  # <-- bar close
+
+    @pytest.mark.parametrize(
+        "timestamp_on_close, interval_type, ts_event1, ts_event2",
+        [
+            (False, "left-open", 0, 60_000_000_000),
+            (False, "right-open", 0, 60_000_000_000),
+            (True, "left-open", 60_000_000_000, 120_000_000_000),
+            (True, "right-open", 0, 60_000_000_000),
+        ],
+    )
+    def test_timebar_aggregator_interval_types(
+        self,
+        timestamp_on_close: bool,
+        interval_type: str,
+        ts_event1: int,
+        ts_event2: int,
+    ) -> None:
+        # Arrange
+        path = TEST_DATA_DIR / "binance/btcusdt-quotes.parquet"
+        df_ticks = ParquetTickDataLoader.load(path)
+
+        wrangler = QuoteTickDataWrangler(BTCUSDT_BINANCE)
+        ticks = wrangler.process(df_ticks)
+
+        clock = TestClock()
+        handler: list[Bar] = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.MID)
+        bar_type = BarType(instrument_id, bar_spec)
+
+        # Act
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+            Logger(clock),
+            timestamp_on_close=timestamp_on_close,
+            interval_type=interval_type,
+        )
+        aggregator.handle_quote_tick(ticks[0])
+
+        events = clock.advance_time(dt_to_unix_nanos(UNIX_EPOCH + timedelta(minutes=2)))
+        for event in events:
+            event.handle()
+
+        # Assert
+        assert len(handler) == 2
+        assert handler[0].ts_event == ts_event1
+        assert handler[1].ts_event == ts_event2

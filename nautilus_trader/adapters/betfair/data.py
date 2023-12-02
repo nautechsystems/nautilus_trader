@@ -31,19 +31,20 @@ from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairMarketStreamClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data.base import DataType
-from nautilus_trader.model.data.base import GenericData
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments.betting import BettingInstrument
-from nautilus_trader.msgbus.bus import MessageBus
+from nautilus_trader.model.objects import Currency
 
 
 class BetfairDataClient(LiveMarketDataClient):
@@ -80,7 +81,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         logger: Logger,
         instrument_provider: BetfairInstrumentProvider,
-        account_currency: str,
+        account_currency: Currency,
         strict_handling: bool = False,
     ):
         super().__init__(
@@ -101,7 +102,7 @@ class BetfairDataClient(LiveMarketDataClient):
             logger=logger,
             message_handler=self.on_market_update,
         )
-        self.parser = BetfairParser(currency=account_currency)
+        self.parser = BetfairParser(currency=account_currency.code)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
 
         # Subscriptions
@@ -240,6 +241,10 @@ class BetfairDataClient(LiveMarketDataClient):
 
     # -- STREAMS ----------------------------------------------------------------------------------
     def on_market_update(self, raw: bytes):
+        """
+        Handle an update from the data stream socket.
+        """
+        self._log.debug(f"raw_data: {raw.decode()}")
         update = stream_decode(raw)
         if isinstance(update, MCM):
             self._on_market_update(mcm=update)

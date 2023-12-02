@@ -26,7 +26,6 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.config.common import CacheConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
@@ -45,6 +44,7 @@ config_node = TradingNodeConfig(
         log_level="INFO",
         # log_level_file="DEBUG",
         # log_file_format="json",
+        log_colors=True,
     ),
     # tracing=TracingConfig(stdout_level="DEBUG"),
     exec_engine=LiveExecEngineConfig(
@@ -52,16 +52,24 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
         filter_position_reports=True,
     ),
-    cache=CacheConfig(
-        # snapshot_orders=True,
-        # snapshot_positions=True,
-        # snapshot_positions_interval=5.0,
-    ),
     cache_database=CacheDatabaseConfig(
         type="in-memory",
         flush_on_start=False,
         timestamps_as_iso8601=True,
     ),
+    # message_bus=MessageBusConfig(
+    #     database=DatabaseConfig(),
+    #     encoding="json",
+    #     stream="quoters",
+    #     use_instance_id=False,
+    #     timestamps_as_iso8601=True,
+    #     # types_filter=[QuoteTick],
+    #     autotrim_mins=30,
+    # ),
+    # heartbeat_interval=1.0,
+    # snapshot_orders=True,
+    # snapshot_positions=True,
+    # snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"

@@ -33,6 +33,7 @@ from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.data.engine import DataEngine
@@ -43,7 +44,6 @@ from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.trading.strategy import Strategy

@@ -15,7 +15,7 @@
 
 from libc.stdint cimport uint64_t
 
-from nautilus_trader.model.enums_c cimport OptionKind
+from nautilus_trader.core.rust.model cimport OptionKind
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
 

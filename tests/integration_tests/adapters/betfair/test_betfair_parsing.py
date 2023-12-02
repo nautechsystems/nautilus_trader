@@ -17,6 +17,7 @@ import asyncio
 import datetime
 from collections import Counter
 from collections import defaultdict
+from copy import copy
 
 import msgspec
 import pytest
@@ -37,6 +38,7 @@ from betfair_parser.spec.common import OrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import decode
 from betfair_parser.spec.common import encode
+from betfair_parser.spec.common.messages import _default_id_generator
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import BestAvailableToBack
 from betfair_parser.spec.streaming import MarketChange
@@ -51,6 +53,7 @@ from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
 from nautilus_trader.adapters.betfair.orderbook import create_betfair_order_book
+from nautilus_trader.adapters.betfair.parsing.common import instrument_id_betfair_ids
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.adapters.betfair.parsing.requests import betfair_account_to_account_state
 from nautilus_trader.adapters.betfair.parsing.requests import determine_order_status
@@ -68,12 +71,13 @@ from nautilus_trader.adapters.betfair.parsing.streaming import market_definition
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.data.book import OrderBookDeltas
-from nautilus_trader.model.data.status import InstrumentClose
-from nautilus_trader.model.data.status import InstrumentStatus
-from nautilus_trader.model.data.tick import TradeTick
-from nautilus_trader.model.data.ticker import Ticker
+from nautilus_trader.model.data import InstrumentClose
+from nautilus_trader.model.data import InstrumentStatus
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import Ticker
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import OrderSide
@@ -87,7 +91,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.test_kit.stubs.commands import TestCommandStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -201,7 +204,7 @@ class TestBetfairParsingStreaming:
         assert result[0] == TradeTick.from_dict(
             {
                 "type": "TradeTick",
-                "instrument_id": "1.205822330-49808334-0.0.BETFAIR",
+                "instrument_id": "1.205822330-49808334-None.BETFAIR",
                 "price": "3.95",
                 "size": "46.950000",
                 "aggressor_side": "NO_AGGRESSOR",
@@ -213,7 +216,7 @@ class TestBetfairParsingStreaming:
         assert result[1] == BetfairTicker.from_dict(
             {
                 "type": "BetfairTicker",
-                "instrument_id": "1.205822330-49808334-0.0.BETFAIR",
+                "instrument_id": "1.205822330-49808334-None.BETFAIR",
                 "ts_event": 0,
                 "ts_init": 0,
                 "last_traded_price": 0.2531646,
@@ -283,7 +286,7 @@ class TestBetfairParsingStreaming:
             ):
                 instrument_id = update.instrument_id
                 if instrument_id not in books:
-                    instrument = betting_instrument(*instrument_id.value.split("-", maxsplit=2))
+                    instrument = betting_instrument(*instrument_id_betfair_ids(instrument_id))
                     books[instrument_id] = create_betfair_order_book(instrument.id)
                 books[instrument_id].apply(update)
                 books[instrument_id].check_integrity()
@@ -342,6 +345,7 @@ class TestBetfairParsing:
         )
         result = order_submit_to_place_order_params(command=command, instrument=self.instrument)
         expected = PlaceOrders.with_params(
+            request_id=result.id,
             market_id="1.179082386",
             instructions=[
                 PlaceInstruction(
@@ -381,6 +385,7 @@ class TestBetfairParsing:
             instrument=self.instrument,
         )
         expected = ReplaceOrders.with_params(
+            request_id=result.id,
             market_id="1.179082386",
             instructions=[ReplaceInstruction(bet_id=1, new_price=1.35)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
@@ -399,6 +404,7 @@ class TestBetfairParsing:
             instrument=self.instrument,
         )
         expected = CancelOrders.with_params(
+            request_id=result.id,
             market_id="1.179082386",
             instructions=[CancelInstruction(bet_id=228302937743, size_reduction=None)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
@@ -659,7 +665,7 @@ class TestBetfairParsing:
         starting_prices = [upd for upd in updates if isinstance(upd, BetfairStartingPrice)]
         assert len(starting_prices) == 8
         assert starting_prices[0].instrument_id == InstrumentId.from_str(
-            "1.208011084-45967562-0.0-BSP.BETFAIR",
+            "1.208011084-45967562-None-BSP.BETFAIR",
         )
         assert starting_prices[0].bsp == 2.0008034621107256
 
@@ -671,6 +677,17 @@ class TestBetfairParsing:
             upd
             for upd in updates
             if isinstance(upd, BSPOrderBookDelta)
-            and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-0.0-BSP.BETFAIR")
+            and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-None-BSP.BETFAIR")
         ]
         assert len(single_instrument_bsp_updates) == 1
+
+
+def request_id() -> int:
+    """
+    `betfair_parser uses an auto=incrementing request_id which can cause issues with the
+    test suite depending on how it is run.
+
+    Return the current request value for testing purposes
+
+    """
+    return next(copy(_default_id_generator))

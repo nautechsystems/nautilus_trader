@@ -5,7 +5,7 @@ Exchange Streaming API.
 
 ## Overview
 
-The following integration classes are available:
+The following adapter classes are available:
 - `BetfairInstrumentProvider` which allows querying the Betfair market catalogue for betting markets, which are then converted into Nautilus "instruments".
 - `BetfairDataClient` which connects to the Exchange Stream API and streams market data.
 - `BetfairExecutionClient` which allows the retrieval of account information and execution and updates for orders (or bets).

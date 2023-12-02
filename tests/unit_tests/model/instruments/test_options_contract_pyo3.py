@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import OptionsContract
-from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
+from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 aapl_option = TestInstrumentProviderPyo3.appl_option()

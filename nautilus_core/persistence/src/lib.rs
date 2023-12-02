@@ -15,6 +15,7 @@
 
 pub mod arrow;
 pub mod backend;
+pub mod db;
 
 #[cfg(feature = "python")]
 pub mod python;

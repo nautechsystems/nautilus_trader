@@ -178,7 +178,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn multiplier(&self) -> Quantity {
-        // SAFETY: Known value
+        // SAFETY: Unwrap safe as using known values
         Quantity::new(1.0, 0).unwrap()
     }
 
@@ -220,64 +220,13 @@ impl Instrument for CryptoFuture {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use std::str::FromStr;
-
-    use chrono::{TimeZone, Utc};
-    use nautilus_core::time::UnixNanos;
-    use rstest::fixture;
-    use rust_decimal::Decimal;
-
-    use crate::{
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-        instruments::crypto_future::CryptoFuture,
-        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn crypto_future_btcusdt() -> CryptoFuture {
-        let activation = Utc.with_ymd_and_hms(2014, 4, 8, 0, 0, 0).unwrap();
-        let expiration = Utc.with_ymd_and_hms(2014, 7, 8, 0, 0, 0).unwrap();
-        CryptoFuture::new(
-            InstrumentId::from("ETHUSDT-123.BINANCE"),
-            Symbol::from("BTCUSDT"),
-            Currency::from("BTC"),
-            Currency::from("USDT"),
-            Currency::from("USDT"),
-            activation.timestamp_nanos_opt().unwrap() as UnixNanos,
-            expiration.timestamp_nanos_opt().unwrap() as UnixNanos,
-            2,
-            6,
-            Price::from("0.01"),
-            Quantity::from("0.000001"),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            None,
-            Some(Quantity::from("9000.0")),
-            Some(Quantity::from("0.000001")),
-            None,
-            Some(Money::new(10.00, Currency::from("USDT")).unwrap()),
-            Some(Price::from("1000000.00")),
-            Some(Price::from("0.01")),
-        )
-        .unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use super::stubs::*;
-    use crate::instruments::crypto_future::CryptoFuture;
+    use crate::instruments::{crypto_future::CryptoFuture, stubs::*};
 
     #[rstest]
     fn test_equality(crypto_future_btcusdt: CryptoFuture) {

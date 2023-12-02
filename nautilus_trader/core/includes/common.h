@@ -203,7 +203,35 @@ typedef struct LiveClock LiveClock;
  */
 typedef struct Logger_t Logger_t;
 
+/**
+ * Provides a generic message bus to facilitate various messaging patterns.
+ *
+ * The bus provides both a producer and consumer API for Pub/Sub, Req/Rep, as
+ * well as direct point-to-point messaging to registered endpoints.
+ *
+ * Pub/Sub wildcard patterns for hierarchical topics are possible:
+ *  - `*` asterisk represents one or more characters in a pattern.
+ *  - `?` question mark represents a single character in a pattern.
+ *
+ * Given a topic and pattern potentially containing wildcard characters, i.e.
+ * `*` and `?`, where `?` can match any single character in the topic, and `*`
+ * can match any number of characters including zero characters.
+ *
+ * The asterisk in a wildcard matches any character zero or more times. For
+ * example, `comp*` matches anything beginning with `comp` which means `comp`,
+ * `complete`, and `computer` are all matched.
+ *
+ * A question mark matches a single character once. For example, `c?mp` matches
+ * `camp` and `comp`. The question mark can also be used more than once.
+ * For example, `c??p` would match both of the above examples and `coop`.
+ */
+typedef struct MessageBus MessageBus;
+
 typedef struct TestClock TestClock;
+
+typedef struct PyCallableWrapper_t {
+    PyObject *ptr;
+} PyCallableWrapper_t;
 
 /**
  * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
@@ -249,6 +277,20 @@ typedef struct Logger_API {
 } Logger_API;
 
 /**
+ * Provides a C compatible Foreign Function Interface (FFI) for an underlying [`MessageBus`].
+ *
+ * This struct wraps `MessageBus` in a way that makes it compatible with C function
+ * calls, enabling interaction with `MessageBus` in a C environment.
+ *
+ * It implements the `Deref` trait, allowing instances of `MessageBus_API` to be
+ * dereferenced to `MessageBus`, providing access to `TestClock`'s methods without
+ * having to manually access the underlying `MessageBus` instance.
+ */
+typedef struct MessageBus_API {
+    struct MessageBus *_0;
+} MessageBus_API;
+
+/**
  * Represents a time event occurring at the event timestamp.
  */
 typedef struct TimeEvent_t {
@@ -279,50 +321,12 @@ typedef struct TimeEventHandler_t {
      */
     struct TimeEvent_t event;
     /**
-     * The event ID.
+     * The Python callable pointer.
      */
     PyObject *callback_ptr;
 } TimeEventHandler_t;
 
-const char *component_state_to_cstr(enum ComponentState value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum ComponentState component_state_from_cstr(const char *ptr);
-
-const char *component_trigger_to_cstr(enum ComponentTrigger value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
-
-const char *log_level_to_cstr(enum LogLevel value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum LogLevel log_level_from_cstr(const char *ptr);
-
-const char *log_color_to_cstr(enum LogColor value);
-
-/**
- * Returns an enum from a Python string.
- *
- * # Safety
- * - Assumes `ptr` is a valid C string pointer.
- */
-enum LogColor log_color_from_cstr(const char *ptr);
+struct PyCallableWrapper_t dummy_callable(struct PyCallableWrapper_t c);
 
 struct TestClock_API test_clock_new(void);
 
@@ -330,19 +334,20 @@ void test_clock_drop(struct TestClock_API clock);
 
 /**
  * # Safety
+ *
  * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
  */
 void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
 
-void test_clock_set_time(struct TestClock_API *clock, uint64_t to_time_ns);
+void test_clock_set_time(const struct TestClock_API *clock, uint64_t to_time_ns);
 
-double test_clock_timestamp(struct TestClock_API *clock);
+double test_clock_timestamp(const struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_ms(struct TestClock_API *clock);
+uint64_t test_clock_timestamp_ms(const struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_us(struct TestClock_API *clock);
+uint64_t test_clock_timestamp_us(const struct TestClock_API *clock);
 
-uint64_t test_clock_timestamp_ns(struct TestClock_API *clock);
+uint64_t test_clock_timestamp_ns(const struct TestClock_API *clock);
 
 PyObject *test_clock_timer_names(const struct TestClock_API *clock);
 
@@ -409,6 +414,46 @@ uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
 
 uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
 
+const char *component_state_to_cstr(enum ComponentState value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum ComponentState component_state_from_cstr(const char *ptr);
+
+const char *component_trigger_to_cstr(enum ComponentTrigger value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum ComponentTrigger component_trigger_from_cstr(const char *ptr);
+
+const char *log_level_to_cstr(enum LogLevel value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogLevel log_level_from_cstr(const char *ptr);
+
+const char *log_color_to_cstr(enum LogColor value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum LogColor log_color_from_cstr(const char *ptr);
+
 /**
  * Creates a new logger.
  *
@@ -417,6 +462,10 @@ uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
  * - Assumes `trader_id_ptr` is a valid C string pointer.
  * - Assumes `machine_id_ptr` is a valid C string pointer.
  * - Assumes `instance_id_ptr` is a valid C string pointer.
+ * - Assumes `directory_ptr` is a valid C string pointer or NULL.
+ * - Assumes `file_name_ptr` is a valid C string pointer or NULL.
+ * - Assumes `file_format_ptr` is a valid C string pointer or NULL.
+ * - Assumes `component_levels_ptr` is a valid C string pointer or NULL.
  */
 struct Logger_API logger_new(const char *trader_id_ptr,
                              const char *machine_id_ptr,
@@ -428,6 +477,7 @@ struct Logger_API logger_new(const char *trader_id_ptr,
                              const char *file_name_ptr,
                              const char *file_format_ptr,
                              const char *component_levels_ptr,
+                             uint8_t is_colored,
                              uint8_t is_bypassed);
 
 void logger_drop(struct Logger_API logger);
@@ -437,6 +487,8 @@ const char *logger_get_trader_id_cstr(const struct Logger_API *logger);
 const char *logger_get_machine_id_cstr(const struct Logger_API *logger);
 
 UUID4_t logger_get_instance_id(const struct Logger_API *logger);
+
+uint8_t logger_is_colored(const struct Logger_API *logger);
 
 uint8_t logger_is_bypassed(const struct Logger_API *logger);
 
@@ -454,6 +506,174 @@ void logger_log(struct Logger_API *logger,
                 enum LogColor color,
                 const char *component_ptr,
                 const char *message_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `trader_id_ptr` is a valid C string pointer.
+ * - Assumes `name_ptr` is a valid C string pointer.
+ */
+struct MessageBus_API msgbus_new(const char *trader_id_ptr,
+                                 const char *name_ptr,
+                                 const char *instance_id_ptr,
+                                 const char *config_ptr);
+
+void msgbus_drop(struct MessageBus_API bus);
+
+TraderId_t msgbus_trader_id(const struct MessageBus_API *bus);
+
+PyObject *msgbus_endpoints(const struct MessageBus_API *bus);
+
+PyObject *msgbus_topics(const struct MessageBus_API *bus);
+
+PyObject *msgbus_correlation_ids(const struct MessageBus_API *bus);
+
+/**
+ * # Safety
+ *
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_has_subscribers(const struct MessageBus_API *bus, const char *pattern_ptr);
+
+PyObject *msgbus_subscription_handler_ids(const struct MessageBus_API *bus);
+
+PyObject *msgbus_subscriptions(const struct MessageBus_API *bus);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_is_registered(const struct MessageBus_API *bus, const char *endpoint_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+uint8_t msgbus_is_subscribed(const struct MessageBus_API *bus,
+                             const char *topic_ptr,
+                             const char *handler_id_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_is_pending_response(const struct MessageBus_API *bus, const UUID4_t *request_id);
+
+uint64_t msgbus_sent_count(const struct MessageBus_API *bus);
+
+uint64_t msgbus_req_count(const struct MessageBus_API *bus);
+
+uint64_t msgbus_res_count(const struct MessageBus_API *bus);
+
+uint64_t msgbus_pub_count(const struct MessageBus_API *bus);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+const char *msgbus_register(struct MessageBus_API *bus,
+                            const char *endpoint_ptr,
+                            const char *handler_id_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ */
+void msgbus_deregister(struct MessageBus_API bus, const char *endpoint_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+const char *msgbus_subscribe(struct MessageBus_API *bus,
+                             const char *topic_ptr,
+                             const char *handler_id_ptr,
+                             uint8_t priority);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+void msgbus_unsubscribe(struct MessageBus_API *bus,
+                        const char *topic_ptr,
+                        const char *handler_id_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Returns a NULL pointer if endpoint is not registered.
+ */
+const char *msgbus_endpoint_callback(const struct MessageBus_API *bus, const char *endpoint_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+CVec msgbus_matching_callbacks(struct MessageBus_API *bus, const char *pattern_ptr);
+
+void vec_pycallable_drop(CVec v);
+
+/**
+ * # Safety
+ *
+ * - Assumes `endpoint_ptr` is a valid C string pointer.
+ * - Potentially returns a pointer to `Py_None`.
+ */
+const char *msgbus_request_callback(struct MessageBus_API *bus,
+                                    const char *endpoint_ptr,
+                                    UUID4_t request_id,
+                                    const char *handler_id_ptr);
+
+/**
+ * # Safety
+ *
+ * - Potentially returns a pointer to `Py_None`.
+ */
+const char *msgbus_response_callback(struct MessageBus_API *bus, const UUID4_t *correlation_id);
+
+/**
+ * # Safety
+ *
+ * - Potentially returns a pointer to `Py_None`.
+ */
+const char *msgbus_correlation_id_handler(struct MessageBus_API *bus,
+                                          const UUID4_t *correlation_id);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `pattern_ptr` is a valid C string pointer.
+ */
+uint8_t msgbus_is_matching(const char *topic_ptr, const char *pattern_ptr);
+
+/**
+ * # Safety
+ *
+ * - Assumes `topic_ptr` is a valid C string pointer.
+ * - Assumes `handler_id_ptr` is a valid C string pointer.
+ * - Assumes `py_callable_ptr` points to a valid Python callable.
+ */
+void msgbus_publish_external(struct MessageBus_API *bus,
+                             const char *topic_ptr,
+                             const char *payload_ptr);
 
 /**
  * # Safety

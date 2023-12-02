@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.factories import OrderFactory
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -47,7 +48,6 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
 from nautilus_trader.test_kit.mocks.exec_clients import MockLiveExecutionClient
@@ -70,7 +70,11 @@ class TestLiveExecutionReconciliation:
         self.loop.set_debug(True)
 
         self.clock = LiveClock()
-        self.logger = Logger(self.clock, bypass=True)
+        self.logger = Logger(
+            self.clock,
+            level_stdout=10,  # DEBUG
+            bypass=True,
+        )
 
         self.account_id = TestIdStubs.account_id()
         self.trader_id = TestIdStubs.trader_id()
@@ -495,3 +499,60 @@ class TestLiveExecutionReconciliation:
         assert result
         assert len(self.cache.orders()) == 1
         assert self.cache.orders()[0].status == OrderStatus.PARTIALLY_FILLED
+
+    @pytest.mark.asyncio()
+    async def test_reconcile_state_no_cached_with_partially_filled_order_and_canceled(self):
+        # Arrange
+        venue_order_id = VenueOrderId("1")
+        order_report = OrderStatusReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=venue_order_id,
+            order_side=OrderSide.BUY,
+            order_type=OrderType.LIMIT,
+            time_in_force=TimeInForce.GTC,
+            order_status=OrderStatus.CANCELED,
+            price=Price.from_str("1.00000"),
+            quantity=Quantity.from_int(10_000),
+            filled_qty=Quantity.from_int(5_000),
+            avg_px=Decimal("1.00000"),
+            post_only=True,
+            report_id=UUID4(),
+            ts_accepted=0,
+            ts_triggered=0,
+            ts_last=0,
+            ts_init=0,
+        )
+
+        trade_report = TradeReport(
+            account_id=self.account_id,
+            instrument_id=AUDUSD_SIM.id,
+            client_order_id=ClientOrderId("O-123456"),
+            venue_order_id=venue_order_id,
+            venue_position_id=None,
+            trade_id=TradeId("1"),
+            order_side=OrderSide.BUY,
+            last_qty=Quantity.from_int(5_000),
+            last_px=Price.from_str("1.00000"),
+            commission=Money(0, USD),
+            liquidity_side=LiquiditySide.MAKER,
+            report_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+
+        self.client.add_order_status_report(order_report)
+        self.client.add_trade_reports(venue_order_id, [trade_report])
+
+        # Act
+        result = await self.exec_engine.reconcile_state()
+
+        # Assert
+        assert result
+        assert len(self.cache.orders()) == 1
+        order = self.cache.orders()[0]
+        assert order.status == OrderStatus.CANCELED
+        assert order.last_trade_id == TradeId("1")
+        assert order.quantity == Quantity.from_int(10_000)
+        assert order.filled_qty == Quantity.from_int(5_000)

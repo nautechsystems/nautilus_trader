@@ -28,6 +28,7 @@ from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_
 from nautilus_trader.adapters.interactive_brokers.providers import InteractiveBrokersInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -41,7 +42,6 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.currency_pair import CurrencyPair
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 # fmt: on
@@ -49,7 +49,8 @@ from nautilus_trader.msgbus.bus import MessageBus
 
 class InteractiveBrokersDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the InteractiveBrokers exchange.
+    Provides a data client for the InteractiveBrokers exchange by using the `Gateway` to
+    stream market data.
     """
 
     def __init__(
@@ -376,8 +377,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             ticks_part = await self._client.get_historical_ticks(
                 contract,
                 tick_type,
-                end,
-                self._use_regular_trading_hours,
+                end_date_time=end,
+                use_rth=self._use_regular_trading_hours,
             )
             if not ticks_part:
                 break

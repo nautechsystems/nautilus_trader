@@ -21,6 +21,7 @@ from typing import Any, Final
 
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import LiveExecEngineConfig
@@ -64,7 +65,6 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders import OrderUnpacker
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class LiveExecutionEngine(ExecutionEngine):
@@ -611,6 +611,14 @@ class LiveExecutionEngine(ExecutionEngine):
             # Add to cache without determining any position ID initially
             self._cache.add_order(order)
 
+        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile order {order.client_order_id}: "
+                f"instrument {order.instrument_id} not found.",
+            )
+            return False  # Failed
+
         if report.order_status == OrderStatus.REJECTED:
             if order.status != OrderStatus.REJECTED:
                 self._generate_order_rejected(order, report)
@@ -638,6 +646,9 @@ class LiveExecutionEngine(ExecutionEngine):
             if order.status != OrderStatus.CANCELED and order.is_open:
                 if report.ts_triggered > 0:
                     self._generate_order_triggered(order, report)
+                # Reconcile all trades
+                for trade in trades:
+                    self._reconcile_trade_report(order, trade, instrument)
                 self._generate_order_canceled(order, report)
             return True  # Reconciled
 
@@ -649,21 +660,13 @@ class LiveExecutionEngine(ExecutionEngine):
             return True  # Reconciled
 
         # Order has some fills from this point
-        instrument: Instrument | None = self._cache.instrument(order.instrument_id)
-        if instrument is None:
-            self._log.error(
-                f"Cannot reconcile order {order.client_order_id}: "
-                f"instrument {order.instrument_id} not found.",
-            )
-            return False  # Failed
 
         # Reconcile all trades
         for trade in trades:
             self._reconcile_trade_report(order, trade, instrument)
 
         if report.avg_px is None:
-            self._log.error("report.avg_px was `None` when a value was expected.")
-            return False  # Failed
+            self._log.warning("report.avg_px was `None` when a value was expected.")
 
         # Check reported filled qty against order filled qty
         if report.filled_qty != order.filled_qty:
@@ -673,7 +676,7 @@ class LiveExecutionEngine(ExecutionEngine):
             fill: OrderFilled = self._generate_inferred_fill(order, report, instrument)
             self._handle_event(fill)
             assert report.filled_qty == order.filled_qty
-            if not math.isclose(report.avg_px, order.avg_px):
+            if report.avg_px is not None and not math.isclose(report.avg_px, order.avg_px):
                 self._log.warning(
                     f"report.avg_px {report.avg_px} != order.avg_px {order.avg_px}",
                 )

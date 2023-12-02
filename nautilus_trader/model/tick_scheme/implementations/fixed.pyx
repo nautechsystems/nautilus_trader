@@ -120,6 +120,3 @@ FOREX_3DECIMAL_TICK_SCHEME = FixedTickScheme(
     min_tick=Price.from_str_c("0.001"),
     max_tick=Price.from_str_c("999.999"),
 )
-
-register_tick_scheme(FOREX_5DECIMAL_TICK_SCHEME)
-register_tick_scheme(FOREX_3DECIMAL_TICK_SCHEME)

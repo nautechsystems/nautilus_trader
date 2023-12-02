@@ -159,6 +159,10 @@ def _build_extensions() -> list[Extension]:
             "User32.Lib",
             "UserEnv.Lib",
             "WS2_32.Lib",
+            "Crypt32.lib",
+            "secur32.lib",
+            "schannel.lib",
+            "ncrypt.lib",
         ]
 
     print("Creating C extension modules...")
@@ -312,7 +316,8 @@ def build() -> None:
             # Copy the build back into the source tree for development and wheel packaging
             _copy_build_dir_to_project(cmd)
 
-    if platform.system() in ("Linux", "Darwin"):
+    if BUILD_MODE == "release" and platform.system() in ("Linux", "Darwin"):
+        # Only strip symbols for release builds
         _strip_unneeded_symbols()
 
 

@@ -19,18 +19,18 @@ use std::{
 };
 
 use nautilus_core::{
-    ffi::{cvec::CVec, string::cstr_to_string},
+    ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_to_string},
     time::UnixNanos,
 };
 use pyo3::{
     ffi,
     prelude::*,
     types::{PyList, PyString},
-    AsPyPointer,
 };
 
 use crate::{
     clock::{Clock, LiveClock, TestClock},
+    handlers::EventHandler,
     timer::{TimeEvent, TimeEventHandler},
 };
 
@@ -71,6 +71,7 @@ pub extern "C" fn test_clock_drop(clock: TestClock_API) {
 }
 
 /// # Safety
+///
 /// - Assumes `callback_ptr` is a valid `PyCallable` pointer.
 #[no_mangle]
 pub unsafe extern "C" fn test_clock_register_default_handler(
@@ -81,32 +82,34 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(ffi::Py_None() != callback_ptr);
 
     let callback_py = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    clock.register_default_handler_py(callback_py);
+    let handler = EventHandler::new(Some(callback_py), None);
+
+    clock.register_default_handler(handler);
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_set_time(clock: &mut TestClock_API, to_time_ns: u64) {
+pub extern "C" fn test_clock_set_time(clock: &TestClock_API, to_time_ns: u64) {
     clock.set_time(to_time_ns);
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp(clock: &mut TestClock_API) -> f64 {
-    clock.timestamp()
+pub extern "C" fn test_clock_timestamp(clock: &TestClock_API) -> f64 {
+    clock.get_time()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_ms(clock: &mut TestClock_API) -> u64 {
-    clock.timestamp_ms()
+pub extern "C" fn test_clock_timestamp_ms(clock: &TestClock_API) -> u64 {
+    clock.get_time_ms()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_us(clock: &mut TestClock_API) -> u64 {
-    clock.timestamp_us()
+pub extern "C" fn test_clock_timestamp_us(clock: &TestClock_API) -> u64 {
+    clock.get_time_ms()
 }
 
 #[no_mangle]
-pub extern "C" fn test_clock_timestamp_ns(clock: &mut TestClock_API) -> u64 {
-    clock.timestamp_ns()
+pub extern "C" fn test_clock_timestamp_ns(clock: &TestClock_API) -> u64 {
+    clock.get_time_ns()
 }
 
 #[no_mangle]
@@ -145,7 +148,9 @@ pub unsafe extern "C" fn test_clock_set_time_alert_ns(
         ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
         _ => None,
     });
-    clock.set_time_alert_ns_py(name, alert_time_ns, callback_py);
+    let handler = EventHandler::new(callback_py.clone(), None);
+
+    clock.set_time_alert_ns(name, alert_time_ns, callback_py.map(|_| handler));
 }
 
 /// # Safety
@@ -172,7 +177,16 @@ pub unsafe extern "C" fn test_clock_set_timer_ns(
         ptr if ptr != ffi::Py_None() => Some(PyObject::from_borrowed_ptr(py, ptr)),
         _ => None,
     });
-    clock.set_timer_ns_py(name, interval_ns, start_time_ns, stop_time_ns, callback_py);
+
+    let handler = EventHandler::new(callback_py.clone(), None);
+
+    clock.set_timer_ns(
+        name,
+        interval_ns,
+        start_time_ns,
+        stop_time_ns,
+        callback_py.map(|_| handler),
+    );
 }
 
 /// # Safety
@@ -184,8 +198,8 @@ pub unsafe extern "C" fn test_clock_advance_time(
     to_time_ns: u64,
     set_time: u8,
 ) -> CVec {
-    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, set_time != 0);
-    clock.match_handlers_py(events).into()
+    let events: Vec<TimeEvent> = clock.advance_time(to_time_ns, u8_as_bool(set_time));
+    clock.match_handlers(events).into()
 }
 
 // TODO: This struct implementation potentially leaks memory
@@ -267,20 +281,20 @@ pub extern "C" fn live_clock_drop(clock: LiveClock_API) {
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp(clock: &mut LiveClock_API) -> f64 {
-    clock.timestamp()
+    clock.get_time()
 }
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClock_API) -> u64 {
-    clock.timestamp_ms()
+    clock.get_time_ms()
 }
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
-    clock.timestamp_us()
+    clock.get_time_ms()
 }
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_ns(clock: &mut LiveClock_API) -> u64 {
-    clock.timestamp_ns()
+    clock.get_time_ns()
 }

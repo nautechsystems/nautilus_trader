@@ -29,12 +29,12 @@ from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecution
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}

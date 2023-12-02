@@ -33,14 +33,14 @@ from nautilus_trader.core.datetime cimport as_utc_index
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.core cimport CVec
 from nautilus_trader.core.rust.core cimport secs_to_nanos
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport AggressorSide
-from nautilus_trader.model.enums_c cimport BookAction
-from nautilus_trader.model.enums_c cimport OrderSide
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport BookAction
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -250,6 +250,8 @@ cdef class QuoteTickDataWrangler:
         ask_data: pd.DataFrame,
         default_volume: float = 1_000_000.0,
         ts_init_delta: int = 0,
+        offset_interval_ms: int = 100,
+        bint timestamp_is_close: bool = True,
         random_seed: Optional[int] = None,
         bint is_raw: bool = False,
     ):
@@ -271,11 +273,19 @@ cdef class QuoteTickDataWrangler:
             The difference in nanoseconds between the data timestamps and the
             `ts_init` value. Can be used to represent/simulate latency between
             the data source and the Nautilus system.
+        offset_interval_ms : int, default 100
+            The number of milliseconds to offset each tick for the bar timestamps.
+            If `timestamp_is_close` then will use negative offsets,
+            otherwise will use positive offsets (see also `timestamp_is_close`).
         random_seed : int, optional
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is ``None`` then won't shuffle.
         is_raw : bool, default False
             If the data is scaled to the Nautilus fixed precision.
+        timestamp_is_close : bool, default True
+            If bar timestamps are at the close.
+            If True then open, high, low timestamps are offset before the close timestamp.
+            If False then high, low, close timestamps are offset after the open timestamp.
 
         """
         Condition.not_none(bid_data, "bid_data")
@@ -330,9 +340,14 @@ cdef class QuoteTickDataWrangler:
         df_ticks_c = pd.DataFrame(data=data_close)
 
         # Latency offsets
-        df_ticks_o.index = df_ticks_o.index.shift(periods=-300, freq="ms")
-        df_ticks_h.index = df_ticks_h.index.shift(periods=-200, freq="ms")
-        df_ticks_l.index = df_ticks_l.index.shift(periods=-100, freq="ms")
+        if timestamp_is_close:
+            df_ticks_o.index = df_ticks_o.index.shift(periods=-3 * offset_interval_ms, freq="ms")
+            df_ticks_h.index = df_ticks_h.index.shift(periods=-2 * offset_interval_ms, freq="ms")
+            df_ticks_l.index = df_ticks_l.index.shift(periods=-1 * offset_interval_ms, freq="ms")
+        else:  # timestamp is open
+            df_ticks_h.index = df_ticks_h.index.shift(periods=1 * offset_interval_ms, freq="ms")
+            df_ticks_l.index = df_ticks_l.index.shift(periods=2 * offset_interval_ms, freq="ms")
+            df_ticks_c.index = df_ticks_c.index.shift(periods=3 * offset_interval_ms, freq="ms")
 
         # Merge tick data
         df_ticks_final = pd.concat([df_ticks_o, df_ticks_h, df_ticks_l, df_ticks_c])
@@ -573,7 +588,7 @@ cdef class BarDataWrangler:
         Process the given bar dataset into Nautilus `Bar` objects.
 
         Expects columns ['open', 'high', 'low', 'close', 'volume'] with 'timestamp' index.
-        Note: The 'volume' column is optional, will then use the `default_volume`.
+        Note: The 'volume' column is optional, if one does not exist then will use the `default_volume`.
 
         Parameters
         ----------

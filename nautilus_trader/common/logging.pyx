@@ -36,11 +36,16 @@ from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.common cimport LogLevel
+from nautilus_trader.core.rust.common cimport log_color_from_cstr
+from nautilus_trader.core.rust.common cimport log_color_to_cstr
+from nautilus_trader.core.rust.common cimport log_level_from_cstr
+from nautilus_trader.core.rust.common cimport log_level_to_cstr
 from nautilus_trader.core.rust.common cimport logger_drop
 from nautilus_trader.core.rust.common cimport logger_get_instance_id
 from nautilus_trader.core.rust.common cimport logger_get_machine_id_cstr
 from nautilus_trader.core.rust.common cimport logger_get_trader_id_cstr
 from nautilus_trader.core.rust.common cimport logger_is_bypassed
+from nautilus_trader.core.rust.common cimport logger_is_colored
 from nautilus_trader.core.rust.common cimport logger_log
 from nautilus_trader.core.rust.common cimport logger_new
 from nautilus_trader.core.string cimport cstr_to_pystr
@@ -48,6 +53,22 @@ from nautilus_trader.core.string cimport pybytes_to_cstr
 from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.model.identifiers cimport TraderId
+
+
+cpdef LogColor log_color_from_str(str value):
+    return log_color_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str log_color_to_str(LogColor value):
+    return cstr_to_pystr(log_color_to_cstr(value))
+
+
+cpdef LogLevel log_level_from_str(str value):
+    return log_level_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str log_level_to_str(LogLevel value):
+    return cstr_to_pystr(log_level_to_cstr(value))
 
 
 RECV = "<--"
@@ -92,6 +113,8 @@ cdef class Logger:
     component_levels : dict[ComponentId, LogLevel]
         The additional per component log level filters, where keys are component
         IDs (e.g. actor/strategy IDs) and values are log levels.
+    colors : bool, default True
+        If ANSI codes should be used to produce colored log lines.
     bypass : bool, default False
         If the log output is bypassed.
     dummy : bool, default False
@@ -111,6 +134,7 @@ cdef class Logger:
         str file_name = None,
         str file_format = None,
         dict component_levels: dict[ComponentId, LogLevel] = None,
+        bint colors = True,
         bint bypass = False,
         bint dummy = False,
     ):
@@ -140,6 +164,7 @@ cdef class Logger:
             pystr_to_cstr(file_name) if file_name else NULL,
             pystr_to_cstr(file_format) if file_format else NULL,
             pybytes_to_cstr(msgspec.json.encode(component_levels)) if component_levels is not None else NULL,
+            colors,
             bypass,
         )
 
@@ -188,6 +213,20 @@ cdef class Logger:
         if self._mem._0 == NULL:
             return None  # Not initialized
         return UUID4.from_mem_c(logger_get_instance_id(&self._mem))
+
+    @property
+    def is_colored(self) -> bool:
+        """
+        Return whether the logger is using ANSI color codes.
+
+        Returns
+        -------
+        bool
+
+        """
+        if self._mem._0 == NULL:
+            return False  # Not initialized
+        return logger_is_colored(&self._mem)
 
     @property
     def is_bypassed(self) -> bool:
@@ -278,6 +317,7 @@ cdef class LoggerAdapter:
 
         self._logger = logger
         self._component = component_name
+        self._is_colored = logger.is_colored
         self._is_bypassed = logger.is_bypassed
 
     @property
@@ -329,13 +369,25 @@ cdef class LoggerAdapter:
         return self._component
 
     @property
-    def is_bypassed(self) -> str:
+    def is_colored(self) -> bool:
+        """
+        Return whether the logger is using ANSI color codes.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._is_colored
+
+    @property
+    def is_bypassed(self) -> bool:
         """
         Return whether the logger is in bypass mode.
 
         Returns
         -------
-        str
+        bool
 
         """
         return self._is_bypassed
@@ -550,12 +602,15 @@ cdef class LoggerAdapter:
 
 cpdef void nautilus_header(LoggerAdapter logger):
     Condition.not_none(logger, "logger")
+
+    color = "\033[36m" if logger.is_colored else ""
+
     print("")  # New line to begin
-    logger.info("\033[36m=================================================================")
-    logger.info(f"\033[36m NAUTILUS TRADER - Automated Algorithmic Trading Platform")
-    logger.info(f"\033[36m by Nautech Systems Pty Ltd.")
-    logger.info(f"\033[36m Copyright (C) 2015-2023. All rights reserved.")
-    logger.info("\033[36m=================================================================")
+    logger.info(f"{color}=================================================================")
+    logger.info(f"{color} NAUTILUS TRADER - Automated Algorithmic Trading Platform")
+    logger.info(f"{color} by Nautech Systems Pty Ltd.")
+    logger.info(f"{color} Copyright (C) 2015-2023. All rights reserved.")
+    logger.info(f"{color}=================================================================")
     logger.info("")
     logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀")
     logger.info("⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⣾⣿⣿⣿⠀⢸⣿⣿⣿⣿⣶⣶⣤⣀⠀⠀⠀⠀⠀")
@@ -571,9 +626,9 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info("⠀⠀⠀⠀⠀⠀⣿⠇⠀⠀⢻⡿⠀⠈⠻⣿⣿⣿⣿⣿⡇⠀⢹⣿⠿⠋⠀⠀⠀⠀⠀")
     logger.info("⠀⠀⠀⠀⠀⠀⠋⠀⠀⠀⡘⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀")
     logger.info("")
-    logger.info("\033[36m=================================================================")
-    logger.info("\033[36m SYSTEM SPECIFICATION")
-    logger.info("\033[36m=================================================================")
+    logger.info(f"{color}=================================================================")
+    logger.info(f"{color} SYSTEM SPECIFICATION")
+    logger.info(f"{color}=================================================================")
     logger.info(f"CPU architecture: {platform.processor()}")
     try:
         cpu_freq_str = f"@ {int(psutil.cpu_freq()[2])} MHz"
@@ -582,15 +637,15 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info(f"CPU(s): {psutil.cpu_count()} {cpu_freq_str}")
     logger.info(f"OS: {platform.platform()}")
     log_memory(logger)
-    logger.info("\033[36m=================================================================")
-    logger.info("\033[36m IDENTIFIERS")
-    logger.info("\033[36m=================================================================")
+    logger.info(f"{color}=================================================================")
+    logger.info(f"{color} IDENTIFIERS")
+    logger.info(f"{color}=================================================================")
     logger.info(f"trader_id: {logger.trader_id}")
     logger.info(f"machine_id: {logger.machine_id}")
     logger.info(f"instance_id: {logger.instance_id}")
-    logger.info("\033[36m=================================================================")
-    logger.info("\033[36m VERSIONING")
-    logger.info("\033[36m=================================================================")
+    logger.info(f"{color}=================================================================")
+    logger.info(f"{color} VERSIONING")
+    logger.info(f"{color}=================================================================")
     logger.info(f"nautilus-trader {__version__}")
     logger.info(f"python {python_version()}")
     logger.info(f"numpy {np.__version__}")
@@ -615,12 +670,16 @@ cpdef void nautilus_header(LoggerAdapter logger):
     except ImportError:  # pragma: no cover
         uvloop = None
 
-    logger.info("\033[36m=================================================================")
+    logger.info(f"{color}=================================================================")
 
 cpdef void log_memory(LoggerAdapter logger):
-    logger.info("\033[36m=================================================================")
-    logger.info("\033[36m MEMORY USAGE")
-    logger.info("\033[36m=================================================================")
+    Condition.not_none(logger, "logger")
+
+    color = "\033[36m" if logger.is_colored else ""
+
+    logger.info(f"{color}=================================================================")
+    logger.info(f"{color} MEMORY USAGE")
+    logger.info(f"{color}=================================================================")
     ram_total_mb = round(psutil.virtual_memory()[0] / 1000000)
     ram_used__mb = round(psutil.virtual_memory()[3] / 1000000)
     ram_avail_mb = round(psutil.virtual_memory()[1] / 1000000)

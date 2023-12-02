@@ -86,7 +86,7 @@ impl PartialEq for TimeEvent {
 pub struct TimeEventHandler {
     /// The event.
     pub event: TimeEvent,
-    /// The event ID.
+    /// The Python callable pointer.
     pub callback_ptr: *mut ffi::PyObject,
 }
 

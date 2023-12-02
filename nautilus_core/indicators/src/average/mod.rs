@@ -12,6 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
+
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
@@ -19,10 +20,18 @@ use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 use crate::{
     average::{
         dema::DoubleExponentialMovingAverage, ema::ExponentialMovingAverage,
-        sma::SimpleMovingAverage,
+        hma::HullMovingAverage, rma::WilderMovingAverage, sma::SimpleMovingAverage,
     },
     indicator::MovingAverage,
 };
+
+pub mod ama;
+pub mod dema;
+pub mod ema;
+pub mod hma;
+pub mod rma;
+pub mod sma;
+pub mod wma;
 
 #[repr(C)]
 #[derive(
@@ -50,6 +59,8 @@ pub enum MovingAverageType {
     Simple,
     Exponential,
     DoubleExponential,
+    Wilder,
+    Hull,
 }
 
 pub struct MovingAverageFactory;
@@ -72,12 +83,12 @@ impl MovingAverageFactory {
             MovingAverageType::DoubleExponential => {
                 Box::new(DoubleExponentialMovingAverage::new(period, price_type).unwrap())
             }
+            MovingAverageType::Wilder => {
+                Box::new(WilderMovingAverage::new(period, price_type).unwrap())
+            }
+            MovingAverageType::Hull => {
+                Box::new(HullMovingAverage::new(period, price_type).unwrap())
+            }
         }
     }
 }
-
-pub mod ama;
-pub mod dema;
-pub mod ema;
-pub mod sma;
-pub mod wma;

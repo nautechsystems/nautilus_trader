@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import datetime
-from functools import lru_cache
 
 import pandas as pd
 from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
@@ -30,6 +29,7 @@ from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import LimitOnCloseOrder
 from betfair_parser.spec.betting.type_definitions import LimitOrder
 from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
+from betfair_parser.spec.common import BetId
 from betfair_parser.spec.common import CustomerOrderRef
 from betfair_parser.spec.common import OrderStatus as BetfairOrderStatus
 from betfair_parser.spec.common import OrderType
@@ -52,7 +52,6 @@ from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import TradeReport
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
@@ -68,7 +67,9 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -95,7 +96,9 @@ def nautilus_limit_to_place_instructions(
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
         selection_id=int(instrument.selection_id),
-        handicap=instrument.selection_handicap,
+        handicap=instrument.selection_handicap
+        if instrument.selection_handicap != null_handicap()
+        else None,
         side=N2B_SIDE[command.order.side],
         limit_order=LimitOrder(
             price=command.order.price.as_double(),
@@ -122,7 +125,9 @@ def nautilus_limit_on_close_to_place_instructions(
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT_ON_CLOSE,
         selection_id=int(instrument.selection_id),
-        handicap=instrument.selection_handicap,
+        handicap=instrument.selection_handicap
+        if instrument.selection_handicap != null_handicap()
+        else None,
         side=N2B_SIDE[command.order.side],
         limit_on_close_order=LimitOnCloseOrder(
             price=command.order.price.as_double(),
@@ -145,7 +150,9 @@ def nautilus_market_to_place_instructions(
     instructions = PlaceInstruction(
         order_type=OrderType.LIMIT,
         selection_id=int(instrument.selection_id),
-        handicap=instrument.selection_handicap,
+        handicap=instrument.selection_handicap
+        if instrument.selection_handicap != null_handicap()
+        else None,
         side=N2B_SIDE[command.order.side],
         limit_order=LimitOrder(
             price=price.as_double(),
@@ -172,7 +179,9 @@ def nautilus_market_on_close_to_place_instructions(
     instructions = PlaceInstruction(
         order_type=OrderType.MARKET_ON_CLOSE,
         selection_id=int(instrument.selection_id),
-        handicap=instrument.selection_handicap,
+        handicap=instrument.selection_handicap
+        if instrument.selection_handicap != null_handicap()
+        else None,
         side=N2B_SIDE[command.order.side],
         market_on_close_order=MarketOnCloseOrder(
             liability=command.order.quantity.as_double(),
@@ -240,7 +249,7 @@ def order_update_to_replace_order_params(
         customer_ref=command.id.value.replace("-", ""),
         instructions=[
             ReplaceInstruction(
-                bet_id=int(venue_order_id.value),
+                bet_id=BetId(venue_order_id.value),
                 new_price=command.price.as_double(),
             ),
         ],
@@ -256,7 +265,7 @@ def order_cancel_to_cancel_order_params(
     """
     return CancelOrders.with_params(
         market_id=instrument.market_id,
-        instructions=[CancelInstruction(bet_id=int(command.venue_order_id.value))],
+        instructions=[CancelInstruction(bet_id=BetId(command.venue_order_id.value))],
         customer_ref=command.id.value.replace("-", ""),
     )
 
@@ -334,21 +343,6 @@ async def generate_trades_list(
             ts_init=ts_event,
         ),
     ]
-
-
-@lru_cache(None)
-def parse_handicap(x) -> str | None:
-    """
-    Ensure consistent parsing of the various handicap sources we get.
-    """
-    if x in (None, ""):
-        return "0.0"
-    if isinstance(x, int | str):
-        return str(float(x))
-    elif isinstance(x, float):
-        return str(x)
-    else:
-        raise TypeError(f"Unexpected type ({type(x)}) for handicap: {x}")
 
 
 def bet_to_order_status_report(

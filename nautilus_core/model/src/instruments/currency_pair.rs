@@ -162,7 +162,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn multiplier(&self) -> Quantity {
-        // SAFETY: Constant value
+        // SAFETY: Unwrap safe as using known values
         Quantity::new(1.0, 0).unwrap()
     }
 
@@ -204,54 +204,13 @@ impl Instrument for CurrencyPair {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Stubs
-////////////////////////////////////////////////////////////////////////////////
-#[cfg(test)]
-pub mod stubs {
-    use std::str::FromStr;
-
-    use rstest::fixture;
-    use rust_decimal::Decimal;
-
-    use crate::{
-        identifiers::{instrument_id::InstrumentId, symbol::Symbol},
-        instruments::currency_pair::CurrencyPair,
-        types::{currency::Currency, price::Price, quantity::Quantity},
-    };
-
-    #[fixture]
-    pub fn currency_pair_btcusdt() -> CurrencyPair {
-        CurrencyPair::new(
-            InstrumentId::from("BTCUSDT.BINANCE"),
-            Symbol::from("BTCUSDT"),
-            Currency::from("BTC"),
-            Currency::from("USDT"),
-            2,
-            6,
-            Price::from("0.01"),
-            Quantity::from("0.000001"),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.0").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            Decimal::from_str("0.001").unwrap(),
-            None,
-            Some(Quantity::from("9000")),
-            Some(Quantity::from("0.000001")),
-            Some(Price::from("1000000")),
-            Some(Price::from("0.01")),
-        )
-        .unwrap()
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
 // Tests
 ///////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::currency_pair::{stubs::currency_pair_btcusdt, CurrencyPair};
+    use crate::instruments::{currency_pair::CurrencyPair, stubs::*};
 
     #[rstest]
     fn test_equality(currency_pair_btcusdt: CurrencyPair) {

@@ -21,8 +21,8 @@ from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import GBP
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import CurrencyType
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 

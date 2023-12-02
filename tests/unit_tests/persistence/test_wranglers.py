@@ -15,11 +15,15 @@
 
 import os
 
+import pytest
+
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.persistence.loaders import BinanceOrderBookDeltaDataLoader
 from nautilus_trader.persistence.wranglers import OrderBookDeltaDataWrangler
+from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
+from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -39,3 +43,52 @@ def test_load_binance_deltas() -> None:
     assert deltas[0].action == BookAction.ADD
     assert deltas[0].order.side == OrderSide.BUY
     assert deltas[0].flags == 42  # Snapshot
+
+
+@pytest.mark.parametrize(
+    ("timestamp_is_close", "interval_ms", "ts_event1", "ts_event2", "ts_event3", "ts_event4"),
+    [
+        [
+            True,
+            100,
+            1359676799700000000,
+            1359676799800000000,
+            1359676799900000000,
+            1359676800000000000,
+        ],
+        [
+            False,
+            50,
+            1359676800000000000,
+            1359676800049999872,
+            1359676800100000000,
+            1359676800150000128,
+        ],
+    ],
+)
+def test_bar_data_wrangler(
+    timestamp_is_close: bool,
+    interval_ms: int,
+    ts_event1: int,
+    ts_event2: int,
+    ts_event3: int,
+    ts_event4: int,
+) -> None:
+    # Arrange
+    usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
+    wrangler = QuoteTickDataWrangler(instrument=usdjpy)
+    provider = TestDataProvider()
+
+    # Act
+    ticks = wrangler.process_bar_data(
+        bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+        ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+        offset_interval_ms=interval_ms,
+        timestamp_is_close=timestamp_is_close,
+    )
+
+    # Assert
+    assert ticks[0].ts_event == ts_event1
+    assert ticks[1].ts_event == ts_event2
+    assert ticks[2].ts_event == ts_event3
+    assert ticks[3].ts_event == ts_event4

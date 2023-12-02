@@ -18,7 +18,7 @@ from nautilus_trader.accounting.accounts.betting cimport BettingAccount
 from nautilus_trader.accounting.accounts.cash cimport CashAccount
 from nautilus_trader.accounting.accounts.margin cimport MarginAccount
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.enums_c cimport AccountType
+from nautilus_trader.core.rust.model cimport AccountType
 
 
 cdef dict _ISSUER_ACCOUNT_TYPE = {}        # type: dict[str, type]

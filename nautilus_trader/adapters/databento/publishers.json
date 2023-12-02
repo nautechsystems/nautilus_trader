@@ -1,0 +1,260 @@
+[
+  {
+    "publisher_id": 1,
+    "dataset": "GLBX.MDP3",
+    "venue": "GLBX",
+    "description": "CME Globex MDP 3.0"
+  },
+  {
+    "publisher_id": 2,
+    "dataset": "XNAS.ITCH",
+    "venue": "XNAS",
+    "description": "Nasdaq TotalView ITCH"
+  },
+  {
+    "publisher_id": 3,
+    "dataset": "XBOS.ITCH",
+    "venue": "XBOS",
+    "description": "Nasdaq BX TotalView ITCH"
+  },
+  {
+    "publisher_id": 4,
+    "dataset": "XPSX.ITCH",
+    "venue": "XPSX",
+    "description": "Nasdaq PSX TotalView ITCH"
+  },
+  {
+    "publisher_id": 5,
+    "dataset": "BATS.PITCH",
+    "venue": "BATS",
+    "description": "Cboe BZX Depth Pitch"
+  },
+  {
+    "publisher_id": 6,
+    "dataset": "BATY.PITCH",
+    "venue": "BATY",
+    "description": "Cboe BYX Depth Pitch"
+  },
+  {
+    "publisher_id": 7,
+    "dataset": "EDGA.PITCH",
+    "venue": "EDGA",
+    "description": "Cboe EDGA Depth Pitch"
+  },
+  {
+    "publisher_id": 8,
+    "dataset": "EDGX.PITCH",
+    "venue": "EDGX",
+    "description": "Cboe EDGX Depth Pitch"
+  },
+  {
+    "publisher_id": 9,
+    "dataset": "XNYS.PILLAR",
+    "venue": "XNYS",
+    "description": "NYSE Integrated"
+  },
+  {
+    "publisher_id": 10,
+    "dataset": "XCIS.PILLAR",
+    "venue": "XCIS",
+    "description": "NYSE National Integrated"
+  },
+  {
+    "publisher_id": 11,
+    "dataset": "XASE.PILLAR",
+    "venue": "XASE",
+    "description": "NYSE American Integrated"
+  },
+  {
+    "publisher_id": 12,
+    "dataset": "XCHI.PILLAR",
+    "venue": "XCHI",
+    "description": "NYSE Chicago Integrated"
+  },
+  {
+    "publisher_id": 13,
+    "dataset": "XCIS.BBO",
+    "venue": "XCIS",
+    "description": "NYSE National BBO"
+  },
+  {
+    "publisher_id": 14,
+    "dataset": "XCIS.TRADES",
+    "venue": "XCIS",
+    "description": "NYSE National Trades"
+  },
+  {
+    "publisher_id": 15,
+    "dataset": "MEMX.MEMOIR",
+    "venue": "MEMX",
+    "description": "MEMX Memoir Depth"
+  },
+  {
+    "publisher_id": 16,
+    "dataset": "EPRL.DOM",
+    "venue": "EPRL",
+    "description": "MIAX Pearl Depth"
+  },
+  {
+    "publisher_id": 17,
+    "dataset": "FINN.NLS",
+    "venue": "FINN",
+    "description": "FINRA/Nasdaq TRF Carteret"
+  },
+  {
+    "publisher_id": 18,
+    "dataset": "FINN.NLS",
+    "venue": "FINC",
+    "description": "FINRA/Nasdaq TRF Chicago"
+  },
+  {
+    "publisher_id": 19,
+    "dataset": "FINY.TRADES",
+    "venue": "FINY",
+    "description": "FINRA/NYSE TRF"
+  },
+  {
+    "publisher_id": 20,
+    "dataset": "OPRA.PILLAR",
+    "venue": "AMXO",
+    "description": "OPRA - NYSE American"
+  },
+  {
+    "publisher_id": 21,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XBOX",
+    "description": "OPRA - Boston Options Exchange"
+  },
+  {
+    "publisher_id": 22,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XCBO",
+    "description": "OPRA - Cboe Options Exchange"
+  },
+  {
+    "publisher_id": 23,
+    "dataset": "OPRA.PILLAR",
+    "venue": "EMLD",
+    "description": "OPRA - MIAX Emerald"
+  },
+  {
+    "publisher_id": 24,
+    "dataset": "OPRA.PILLAR",
+    "venue": "EDGO",
+    "description": "OPRA - Cboe EDGX Options Exchange"
+  },
+  {
+    "publisher_id": 25,
+    "dataset": "OPRA.PILLAR",
+    "venue": "GMNI",
+    "description": "OPRA - Nasdaq GEMX"
+  },
+  {
+    "publisher_id": 26,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XISX",
+    "description": "OPRA - Nasdaq ISE"
+  },
+  {
+    "publisher_id": 27,
+    "dataset": "OPRA.PILLAR",
+    "venue": "MCRY",
+    "description": "OPRA - Nasdaq MRX"
+  },
+  {
+    "publisher_id": 28,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XMIO",
+    "description": "OPRA - Miami International Securities"
+  },
+  {
+    "publisher_id": 29,
+    "dataset": "OPRA.PILLAR",
+    "venue": "ARCO",
+    "description": "OPRA - NYSE Arca"
+  },
+  {
+    "publisher_id": 30,
+    "dataset": "OPRA.PILLAR",
+    "venue": "OPRA",
+    "description": "OPRA - Options Price Reporting Authority"
+  },
+  {
+    "publisher_id": 31,
+    "dataset": "OPRA.PILLAR",
+    "venue": "MPRL",
+    "description": "OPRA - MIAX Pearl"
+  },
+  {
+    "publisher_id": 32,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XNDQ",
+    "description": "OPRA - Nasdaq Options Market"
+  },
+  {
+    "publisher_id": 33,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XBXO",
+    "description": "OPRA - Nasdaq BX Options"
+  },
+  {
+    "publisher_id": 34,
+    "dataset": "OPRA.PILLAR",
+    "venue": "C2OX",
+    "description": "OPRA - Cboe C2 Options Exchange"
+  },
+  {
+    "publisher_id": 35,
+    "dataset": "OPRA.PILLAR",
+    "venue": "XPHL",
+    "description": "OPRA - Nasdaq PHLX"
+  },
+  {
+    "publisher_id": 36,
+    "dataset": "OPRA.PILLAR",
+    "venue": "BATO",
+    "description": "OPRA - Cboe BZX Options"
+  },
+  {
+    "publisher_id": 37,
+    "dataset": "OPRA.PILLAR",
+    "venue": "MXOP",
+    "description": "OPRA - MEMX Options Exchange"
+  },
+  {
+    "publisher_id": 38,
+    "dataset": "IEXG.TOPS",
+    "venue": "IEXG",
+    "description": "IEX TOPS"
+  },
+  {
+    "publisher_id": 39,
+    "dataset": "DBEQ.BASIC",
+    "venue": "XCHI",
+    "description": "DBEQ Basic - NYSE Chicago"
+  },
+  {
+    "publisher_id": 40,
+    "dataset": "DBEQ.BASIC",
+    "venue": "XCIS",
+    "description": "DBEQ Basic - NYSE National"
+  },
+  {
+    "publisher_id": 41,
+    "dataset": "DBEQ.BASIC",
+    "venue": "IEXG",
+    "description": "DBEQ Basic - IEX"
+  },
+  {
+    "publisher_id": 42,
+    "dataset": "DBEQ.BASIC",
+    "venue": "EPRL",
+    "description": "DBEQ Basic - MIAX Pearl"
+  },
+  {
+    "publisher_id": 43,
+    "dataset": "ARCX.PILLAR",
+    "venue": "ARCX",
+    "description": "NYSE Arca Integrated"
+  }
+]

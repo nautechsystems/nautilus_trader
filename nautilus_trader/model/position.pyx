@@ -19,11 +19,11 @@ from libc.math cimport fabs
 from libc.math cimport fmin
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport PositionSide
-from nautilus_trader.model.enums_c cimport order_side_to_str
-from nautilus_trader.model.enums_c cimport position_side_to_str
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.identifiers cimport TradeId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Price
@@ -133,6 +133,7 @@ cdef class Position:
         """
         return {
             "position_id": self.id.to_str(),
+            "trader_id": self.trader_id.to_str(),
             "strategy_id": self.strategy_id.to_str(),
             "instrument_id": self.instrument_id.to_str(),
             "account_id": self.account_id.to_str(),

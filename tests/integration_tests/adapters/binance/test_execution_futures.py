@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExe
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.uuid import UUID4
@@ -36,7 +37,6 @@ from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.test_kit.providers import TestInstrumentProvider

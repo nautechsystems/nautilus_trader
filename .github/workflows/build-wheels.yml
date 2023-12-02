@@ -1,7 +1,6 @@
 name: build-wheels
 
-# Build Linux wheels on successful completion of the `coverage` workflow on the `develop` branch
-# Temporarily build wheels on every push to `develop` branch
+# Build wheels on every push to `develop` branch
 
 on:
   push:
@@ -15,7 +14,7 @@ jobs:
       matrix:
         arch: [x64]
         os: [ubuntu-latest]
-        python-version: ["3.11"]
+        python-version: ["3.11", "3.12"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
@@ -31,10 +30,20 @@ jobs:
           echo "RUST_VERSION=$version" >> $GITHUB_ENV
         working-directory: ${{ github.workspace }}
 
-      - name: Set up Rust tool-chain (stable)
+      - name: Set up Rust tool-chain (Linux, Windows) stable
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
         uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: ${{ env.RUST_VERSION }}
+          components: rustfmt, clippy
+
+      # Work around as actions-rust-lang does not seem to work on macOS yet
+      - name: Set up Rust tool-chain (macOS) stable
+        if: runner.os == 'macOS'
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          override: true
           components: rustfmt, clippy
 
       - name: Set up Python environment

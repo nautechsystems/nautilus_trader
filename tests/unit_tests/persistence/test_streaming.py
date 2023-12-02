@@ -28,11 +28,11 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import NautilusKernelConfig
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.rust.model import BookType
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.orderbook import OrderBook
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
@@ -76,15 +76,15 @@ class TestPersistenceStreaming:
         result = dict(Counter([r.__class__.__name__ for r in result]))
 
         expected = {
-            "AccountState": 772,
+            "AccountState": 398,
             "BettingInstrument": 1,
             "ComponentStateChanged": 21,
-            "OrderAccepted": 375,
+            "OrderAccepted": 188,
             "OrderBookDelta": 1307,
-            "OrderFilled": 397,
-            "OrderInitialized": 376,
-            "OrderSubmitted": 376,
-            "PositionChanged": 394,
+            "OrderFilled": 210,
+            "OrderInitialized": 189,
+            "OrderSubmitted": 189,
+            "PositionChanged": 207,
             "PositionClosed": 2,
             "PositionOpened": 3,
             "TradeTick": 179,
@@ -147,7 +147,7 @@ class TestPersistenceStreaming:
     ) -> None:
         # Arrange
         self.catalog = betfair_catalog
-        instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
+        instrument_id = self.catalog.instruments()[0].id.value
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",
@@ -205,7 +205,7 @@ class TestPersistenceStreaming:
     ) -> None:
         # Arrange
         self.catalog = betfair_catalog
-        instrument_id = self.catalog.instruments(as_nautilus=True)[0].id.value
+        instrument_id = self.catalog.instruments()[0].id.value
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",
@@ -300,12 +300,12 @@ class TestPersistenceStreaming:
         # Assert
         expected = {
             "OrderBookDelta": 1307,
-            "AccountState": 772,
-            "OrderFilled": 397,
-            "PositionChanged": 394,
-            "OrderInitialized": 376,
-            "OrderSubmitted": 376,
-            "OrderAccepted": 375,
+            "AccountState": 398,
+            "OrderFilled": 210,
+            "PositionChanged": 207,
+            "OrderInitialized": 189,
+            "OrderSubmitted": 189,
+            "OrderAccepted": 188,
             "TradeTick": 179,
             "ComponentStateChanged": 21,
             "PositionOpened": 3,

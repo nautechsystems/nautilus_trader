@@ -23,6 +23,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport EVT
 from nautilus_trader.common.logging cimport RECV
@@ -31,6 +32,12 @@ from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.message cimport Event
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport TimeInForce
+from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.manager cimport OrderManager
 from nautilus_trader.execution.matching_core cimport MatchingCore
@@ -40,15 +47,8 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderStatus
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport TimeInForce
-from nautilus_trader.model.enums_c cimport TriggerType
-from nautilus_trader.model.enums_c cimport trigger_type_to_str
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderEmulated
 from nautilus_trader.model.events.order cimport OrderEvent
@@ -58,6 +58,7 @@ from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport trigger_type_to_str
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -71,7 +72,6 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef set SUPPORTED_TRIGGERS = {TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE}

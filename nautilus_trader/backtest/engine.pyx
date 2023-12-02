@@ -30,7 +30,7 @@ from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config.error import InvalidConfiguration
-from nautilus_trader.model.data import NAUTILUS_PYO3_DATA_TYPES
+from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.system.kernel import NautilusKernel
 from nautilus_trader.trading.trader import Trader
 
@@ -48,12 +48,12 @@ from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.clock cimport LiveClock
 from nautilus_trader.common.clock cimport TestClock
-from nautilus_trader.common.enums_c cimport log_level_from_str
+from nautilus_trader.common.clock cimport TimeEvent
+from nautilus_trader.common.clock cimport TimeEventHandler
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
+from nautilus_trader.common.logging cimport log_level_from_str
 from nautilus_trader.common.logging cimport log_memory
-from nautilus_trader.common.timer cimport TimeEvent
-from nautilus_trader.common.timer cimport TimeEventHandler
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport maybe_dt_to_unix_nanos
@@ -66,20 +66,20 @@ from nautilus_trader.core.rust.backtest cimport time_event_accumulator_new
 from nautilus_trader.core.rust.common cimport TimeEventHandler_t
 from nautilus_trader.core.rust.common cimport vec_time_event_handlers_drop
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport AggregationSource
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.base cimport GenericData
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport AccountType
-from nautilus_trader.model.enums_c cimport AggregationSource
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport OmsType
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport GenericData
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -1207,16 +1207,21 @@ cdef class BacktestEngine:
                 for exchange in self._venues.values():
                     exchange.process(ts_event_init)
 
+    def _get_log_color_code(self):
+        return "\033[36m" if self._log.is_colored else ""
+
     def _log_pre_run(self):
         log_memory(self._log)
 
+        cdef str color = self._get_log_color_code()
+
         for exchange in self._venues.values():
             account = exchange.exec_client.get_account()
-            self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36m SimulatedVenue {exchange.id}")
-            self._log.info("\033[36m=================================================================")
+            self._log.info(f"{color}=================================================================")
+            self._log.info(f"{color} SimulatedVenue {exchange.id}")
+            self._log.info(f"{color}=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             self._log.info(f"Balances starting:")
             if exchange.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
@@ -1225,16 +1230,18 @@ cdef class BacktestEngine:
                     self._log.info(b.to_str())
 
     def _log_run(self, start: pd.Timestamp, end: pd.Timestamp):
-        self._log.info("\033[36m=================================================================")
-        self._log.info("\033[36m BACKTEST RUN")
-        self._log.info("\033[36m=================================================================")
+        cdef str color = self._get_log_color_code()
+
+        self._log.info(f"{color}=================================================================")
+        self._log.info(f"{color} BACKTEST RUN")
+        self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
         self._log.info(f"Run started:    {self._run_started}")
         self._log.info(f"Backtest start: {self._backtest_start}")
         self._log.info(f"Batch start:    {start}")
         self._log.info(f"Batch end:      {end}")
-        self._log.info("\033[36m-----------------------------------------------------------------")
+        self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _log_post_run(self):
         if self._run_finished and self._run_started:
@@ -1247,9 +1254,11 @@ cdef class BacktestEngine:
         else:
             backtest_range = None
 
-        self._log.info("\033[36m=================================================================")
-        self._log.info("\033[36m BACKTEST POST-RUN")
-        self._log.info("\033[36m=================================================================")
+        cdef str color = self._get_log_color_code()
+
+        self._log.info(f"{color}=================================================================")
+        self._log.info(f"{color} BACKTEST POST-RUN")
+        self._log.info(f"{color}=================================================================")
         self._log.info(f"Run config ID:  {self._run_config_id}")
         self._log.info(f"Run ID:         {self._run_id}")
         self._log.info(f"Run started:    {self._run_started}")
@@ -1277,11 +1286,11 @@ cdef class BacktestEngine:
             set venue_currencies
         for venue in self._venues.values():
             account = venue.exec_client.get_account()
-            self._log.info("\033[36m=================================================================")
-            self._log.info(f"\033[36m SimulatedVenue {venue.id}")
-            self._log.info("\033[36m=================================================================")
+            self._log.info(f"{color}=================================================================")
+            self._log.info(f"{color} SimulatedVenue {venue.id}")
+            self._log.info(f"{color}=================================================================")
             self._log.info(f"{repr(account)}")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             unrealized_pnls: Optional[dict[Currency, Money]] = None
             if venue.is_frozen_account:
                 self._log.warning(f"ACCOUNT FROZEN")
@@ -1291,15 +1300,15 @@ cdef class BacktestEngine:
                 self._log.info(f"Balances starting:")
                 for b in account.starting_balances().values():
                     self._log.info(b.to_str())
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Balances ending:")
                 for b in account.balances_total().values():
                     self._log.info(b.to_str())
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Commissions:")
                 for c in account.commissions().values():
                     self._log.info(Money(-c.as_double(), c.currency).to_str())  # Display commission as negative
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 self._log.info(f"Unrealized PnLs (included in totals):")
                 unrealized_pnls = self.portfolio.unrealized_pnls(Venue(venue.id.value))
                 if not unrealized_pnls:
@@ -1312,9 +1321,9 @@ cdef class BacktestEngine:
             for module in venue.modules:
                 module.log_diagnostics(self._log)
 
-            self._log.info("\033[36m=================================================================")
-            self._log.info("\033[36m PORTFOLIO PERFORMANCE")
-            self._log.info("\033[36m=================================================================")
+            self._log.info(f"{color}=================================================================")
+            self._log.info(f"{color} PORTFOLIO PERFORMANCE")
+            self._log.info(f"{color}=================================================================")
 
             # Collect all positions and currencies for venue
             venue_positions = []
@@ -1332,23 +1341,23 @@ cdef class BacktestEngine:
             # Present PnL performance stats per asset
             for currency in sorted(list(venue_currencies), key=lambda x: x.code):
                 self._log.info(f" PnL Statistics ({str(currency)})")
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
                 unrealized_pnl = unrealized_pnls.get(currency) if unrealized_pnls else None
                 for stat in self._kernel.portfolio.analyzer.get_stats_pnls_formatted(currency, unrealized_pnl):
                     self._log.info(stat)
-                self._log.info("\033[36m-----------------------------------------------------------------")
+                self._log.info(f"{color}-----------------------------------------------------------------")
 
             self._log.info(" Returns Statistics")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             for stat in self._kernel.portfolio.analyzer.get_stats_returns_formatted():
                 self._log.info(stat)
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
 
             self._log.info(" General Statistics")
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
             for stat in self._kernel.portfolio.analyzer.get_stats_general_formatted():
                 self._log.info(stat)
-            self._log.info("\033[36m-----------------------------------------------------------------")
+            self._log.info(f"{color}-----------------------------------------------------------------")
 
     def _add_data_client_if_not_exists(self, ClientId client_id) -> None:
         if client_id not in self._kernel.data_engine.registered_clients:

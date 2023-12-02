@@ -30,9 +30,9 @@ from nautilus_trader.adapters.betfair.parsing.streaming import PARSE_TYPES
 from nautilus_trader.adapters.betfair.parsing.streaming import market_change_to_updates
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.objects import Currency
 
 
 class BetfairParser:
@@ -67,13 +67,6 @@ class BetfairParser:
 def iter_stream(file_like: BinaryIO):
     for line in file_like:
         yield stream_decode(line)
-        # try:
-        #     data = stream_decode(line)
-        # except (msgspec.DecodeError, msgspec.ValidationError) as e:
-        #     print("ERR", e)
-        #     print(msgspec.json.decode(line))
-        #     raise e
-        # yield data
 
 
 def parse_betfair_file(

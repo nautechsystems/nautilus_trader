@@ -17,6 +17,7 @@
    data.md
    adapters.md
    logging.md
+   message_bus.md
    advanced/index.md
 ```
 
@@ -70,11 +71,15 @@ The NautilusTrader platform defines a range of built-in data types crafted speci
 a trading domain
 
 ## [Adapters](adapters.md)
-The NautilusTrader design allows for integrating data publishers and/or trading venues
+The NautilusTrader design allows for integrating data providers and/or trading venues
 through adapter implementations, these can be found in the top level `adapters` subpackage. 
 
 ## [Logging](logging.md)
 The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
+
+## [Message Bus](message_bus.md)
+The heart of the communication channels between components, providing decoupled messaging patterns such as
+point-to-point, publish/subscribe and request/response.
 
 ## [Advanced](advanced/index.md)
 Here you will find more detailed documentation and examples covering the more advanced

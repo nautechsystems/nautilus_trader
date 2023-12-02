@@ -23,19 +23,19 @@ from cpython.datetime cimport datetime
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.clock cimport Clock
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.enums_c cimport BookType
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class BacktestDataClient(DataClient):

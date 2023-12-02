@@ -20,9 +20,9 @@ from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.messages import ComponentStateChanged
 from nautilus_trader.common.messages import TradingStateChanged
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import GBP
 from nautilus_trader.model.currencies import USD
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import TradingState
@@ -49,6 +49,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -84,19 +85,33 @@ class TestEventStubs:
         )
 
     @staticmethod
-    def cash_account_state(account_id: AccountId | None = None) -> AccountState:
+    def cash_account_state(
+        account_id: AccountId | None = None,
+        base_currency: Currency | None = USD,
+    ) -> AccountState:
+        balances = [
+            AccountBalance(
+                Money(1_000_000, USD),
+                Money(0, USD),
+                Money(1_000_000, USD),
+            ),
+        ]
+
+        if base_currency is None:
+            balances.append(
+                AccountBalance(
+                    Money(10_000, AUD),
+                    Money(0, AUD),
+                    Money(10_000, AUD),
+                ),
+            )
+
         return AccountState(
             account_id=account_id or TestIdStubs.account_id(),
             account_type=AccountType.CASH,
-            base_currency=USD,
+            base_currency=base_currency,
             reported=True,  # reported
-            balances=[
-                AccountBalance(
-                    Money(1_000_000, USD),
-                    Money(0, USD),
-                    Money(1_000_000, USD),
-                ),
-            ],
+            balances=balances,
             margins=[],
             info={},
             event_id=UUID4(),

@@ -16,12 +16,12 @@
 import pytest
 
 from nautilus_trader.common.clock import TestClock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.component import is_matching_py
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.message import Request
 from nautilus_trader.core.message import Response
 from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.msgbus.bus import MessageBus
-from nautilus_trader.msgbus.bus import is_matching_py
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 

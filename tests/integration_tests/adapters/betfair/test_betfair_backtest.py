@@ -40,13 +40,13 @@ def test_betfair_backtest():
     instruments = [
         betting_instrument(
             market_id="1.166811431",
-            selection_id="19248890",
-            selection_handicap="0.0",
+            selection_id=19248890,
+            selection_handicap=None,
         ),
         betting_instrument(
             market_id="1.166811431",
-            selection_id="38848248",
-            selection_handicap="0.0",
+            selection_id=38848248,
+            selection_handicap=None,
         ),
     ]
     engine.add_instrument(instruments[0])
@@ -78,6 +78,6 @@ def test_betfair_backtest():
     account = engine.trader.generate_account_report(BETFAIR_VENUE)
     fills = engine.trader.generate_order_fills_report()
     positions = engine.trader.generate_positions_report()
-    assert account.iloc[-1]["total"] == "13022.11"
-    assert len(fills) == 4639
+    assert account.iloc[-1]["total"] == "49095.42"
+    assert len(fills) == 2708
     assert len(positions) == 2

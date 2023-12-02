@@ -19,16 +19,16 @@ from typing import Optional
 from nautilus_trader.accounting.error import AccountMarginExceeded
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.enums_c cimport AccountType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport liquidity_side_to_str
+from nautilus_trader.core.rust.model cimport AccountType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.model.events.account cimport AccountState
 from nautilus_trader.model.events.order cimport OrderFilled
+from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport AccountBalance
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport MarginBalance
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.position cimport Position

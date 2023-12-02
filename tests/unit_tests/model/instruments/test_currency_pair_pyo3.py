@@ -14,7 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.core.nautilus_pyo3 import CurrencyPair
-from nautilus_trader.test_kit.rust.instruments import TestInstrumentProviderPyo3
+from nautilus_trader.test_kit.rust.instruments_pyo3 import TestInstrumentProviderPyo3
 
 
 btcusdt_binance = TestInstrumentProviderPyo3.btcusdt_binance()

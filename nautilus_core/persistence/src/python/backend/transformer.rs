@@ -163,7 +163,7 @@ impl DataTransformer {
 
         let data_type: String = data
             .first()
-            .unwrap() // SAFETY: already checked that `data` not empty
+            .unwrap() // SAFETY: Unwrap safe as already checked that `data` not empty
             .as_ref(py)
             .getattr("__class__")?
             .getattr("__name__")?
@@ -202,7 +202,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty
+        // SAFETY: Unwrap safe as already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = OrderBookDelta::get_metadata(
             &first.instrument_id,
@@ -235,7 +235,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty
+        // SAFETY: Unwrap safe as already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = QuoteTick::get_metadata(
             &first.instrument_id,
@@ -268,7 +268,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty
+        // SAFETY: Unwrap safe as already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = TradeTick::get_metadata(
             &first.instrument_id,
@@ -298,7 +298,7 @@ impl DataTransformer {
         }
 
         // Take first element and extract metadata
-        // SAFETY: already checked that `data` not empty
+        // SAFETY: Unwrap safe as already checked that `data` not empty
         let first = data.first().unwrap();
         let metadata = Bar::get_metadata(
             &first.bar_type,

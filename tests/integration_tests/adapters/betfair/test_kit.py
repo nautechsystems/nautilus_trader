@@ -16,7 +16,6 @@
 import bz2
 import gzip
 import pathlib
-from asyncio import Future
 from unittest.mock import MagicMock
 
 import msgspec
@@ -24,7 +23,10 @@ import pandas as pd
 from aiohttp import ClientResponse
 from betfair_parser.spec.betting.type_definitions import MarketFilter
 from betfair_parser.spec.common import EndpointType
+from betfair_parser.spec.common import Handicap
+from betfair_parser.spec.common import MarketId
 from betfair_parser.spec.common import Request
+from betfair_parser.spec.common import SelectionId
 from betfair_parser.spec.common import encode
 from betfair_parser.spec.streaming import MCM
 from betfair_parser.spec.streaming import OCM
@@ -51,10 +53,12 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import RiskEngineConfig
 from nautilus_trader.config import StreamingConfig
-from nautilus_trader.model.data.book import OrderBookDelta
-from nautilus_trader.model.data.tick import TradeTick
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
+from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from tests import TEST_DATA_DIR
@@ -71,12 +75,14 @@ async def async_magic():
 MagicMock.__await__ = lambda x: async_magic().__await__()
 
 
-def mock_betfair_request(obj, response, attr="_request"):
-    mock_resp = MagicMock(spec=ClientResponse)
-    mock_resp.body = encode(response)
+def mock_betfair_request(obj, response):
+    async def mock_request(method: HttpMethod, request: Request):
+        mock_resp = MagicMock(spec=ClientResponse)
+        response["id"] = request.id
+        mock_resp.body = encode(response)
+        return mock_resp
 
-    setattr(obj, attr, MagicMock(return_value=Future()))
-    getattr(obj, attr).return_value.set_result(mock_resp)
+    setattr(obj, "_request", MagicMock(side_effect=mock_request))
 
 
 class BetfairTestStubs:
@@ -113,8 +119,8 @@ class BetfairTestStubs:
                 "AccountAPING/v1.0/getAccountFunds": BetfairResponses.account_funds_no_exposure,
                 "SportsAPING/v1.0/listMarketCatalogue": BetfairResponses.betting_list_market_catalogue,
                 "SportsAPING/v1.0/list": BetfairResponses.betting_list_market_catalogue,
-                "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_place_order_success(),
-                "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_replace_orders_success(),
+                "SportsAPING/v1.0/placeOrders": BetfairResponses.betting_place_order_success,
+                "SportsAPING/v1.0/replaceOrders": BetfairResponses.betting_replace_orders_success,
                 "SportsAPING/v1.0/cancelOrders": BetfairResponses.betting_cancel_orders_success,
                 "SportsAPING/v1.0/listCurrentOrders": BetfairResponses.list_current_orders,
                 "SportsAPING/v1.0/listClearedOrders": BetfairResponses.list_cleared_orders,
@@ -123,14 +129,15 @@ class BetfairTestStubs:
             if rpc_method == "SportsAPING/v1.0/listMarketCatalogue":
                 kw = {"filter_": request.params.filter}
             if rpc_method in responses:
+                response = responses[rpc_method](**kw)  # type: ignore
+                if "id" in response:
+                    response["id"] = request.id
                 resp = MagicMock(spec=ClientResponse)
-                resp.body = msgspec.json.encode(responses[rpc_method](**kw))
+                resp.body = msgspec.json.encode(response)
                 return resp
             elif request.endpoint_type == EndpointType.NAVIGATION:
                 resp = MagicMock(spec=ClientResponse)
-                resp.body = msgspec.json.encode(
-                    BetfairResponses.navigation_list_navigation(),
-                )
+                resp.body = msgspec.json.encode(BetfairResponses.navigation_list_navigation())
                 return resp
             else:
                 raise KeyError(rpc_method)
@@ -310,7 +317,8 @@ class BetfairResponses:
     @staticmethod
     def load(filename: str):
         raw = (RESOURCES_PATH / "responses" / filename).read_bytes()
-        return msgspec.json.decode(raw)
+        data = msgspec.json.decode(raw)
+        return data
 
     @staticmethod
     def account_details():
@@ -397,6 +405,10 @@ class BetfairResponses:
             },
         )
         return raw
+
+    @staticmethod
+    def list_market_catalogue():
+        return BetfairResponses.load("list_market_catalogue.json")
 
     @staticmethod
     def betting_list_market_catalogue(filter_: MarketFilter | None = None):
@@ -779,26 +791,26 @@ class BetfairDataProvider:
 
 
 def betting_instrument(
-    market_id: str = "1.179082386",
-    selection_id: str = "50214",
-    selection_handicap: str | None = None,
+    market_id: MarketId = "1.179082386",
+    selection_id: SelectionId = 50214,
+    selection_handicap: Handicap | None = None,
 ) -> BettingInstrument:
     return BettingInstrument(
         venue_name=BETFAIR_VENUE.value,
         betting_type="ODDS",
-        competition_id="12282733",
+        competition_id=12282733,
         competition_name="NFL",
         event_country_code="GB",
-        event_id="29678534",
+        event_id=29678534,
         event_name="NFL",
         event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
-        event_type_id="6423",
+        event_type_id=6423,
         event_type_name="American Football",
         market_id=market_id,
         market_name="AFC Conference Winner",
         market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
         market_type="SPECIAL",
-        selection_handicap=selection_handicap,
+        selection_handicap=selection_handicap or null_handicap(),
         selection_id=selection_id,
         selection_name="Kansas City Chiefs",
         currency="GBP",
@@ -812,11 +824,11 @@ def betting_instrument_handicap() -> BettingInstrument:
     return BettingInstrument.from_dict(
         {
             "venue_name": "BETFAIR",
-            "event_type_id": "61420",
+            "event_type_id": 61420,
             "event_type_name": "Australian Rules",
-            "competition_id": "11897406",
+            "competition_id": 11897406,
             "competition_name": "AFL",
-            "event_id": "30777079",
+            "event_id": 30777079,
             "event_name": "GWS v Richmond",
             "event_country_code": "AU",
             "event_open_date": "2021-08-13T09:50:00+00:00",
@@ -825,9 +837,9 @@ def betting_instrument_handicap() -> BettingInstrument:
             "market_name": "Handicap",
             "market_start_time": "2021-08-13T09:50:00+00:00",
             "market_type": "HANDICAP",
-            "selection_id": "5304641",
+            "selection_id": 5304641,
             "selection_name": "GWS",
-            "selection_handicap": "-5.5",
+            "selection_handicap": -5.5,
             "currency": "AUD",
             "ts_event": 0,
             "ts_init": 0,

@@ -21,18 +21,18 @@ import pytz
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.enums_c cimport AssetClass
-from nautilus_trader.model.enums_c cimport AssetType
-from nautilus_trader.model.enums_c cimport OptionKind
-from nautilus_trader.model.enums_c cimport asset_class_from_str
-from nautilus_trader.model.enums_c cimport asset_class_to_str
-from nautilus_trader.model.enums_c cimport option_kind_from_str
-from nautilus_trader.model.enums_c cimport option_kind_to_str
+from nautilus_trader.core.rust.model cimport AssetClass
+from nautilus_trader.core.rust.model cimport AssetType
+from nautilus_trader.core.rust.model cimport OptionKind
+from nautilus_trader.model.functions cimport asset_class_from_str
+from nautilus_trader.model.functions cimport asset_class_to_str
+from nautilus_trader.model.functions cimport option_kind_from_str
+from nautilus_trader.model.functions cimport option_kind_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Symbol
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.base cimport Price
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 
 
@@ -47,9 +47,9 @@ cdef class OptionsContract(Instrument):
     raw_symbol : Symbol
         The native/local/raw symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
-        The futures contract asset class.
+        The options contract asset class.
     currency : Currency
-        The futures contract currency.
+        The options contract currency.
     price_precision : int
         The price decimal precision.
     price_increment : Price

@@ -109,19 +109,20 @@ impl Default for MarketOrder {
             OrderSide::Buy,
             Quantity::from(100_000),
             TimeInForce::Day,
-            false,
-            false,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             UUID4::default(),
             0,
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
         )
+        .unwrap()
     }
 }
 

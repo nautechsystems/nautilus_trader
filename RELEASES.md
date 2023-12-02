@@ -1,3 +1,41 @@
+# NautilusTrader 1.181.0 Beta
+
+Released on 2nd December (UTC).
+
+This release adds support for Python 3.12.
+
+### Enhancements
+- Rewrote Interactive Brokers integration documentation, many thanks @benjaminsingleton
+- Added Interactive Brokers adapter support for crypto instruments with cash quantity, thanks @benjaminsingleton
+- Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
+- Added `DataEngineConfig.time_bars_interval_type` (determines the type of interval used for time aggregation `left-open` or `right-open`)
+- Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
+- Added `QuoteTickDataWrangler.process_bar_data` options for `offset_interval_ms` and `timestamp_is_close`
+- Added identifier generators in Rust, thanks @filipmacek
+- Added `OrderFactory` in Rust, thanks @filipmacek
+- Added `WilderMovingAverage` in Rust, thanks @ayush-sb
+- Added `HullMovingAverage` in Rust, thanks @ayush-sb
+- Added all common identifier generators in Rust, thanks @filipmacek
+- Added generic SQL database support with `sqlx` in Rust, thanks @filipmacek
+
+### Breaking Changes
+- Consolidated all `data` submodules into one `data` module (reduce binary wheel size)
+- Moved `OrderBook` from `model.orderbook.book` to `model.book` (subpackage only had this single module)
+- Moved `Currency` from `model.currency` to `model.objects` (consolidating modules to reduce binary wheel size)
+- Moved `MessageBus` from `common.msgbus` to `common.component` (consolidating modules to reduce binary wheel size)
+- Moved `MsgSpecSerializer` from `serialization.msgpack.serializer` to `serialization.serializer`
+- Moved `CacheConfig` `snapshot_orders`, `snapshot_positions`, `snapshot_positions_interval` to `NautilusKernelConfig` (logical applicability)
+- Renamed `MsgPackSerializer` to `MsgSpecSeralizer` (now handles both JSON and MsgPack formats)
+
+### Fixes
+- Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek
+- Fixed conversion of fixed precision integers to floats (should be dividing to avoid rounding errors), thanks for reporting @filipmacek
+- Fixed daily timestamp parsing for Interactive Brokers, thanks @benjaminsingleton
+- Fixed live reconciliation trade processing for partially filled then canceled orders
+- Fixed `RiskEngine` cumulative notional risk check for `CurrencyPair` SELL orders on multi-currency cash accounts
+
+---
+
 # NautilusTrader 1.180.0 Beta
 
 Released on 3rd November 2023 (UTC).
@@ -7,7 +45,7 @@ Released on 3rd November 2023 (UTC).
 - Improved `RedisCacheDatabase` client connection error handling with retries
 - Added `WebSocketClient` connection headers, thanks @ruthvik125 and @twitu
 - Added `support_contingent_orders` option for venues (to simulate venues which do not support contingent orders)
-- Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingenct orders)
+- Added `StrategyConfig.manage_contingent_orders` option (to automatically manage **open** contingent orders)
 - Added `FuturesContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `OptionsContract.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
 - Added `CryptoFuture.activation_utc` property which returns a `pd.Timestamp` tz-aware (UTC)
@@ -19,9 +57,9 @@ Released on 3rd November 2023 (UTC).
 - Renamed `FuturesContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Renamed `OptionsContract.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
 - Renamed `CryptoFuture.expiry_date` to `expiration_ns` (and associated params) as `uint64_t` UNIX nanoseconds
-- Changed `FuturesContract` arrow schema
-- Changed `OptionsContract` arrow schema
-- Changed `CryptoFuture` arrow schema
+- Changed `FuturesContract` Arrow schema
+- Changed `OptionsContract` Arrow schema
+- Changed `CryptoFuture` Arrow schema
 - Transformed orders will now retain the original `ts_init` timestamp
 - Removed unimplemented `batch_more` option for `Strategy.modify_order`
 - Removed `InstrumentProvider.venue` property (redundant as a provider may have many venues)
@@ -275,7 +313,7 @@ Released on 19th May 2023 (UTC).
 - Fixed `MatchingEngine` processing of reduce only for child contingent orders
 - Fixed `MatchingEngine` position ID assignment for child contingent orders
 - Fixed `Actor` handling of historical data from requests (will now call `on_historical_data` regardless of state), thanks for reporting @miller-moore
-- Fixed pyarrow schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
+- Fixed `pyarrow` schema dictionary index keys being too narrow (int8 -> int16), thanks for reporting @rterbush
 
 ---
 

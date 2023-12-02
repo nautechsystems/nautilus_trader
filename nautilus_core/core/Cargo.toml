@@ -34,7 +34,3 @@ rstest = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
-
-[[bench]]
-name = "criterion_time_benchmark"
-harness = false

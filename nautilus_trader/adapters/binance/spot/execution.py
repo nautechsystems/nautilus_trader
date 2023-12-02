@@ -33,6 +33,7 @@ from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotOrderU
 from nautilus_trader.adapters.binance.spot.schemas.user import BinanceSpotUserMsgWrapper
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
@@ -43,7 +44,6 @@ from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.enums import time_in_force_to_str
 from nautilus_trader.model.orders import Order
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BinanceSpotExecutionClient(BinanceCommonExecutionClient):

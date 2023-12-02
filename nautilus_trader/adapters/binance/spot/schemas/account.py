@@ -19,8 +19,8 @@ import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 
 

@@ -42,7 +42,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.common.clock cimport Clock
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.enums_c cimport ComponentState
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport CMD
 from nautilus_trader.common.logging cimport RECV
 from nautilus_trader.common.logging cimport REQ
@@ -52,6 +52,8 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.datetime cimport unix_nanos_to_dt
+from nautilus_trader.core.rust.common cimport ComponentState
+from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.aggregation cimport TickBarAggregator
@@ -65,18 +67,18 @@ from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
-from nautilus_trader.model.data.bar cimport Bar
-from nautilus_trader.model.data.bar cimport BarType
-from nautilus_trader.model.data.base cimport DataType
-from nautilus_trader.model.data.book cimport OrderBookDelta
-from nautilus_trader.model.data.book cimport OrderBookDeltas
-from nautilus_trader.model.data.status cimport InstrumentClose
-from nautilus_trader.model.data.status cimport InstrumentStatus
-from nautilus_trader.model.data.status cimport VenueStatus
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport BarAggregation
-from nautilus_trader.model.enums_c cimport PriceType
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.data cimport BarType
+from nautilus_trader.model.data cimport DataType
+from nautilus_trader.model.data cimport InstrumentClose
+from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -84,8 +86,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class DataEngine(Component):
@@ -143,6 +143,7 @@ cdef class DataEngine(Component):
         self.debug = config.debug
         self._time_bars_build_with_no_updates = config.time_bars_build_with_no_updates
         self._time_bars_timestamp_on_close = config.time_bars_timestamp_on_close
+        self._time_bars_interval_type = config.time_bars_interval_type
         self._validate_data_sequence = config.validate_data_sequence
 
         # Counters
@@ -1301,7 +1302,7 @@ cdef class DataEngine(Component):
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
-                data = self._catalog.instruments(as_nautilus=True)
+                data = self._catalog.instruments()
             else:
                 data = self._catalog.instruments(instrument_ids=[str(instrument_id)])
         elif request.data_type.type == QuoteTick:
@@ -1627,6 +1628,7 @@ cdef class DataEngine(Component):
                 logger=self._log.get_logger(),
                 build_with_no_updates=self._time_bars_build_with_no_updates,
                 timestamp_on_close=self._time_bars_timestamp_on_close,
+                interval_type=self._time_bars_interval_type,
             )
         elif bar_type.spec.aggregation == BarAggregation.TICK:
             aggregator = TickBarAggregator(

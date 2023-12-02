@@ -248,14 +248,14 @@ impl TradeTick {
     /// Return JSON encoded bytes representation of the object.
     #[pyo3(name = "as_json")]
     fn py_as_json(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrapping is safe when serializing a valid object
+        // SAFETY: Unwrap safe when serializing a valid object
         self.as_json_bytes().unwrap().into_py(py)
     }
 
     /// Return MsgPack encoded bytes representation of the object.
     #[pyo3(name = "as_msgpack")]
     fn py_as_msgpack(&self, py: Python<'_>) -> Py<PyAny> {
-        // SAFETY: Unwrapping is safe when serializing a valid object
+        // SAFETY: Unwrap safe when serializing a valid object
         self.as_msgpack_bytes().unwrap().into_py(py)
     }
 }

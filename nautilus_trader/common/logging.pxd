@@ -24,6 +24,13 @@ from nautilus_trader.core.rust.common cimport Logger_API
 from nautilus_trader.core.rust.common cimport LogLevel
 
 
+cpdef LogColor log_color_from_str(str value)
+cpdef str log_color_to_str(LogColor value)
+
+cpdef LogLevel log_level_from_str(str value)
+cpdef str log_level_to_str(LogLevel value)
+
+
 cdef str RECV
 cdef str SENT
 cdef str CMD
@@ -62,6 +69,7 @@ cdef class Logger:
 cdef class LoggerAdapter:
     cdef Logger _logger
     cdef str _component
+    cdef bint _is_colored
     cdef bint _is_bypassed
 
     cpdef Logger get_logger(self)

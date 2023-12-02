@@ -28,14 +28,14 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data.base import capsule_to_list
+from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.persistence.catalog.types import CatalogDataResult
 
@@ -211,10 +211,7 @@ class BacktestNode:
         # Add instruments
         for config in data_configs:
             if is_nautilus_class(config.data_type):
-                instruments = config.catalog().instruments(
-                    instrument_ids=config.instrument_id,
-                    as_nautilus=True,
-                )
+                instruments = config.catalog().instruments(instrument_ids=config.instrument_id)
                 for instrument in instruments or []:
                     if instrument.id not in engine.cache.instrument_ids():
                         engine.add_instrument(instrument)

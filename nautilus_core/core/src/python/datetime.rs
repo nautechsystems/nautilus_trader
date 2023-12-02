@@ -62,6 +62,7 @@ pub fn py_nanos_to_micros(nanos: u64) -> u64 {
     nanos_to_micros(nanos)
 }
 
+#[must_use]
 #[pyfunction(name = "unix_nanos_to_iso8601")]
 pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     unix_nanos_to_iso8601(timestamp_ns)

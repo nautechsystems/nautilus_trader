@@ -15,24 +15,19 @@
 
 from decimal import Decimal
 
+# This needs to be a Python import so it can used in the FSM
 from nautilus_trader.model.enums import order_status_to_str
 
 from libc.stdint cimport int64_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
-from nautilus_trader.model.currency cimport Currency
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderStatus
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport PositionSide
-from nautilus_trader.model.enums_c cimport contingency_type_to_str
-from nautilus_trader.model.enums_c cimport order_side_to_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
-from nautilus_trader.model.enums_c cimport position_side_to_str
-from nautilus_trader.model.enums_c cimport time_in_force_to_str
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -50,7 +45,13 @@ from nautilus_trader.model.events.order cimport OrderReleased
 from nautilus_trader.model.events.order cimport OrderSubmitted
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport contingency_type_to_str
+from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport position_side_to_str
+from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.identifiers cimport TradeId
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Quantity
 

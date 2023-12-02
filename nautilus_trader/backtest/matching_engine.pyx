@@ -24,11 +24,22 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.backtest.models cimport FillModel
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.clock cimport TestClock
+from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
+from nautilus_trader.core.rust.model cimport AggressorSide
+from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport OmsType
+from nautilus_trader.core.rust.model cimport OrderSide
+from nautilus_trader.core.rust.model cimport OrderStatus
+from nautilus_trader.core.rust.model cimport OrderType
 from nautilus_trader.core.rust.model cimport Price_t
+from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport orderbook_best_ask_price
 from nautilus_trader.core.rust.model cimport orderbook_best_bid_price
 from nautilus_trader.core.rust.model cimport orderbook_has_ask
@@ -43,21 +54,10 @@ from nautilus_trader.execution.messages cimport CancelAllOrders
 from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
-from nautilus_trader.model.data.book cimport BookOrder
-from nautilus_trader.model.data.tick cimport QuoteTick
-from nautilus_trader.model.data.tick cimport TradeTick
-from nautilus_trader.model.enums_c cimport AggressorSide
-from nautilus_trader.model.enums_c cimport BookType
-from nautilus_trader.model.enums_c cimport ContingencyType
-from nautilus_trader.model.enums_c cimport LiquiditySide
-from nautilus_trader.model.enums_c cimport OmsType
-from nautilus_trader.model.enums_c cimport OrderSide
-from nautilus_trader.model.enums_c cimport OrderStatus
-from nautilus_trader.model.enums_c cimport OrderType
-from nautilus_trader.model.enums_c cimport PriceType
-from nautilus_trader.model.enums_c cimport TimeInForce
-from nautilus_trader.model.enums_c cimport liquidity_side_to_str
-from nautilus_trader.model.enums_c cimport order_type_to_str
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport QuoteTick
+from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -67,6 +67,8 @@ from nautilus_trader.model.events.order cimport OrderModifyRejected
 from nautilus_trader.model.events.order cimport OrderRejected
 from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
+from nautilus_trader.model.functions cimport liquidity_side_to_str
+from nautilus_trader.model.functions cimport order_type_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -79,7 +81,6 @@ from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
-from nautilus_trader.model.orderbook.book cimport OrderBook
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.limit_if_touched cimport LimitIfTouchedOrder
@@ -91,7 +92,6 @@ from nautilus_trader.model.orders.stop_market cimport StopMarketOrder
 from nautilus_trader.model.orders.trailing_stop_limit cimport TrailingStopLimitOrder
 from nautilus_trader.model.orders.trailing_stop_market cimport TrailingStopMarketOrder
 from nautilus_trader.model.position cimport Position
-from nautilus_trader.msgbus.bus cimport MessageBus
 
 
 cdef class OrderMatchingEngine:
@@ -642,7 +642,10 @@ cdef class OrderMatchingEngine:
         # Index identifiers
         self._account_ids[order.trader_id] = account_id
 
-        cdef Order parent
+        cdef:
+            Order parent
+            Order contingenct_order
+            ClientOrderId client_order_id
         if self._support_contingent_orders and order.parent_order_id is not None:
             parent = self.cache.order(order.parent_order_id)
             assert parent is not None and parent.contingency_type == ContingencyType.OTO, "OTO parent not found"
@@ -652,6 +655,16 @@ cdef class OrderMatchingEngine:
             elif parent.status_c() == OrderStatus.ACCEPTED or parent.status_c() == OrderStatus.TRIGGERED:
                 self._log.info(f"Pending OTO {order.client_order_id} triggers from {parent.client_order_id}")
                 return  # Pending trigger
+
+            # Check contingent orders are still open
+            for client_order_id in order.linked_order_ids:
+                contingent_order = self.cache.order(client_order_id)
+                if contingent_order is None:
+                    raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
+                if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
+                    if not order.is_closed_c() and contingent_order.is_closed_c():
+                        self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
+                        return  # Order rejected
 
         # Check reduce-only instruction
         cdef Position position

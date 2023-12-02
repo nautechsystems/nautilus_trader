@@ -198,7 +198,7 @@
         "bettingType": "ODDS",
         "bspMarket": true,
         "bspReconciled": false,
-        "competitionId": "",
+        "competitionId": null,
         "competitionName": "",
         "complete": true,
         "countryCode": "GB",

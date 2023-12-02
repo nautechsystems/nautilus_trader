@@ -19,6 +19,7 @@ use std::{
     fs::{create_dir_all, File},
     io::{self, BufWriter, Stderr, Stdout, Write},
     path::{Path, PathBuf},
+    str::FromStr,
     sync::mpsc::{channel, Receiver, SendError, Sender},
     thread,
 };
@@ -26,10 +27,84 @@ use std::{
 use chrono::{prelude::*, Utc};
 use nautilus_core::{datetime::unix_nanos_to_iso8601, time::UnixNanos, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::Level;
+use tracing_appender::{
+    non_blocking::WorkerGuard,
+    rolling::{RollingFileAppender, Rotation},
+};
+use tracing_subscriber::{fmt::Layer, prelude::*, EnvFilter, Registry};
 
 use crate::enums::{LogColor, LogLevel};
+
+/// Guards the log collector and flushes it when dropped
+///
+/// This struct must be dropped when the application has completed operation
+/// it ensures that the any pending log lines are flushed before the application
+/// closes.
+#[pyclass]
+pub struct LogGuard {
+    #[allow(dead_code)]
+    guards: Vec<WorkerGuard>,
+}
+
+/// Sets the global log collector
+///
+/// stdout_level: Set the level for the stdout writer
+/// stderr_level: Set the level for the stderr writer
+/// file_level: Set the level, the directory and the prefix for the file writer
+///
+/// It also configures a top level filter based on module/component name.
+/// The format for the string is component1=info,component2=debug.
+/// For e.g. network=error,kernel=info
+///
+/// # Safety
+/// Should only be called once during an applications run, ideally at the
+/// beginning of the run.
+#[pyfunction]
+#[must_use]
+pub fn set_global_log_collector(
+    stdout_level: Option<String>,
+    stderr_level: Option<String>,
+    file_level: Option<(String, String, String)>,
+) -> LogGuard {
+    let mut guards = Vec::new();
+    let stdout_sub_builder = stdout_level.map(|stdout_level| {
+        let stdout_level = Level::from_str(&stdout_level).unwrap();
+        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+        guards.push(guard);
+        Layer::default().with_writer(non_blocking.with_max_level(stdout_level))
+    });
+    let stderr_sub_builder = stderr_level.map(|stderr_level| {
+        let stderr_level = Level::from_str(&stderr_level).unwrap();
+        let (non_blocking, guard) = tracing_appender::non_blocking(std::io::stdout());
+        guards.push(guard);
+        Layer::default().with_writer(non_blocking.with_max_level(stderr_level))
+    });
+    let file_sub_builder = file_level.map(|(dir_path, file_prefix, file_level)| {
+        let file_level = Level::from_str(&file_level).unwrap();
+        let rolling_log = RollingFileAppender::new(Rotation::NEVER, dir_path, file_prefix);
+        let (non_blocking, guard) = tracing_appender::non_blocking(rolling_log);
+        guards.push(guard);
+        Layer::default()
+            .with_ansi(false) // turn off unicode colors when writing to file
+            .with_writer(non_blocking.with_max_level(file_level))
+    });
+
+    if let Err(e) = Registry::default()
+        .with(stderr_sub_builder)
+        .with(stdout_sub_builder)
+        .with(file_sub_builder)
+        .with(EnvFilter::from_default_env())
+        .try_init()
+    {
+        println!("Failed to set global default dispatcher because of error: {e}");
+    };
+
+    LogGuard { guards }
+}
 
 /// Provides a high-performance logger utilizing a MPSC channel under the hood.
 ///
@@ -47,6 +122,8 @@ pub struct Logger {
     pub level_stdout: LogLevel,
     /// The minimum log level to write to a log file.
     pub level_file: Option<LogLevel>,
+    /// If logger is using ANSI color codes.
+    pub is_colored: bool,
     /// If logging is bypassed.
     pub is_bypassed: bool,
 }
@@ -89,6 +166,7 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         component_levels: Option<HashMap<String, Value>>,
+        is_colored: bool,
         is_bypassed: bool,
     ) -> Self {
         let (tx, rx) = channel::<LogEvent>();
@@ -121,6 +199,7 @@ impl Logger {
                 file_name,
                 file_format,
                 level_filters,
+                is_colored,
                 rx,
             );
         });
@@ -132,10 +211,12 @@ impl Logger {
             instance_id,
             level_stdout,
             level_file,
+            is_colored,
             is_bypassed,
         }
     }
 
+    #[allow(clippy::useless_format)] // Format is not actually useless as we escape braces
     fn handle_messages(
         trader_id: &str,
         instance_id: &str,
@@ -145,6 +226,7 @@ impl Logger {
         file_name: Option<String>,
         file_format: Option<String>,
         level_filters: HashMap<String, LogLevel>,
+        is_colored: bool,
         rx: Receiver<LogEvent>,
     ) {
         // Setup std I/O buffers
@@ -187,9 +269,11 @@ impl Logger {
         let mut file_buf = file.map(BufWriter::new);
 
         // Setup templates for formatting
-        let template_console = String::from(
-            "\x1b[1m{ts}\x1b[0m {color}[{level}] {trader_id}.{component}: {message}\x1b[0m\n",
-        );
+        let template_console = match is_colored {
+            true => format!("\x1b[1m{{ts}}\x1b[0m {{color}}[{{level}}] {{trader_id}}.{{component}}: {{message}}\x1b[0m\n"),
+            false => format!("{{ts}} [{{level}}] {{trader_id}}.{{component}}: {{message}}\n")
+        };
+
         let template_file = String::from("{ts} [{level}] {trader_id}.{component}: {message}\n");
 
         // Continue to receive and handle log events until channel is hung up
@@ -449,6 +533,7 @@ pub mod stubs {
             None,
             None,
             None,
+            true,
             false,
         )
     }
@@ -550,6 +635,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             false,
         );
 
@@ -610,6 +696,7 @@ mod tests {
                 String::from("RiskEngine"),
                 Value::from("ERROR"), // <-- This should be filtered
             )))),
+            true,
             false,
         );
 
@@ -661,6 +748,7 @@ mod tests {
             None,
             Some("json".to_string()),
             None,
+            true,
             false,
         );
 

@@ -129,8 +129,6 @@ if __name__ == "__main__":
     # Update the market ID with something coming up in `Next Races` from
     # https://www.betfair.com.au/exchange/plus/
     # The market ID will appear in the browser query string.
-    config = BetfairInstrumentProviderConfig(
-        market_ids=["1.218938285"],
-    )
+    config = BetfairInstrumentProviderConfig(market_ids=["1.221718403"])
     node = asyncio.run(main(instrument_config=config))
     node.dispose()
