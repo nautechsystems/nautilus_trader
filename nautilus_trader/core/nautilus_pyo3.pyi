@@ -769,6 +769,21 @@ class OrderSubmitted:
     def from_dict(cls, values: dict[str, str]) -> OrderSubmitted: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderEmulated:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderEmulated: ...
+    def to_dict(self) -> dict[str, str]: ...
+
 
 ###################################################################################################
 # Infrastructure

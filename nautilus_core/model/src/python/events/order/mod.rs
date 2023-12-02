@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod denied;
+pub mod emulated;
 pub mod filled;
 pub mod initialized;
 pub mod rejected;
