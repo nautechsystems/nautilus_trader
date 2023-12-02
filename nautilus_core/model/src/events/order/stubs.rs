@@ -22,8 +22,9 @@ use ustr::Ustr;
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
-        denied::OrderDenied, filled::OrderFilled, initialized::OrderInitialized,
-        rejected::OrderRejected, submitted::OrderSubmitted, triggered::OrderTriggered,
+        denied::OrderDenied, emulated::OrderEmulated, filled::OrderFilled,
+        initialized::OrderInitialized, rejected::OrderRejected, submitted::OrderSubmitted,
+        triggered::OrderTriggered,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
@@ -201,6 +202,26 @@ pub fn order_triggered(
         false,
         Some(venue_order_id),
         Some(account_id),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_emulated(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    uuid4: UUID4,
+) -> OrderEmulated {
+    OrderEmulated::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        uuid4,
+        0,
+        0,
     )
     .unwrap()
 }
