@@ -1,9 +1,10 @@
 # NautilusTrader 1.181.0 Beta
 
-Released on TBD (UTC).
+Released on 2nd December (UTC).
 
 ### Enhancements
 - Rewrote Interactive Brokers integration documentation, many thanks @benjaminsingleton
+- Added Interactive Brokers adapter support for crypto instruments with cash quantity, thanks @benjaminsingleton
 - Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
 - Added `DataEngineConfig.time_bars_interval_type` (determines the type of interval used for time aggregation `left-open` or `right-open`)
 - Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
