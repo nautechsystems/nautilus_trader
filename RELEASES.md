@@ -2,6 +2,8 @@
 
 Released on 2nd December (UTC).
 
+This release adds support for Python 3.12.
+
 ### Enhancements
 - Rewrote Interactive Brokers integration documentation, many thanks @benjaminsingleton
 - Added Interactive Brokers adapter support for crypto instruments with cash quantity, thanks @benjaminsingleton
