@@ -20,7 +20,7 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::{prelude::*, PyResult};
+use pyo3::{prelude::*, types::PyBytes, PyResult};
 use serde_json::Value;
 
 use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
@@ -38,10 +38,24 @@ impl RedisCacheDatabase {
         }
     }
 
+    #[pyo3(name = "keys")]
+    fn py_keys(&mut self, pattern: &str) -> PyResult<Vec<String>> {
+        match self.keys(pattern) {
+            Ok(keys) => Ok(keys),
+            Err(e) => Err(to_pyruntime_err(e)),
+        }
+    }
+
     #[pyo3(name = "read")]
-    fn py_read(&mut self, op_type: String) -> PyResult<Vec<Vec<u8>>> {
-        match self.read(op_type) {
-            Ok(payload) => Ok(payload),
+    fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<PyObject>> {
+        match self.read(key) {
+            Ok(result) => {
+                let vec_py_bytes = result
+                    .into_iter()
+                    .map(|r| PyBytes::new(py, &r).into())
+                    .collect::<Vec<PyObject>>();
+                Ok(vec_py_bytes)
+            }
             Err(e) => Err(to_pyruntime_err(e)),
         }
     }

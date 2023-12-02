@@ -30,6 +30,7 @@ use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
 const DELIMITER: char = ':';
 const GENERAL: &str = "general";
+const CURRENCIES: &str = "currencies";
 
 #[cfg_attr(
     feature = "python",
@@ -37,6 +38,7 @@ const GENERAL: &str = "general";
 )]
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
+    trader_key: String,
     conn: Connection,
     tx: Sender<DatabaseCommand>,
 }
@@ -54,21 +56,38 @@ impl CacheDatabase for RedisCacheDatabase {
         let conn = client.get_connection().unwrap();
 
         let (tx, rx) = channel::<DatabaseCommand>();
+        let _encoding = get_encoding(&config);
+        let trader_key = get_trader_key(trader_id, instance_id, &config);
+        let trader_key_clone = trader_key.clone();
 
         thread::spawn(move || {
-            Self::handle_ops(rx, trader_id, instance_id, config);
+            Self::handle_ops(rx, trader_key_clone, config);
         });
 
         Ok(RedisCacheDatabase {
             trader_id,
+            trader_key,
             conn,
             tx,
         })
     }
 
-    fn read(&mut self, key: String) -> Result<Vec<Vec<u8>>> {
-        let result: Vec<Vec<u8>> = self.conn.get(key)?;
-        Ok(result)
+    fn keys(&mut self, pattern: &str) -> Result<Vec<String>> {
+        match self.conn.keys(pattern) {
+            Ok(keys) => Ok(keys),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>> {
+        let collection = get_collection_key(key);
+        let key = format!("{}{DELIMITER}{}", self.trader_key, key);
+
+        match collection {
+            GENERAL => read_general(&mut self.conn, &key),
+            CURRENCIES => read_general(&mut self.conn, &key),
+            _ => panic!("Collection '{collection}' not recognized"),
+        }
     }
 
     fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String> {
@@ -97,27 +116,22 @@ impl CacheDatabase for RedisCacheDatabase {
 
     fn handle_ops(
         rx: Receiver<DatabaseCommand>,
-        trader_id: TraderId,
-        instance_id: UUID4,
+        trader_key: String,
         config: HashMap<String, Value>,
     ) {
         let redis_url = get_redis_url(&config);
         let client = redis::Client::open(redis_url).unwrap();
         let mut conn = client.get_connection().unwrap();
-        let trader_key = get_trader_key(&config, trader_id, instance_id);
 
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            let collection = msg
-                .key
-                .split_once(DELIMITER)
-                .unwrap_or_else(|| panic!("Invalid `key` '{}'", msg.key));
-            let key = format!("{trader_key}{}", msg.key);
+            let collection = get_collection_key(&msg.key);
+            let key = format!("{trader_key}{DELIMITER}{}", msg.key);
 
             match msg.op_type {
                 DatabaseOperation::Insert => insert(
                     &mut conn,
-                    collection.0,
+                    collection,
                     &key,
                     &msg.payload.expect("Null `payload` for `insert`"),
                 )
@@ -125,6 +139,16 @@ impl CacheDatabase for RedisCacheDatabase {
                 _ => panic!("Unsupported `op_type`"),
             }
         }
+    }
+}
+
+fn read_general(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
+    let result: Vec<u8> = conn.get(key)?;
+
+    if result.is_empty() {
+        Ok(vec![])
+    } else {
+        Ok(vec![result])
     }
 }
 
@@ -138,13 +162,14 @@ fn insert(
 
     match collection {
         GENERAL => insert_general(conn, key, &value[0]),
+        CURRENCIES => insert_general(conn, key, &value[0]),
         _ => panic!("Collection '{collection}' not recognized"),
     }
 }
 
 fn insert_general(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<(), String> {
     conn.set(key, value)
-        .map_err(|e| format!("Failed to set key-value in Redis: {e}"))
+        .map_err(|e| format!("Failed to set '{key}' in Redis: {e}"))
 }
 
 fn get_redis_url(config: &HashMap<String, Value>) -> String {
@@ -175,9 +200,9 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
 }
 
 fn get_trader_key(
-    config: &HashMap<String, Value>,
     trader_id: TraderId,
     instance_id: UUID4,
+    config: &HashMap<String, Value>,
 ) -> String {
     let mut key = String::new();
 
@@ -186,12 +211,36 @@ fn get_trader_key(
     }
 
     key.push_str(trader_id.value.as_str());
-    key.push(DELIMITER);
 
     if let Some(Value::Bool(true)) = config.get("use_instance_id") {
-        key.push_str(&format!("{instance_id}"));
         key.push(DELIMITER);
+        key.push_str(&format!("{instance_id}"));
     }
 
     key
+}
+
+fn get_encoding(config: &HashMap<String, Value>) -> String {
+    config
+        .get("encoding")
+        .and_then(|v| v.as_str())
+        .unwrap_or("msgpack")
+        .to_string()
+}
+
+fn get_collection_key(key: &str) -> &str {
+    key.split_once(DELIMITER)
+        .unwrap_or_else(|| panic!("Invalid `key` '{}'", key))
+        .0
+}
+
+#[allow(dead_code)]
+fn deserialize_payload(encoding: &str, payload: &[u8]) -> Result<HashMap<String, Value>, String> {
+    match encoding {
+        "msgpack" => rmp_serde::from_slice(payload)
+            .map_err(|e| format!("Failed to deserialize msgpack `payload`: {e}")),
+        "json" => serde_json::from_slice(payload)
+            .map_err(|e| format!("Failed to deserialize json `payload`: {e}")),
+        _ => Err(format!("Unsupported encoding: {encoding}")),
+    }
 }

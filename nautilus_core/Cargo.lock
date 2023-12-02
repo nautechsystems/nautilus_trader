@@ -2262,6 +2262,7 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "redis",
+ "rmp-serde",
  "rstest",
  "serde",
  "serde_json",

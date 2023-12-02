@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
+import time
 from decimal import Decimal
 
 import msgspec
@@ -163,6 +164,7 @@ class TestRedisCacheDatabase:
         self.database.add(key, str(bar).encode())
 
         # Assert
+        time.sleep(0.1)  # Allow MPSC thread to write
         assert self.database.load() == {key: str(bar).encode()}
 
     def test_add_currency(self):
@@ -179,6 +181,7 @@ class TestRedisCacheDatabase:
         self.database.add_currency(currency)
 
         # Assert
+        time.sleep(0.1)  # Allow MPSC thread to write
         assert self.database.load_currency(currency.code) == currency
 
     def test_add_account(self):
@@ -457,6 +460,7 @@ class TestRedisCacheDatabase:
         self.database.add_currency(aud)
 
         # Act
+        time.sleep(0.1)  # Allow MPSC thread to write
         result = self.database.load_currency("AUD")
 
         # Assert
@@ -978,4 +982,5 @@ class TestRedisCacheDatabaseIntegrity:
         self.engine.run()
 
         # Assert
+        time.sleep(0.1)  # Allow MPSC thread to write
         assert self.engine.cache.check_integrity()

@@ -228,17 +228,21 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict general = {}
 
-        cdef list general_keys = self._redis.keys(f"{self._key_general}*")
+        cdef list general_keys = self._backing.keys(f"*:{_GENERAL}:*")
+        # cdef list general_keys = self._redis.keys(f"{self._key_general}*")
         if not general_keys:
             return general
 
-        cdef bytes key_bytes
-        cdef bytes value_bytes
-        cdef str key
-        for key_bytes in general_keys:
-            value_bytes = self._redis.get(name=key_bytes)
+        cdef:
+            str key
+            list result
+            bytes value_bytes
+        for key in general_keys:
+            key = key.split(':', maxsplit=1)[1]
+            result = self._backing.read(key)
+            value_bytes = result[0]
             if value_bytes is not None:
-                key = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+                key = key.split(':', maxsplit=1)[1]
                 general[key] = value_bytes
 
         return general
@@ -254,7 +258,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict currencies = {}
 
-        cdef list currency_keys = self._redis.keys(f"{self._key_currencies}*")
+        cdef list currency_keys = self._redis.keys(f"*:{_CURRENCIES}*")
         if not currency_keys:
             return currencies
 
@@ -457,8 +461,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(code, "code")
 
+        # cdef list data = self._backing.read(f"{_CURRENCIES}:{code}")
+        #
+        # if not data:
+        #     return None
+        #
+        # cdef dict c_map = self._serializer.deserialize(data[0])
+
         cdef dict c_hash = self._redis.hgetall(name=self._key_currencies + code)
         cdef dict c_map = {k.decode('utf-8'): v for k, v in c_hash.items()}
+
         if not c_map:
             return None
 
@@ -466,8 +478,8 @@ cdef class RedisCacheDatabase(CacheDatabase):
             code=code,
             precision=int(c_map["precision"]),
             iso4217=int(c_map["iso4217"]),
-            name=c_map["name"].decode(_UTF8),
-            currency_type=currency_type_from_str(c_map["currency_type"].decode("utf-8")),
+            name=c_map["name"].decode(_UTF8),  # Remove decode in new impl
+            currency_type=currency_type_from_str(c_map["currency_type"].decode(_UTF8)),
         )
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
@@ -753,6 +765,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(value, "value")
 
         # self._redis.set(name=self._key_general + key, value=value)
+
         self._backing.insert(f"{_GENERAL}:{key}", [value])
         self._log.debug(f"Added general object {key}.")
 
@@ -774,6 +787,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
             "name": currency.name,
             "currency_type": currency_type_to_str(currency.currency_type)
         }
+
+        # cdef bytes payload = self._serializer.serialize(currency_map)
+        # self._backing.insert(f"{_CURRENCIES}:{currency.code}", [payload])
 
         # Command pipeline
         pipe = self._redis.pipeline()
