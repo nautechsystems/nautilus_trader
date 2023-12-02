@@ -15,6 +15,7 @@
 
 
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
+from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
@@ -138,4 +139,21 @@ def test_order_submitted():
         == "OrderSubmitted(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
         + "client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
         + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_emulated():
+    event = TestEventsProviderPyo3.order_emulated()
+    result_dict = OrderEmulated.to_dict(event)
+    order_emulated = OrderEmulated.from_dict(result_dict)
+    assert order_emulated == event
+    assert (
+        str(event)
+        == "OrderEmulated(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1)"
+    )
+    assert (
+        repr(event)
+        == "OrderEmulated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
     )
