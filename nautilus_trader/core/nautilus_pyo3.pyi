@@ -701,7 +701,7 @@ class Equity:
         currency: Currency,
         price_precision: int,
         price_increment: Price,
-        multiplier: float,
+        multiplier: Quantity,
         margin_init: float,
         margin_maint: float,
         maker_fee: float,

@@ -181,7 +181,7 @@ class TestInstrumentProviderPyo3:
             activation = pd.Timestamp(2021, 9, 17, tz=pytz.utc)
         if expiration is None:
             expiration = pd.Timestamp(2021, 12, 17, tz=pytz.utc)
-        return FuturesContract(  # type: ignore
+        return FuturesContract(
             id=InstrumentId.from_str("ESZ21.CME"),
             raw_symbol=Symbol("ESZ21"),
             asset_class=AssetClass.INDEX,
