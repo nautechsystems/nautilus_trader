@@ -51,7 +51,7 @@ time-consuming operations involved in interacting with a database or client.
 
 ### Serialization
 
-Most built in objects are serializable, as well as primitives such as `str`, `int`, `float`, `bool` and `bytes`.
+Most Nautilus built-in objects are serializable, dictionaries `dict[str, Any]` containing serializable primitives, as well as primitive types themselves such as `str`, `int`, `float`, `bool` and `bytes`.
 Additional custom types can be registered by calling the following registration function from the `serialization` subpackage:
 
 ```python
@@ -60,23 +60,16 @@ def register_serializable_object(
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
 ):
-    """
-    Register the given object with the global serialization object maps.
-
-    Parameters
-    ----------
-    obj : object
-        The object to register.
-    to_dict : Callable[[Any], dict[str, Any]]
-        The delegate to instantiate a dict of primitive types from the object.
-    from_dict : Callable[[dict[str, Any]], Any]
-        The delegate to instantiate the object from a dict of primitive types.
-    """
     ...
 ```
+
+- `obj` The object to register
+- `to_dict` The delegate to instantiate a dict of primitive types from the object
+- `from_dict` The delegate to instantiate the object from a dict of primitive types
+
 ## Configuration
 
-The message bus backing can be configured by importing the `MessageBusConfig` object and passing this to
+The message bus external backing technology can be configured by importing the `MessageBusConfig` object and passing this to
 your `TradingNodeConfig`. Each of these config options will be described below.
 
 ```python
@@ -91,46 +84,6 @@ message_bus=MessageBusConfig(
     autotrim_mins=30,
 )
 ...
-```
-
-```python
-
-class MessageBusConfig(NautilusConfig, frozen=True):
-    """
-    Configuration for ``MessageBus`` instances.
-
-    Parameters
-    ----------
-    database : DatabaseConfig, optional
-        The configuration for the message bus backing database.
-    stream : str, optional
-        The additional prefix for externally published stream names (must have a `database` config).
-    use_instance_id : bool, default False
-        If the traders instance ID should be used in stream names.
-    encoding : str, {'msgpack', 'json'}, default 'msgpack'
-        The encoding for database operations, controls the type of serializer used.
-    timestamps_as_iso8601, default False
-        If timestamps should be persisted as ISO 8601 strings.
-        If `False` then will persit as UNIX nanoseconds.
-    types_filter : list[type], optional
-        A list of serializable types *not* to publish externally.
-    autotrim_mins : int, optional
-        The lookback window in minutes for automatic stream trimming.
-        The actual window may extend up to one minute beyond the specified value since streams are
-        trimmed at most once every minute.
-        Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
-        in acommand syntax error.
-
-    """
-
-    database: DatabaseConfig | None = None
-    stream: str | None = None
-    use_instance_id: bool = False
-    encoding: str = "msgpack"
-    timestamps_as_iso8601: bool = False
-    types_filter: list[type] | None = None
-    autotrim_mins: int | None = None
-
 ```
 
 ### Database config
@@ -157,6 +110,24 @@ By configuring this grouping behavior, pass a string to the `stream` configurati
 Each trader node is assigned a unique 'instance ID,' which is a UUIDv4. This instance ID helps distinguish individual traders when messages 
 are distributed across multiple streams. You can include the instance ID in the trader key by setting the `use_instance_id` configuration option to `True`.
 This is particularly useful when you need to track and identify traders across various streams in a multi-node trading system.
+
+### Encoding
+
+Two encodings are currently supported by the built-in `Serializer` used by the `MessageBus`:
+- JSON (`json`)
+- MessagePack (`msgpack`)
+
+Use the `encoding` config option to control the message writing encoding.
+
+```{tip}
+The `msgpack` encoding is used by default as it offers the most optimal serialization and memory performance.
+It's recommended to use `json` encoding for human readability when performance is not a primary concern.
+```
+
+### Timestamp formatting
+
+By default timestamps are formatted as UNIX epoch nanosecond integers. Alternatively you can
+configure ISO 8601 string formatting by setting the `timestamps_as_iso8601` to `True`.
 
 ### Types filtering
 
