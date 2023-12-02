@@ -88,7 +88,7 @@ message_bus=MessageBusConfig(
 
 ### Database config
 A `DatabaseConfig` must be provided, for a default Redis setup on the local
-loopback, you can simple pass a `DatabaseConfig()` which will use defaults to match.
+loopback you can pass a `DatabaseConfig()`, which will use defaults to match.
 
 ### Trader keys
 
