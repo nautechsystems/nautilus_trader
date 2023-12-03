@@ -655,16 +655,6 @@ cpdef void nautilus_header(LoggerAdapter logger):
     logger.info(f"pyarrow {pyarrow.__version__}")
     logger.info(f"pytz {pytz.__version__}")  # type: ignore
     try:
-        import redis
-        logger.info(f"redis {redis.__version__}")
-    except ImportError:  # pragma: no cover
-        redis = None
-    try:
-        import hiredis
-        logger.info(f"hiredis {hiredis.__version__}")
-    except ImportError:  # pragma: no cover
-        hiredis = None
-    try:
         import uvloop
         logger.info(f"uvloop {uvloop.__version__}")
     except ImportError:  # pragma: no cover

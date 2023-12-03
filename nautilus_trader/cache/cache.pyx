@@ -29,7 +29,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
-from nautilus_trader.cache.base cimport CacheFacade
+from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.logging cimport LogColor
 from nautilus_trader.common.logging cimport Logger
 from nautilus_trader.common.logging cimport LoggerAdapter
@@ -77,8 +77,8 @@ cdef class Cache(CacheFacade):
     ----------
     logger : Logger
         The logger for the cache.
-    database : CacheDatabase, optional
-        The database for the cache. If ``None`` then will bypass persistence.
+    database : CacheDatabaseFacade, optional
+        The database adapter for the cache. If ``None`` then will bypass persistence.
     config : CacheConfig, optional
         The cache configuration.
     snapshot_orders : bool, default False
@@ -95,7 +95,7 @@ cdef class Cache(CacheFacade):
     def __init__(
         self,
         Logger logger not None,
-        CacheDatabase database: Optional[CacheDatabase] = None,
+        CacheDatabaseFacade database: Optional[CacheDatabaseFacade] = None,
         bint snapshot_orders: bool = False,
         bint snapshot_positions: bool = False,
         config: Optional[CacheConfig] = None,

@@ -3,11 +3,14 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
+- Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
+- Removed `redis` and `hiredis` dependencies from Python codebase
 
 ### Breaking Changes
 - Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
-- `Actor` state loading now uses the standard `Serializer`
+- Changed `Actor` state loading to now use the standard `Serializer`
+- Removed `infrastructure` subpackage (now redundant with new Rust implementation)
 
 ### Fixes
 None

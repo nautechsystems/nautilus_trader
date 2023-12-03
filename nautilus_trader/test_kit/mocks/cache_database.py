@@ -13,9 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.accounting.accounts.base import Account
-from nautilus_trader.cache.database import CacheDatabase
+from nautilus_trader.cache.facade import CacheDatabaseFacade
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -31,7 +30,7 @@ from nautilus_trader.model.position import Position
 from nautilus_trader.trading.strategy import Strategy
 
 
-class MockCacheDatabase(CacheDatabase):
+class MockCacheDatabase(CacheDatabaseFacade):
     """
     Provides a mock cache database for testing.
 
