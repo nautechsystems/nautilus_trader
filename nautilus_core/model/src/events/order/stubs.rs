@@ -23,8 +23,8 @@ use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
         denied::OrderDenied, emulated::OrderEmulated, filled::OrderFilled,
-        initialized::OrderInitialized, rejected::OrderRejected, submitted::OrderSubmitted,
-        triggered::OrderTriggered,
+        initialized::OrderInitialized, rejected::OrderRejected, released::OrderReleased,
+        submitted::OrderSubmitted, triggered::OrderTriggered,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
@@ -219,6 +219,27 @@ pub fn order_emulated(
         strategy_id_ema_cross,
         instrument_id_btc_usdt,
         client_order_id,
+        uuid4,
+        0,
+        0,
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_released(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    uuid4: UUID4,
+) -> OrderReleased {
+    OrderReleased::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        Price::from_str("22000").unwrap(),
         uuid4,
         0,
         0,
