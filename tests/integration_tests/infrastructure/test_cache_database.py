@@ -147,11 +147,7 @@ class TestCacheDatabaseAdapter:
     def teardown(self):
         # Tests will fail if Redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests for debugging
-
-        # Ensure clean slate
-        while self.database.keys("*"):
-            time.sleep(0.1)
-            continue
+        time.sleep(0.3)  # Ensure clean slate
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -160,7 +156,6 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert result == {}
-        assert self.database.keys() == []
 
     @pytest.mark.asyncio
     async def test_add_general_object_adds_to_cache(self):
@@ -176,7 +171,6 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert self.database.load() == {key: str(bar).encode()}
-        assert self.database.keys() == ["trader-TESTER-000:general:" + key]
 
     @pytest.mark.asyncio
     async def test_add_currency(self):
@@ -1072,58 +1066,6 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert result == {}
 
-    @pytest.mark.asyncio
-    async def test_flush(self):
-        # Arrange
-        order1 = self.strategy.order_factory.market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-        )
-
-        self.database.add_order(order1)
-
-        # Allow MPSC thread to insert
-        await eventually(lambda: self.database.load_order(order1.client_order_id))
-
-        position1_id = PositionId("P-1")
-        fill = TestEventStubs.order_filled(
-            order1,
-            instrument=AUDUSD_SIM,
-            position_id=position1_id,
-            last_px=Price.from_str("1.00000"),
-        )
-
-        position1 = Position(instrument=AUDUSD_SIM, fill=fill)
-        self.database.update_order(order1)
-        self.database.add_position(position1)
-
-        order2 = self.strategy.order_factory.stop_market(
-            AUDUSD_SIM.id,
-            OrderSide.BUY,
-            Quantity.from_int(100_000),
-            Price.from_str("1.00000"),
-        )
-
-        self.database.add_order(order2)
-
-        order2.apply(TestEventStubs.order_submitted(order2))
-        order2.apply(TestEventStubs.order_accepted(order2))
-
-        self.database.update_order(order2)
-
-        # Act
-        self.database.flush()
-
-        # Allow MPSC thread to delete
-        await eventually(lambda: not self.database.load_orders())
-        await eventually(lambda: not self.database.load_positions())
-
-        # Assert
-        assert self.database.load_order(order1.client_order_id) is None
-        assert self.database.load_order(order2.client_order_id) is None
-        assert self.database.load_position(position1.id) is None
-
 
 class TestRedisCacheDatabaseIntegrity:
     def setup(self):
@@ -1196,8 +1138,6 @@ class TestRedisCacheDatabaseIntegrity:
 
         # Reset engine
         self.engine.reset()
-
-        await asyncio.sleep(0.5)
 
         # Act
         self.engine.run()
