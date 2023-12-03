@@ -179,7 +179,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `submit_order` method for this client.",  # pragma: no cover  # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `submit_order` must be implemented in the subclass")
 
     cpdef void submit_order_list(self, SubmitOrderList command):
         """
@@ -195,7 +195,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `submit_order_list` method for this client.",  # pragma: no cover   # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `submit_order_list` must be implemented in the subclass")
 
     cpdef void modify_order(self, ModifyOrder command):
         """
@@ -211,7 +211,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `modify_order` method for this client.",  # pragma: no cover  # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `modify_order` must be implemented in the subclass")
 
     cpdef void cancel_order(self, CancelOrder command):
         """
@@ -227,7 +227,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `cancel_order` method for this client.",  # pragma: no cover  # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `cancel_order` must be implemented in the subclass")
 
     cpdef void cancel_all_orders(self, CancelAllOrders command):
         """
@@ -243,7 +243,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `cancel_all_orders` method for this client.",  # pragma: no cover  # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `cancel_all_orders` must be implemented in the subclass")
 
     cpdef void batch_cancel_orders(self, BatchCancelOrders command):
         """
@@ -259,7 +259,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `batch_cancel_orders` method for this client.",  # pragma: no cover  # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `batch_cancel_orders` must be implemented in the subclass")
 
     cpdef void query_order(self, QueryOrder command):
         """
@@ -276,7 +276,7 @@ cdef class ExecutionClient(Component):
             f"Cannot execute command {command}: not implemented. "  # pragma: no cover
             f"You can implement by overriding the `query_order` method for this client.",  # pragma: no cover  # noqa
         )
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `query_order` must be implemented in the subclass")
 
 # -- EVENT HANDLERS -------------------------------------------------------------------------------
 

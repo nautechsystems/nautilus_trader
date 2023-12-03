@@ -71,20 +71,20 @@ cdef class SimulationModule(Actor):
         self.exchange = exchange
 
     cpdef void pre_process(self, Data data):
-        """Abstract method (implement in subclass)."""
+        """Abstract method `pre_process` (implement in subclass)."""
         pass
 
     cpdef void process(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `process` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void log_diagnostics(self, LoggerAdapter log):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `log_diagnostics` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void reset(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `reset` must be implemented in the subclass")  # pragma: no cover
 
 
 _TZ_US_EAST = pytz.timezone("US/Eastern")

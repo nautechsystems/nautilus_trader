@@ -313,7 +313,9 @@ class LiveExecutionClient(ExecutionClient):
             If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_order_status_report` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_order_status_reports(
         self,
@@ -343,7 +345,9 @@ class LiveExecutionClient(ExecutionClient):
         list[OrderStatusReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_order_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_trade_reports(
         self,
@@ -373,7 +377,9 @@ class LiveExecutionClient(ExecutionClient):
         list[TradeReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_trade_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_position_status_reports(
         self,
@@ -400,7 +406,9 @@ class LiveExecutionClient(ExecutionClient):
         list[PositionStatusReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_position_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_mass_status(
         self,

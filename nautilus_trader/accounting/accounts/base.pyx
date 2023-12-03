@@ -458,10 +458,10 @@ cdef class Account:
         bool
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `is_unleveraged` must be implemented in the subclass")  # pragma: no cover
 
     cdef void _recalculate_balance(self, Currency currency):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_recalculate_balance` must be implemented in the subclass")  # pragma: no cover
 
     cpdef Money calculate_commission(
         self,
@@ -471,7 +471,7 @@ cdef class Account:
         LiquiditySide liquidity_side,
         bint use_quote_for_inverse=False,
     ):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `calculate_commission` must be implemented in the subclass")  # pragma: no cover
 
     cpdef list calculate_pnls(
         self,
@@ -479,7 +479,7 @@ cdef class Account:
         OrderFilled fill,
         Position position: Optional[Position] = None,
     ):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `calculate_pnls` must be implemented in the subclass")  # pragma: no cover
 
     cpdef Money balance_impact(
         self,
@@ -488,4 +488,4 @@ cdef class Account:
         Price price,
         OrderSide order_side,
     ):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `balance_impact` must be implemented in the subclass")  # pragma: no cover
