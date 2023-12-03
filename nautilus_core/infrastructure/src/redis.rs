@@ -64,7 +64,7 @@ const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
