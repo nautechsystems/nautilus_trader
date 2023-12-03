@@ -214,7 +214,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         """
         self._log.debug("Flushing database....")
-        self._redis.flushdb()
+        self._backing.flushdb()
         self._log.info("Flushed database.", LogColor.BLUE)
 
     cpdef dict load(self):
@@ -258,15 +258,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict currencies = {}
 
-        cdef list currency_keys = self._redis.keys(f"*:{_CURRENCIES}*")
+        cdef list currency_keys = self._backing.keys(f"*:{_CURRENCIES}*")
         if not currency_keys:
             return currencies
 
-        cdef bytes key_bytes
-        cdef str currency_code
-        cdef Currency currency
-        for key_bytes in currency_keys:
-            currency_code = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
+        cdef:
+            str key
+            str currency_code
+            Currency currency
+        for key in currency_keys:
+            currency_code = key.rsplit(':', maxsplit=1)[1]
             currency = self.load_currency(currency_code)
 
             if currency is not None:
@@ -285,17 +286,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict instruments = {}
 
-        cdef list instrument_keys = self._redis.keys(f"{self._key_instruments}*")
+        cdef list instrument_keys = self._backing.keys(f"*:{_INSTRUMENTS}*")
         if not instrument_keys:
             return instruments
 
-        cdef bytes key_bytes
-        cdef str key_str
-        cdef InstrumentId instrument_id
-        cdef Instrument instrument
-        for key_bytes in instrument_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            instrument_id = InstrumentId.from_str_c(key_str)
+        cdef:
+            str key
+            InstrumentId instrument_id
+            Instrument instrument
+        for key in instrument_keys:
+            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
             instrument = self.load_instrument(instrument_id)
 
             if instrument is not None:
@@ -314,17 +314,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict synthetics = {}
 
-        cdef list synthetic_keys = self._redis.keys(f"{self._key_synthetics}*")
+        cdef list synthetic_keys = self._backing.keys(f"*:{_SYNTHETICS}*")
         if not synthetic_keys:
             return synthetics
 
-        cdef bytes key_bytes
-        cdef str key_str
-        cdef InstrumentId instrument_id
-        cdef SyntheticInstrument synthetic
-        for key_bytes in synthetic_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            instrument_id = InstrumentId.from_str_c(key_str)
+        cdef:
+            str key
+            InstrumentId instrument_id
+            SyntheticInstrument synthetic
+        for key in synthetic_keys:
+            instrument_id = InstrumentId.from_str_c(key.rsplit(':', maxsplit=1)[1])
             synthetic = self.load_synthetic(instrument_id)
 
             if synthetic is not None:
@@ -343,17 +342,17 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict accounts = {}
 
-        cdef list account_keys = self._redis.keys(f"{self._key_accounts}*")
+        cdef list account_keys = self._backing.keys(f"*:{_ACCOUNTS}*")
         if not account_keys:
             return accounts
 
-        cdef bytes key_bytes
-        cdef str account_str
-        cdef AccountId account_id
-        cdef Account account
-        for key_bytes in account_keys:
-            account_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            account_id = AccountId(account_str)
+        cdef:
+            str key
+            str account_str
+            AccountId account_id
+            Account account
+        for key in account_keys:
+            account_id = AccountId(key.rsplit(':', maxsplit=1)[1])
             account = self.load_account(account_id)
 
             if account is not None:
@@ -372,17 +371,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict orders = {}
 
-        cdef list order_keys = self._redis.keys(f"{self._key_orders}*")
+        cdef list order_keys = self._backing.keys(f"*:{_ORDERS}*")
         if not order_keys:
             return orders
 
-        cdef bytes key_bytes
-        cdef str key_str
-        cdef ClientOrderId client_order_id
-        cdef Order order
-        for key_bytes in order_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            client_order_id = ClientOrderId(key_str)
+        cdef:
+            str key
+            ClientOrderId client_order_id
+            Order order
+        for key in order_keys:
+            client_order_id = ClientOrderId(key.rsplit(':', maxsplit=1)[1])
             order = self.load_order(client_order_id)
 
             if order is not None:
@@ -401,17 +399,16 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         cdef dict positions = {}
 
-        cdef list position_keys = self._redis.keys(f"{self._key_positions}*")
+        cdef list position_keys = self._backing.keys(f"*:{_POSITIONS}*")
         if not position_keys:
             return positions
 
-        cdef bytes key_bytes
-        cdef str key_str
-        cdef PositionId position_id
-        cdef Position position
-        for key_bytes in position_keys:
-            key_str = key_bytes.decode(_UTF8).rsplit(':', maxsplit=1)[1]
-            position_id = PositionId(key_str)
+        cdef:
+            str key
+            PositionId position_id
+            Position position
+        for key in position_keys:
+            position_id = PositionId(key.rsplit(':', maxsplit=1)[1])
             position = self.load_position(position_id)
 
             if position is not None:
@@ -461,25 +458,26 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(code, "code")
 
-        # cdef list data = self._backing.read(f"{_CURRENCIES}:{code}")
-        #
-        # if not data:
-        #     return None
-        #
-        # cdef dict c_map = self._serializer.deserialize(data[0])
+        cdef str key = f"{_CURRENCIES}:{code}"
+        cdef list result = self._backing.read(key)
 
-        cdef dict c_hash = self._redis.hgetall(name=self._key_currencies + code)
-        cdef dict c_map = {k.decode('utf-8'): v for k, v in c_hash.items()}
-
-        if not c_map:
+        if not result:
             return None
+
+        cdef dict c_map = self._serializer.deserialize(result[0])
+
+        # cdef dict c_hash = self._redis.hgetall(name=self._key_currencies + code)
+        # cdef dict c_map = {k.decode('utf-8'): v for k, v in c_hash.items()}
+        #
+        # if not c_map:
+        #     return None
 
         return Currency(
             code=code,
             precision=int(c_map["precision"]),
             iso4217=int(c_map["iso4217"]),
-            name=c_map["name"].decode(_UTF8),  # Remove decode in new impl
-            currency_type=currency_type_from_str(c_map["currency_type"].decode(_UTF8)),
+            name=c_map["name"],
+            currency_type=currency_type_from_str(c_map["currency_type"]),
         )
 
     cpdef Instrument load_instrument(self, InstrumentId instrument_id):
@@ -499,10 +497,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(instrument_id, "instrument_id")
 
-        cdef str key = self._key_instruments + instrument_id.to_str()
-        cdef bytes instrument_bytes = self._redis.get(name=key)
-        if not instrument_bytes:
+        cdef str key = f"{_INSTRUMENTS}:{instrument_id.to_str()}"
+        cdef list result = self._backing.read(key)
+        if not result:
             return None
+
+        cdef bytes instrument_bytes = result[0]
 
         return self._serializer.deserialize(instrument_bytes)
 
@@ -529,10 +529,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.true(instrument_id.is_synthetic(), "instrument_id was not for a synthetic instrument")
 
-        cdef str key = self._key_synthetics + instrument_id.to_str()
-        cdef bytes synthetic_bytes = self._redis.get(name=key)
-        if not synthetic_bytes:
+        cdef str key = f"{_SYNTHETICS}:{instrument_id.to_str()}"
+        cdef list result = self._backing.read(key)
+        if not result:
             return None
+
+        cdef bytes synthetic_bytes = result[0]
 
         return self._serializer.deserialize(synthetic_bytes)
 
@@ -552,20 +554,32 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(account_id, "account_id")
 
-        cdef list events = self._redis.lrange(
-            name=self._key_accounts + account_id.to_str(),
-            start=0,
-            end=-1,
-        )
-
-        # Check there is at least one event to pop
-        if not events:
+        cdef str key = f"{_ACCOUNTS}:{account_id.to_str()}"
+        cdef list result = self._backing.read(key)
+        if not result:
             return None
 
+        cdef bytes initial_event = result.pop(0)
+        cdef Account account = AccountFactory.create_c(self._serializer.deserialize(initial_event))
+
         cdef bytes event
-        cdef Account account = AccountFactory.create_c(self._serializer.deserialize(events[0]))
-        for event in events[1:]:
+        for event in result:
             account.apply(event=self._serializer.deserialize(event))
+
+        # cdef list events = self._redis.lrange(
+        #     name=self._key_accounts + account_id.to_str(),
+        #     start=0,
+        #     end=-1,
+        # )
+        #
+        # # Check there is at least one event to pop
+        # if not events:
+        #     return None
+        #
+        # cdef bytes event
+        # cdef Account account = AccountFactory.create_c(self._serializer.deserialize(events[0]))
+        # for event in events[1:]:
+        #     account.apply(event=self._serializer.deserialize(event))
 
         return account
 
@@ -585,23 +599,26 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(client_order_id, "client_order_id")
 
-        cdef list events = self._redis.lrange(
-            name=self._key_orders + client_order_id.to_str(),
-            start=0,
-            end=-1,
-        )
+        cdef str key = f"{_ORDERS}:{client_order_id.to_str()}"
+        cdef list result = self._backing.read(key)
+
+        # cdef list events = self._redis.lrange(
+        #     name=self._key_orders + client_order_id.to_str(),
+        #     start=0,
+        #     end=-1,
+        # )
 
         # Check there is at least one event to pop
-        if not events:
+        if not result:
             return None
 
-        cdef OrderInitialized init = self._serializer.deserialize(events.pop(0))
+        cdef OrderInitialized init = self._serializer.deserialize(result.pop(0))
         cdef Order order = OrderUnpacker.from_init_c(init)
 
         cdef int event_count = 0
         cdef bytes event_bytes
         cdef OrderEvent event
-        for event_bytes in events:
+        for event_bytes in result:
             event = self._serializer.deserialize(event_bytes)
 
             # Check event integrity
@@ -640,17 +657,20 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(position_id, "position_id")
 
-        cdef list events = self._redis.lrange(
-            name=self._key_positions + position_id.to_str(),
-            start=0,
-            end=-1,
-        )
+        cdef str key = f"{_POSITIONS}:{position_id.to_str()}"
+        cdef list result = self._backing.read(key)
+
+        # cdef list events = self._redis.lrange(
+        #     name=self._key_positions + position_id.to_str(),
+        #     start=0,
+        #     end=-1,
+        # )
 
         # Check there is at least one event to pop
-        if not events:
+        if not result:
             return None
 
-        cdef OrderFilled initial_fill = self._serializer.deserialize(events.pop(0))
+        cdef OrderFilled initial_fill = self._serializer.deserialize(result.pop(0))
         cdef Instrument instrument = self.load_instrument(initial_fill.instrument_id)
         if instrument is None:
             self._log.error(
@@ -664,7 +684,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         cdef:
             bytes event_bytes
             OrderFilled fill
-        for event_bytes in events:
+        for event_bytes in result:
             event = self._serializer.deserialize(event_bytes)
 
             # Check event integrity
@@ -686,15 +706,22 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         Returns
         -------
-        dict[str, bytes]
+        dict[str, Any]
 
         """
         Condition.not_none(component_id, "component_id")
 
-        cdef dict user_state = self._redis.hgetall(
-            name=self._key_actors + component_id.to_str() + ":state",
-        )
-        return {k.decode('utf-8'): v for k, v in user_state.items()}
+        cdef str key = f"{_ACTORS}:{component_id.to_str()}:state"
+        cdef list result = self._backing.read(key)
+        if not result:
+            return {}
+
+        return self._serializer.deserialize(result[0])
+
+        # cdef dict user_state = self._redis.hgetall(
+        #     name=self._key_actors + component_id.to_str() + ":state",
+        # )
+        # return {k.decode('utf-8'): v for k, v in user_state.items()}
 
     cpdef void delete_actor(self, ComponentId component_id):
         """
@@ -708,7 +735,10 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(component_id, "component_id")
 
-        self._redis.delete(self._key_actors + component_id.to_str() + ":state")
+        cdef str key = f"{_ACTORS}:{component_id.to_str()}:state"
+        self._backing.delete(key)
+
+        # self._redis.delete(self._key_actors + component_id.to_str() + ":state")
 
         self._log.info(f"Deleted {repr(component_id)}.")
 
@@ -728,10 +758,19 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        cdef dict user_state = self._redis.hgetall(
-            name=self._key_strategies + strategy_id.to_str() + ":state",
-        )
-        return {k.decode('utf-8'): v for k, v in user_state.items()}
+        cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
+        cdef list result = self._backing.read(key)
+        if not result:
+            return {}
+
+        return self._serializer.deserialize(result[0])
+
+        # return self._serializer.deserialize(result[0])
+        #
+        # cdef dict user_state = self._redis.hgetall(
+        #     name=self._key_strategies + strategy_id.to_str() + ":state",
+        # )
+        # return {k.decode('utf-8'): v for k, v in user_state.items()}
 
     cpdef void delete_strategy(self, StrategyId strategy_id):
         """
@@ -745,7 +784,10 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(strategy_id, "strategy_id")
 
-        self._redis.delete(self._key_strategies + strategy_id.to_str() + ":state")
+        cdef str key = f"{_STRATEGIES}:{strategy_id.to_str()}:state"
+        self._backing.delete(key)
+
+        # self._redis.delete(self._key_strategies + strategy_id.to_str() + ":state")
 
         self._log.info(f"Deleted {repr(strategy_id)}.")
 
@@ -788,14 +830,15 @@ cdef class RedisCacheDatabase(CacheDatabase):
             "currency_type": currency_type_to_str(currency.currency_type)
         }
 
-        # cdef bytes payload = self._serializer.serialize(currency_map)
-        # self._backing.insert(f"{_CURRENCIES}:{currency.code}", [payload])
+        cdef key = f"{_CURRENCIES}:{currency.code}"
+        cdef list payload = [self._serializer.serialize(currency_map)]
+        self._backing.insert(key, payload)
 
         # Command pipeline
-        pipe = self._redis.pipeline()
-        for key, value in currency_map.items():
-            pipe.hset(name=self._key_currencies + currency.code, key=key, value=value)
-        pipe.execute()
+        # pipe = self._redis.pipeline()
+        # for key, value in currency_map.items():
+        #     pipe.hset(name=self._key_currencies + currency.code, key=key, value=value)
+        # pipe.execute()
 
         self._log.debug(f"Added currency {currency.code}.")
 
@@ -811,8 +854,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(instrument, "instrument")
 
-        cdef str key = self._key_instruments + instrument.id.to_str()
-        self._redis.set(name=key, value=self._serializer.serialize(instrument))
+        cdef str key = f"{_INSTRUMENTS}:{instrument.id.to_str()}"
+        cdef list payload = [self._serializer.serialize(instrument)]
+        self._backing.insert(key, payload)
 
         self._log.debug(f"Added instrument {instrument.id}.")
 
@@ -828,8 +872,9 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(synthetic, "synthetic")
 
-        cdef str key = self._key_synthetics + synthetic.id.value
-        self._redis.set(name=key, value=self._serializer.serialize(synthetic))
+        cdef str key = f"{_SYNTHETICS}:{synthetic.id.value}"
+        cdef list payload = [self._serializer.serialize(synthetic)]
+        self._backing.insert(key, payload)
 
         self._log.debug(f"Added synthetic instrument {synthetic.id}.")
 
@@ -845,16 +890,20 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(account, "account")
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        pipe.rpush(self._key_accounts + account.id.to_str(), self._serializer.serialize(account.last_event_c()))
-        cdef list reply = pipe.execute()
+        cdef str key = f"{_ACCOUNTS}:{account.id.value}"
+        cdef list payload = [self._serializer.serialize(account.last_event_c())]
+        self._backing.insert(key, payload)
 
-        # Check data integrity of reply
-        if len(reply) > 1:  # Reply = The length of the list after the push operation
-            self._log.error(
-                f"The {repr(account.id)} already existed and was appended to.",
-            )
+        # # Command pipeline
+        # pipe = self._redis.pipeline()
+        # pipe.rpush(self._key_accounts + account.id.to_str(), self._serializer.serialize(account.last_event_c()))
+        # cdef list reply = pipe.execute()
+        #
+        # # Check data integrity of reply
+        # if len(reply) > 1:  # Reply = The length of the list after the push operation
+        #     self._log.error(
+        #         f"The {repr(account.id)} already existed and was appended to.",
+        #     )
 
         self._log.debug(f"Added {account}.")
 
@@ -874,27 +923,38 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(order, "order")
 
-        cdef bytes last_event = self._serializer.serialize(order.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.to_str(), last_event)
+        cdef client_order_id_str = order.client_order_id.to_str()
+        cdef str key = f"{_ORDERS}:{client_order_id_str}"
+        cdef list payload = [self._serializer.serialize(order.last_event_c())]
+        self._backing.insert(key, payload)
 
-        # Check data integrity of reply
-        if reply > 1:  # Reply = The length of the list after the push operation
-            # Dropped the log level to debug as this is expected for transformed orders
-            self._log.debug(
-                f"The {repr(order.client_order_id)} already existed and was appended to.",
-            )
+        # cdef bytes last_event = self._serializer.serialize(order.last_event_c())
+        # cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.to_str(), last_event)
+        #
+        # # Check data integrity of reply
+        # if reply > 1:  # Reply = The length of the list after the push operation
+        #     # Dropped the log level to debug as this is expected for transformed orders
+        #     self._log.debug(
+        #         f"The {repr(order.client_order_id)} already existed and was appended to.",
+        #     )
 
-        self._redis.sadd(self._key_index_orders, order.client_order_id.to_str())
+        cdef bytes client_order_id_bytes = client_order_id_str.encode()
+        payload = [client_order_id_bytes]
+        self._backing.insert(_INDEX_ORDERS, payload)
+        # self._redis.sadd(self._key_index_orders, order.client_order_id.to_str())
 
         if order.emulation_trigger != TriggerType.NO_TRIGGER:
-            self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
+            self._backing.insert(_INDEX_ORDERS_EMULATED, payload)
+            # self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
 
         self._log.debug(f"Added {order}.")
 
         if position_id is not None:
             self.index_order_position(order.client_order_id, position_id)
         if client_id is not None:
-            self._redis.hset(self._key_index_order_client, order.client_order_id.to_str(), client_id.to_str())
+            payload = [client_order_id_bytes, client_id.to_str().encode()]
+            self._backing.insert(_INDEX_ORDER_CLIENT, payload)
+            # self._redis.hset(self._key_index_order_client, order.client_order_id.to_str(), client_id.to_str())
             self._log.debug(f"Indexed {order.client_order_id!r} -> {client_id!r}")
 
     cpdef void add_position(self, Position position):
@@ -909,17 +969,26 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes last_event = self._serializer.serialize(position.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), last_event)
+        cdef str position_id_str = position.id.to_str()
+        cdef str key = f"{_POSITIONS}:{position_id_str}"
+        cdef list payload = [self._serializer.serialize(position.last_event_c())]
+        self._backing.insert(key, payload)
 
-        # Check data integrity of reply
-        if reply > 1:  # Reply = The length of the list after the push operation
-            self._log.warning(
-                f"The {repr(position.id)} already existed and was appended to.",
-            )
+        cdef bytes position_id_bytes = position_id_str.encode()
+        self._backing.insert(_INDEX_POSITIONS, [position_id_bytes])
+        self._backing.insert(_INDEX_POSITIONS_OPEN, [position_id_bytes])
 
-        self._redis.sadd(self._key_index_positions, position.id.to_str())
-        self._redis.sadd(self._key_index_positions_open, position.id.to_str())
+        # cdef bytes last_event = self._serializer.serialize(position.last_event_c())
+        # cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), last_event)
+        #
+        # # Check data integrity of reply
+        # if reply > 1:  # Reply = The length of the list after the push operation
+        #     self._log.warning(
+        #         f"The {repr(position.id)} already existed and was appended to.",
+        #     )
+        #
+        # self._redis.sadd(self._key_index_positions, position.id.to_str())
+        # self._redis.sadd(self._key_index_positions_open, position.id.to_str())
 
         self._log.debug(f"Added {position}.")
 
@@ -938,11 +1007,14 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(client_order_id, "client_order_id")
         Condition.not_none(venue_order_id, "venue_order_id")
 
-        self._redis.hset(
-            self._key_index_order_ids,
-            client_order_id.to_str(),
-            venue_order_id.to_str(),
-        )
+        cdef list payload = [client_order_id.to_str().encode(), venue_order_id.to_str().encode()]
+        self._backing.insert(_INDEX_ORDER_IDS, payload)
+
+        # self._redis.hset(
+        #     self._key_index_order_ids,
+        #     client_order_id.to_str(),
+        #     venue_order_id.to_str(),
+        # )
 
         self._log.debug(f"Indexed {client_order_id!r} -> {venue_order_id!r}")
 
@@ -961,11 +1033,14 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(client_order_id, "client_order_id")
         Condition.not_none(position_id, "position_id")
 
-        self._redis.hset(
-            self._key_index_order_position,
-            client_order_id.to_str(),
-            position_id.to_str(),
-        )
+        cdef list payload = [client_order_id.to_str().encode(), position_id.to_str().encode()]
+        self._backing.insert(_INDEX_ORDER_POSITION, payload)
+
+        # self._redis.hset(
+        #     self._key_index_order_position,
+        #     client_order_id.to_str(),
+        #     position_id.to_str(),
+        # )
 
         self._log.debug(f"Indexed {client_order_id!r} -> {position_id!r}")
 
@@ -983,16 +1058,20 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef dict state = actor.save()  # Extract state dictionary from strategy
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        for key, value in state.items():
-            pipe.hset(
-                name=self._key_actors + actor.id.value + ":state",
-                key=key,
-                value=value,
-            )
-            self._log.debug(f"Saving {actor.id} state {{ {key}: {value} }}")
-        pipe.execute()
+        cdef key = f"{_ACTORS}:{actor.id.value}:state"
+        cdef list payload = [self._serializer.serialize(state)]
+        self._backing.insert(key, payload)
+
+        # # Command pipeline
+        # pipe = self._redis.pipeline()
+        # for key, value in state.items():
+        #     pipe.hset(
+        #         name=self._key_actors + actor.id.value + ":state",
+        #         key=key,
+        #         value=value,
+        #     )
+        #     self._log.debug(f"Saving {actor.id} state {{ {key}: {value} }}")
+        # pipe.execute()
 
         self._log.debug(f"Saved actor state for {actor.id.value}.")
 
@@ -1010,16 +1089,20 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         cdef dict state = strategy.save()  # Extract state dictionary from strategy
 
-        # Command pipeline
-        pipe = self._redis.pipeline()
-        for key, value in state.items():
-            pipe.hset(
-                name=self._key_strategies + strategy.id.value + ":state",
-                key=key,
-                value=value,
-            )
-            self._log.debug(f"Saving {strategy.id} state {{ {key}: {value} }}")
-        pipe.execute()
+        cdef key = f"{_STRATEGIES}:{strategy.id.value}:state"
+        cdef list payload = [self._serializer.serialize(state)]
+        self._backing.insert(key, payload)
+
+        # # Command pipeline
+        # pipe = self._redis.pipeline()
+        # for key, value in state.items():
+        #     pipe.hset(
+        #         name=self._key_strategies + strategy.id.value + ":state",
+        #         key=key,
+        #         value=value,
+        #     )
+        #     self._log.debug(f"Saving {strategy.id} state {{ {key}: {value} }}")
+        # pipe.execute()
 
         self._log.debug(f"Saved strategy state for {strategy.id.value}.")
 
@@ -1034,8 +1117,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(account, "account")
 
-        cdef bytes serialized_event = self._serializer.serialize(account.last_event_c())
-        self._redis.rpush(self._key_accounts + account.id.to_str(), serialized_event)
+        cdef str key = f"{_ACCOUNTS}:{account.id.to_str()}"
+        cdef list payload = [self._serializer.serialize(account.last_event_c())]
+        self._backing.update(key, payload)
+
+        # self._redis.rpush(self._key_accounts + account.id.to_str(), serialized_event)
 
         self._log.debug(f"Updated {account}.")
 
@@ -1051,36 +1137,51 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(order, "order")
 
-        cdef bytes serialized_event = self._serializer.serialize(order.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.to_str(), serialized_event)
+        cdef str client_order_id_str = order.client_order_id.to_str()
+        cdef str key = f"{_ORDERS}:{client_order_id_str}"
+        cdef list payload = [self._serializer.serialize(order.last_event_c())]
+        self._backing.update(key, payload)
 
-        # Check data integrity of reply
-        if reply == 1:  # Reply = The length of the list after the push operation
-            self._log.error(f"The updated Order(id={order.client_order_id.to_str()}) did not already exist.")
+        # cdef bytes serialized_event = self._serializer.serialize(order.last_event_c())
+        # cdef int reply = self._redis.rpush(self._key_orders + order.client_order_id.to_str(), serialized_event)
+
+        # # Check data integrity of reply
+        # if reply == 1:  # Reply = The length of the list after the push operation
+        #     self._log.error(f"The updated Order(id={order.client_order_id.to_str()}) did not already exist.")
 
         if order.venue_order_id is not None:
             # Assumes order_id does not change
             self.index_venue_order_id(order.client_order_id, order.venue_order_id)
 
+        payload = [client_order_id_str.encode()]
+
         # Update in-flight state
         if order.is_inflight_c():
-            self._redis.sadd(self._key_index_orders_inflight, order.client_order_id.to_str())
+            self._backing.insert(_INDEX_ORDERS_INFLIGHT, payload)
+            # self._redis.sadd(self._key_index_orders_inflight, order.client_order_id.to_str())
         else:
-            self._redis.srem(self._key_index_orders_inflight, order.client_order_id.to_str())
+            self._backing.delete(_INDEX_ORDERS_INFLIGHT, payload)
+            # self._redis.srem(self._key_index_orders_inflight, order.client_order_id.to_str())
 
         # Update open/closed state
         if order.is_open_c():
-            self._redis.srem(self._key_index_orders_closed, order.client_order_id.to_str())
-            self._redis.sadd(self._key_index_orders_open, order.client_order_id.to_str())
+            self._backing.delete(_INDEX_ORDERS_CLOSED, payload)
+            self._backing.insert(_INDEX_ORDERS_OPEN, payload)
+            # self._redis.srem(self._key_index_orders_closed, order.client_order_id.to_str())
+            # self._redis.sadd(self._key_index_orders_open, order.client_order_id.to_str())
         elif order.is_closed_c():
-            self._redis.srem(self._key_index_orders_open, order.client_order_id.to_str())
-            self._redis.sadd(self._key_index_orders_closed, order.client_order_id.to_str())
+            self._backing.delete(_INDEX_ORDERS_OPEN, payload)
+            self._backing.insert(_INDEX_ORDERS_CLOSED, payload)
+            # self._redis.srem(self._key_index_orders_open, order.client_order_id.to_str())
+            # self._redis.sadd(self._key_index_orders_closed, order.client_order_id.to_str())
 
         # Update emulation state
         if order.emulation_trigger == TriggerType.NO_TRIGGER:
-            self._redis.srem(self._key_index_orders_emulated, order.client_order_id.to_str())
+            self._backing.delete(_INDEX_ORDERS_EMULATED, payload)
+            # self._redis.srem(self._key_index_orders_emulated, order.client_order_id.to_str())
         else:
-            self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
+            self._backing.insert(_INDEX_ORDERS_EMULATED, payload)
+            # self._redis.sadd(self._key_index_orders_emulated, order.client_order_id.to_str())
 
         self._log.debug(f"Updated {order}.")
 
@@ -1096,15 +1197,24 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(position, "position")
 
-        cdef bytes serialized_event = self._serializer.serialize(position.last_event_c())
-        cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), serialized_event)
+        cdef str position_id_str = position.id.to_str()
+        cdef str key = f"{_POSITIONS}:{position.id.to_str()}"
+        cdef list payload = [self._serializer.serialize(position.last_event_c())]
+        self._backing.update(key, payload)
+
+        # cdef bytes serialized_event = self._serializer.serialize(position.last_event_c())
+        # cdef int reply = self._redis.rpush(self._key_positions + position.id.to_str(), serialized_event)
 
         if position.is_open_c():
-            self._redis.sadd(self._key_index_positions_open, position.id.to_str())
-            self._redis.srem(self._key_index_positions_closed, position.id.to_str())
+            self._backing.insert(_INDEX_POSITIONS_OPEN, payload)
+            self._backing.delete(_INDEX_POSITIONS_CLOSED, payload)
+            # self._redis.sadd(self._key_index_positions_open, position.id.to_str())
+            # self._redis.srem(self._key_index_positions_closed, position.id.to_str())
         elif position.is_closed_c():
-            self._redis.sadd(self._key_index_positions_closed, position.id.to_str())
-            self._redis.srem(self._key_index_positions_open, position.id.to_str())
+            self._backing.insert(_INDEX_POSITIONS_CLOSED, payload)
+            self._backing.delete(_INDEX_POSITIONS_OPEN, payload)
+            # self._redis.sadd(self._key_index_positions_closed, position.id.to_str())
+            # self._redis.srem(self._key_index_positions_open, position.id.to_str())
 
         self._log.debug(f"Updated {position}.")
 
@@ -1120,10 +1230,11 @@ cdef class RedisCacheDatabase(CacheDatabase):
         """
         Condition.not_none(order, "order")
 
-        cdef dict order_state = order.to_dict()
-        cdef bytes snapshot_bytes = self._serializer.serialize(order_state)
+        cdef str key = f"{_SNAPSHOTS_ORDERS}:{order.client_order_id.to_str()}"
+        cdef list payload = [self._serializer.serialize(order.to_dict())]
+        self._backing.insert(key, payload)
 
-        self._redis.rpush(self._key_snapshots_orders + order.client_order_id.to_str(), snapshot_bytes)
+        # self._redis.rpush(self._key_snapshots_orders + order.client_order_id.to_str(), snapshot_bytes)
 
         self._log.debug(f"Added state snapshot {order}.")
 
@@ -1150,8 +1261,12 @@ cdef class RedisCacheDatabase(CacheDatabase):
 
         position_state["ts_snapshot"] = ts_snapshot
 
-        cdef bytes snapshot_bytes = self._serializer.serialize(position_state)
-        self._redis.rpush(self._key_snapshots_positions + position.id.to_str(), snapshot_bytes)
+        cdef str key = f"{_SNAPSHOTS_POSITIONS}:{position.id.to_str()}"
+        cdef list payload = [self._serializer.serialize(position_state)]
+        self._backing.insert(key, payload)
+
+        # cdef bytes snapshot_bytes = self._serializer.serialize(position_state)
+        # self._redis.rpush(self._key_snapshots_positions + position.id.to_str(), snapshot_bytes)
 
         self._log.debug(f"Added state snapshot {position}.")
 
@@ -1168,6 +1283,7 @@ cdef class RedisCacheDatabase(CacheDatabase):
         Condition.not_none(timestamp, "timestamp")
 
         cdef timestamp_str = format_iso8601(timestamp)
-        self._redis.set(self._key_heartbeat, timestamp_str)
+        self._backing.insert(_HEARTBEAT, [timestamp_str.encode()])
+        # self._redis.set(self._key_heartbeat, timestamp_str)
 
         self._log.debug(f"Set last heartbeat {timestamp_str}.")

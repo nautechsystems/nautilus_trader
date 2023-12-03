@@ -38,6 +38,14 @@ impl RedisCacheDatabase {
         }
     }
 
+    #[pyo3(name = "flushdb")]
+    fn py_flushdb(&mut self) -> PyResult<()> {
+        match self.flushdb() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(to_pyruntime_err(e)),
+        }
+    }
+
     #[pyo3(name = "keys")]
     fn py_keys(&mut self, pattern: &str) -> PyResult<Vec<String>> {
         match self.keys(pattern) {
@@ -77,8 +85,8 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "delete")]
-    fn py_delete(&mut self, key: String) -> PyResult<()> {
-        match self.delete(key) {
+    fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
+        match self.delete(key, payload) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }

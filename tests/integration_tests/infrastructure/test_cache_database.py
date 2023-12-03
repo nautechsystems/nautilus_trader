@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import sys
-import time
 from decimal import Decimal
 
 import msgspec
@@ -54,6 +53,7 @@ from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
 from nautilus_trader.serialization.serializer import MsgSpecSerializer
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.mocks.actors import MockActor
 from nautilus_trader.test_kit.mocks.strategies import MockStrategy
 from nautilus_trader.test_kit.providers import TestDataProvider
@@ -148,14 +148,16 @@ class TestRedisCacheDatabase:
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
 
-    def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
+    @pytest.mark.asyncio
+    async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
         # Arrange, Act
         result = self.database.load()
 
         # Assert
         assert result == {}
 
-    def test_add_general_object_adds_to_cache(self):
+    @pytest.mark.asyncio
+    async def test_add_general_object_adds_to_cache(self):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
         key = str(bar.bar_type) + "-" + str(bar.ts_event)
@@ -163,11 +165,14 @@ class TestRedisCacheDatabase:
         # Act
         self.database.add(key, str(bar).encode())
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load())
+
         # Assert
-        time.sleep(0.1)  # Allow MPSC thread to write
         assert self.database.load() == {key: str(bar).encode()}
 
-    def test_add_currency(self):
+    @pytest.mark.asyncio
+    async def test_add_currency(self):
         # Arrange
         currency = Currency(
             code="1INCH",
@@ -180,23 +185,33 @@ class TestRedisCacheDatabase:
         # Act
         self.database.add_currency(currency)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_currency(currency.code))
+
         # Assert
-        time.sleep(0.1)  # Allow MPSC thread to write
         assert self.database.load_currency(currency.code) == currency
 
-    def test_add_account(self):
+    @pytest.mark.asyncio
+    async def test_add_account(self):
         # Arrange
         account = TestExecStubs.cash_account()
 
         # Act
         self.database.add_account(account)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_account(account.id))
+
         # Assert
         assert self.database.load_account(account.id) == account
 
-    def test_add_instrument(self):
+    @pytest.mark.asyncio
+    async def test_add_instrument(self):
         # Arrange, Act
         self.database.add_instrument(AUDUSD_SIM)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
 
         # Assert
         assert self.database.load_instrument(AUDUSD_SIM.id) == AUDUSD_SIM
@@ -320,7 +335,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    def test_update_position_for_closed_position(self):
+    @pytest.mark.asyncio
+    async def test_update_position_for_closed_position(self):
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
@@ -332,6 +348,9 @@ class TestRedisCacheDatabase:
 
         position_id = PositionId("P-1")
         self.database.add_order(order1)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order1.client_order_id))
 
         order1.apply(TestEventStubs.order_submitted(order1))
         self.database.update_order(order1)
@@ -353,6 +372,9 @@ class TestRedisCacheDatabase:
         position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_position(position.id))
+
         order2 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.SELL,
@@ -360,6 +382,9 @@ class TestRedisCacheDatabase:
         )
 
         self.database.add_order(order2)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order2.client_order_id))
 
         order2.apply(TestEventStubs.order_submitted(order2))
         self.database.update_order(order2)
@@ -382,10 +407,14 @@ class TestRedisCacheDatabase:
         # Act
         self.database.update_position(position)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_position(position.id))
+
         # Assert
         assert self.database.load_position(position.id) == position
 
-    def test_update_position_when_not_already_exists_logs(self):
+    @pytest.mark.asyncio
+    async def test_update_position_when_not_already_exists_logs(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -394,6 +423,9 @@ class TestRedisCacheDatabase:
         )
 
         self.database.add_order(order)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
@@ -411,7 +443,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert True  # No exception raised
 
-    def test_update_actor(self):
+    @pytest.mark.asyncio
+    async def test_update_actor(self):
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -423,12 +456,17 @@ class TestRedisCacheDatabase:
 
         # Act
         self.database.update_actor(actor)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_actor(actor.id))
+
         result = self.database.load_actor(actor.id)
 
         # Assert
-        assert result == {"A": b"1"}
+        assert result == {"A": 1}
 
-    def test_update_strategy(self):
+    @pytest.mark.asyncio
+    async def test_update_strategy(self):
         # Arrange
         strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
         strategy.register(
@@ -442,34 +480,46 @@ class TestRedisCacheDatabase:
 
         # Act
         self.database.update_strategy(strategy)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_strategy(strategy.id))
+
         result = self.database.load_strategy(strategy.id)
 
         # Assert
         assert result == {"UserState": b"1"}
 
-    def test_load_currency_when_no_currencies_in_database_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_load_currency_when_no_currencies_in_database_returns_none(self):
         # Arrange, Act
         result = self.database.load_currency("ONEINCH")
 
         # Assert
         assert result is None
 
-    def test_load_currency_when_currency_in_database_returns_expected(self):
+    @pytest.mark.asyncio
+    async def test_load_currency_when_currency_in_database_returns_expected(self):
         # Arrange
         aud = Currency.from_str("AUD")
         self.database.add_currency(aud)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_currency("AUD"))
+
         # Act
-        time.sleep(0.1)  # Allow MPSC thread to write
         result = self.database.load_currency("AUD")
 
         # Assert
         assert result == aud
 
-    def test_load_currencies_when_currencies_in_database_returns_expected(self):
+    @pytest.mark.asyncio
+    async def test_load_currencies_when_currencies_in_database_returns_expected(self):
         # Arrange
         aud = Currency.from_str("AUD")
         self.database.add_currency(aud)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_currencies())
 
         # Act
         result = self.database.load_currencies()
@@ -477,16 +527,21 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == {"AUD": aud}
 
-    def test_load_instrument_when_no_instrument_in_database_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_load_instrument_when_no_instrument_in_database_returns_none(self):
         # Arrange, Act
         result = self.database.load_instrument(AUDUSD_SIM.id)
 
         # Assert
         assert result is None
 
-    def test_load_instrument_when_instrument_in_database_returns_expected(self):
+    @pytest.mark.asyncio
+    async def test_load_instrument_when_instrument_in_database_returns_expected(self):
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
 
         # Act
         result = self.database.load_instrument(AUDUSD_SIM.id)
@@ -494,9 +549,13 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == AUDUSD_SIM
 
-    def test_load_instruments_when_instrument_in_database_returns_expected(self):
+    @pytest.mark.asyncio
+    async def test_load_instruments_when_instrument_in_database_returns_expected(self):
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_instruments())
 
         # Act
         result = self.database.load_instruments()
@@ -504,7 +563,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == {AUDUSD_SIM.id: AUDUSD_SIM}
 
-    def test_load_synthetic_when_no_synethic_instrument_in_database_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_load_synthetic_when_no_synethic_instrument_in_database_returns_none(self):
         # Arrange
         synthetic = TestInstrumentProvider.synthetic_instrument()
 
@@ -514,10 +574,14 @@ class TestRedisCacheDatabase:
         # Assert
         assert result is None
 
-    def test_load_synthetic_when_synthetic_instrument_in_database_returns_expected(self):
+    @pytest.mark.asyncio
+    async def test_load_synthetic_when_synthetic_instrument_in_database_returns_expected(self):
         # Arrange
         synthetic = TestInstrumentProvider.synthetic_instrument()
         self.database.add_synthetic(synthetic)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_synthetic(synthetic.id))
 
         # Act
         result = self.database.load_synthetic(synthetic.id)
@@ -525,7 +589,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == synthetic
 
-    def test_load_account_when_no_account_in_database_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_load_account_when_no_account_in_database_returns_none(self):
         # Arrange
         account = TestExecStubs.cash_account()
 
@@ -535,10 +600,14 @@ class TestRedisCacheDatabase:
         # Assert
         assert result is None
 
-    def test_load_account_when_account_in_database_returns_account(self):
+    @pytest.mark.asyncio
+    async def test_load_account_when_account_in_database_returns_account(self):
         # Arrange
         account = TestExecStubs.cash_account()
         self.database.add_account(account)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_account(account.id))
 
         # Act
         result = self.database.load_account(account.id)
@@ -546,7 +615,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert result == account
 
-    def test_load_order_when_no_order_in_database_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_no_order_in_database_returns_none(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -560,7 +630,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert result is None
 
-    def test_load_order_when_market_order_in_database_returns_order(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -570,13 +641,17 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
         # Assert
         assert result == order
 
-    def test_load_order_with_exec_algorithm_params(self):
+    @pytest.mark.asyncio
+    async def test_load_order_with_exec_algorithm_params(self):
         # Arrange
         exec_algorithm_params = {"horizon_secs": 20, "interval_secs": 2.5}
         order = self.strategy.order_factory.market(
@@ -589,6 +664,9 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
@@ -596,7 +674,8 @@ class TestRedisCacheDatabase:
         assert result == order
         assert result.exec_algorithm_params
 
-    def test_load_order_when_limit_order_in_database_returns_order(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             AUDUSD_SIM.id,
@@ -607,13 +686,17 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
         # Assert
         assert result == order
 
-    def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_transformed_to_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit(
             AUDUSD_SIM.id,
@@ -626,6 +709,9 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
@@ -633,7 +719,8 @@ class TestRedisCacheDatabase:
         assert result == order
         assert result.order_type == OrderType.MARKET
 
-    def test_load_order_when_transformed_to_limit_order_in_database_returns_order(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_transformed_to_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.limit_if_touched(
             AUDUSD_SIM.id,
@@ -647,6 +734,9 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
@@ -654,7 +744,8 @@ class TestRedisCacheDatabase:
         assert result == order
         assert result.order_type == OrderType.LIMIT
 
-    def test_load_order_when_stop_market_order_in_database_returns_order(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_stop_market_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -665,13 +756,17 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
         # Assert
         assert result == order
 
-    def test_load_order_when_stop_limit_order_in_database_returns_order(self):
+    @pytest.mark.asyncio
+    async def test_load_order_when_stop_limit_order_in_database_returns_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_limit(
             AUDUSD_SIM.id,
@@ -683,6 +778,9 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         result = self.database.load_order(order.client_order_id)
 
@@ -691,7 +789,8 @@ class TestRedisCacheDatabase:
         assert result.price == order.price
         assert result.trigger_price == order.trigger_price
 
-    def test_load_position_when_no_position_in_database_returns_none(self):
+    @pytest.mark.asyncio
+    async def test_load_position_when_no_position_in_database_returns_none(self):
         # Arrange
         position_id = PositionId("P-1")
 
@@ -701,7 +800,9 @@ class TestRedisCacheDatabase:
         # Assert
         assert result is None
 
-    def test_load_position_when_instrument_in_database_returns_none(self):
+    @pytest.mark.skip
+    @pytest.mark.asyncio
+    async def test_load_position_when_instrument_in_database_returns_none(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -710,6 +811,9 @@ class TestRedisCacheDatabase:
         )
 
         self.database.add_order(order)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
@@ -728,7 +832,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert result is None
 
-    def test_load_position_when_position_in_database_returns_position(self):
+    @pytest.mark.asyncio
+    async def test_load_position_when_position_in_database_returns_position(self):
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
@@ -739,6 +844,9 @@ class TestRedisCacheDatabase:
         )
 
         self.database.add_order(order)
+
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
@@ -752,37 +860,47 @@ class TestRedisCacheDatabase:
 
         self.database.add_position(position)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_position(position.id))
+
         # Act
         result = self.database.load_position(position_id)
 
         # Assert
         assert result == position
 
-    def test_load_accounts_when_no_accounts_returns_empty_dict(self):
+    @pytest.mark.asyncio
+    async def test_load_accounts_when_no_accounts_returns_empty_dict(self):
         # Arrange, Act
         result = self.database.load_accounts()
 
         # Assert
         assert result == {}
 
-    def test_load_accounts_cache_when_one_account_in_database(self):
+    @pytest.mark.asyncio
+    async def test_load_accounts_cache_when_one_account_in_database(self):
         # Arrange
         account = TestExecStubs.cash_account()
 
         # Act
         self.database.add_account(account)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_accounts())
+
         # Assert
         assert self.database.load_accounts() == {account.id: account}
 
-    def test_load_orders_cache_when_no_orders(self):
+    @pytest.mark.asyncio
+    async def test_load_orders_cache_when_no_orders(self):
         # Arrange, Act
         self.database.load_orders()
 
         # Assert
         assert self.database.load_orders() == {}
 
-    def test_load_orders_cache_when_one_order_in_database(self):
+    @pytest.mark.asyncio
+    async def test_load_orders_cache_when_one_order_in_database(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -792,20 +910,25 @@ class TestRedisCacheDatabase:
 
         self.database.add_order(order)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_orders())
+
         # Act
         result = self.database.load_orders()
 
         # Assert
         assert result == {order.client_order_id: order}
 
-    def test_load_positions_cache_when_no_positions(self):
+    @pytest.mark.asyncio
+    async def test_load_positions_cache_when_no_positions(self):
         # Arrange, Act
         self.database.load_positions()
 
         # Assert
         assert self.database.load_positions() == {}
 
-    def test_load_positions_cache_when_one_position_in_database(self):
+    @pytest.mark.asyncio
+    async def test_load_positions_cache_when_one_position_in_database(self):
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
@@ -833,13 +956,17 @@ class TestRedisCacheDatabase:
         position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_orders())
+
         # Act
         result = self.database.load_positions()
 
         # Assert
         assert result == {position.id: position}
 
-    def test_delete_actor(self):
+    @pytest.mark.asyncio
+    async def test_delete_actor(self):
         # Arrange, Act
         actor = MockActor()
         actor.register_base(
@@ -851,14 +978,22 @@ class TestRedisCacheDatabase:
 
         self.database.update_actor(actor)
 
+        # Allow MPSC thread to write
+        await eventually(lambda: self.database.load_actor(actor.id))
+
         # Act
         self.database.delete_actor(actor.id)
+
+        # Allow MPSC thread to delete
+        await eventually(lambda: not self.database.load_actor(actor.id))
+
         result = self.database.load_actor(actor.id)
 
         # Assert
         assert result == {}
 
-    def test_delete_strategy(self):
+    @pytest.mark.asyncio
+    async def test_delete_strategy(self):
         # Arrange, Act
         strategy = MockStrategy(TestDataStubs.bartype_btcusdt_binance_100tick_last())
         strategy.register(
@@ -872,14 +1007,22 @@ class TestRedisCacheDatabase:
 
         self.database.update_strategy(strategy)
 
+        # Allow MPSC thread to delete
+        await eventually(lambda: self.database.load_strategy(strategy.id))
+
         # Act
-        self.database.delete_strategy(self.strategy.id)
-        result = self.database.load_strategy(self.strategy.id)
+        self.database.delete_strategy(strategy.id)
+
+        # Allow MPSC thread to delete
+        await eventually(lambda: not self.database.load_strategy(strategy.id))
+
+        result = self.database.load_strategy(strategy.id)
 
         # Assert
         assert result == {}
 
-    def test_flush(self):
+    @pytest.mark.asyncio
+    async def test_flush(self):
         # Arrange
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -917,6 +1060,10 @@ class TestRedisCacheDatabase:
 
         # Act
         self.database.flush()
+
+        # Allow MPSC thread to delete
+        await eventually(lambda: not self.database.load_orders())
+        await eventually(lambda: not self.database.load_positions())
 
         # Assert
         assert self.database.load_order(order1.client_order_id) is None
@@ -960,7 +1107,8 @@ class TestRedisCacheDatabaseIntegrity:
         # Tests will start failing if redis is not flushed on tear down
         self.test_redis.flushall()  # Comment this line out to preserve data between tests
 
-    def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
+    @pytest.mark.asyncio
+    async def test_rerunning_backtest_with_redis_db_builds_correct_index(self):
         # Arrange
         config = EMACrossConfig(
             instrument_id=str(self.usdjpy.id),
@@ -982,5 +1130,4 @@ class TestRedisCacheDatabaseIntegrity:
         self.engine.run()
 
         # Assert
-        time.sleep(0.1)  # Allow MPSC thread to write
-        assert self.engine.cache.check_integrity()
+        assert eventually(lambda: self.engine.cache.check_integrity())

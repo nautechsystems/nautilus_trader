@@ -44,6 +44,9 @@ impl DatabaseCommand {
     }
 }
 
+/// Provides a generic cache database facade.
+///
+/// Delete operations may need a `payload` to target specific values.
 pub trait CacheDatabase {
     type DatabaseType;
 
@@ -52,11 +55,12 @@ pub trait CacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, Value>,
     ) -> Result<Self::DatabaseType>;
+    fn flushdb(&mut self) -> Result<()>;
     fn keys(&mut self, pattern: &str) -> Result<Vec<String>>;
     fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>>;
-    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
-    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
-    fn delete(&mut self, key: String) -> Result<(), String>;
+    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<()>;
+    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<()>;
+    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
     fn handle_ops(
         rx: Receiver<DatabaseCommand>,
         trader_key: String,

@@ -6,7 +6,8 @@ Released on TBD (UTC).
 None
 
 ### Breaking Changes
-None
+- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
+- `Actor` state loading now uses the standard `Serializer`
 
 ### Fixes
 None
