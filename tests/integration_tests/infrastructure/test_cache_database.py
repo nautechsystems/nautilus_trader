@@ -147,7 +147,11 @@ class TestCacheDatabaseAdapter:
     def teardown(self):
         # Tests will fail if Redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests for debugging
-        time.sleep(0.1)  # Ensure clean slate
+
+        # Ensure clean slate
+        while self.database.keys("*"):
+            time.sleep(0.1)
+            continue
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -156,6 +160,7 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert result == {}
+        assert self.database.keys() == []
 
     @pytest.mark.asyncio
     async def test_add_general_object_adds_to_cache(self):
@@ -171,6 +176,7 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert self.database.load() == {key: str(bar).encode()}
+        assert self.database.keys() == ["trader-TESTER-000:general:" + key]
 
     @pytest.mark.asyncio
     async def test_add_currency(self):
@@ -1190,6 +1196,8 @@ class TestRedisCacheDatabaseIntegrity:
 
         # Reset engine
         self.engine.reset()
+
+        await asyncio.sleep(0.5)
 
         # Act
         self.engine.run()

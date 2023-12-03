@@ -188,6 +188,36 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         self._backing.flushdb()
         self._log.info("Flushed database.", LogColor.BLUE)
 
+    cpdef list[str] keys(self, str pattern = "*"):
+        """
+        Return all keys in the database matching the given `pattern`.
+
+        Parameters
+        ----------
+        pattern : str, default '*'
+            The glob-style pattern to match against the keys in the database.
+
+        Returns
+        -------
+        list[str]
+
+        Raises
+        ------
+        ValueError
+            If `pattern` is not a valid string.
+
+        Warnings
+        --------
+        Using the default '*' pattern string can have serious performance implications and
+        can take a long time to execute if many keys exist in the database. This operation
+        can lead to high memory and CPU usage, and should be used with caution, especially
+        in production environments.
+
+        """
+        Condition.valid_string(pattern, "pattern")
+
+        return self._backing.keys(pattern)
+
     cpdef dict load(self):
         """
         Load all general objects from the database.
