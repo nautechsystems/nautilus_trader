@@ -265,10 +265,14 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert self.database.load_position(position.id) == position
 
-    def test_update_account(self):
+    @pytest.mark.asyncio
+    async def test_update_account(self):
         # Arrange
         account = TestExecStubs.cash_account()
         self.database.add_account(account)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_account(account.id))
 
         # Act
         self.database.update_account(account)
@@ -277,7 +281,7 @@ class TestCacheDatabaseAdapter:
         assert self.database.load_account(account.id) == account
 
     @pytest.mark.asyncio
-    def test_update_order_when_not_already_exists_logs(self):
+    async def test_update_order_when_not_already_exists_logs(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
