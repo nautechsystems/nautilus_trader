@@ -162,7 +162,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.add(key, str(bar).encode())
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load())
 
         # Assert
@@ -182,7 +182,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.add_currency(currency)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_currency(currency.code))
 
         # Assert
@@ -196,7 +196,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.add_account(account)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_account(account.id))
 
         # Assert
@@ -207,13 +207,14 @@ class TestCacheDatabaseAdapter:
         # Arrange, Act
         self.database.add_instrument(AUDUSD_SIM)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
 
         # Assert
         assert self.database.load_instrument(AUDUSD_SIM.id) == AUDUSD_SIM
 
-    def test_add_order(self):
+    @pytest.mark.asyncio
+    async def test_add_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -224,10 +225,14 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.add_order(order)
 
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    def test_add_position(self):
+    @pytest.mark.asyncio
+    async def test_add_position(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -237,6 +242,9 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_instrument(AUDUSD_SIM)
         self.database.add_order(order)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
@@ -250,6 +258,9 @@ class TestCacheDatabaseAdapter:
 
         # Act
         self.database.add_position(position)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_position(position.id))
 
         # Assert
         assert self.database.load_position(position.id) == position
@@ -265,6 +276,7 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert self.database.load_account(account.id) == account
 
+    @pytest.mark.asyncio
     def test_update_order_when_not_already_exists_logs(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
@@ -280,7 +292,8 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert True  # No exceptions raised
 
-    def test_update_order_for_open_order(self):
+    @pytest.mark.asyncio
+    async def test_update_order_for_open_order(self):
         # Arrange
         order = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
@@ -290,6 +303,9 @@ class TestCacheDatabaseAdapter:
         )
 
         self.database.add_order(order)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
         order.apply(TestEventStubs.order_submitted(order))
         self.database.update_order(order)
@@ -302,7 +318,8 @@ class TestCacheDatabaseAdapter:
         # Assert
         assert self.database.load_order(order.client_order_id) == order
 
-    def test_update_order_for_closed_order(self):
+    @pytest.mark.asyncio
+    async def test_update_order_for_closed_order(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -311,6 +328,9 @@ class TestCacheDatabaseAdapter:
         )
 
         self.database.add_order(order)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
 
         order.apply(TestEventStubs.order_submitted(order))
         self.database.update_order(order)
@@ -346,7 +366,7 @@ class TestCacheDatabaseAdapter:
         position_id = PositionId("P-1")
         self.database.add_order(order1)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order1.client_order_id))
 
         order1.apply(TestEventStubs.order_submitted(order1))
@@ -369,7 +389,7 @@ class TestCacheDatabaseAdapter:
         position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_position(position.id))
 
         order2 = self.strategy.order_factory.market(
@@ -380,7 +400,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order2)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order2.client_order_id))
 
         order2.apply(TestEventStubs.order_submitted(order2))
@@ -404,7 +424,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.update_position(position)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to update
         await eventually(lambda: self.database.load_position(position.id))
 
         # Assert
@@ -421,7 +441,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
@@ -454,7 +474,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.update_actor(actor)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_actor(actor.id))
 
         result = self.database.load_actor(actor.id)
@@ -478,7 +498,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.update_strategy(strategy)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_strategy(strategy.id))
 
         result = self.database.load_strategy(strategy.id)
@@ -500,7 +520,7 @@ class TestCacheDatabaseAdapter:
         aud = Currency.from_str("AUD")
         self.database.add_currency(aud)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_currency("AUD"))
 
         # Act
@@ -515,7 +535,7 @@ class TestCacheDatabaseAdapter:
         aud = Currency.from_str("AUD")
         self.database.add_currency(aud)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_currencies())
 
         # Act
@@ -537,7 +557,7 @@ class TestCacheDatabaseAdapter:
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
 
         # Act
@@ -551,7 +571,7 @@ class TestCacheDatabaseAdapter:
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_instruments())
 
         # Act
@@ -577,7 +597,7 @@ class TestCacheDatabaseAdapter:
         synthetic = TestInstrumentProvider.synthetic_instrument()
         self.database.add_synthetic(synthetic)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_synthetic(synthetic.id))
 
         # Act
@@ -603,7 +623,7 @@ class TestCacheDatabaseAdapter:
         account = TestExecStubs.cash_account()
         self.database.add_account(account)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_account(account.id))
 
         # Act
@@ -638,7 +658,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -661,7 +681,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -683,7 +703,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -706,7 +726,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -731,7 +751,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -753,7 +773,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -775,7 +795,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         # Act
@@ -808,7 +828,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
@@ -841,7 +861,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_order(order.client_order_id))
 
         position_id = PositionId("P-1")
@@ -856,7 +876,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_position(position)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_position(position.id))
 
         # Act
@@ -881,7 +901,7 @@ class TestCacheDatabaseAdapter:
         # Act
         self.database.add_account(account)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_accounts())
 
         # Assert
@@ -906,7 +926,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.add_order(order)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_orders())
 
         # Act
@@ -952,8 +972,8 @@ class TestCacheDatabaseAdapter:
         position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
         self.database.add_position(position)
 
-        # Allow MPSC thread to write
-        await eventually(lambda: self.database.load_orders())
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_positions())
 
         # Act
         result = self.database.load_positions()
@@ -974,7 +994,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.update_actor(actor)
 
-        # Allow MPSC thread to write
+        # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_actor(actor.id))
 
         # Act
@@ -1003,7 +1023,7 @@ class TestCacheDatabaseAdapter:
 
         self.database.update_strategy(strategy)
 
-        # Allow MPSC thread to delete
+        # Allow MPSC thread to update
         await eventually(lambda: self.database.load_strategy(strategy.id))
 
         # Act
