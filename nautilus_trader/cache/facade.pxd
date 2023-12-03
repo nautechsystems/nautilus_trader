@@ -57,6 +57,7 @@ cdef class CacheDatabaseFacade:
     cdef LoggerAdapter _log
 
     cpdef void flush(self)
+    cpdef list[str] keys(self, str pattern=*)
     cpdef dict load(self)
     cpdef dict load_currencies(self)
     cpdef dict load_instruments(self)
