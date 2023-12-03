@@ -15,6 +15,7 @@
 
 import asyncio
 import sys
+import time
 from decimal import Decimal
 
 import msgspec
@@ -41,6 +42,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
@@ -145,6 +147,7 @@ class TestCacheDatabaseAdapter:
     def teardown(self):
         # Tests will fail if Redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests for debugging
+        time.sleep(0.1)  # Ensure clean slate
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -392,9 +395,13 @@ class TestCacheDatabaseAdapter:
                 instrument=AUDUSD_SIM,
                 position_id=position_id,
                 last_px=Price.from_str("1.00001"),
+                trade_id=TradeId("1"),
             ),
         )
         self.database.update_order(order1)
+
+        # Allow MPSC thread to update
+        await eventually(lambda: self.database.load_order(order1.client_order_id))
 
         # Act
         position = Position(instrument=AUDUSD_SIM, fill=order1.last_event)
@@ -425,6 +432,7 @@ class TestCacheDatabaseAdapter:
             instrument=AUDUSD_SIM,
             position_id=position_id,
             last_px=Price.from_str("1.00001"),
+            trade_id=TradeId("2"),
         )
 
         order2.apply(filled)
@@ -898,6 +906,7 @@ class TestCacheDatabaseAdapter:
 
         # Assert
         assert result == position
+        assert position.id == position_id
 
     @pytest.mark.asyncio
     async def test_load_accounts_when_no_accounts_returns_empty_dict(self):
