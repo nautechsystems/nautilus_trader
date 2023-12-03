@@ -675,14 +675,17 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: str,
     ) -> Generator[FeatherFile, None, None]:
         prefix = f"{self.path}/{kind}/{urisafe_instrument_id(instance_id)}"
-
+        handled = set()
         # Non-instrument feather files
         for fn in self.fs.glob(f"{prefix}/*.feather"):
             cls_name = fn.replace(prefix + "/", "").replace(".feather", "")
             yield FeatherFile(path=fn, class_name=cls_name)
+            handled.add(fn)
 
         # Per-instrument feather files
         for ins_fn in self.fs.glob(f"{prefix}/**/*.feather"):
+            if ins_fn in handled:
+                continue
             ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
             yield FeatherFile(path=ins_fn, class_name=ins_cls_name)
 

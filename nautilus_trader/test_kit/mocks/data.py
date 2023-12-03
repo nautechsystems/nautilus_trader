@@ -57,7 +57,7 @@ def data_catalog_setup(
     catalog.fs.mkdir(catalog.path, create_parents=True)
 
     assert catalog.fs.isdir(catalog.path)
-    assert not catalog.fs.glob(f"{catalog.path}/**")
+    assert not catalog.fs.glob(f"{catalog.path}/**/*")
 
     return catalog
 

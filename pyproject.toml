@@ -56,7 +56,7 @@ numpy = "^1.26.2"  # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 frozendict = "^2.3.10"
-fsspec = "==2023.6.0"  # Pinned for stability
+fsspec = "==2023.12.0"  # Pinned for stability
 importlib_metadata = "^6.8.0"
 msgspec = "^0.18.4"
 pandas = "^2.1.3"
