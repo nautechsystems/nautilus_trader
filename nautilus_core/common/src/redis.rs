@@ -18,43 +18,13 @@ use std::{collections::HashMap, sync::mpsc::Receiver, time::Duration};
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::trader_id::TraderId;
 use redis::*;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::msgbus::BusMessage;
 
 const DELIMITER: char = ':';
 const XTRIM: &str = "XTRIM";
 const MINID: &str = "MINID";
-
-pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
-    let empty = Value::Object(serde_json::Map::new());
-    let database = config.get("database").unwrap_or(&empty);
-
-    let host = database
-        .get("host")
-        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
-    let username = database
-        .get("username")
-        .map(|v| v.as_str().unwrap_or_default());
-    let password = database
-        .get("password")
-        .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = database.get("ssl").unwrap_or(&Value::Bool(false));
-
-    format!(
-        "redis{}://{}:{}@{}:{}",
-        if use_ssl.as_bool().unwrap_or(false) {
-            "s"
-        } else {
-            ""
-        },
-        username.unwrap_or(""),
-        password.unwrap_or(""),
-        host.unwrap(),
-        port.unwrap(),
-    )
-}
 
 pub fn handle_messages_with_redis(
     rx: Receiver<BusMessage>,
@@ -64,7 +34,7 @@ pub fn handle_messages_with_redis(
 ) {
     let redis_url = get_redis_url(&config);
     let client = redis::Client::open(redis_url).unwrap();
-    let stream_name = get_stream_name(&config, trader_id, instance_id);
+    let stream_name = get_stream_name(trader_id, instance_id, &config);
     let autotrim_mins = config
         .get("autotrim_mins")
         .and_then(|v| v.as_u64())
@@ -109,10 +79,40 @@ pub fn handle_messages_with_redis(
     }
 }
 
+pub fn get_redis_url(config: &HashMap<String, Value>) -> String {
+    let empty = Value::Object(serde_json::Map::new());
+    let database = config.get("database").unwrap_or(&empty);
+
+    let host = database
+        .get("host")
+        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
+    let port = database.get("port").map(|v| v.as_str().unwrap_or("6379"));
+    let username = database
+        .get("username")
+        .map(|v| v.as_str().unwrap_or_default());
+    let password = database
+        .get("password")
+        .map(|v| v.as_str().unwrap_or_default());
+    let use_ssl = database.get("ssl").unwrap_or(&json!(false));
+
+    format!(
+        "redis{}://{}:{}@{}:{}",
+        if use_ssl.as_bool().unwrap_or(false) {
+            "s"
+        } else {
+            ""
+        },
+        username.unwrap_or(""),
+        password.unwrap_or(""),
+        host.unwrap(),
+        port.unwrap(),
+    )
+}
+
 fn get_stream_name(
-    config: &HashMap<String, Value>,
     trader_id: TraderId,
     instance_id: UUID4,
+    config: &HashMap<String, Value>,
 ) -> String {
     let mut stream_name = String::new();
 
@@ -126,10 +126,34 @@ fn get_stream_name(
     stream_name.push_str(trader_id.value.as_str());
     stream_name.push(DELIMITER);
 
-    if let Some(Value::Bool(true)) = config.get("use_instance_id") {
+    if let Some(json!(true)) = config.get("use_instance_id") {
         stream_name.push_str(&format!("{instance_id}"));
         stream_name.push(DELIMITER);
     }
 
     stream_name
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn test_get_stream_name_with_stream_prefix_and_instance_id() {
+        let trader_id = TraderId::from("tester-123");
+        let instance_id = UUID4::new();
+        let mut config = HashMap::new();
+        config.insert("stream".to_string(), json!("quoters"));
+        config.insert("use_instance_id".to_string(), json!(true));
+
+        let key = get_stream_name(trader_id, instance_id, &config);
+        let expected_suffix = format!("{instance_id}:");
+        assert!(key.starts_with("quoters:tester-123:"));
+        assert!(key.ends_with(&expected_suffix));
+    }
 }
