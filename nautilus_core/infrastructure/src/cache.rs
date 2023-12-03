@@ -58,8 +58,8 @@ pub trait CacheDatabase {
     fn flushdb(&mut self) -> Result<()>;
     fn keys(&mut self, pattern: &str) -> Result<Vec<String>>;
     fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>>;
-    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<()>;
-    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<()>;
+    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
+    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
     fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
     fn handle_ops(
         rx: Receiver<DatabaseCommand>,

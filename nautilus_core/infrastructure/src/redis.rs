@@ -28,9 +28,14 @@ use serde_json::Value;
 
 use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
+// Error constants
 const CHANNEL_TX_FAILED: &str = "Failed to send to channel";
 
+// Redis constants
+const FLUSHDB: &str = "FLUSHDB";
 const DELIMITER: char = ':';
+
+// Collection keys
 const INDEX: &str = "index";
 const GENERAL: &str = "general";
 const CURRENCIES: &str = "currencies";
@@ -41,7 +46,10 @@ const ORDERS: &str = "orders";
 const POSITIONS: &str = "positions";
 const ACTORS: &str = "actors";
 const STRATEGIES: &str = "strategies";
+const SNAPSHOTS: &str = "snapshots";
+const HEALTH: &str = "health";
 
+// Index keys
 const INDEX_ORDER_IDS: &str = "index:order_ids";
 const INDEX_ORDER_POSITION: &str = "index:order_position";
 const INDEX_ORDER_CLIENT: &str = "index:order_client";
@@ -53,10 +61,6 @@ const INDEX_ORDERS_INFLIGHT: &str = "index:orders_inflight";
 const INDEX_POSITIONS: &str = "index:positions";
 const INDEX_POSITIONS_OPEN: &str = "index:positions_open";
 const INDEX_POSITIONS_CLOSED: &str = "index:positions_closed";
-
-const SNAPSHOTS_ORDERS: &str = "snapshots:orders";
-const SNAPSHOTS_POSITIONS: &str = "snapshots:positions";
-const HEARTBEAT: &str = "health:heartbeat";
 
 #[cfg_attr(
     feature = "python",
@@ -99,7 +103,7 @@ impl CacheDatabase for RedisCacheDatabase {
     }
 
     fn flushdb(&mut self) -> Result<()> {
-        match redis::cmd("FLUSHDB").query::<()>(&mut self.conn) {
+        match redis::cmd(FLUSHDB).query::<()>(&mut self.conn) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
@@ -131,16 +135,16 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<()> {
-        let op = DatabaseCommand::new(DatabaseOperation::Insert, key, Some(payload));
+    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()> {
+        let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
             Err(e) => bail!("{CHANNEL_TX_FAILED}: {e}"),
         }
     }
 
-    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<()> {
-        let op = DatabaseCommand::new(DatabaseOperation::Update, key, Some(payload));
+    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()> {
+        let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
             Err(e) => bail!("{CHANNEL_TX_FAILED}: {e}"),
@@ -170,22 +174,20 @@ impl CacheDatabase for RedisCacheDatabase {
             let key = format!("{trader_key}{DELIMITER}{}", msg.key);
 
             match msg.op_type {
-                DatabaseOperation::Insert => insert(
-                    &mut conn,
-                    collection,
-                    &key,
-                    &msg.payload.expect("Null `payload` for insert"),
-                )
-                .unwrap(),
-                DatabaseOperation::Update => update(
-                    &mut conn,
-                    collection,
-                    &key,
-                    &msg.payload.expect("Null `payload` for update"),
-                )
-                .unwrap(),
+                DatabaseOperation::Insert => {
+                    if let Err(e) = insert(&mut conn, collection, &key, msg.payload) {
+                        eprintln!("{}", e);
+                    }
+                }
+                DatabaseOperation::Update => {
+                    if let Err(e) = update(&mut conn, collection, &key, msg.payload) {
+                        eprintln!("{}", e);
+                    }
+                }
                 DatabaseOperation::Delete => {
-                    delete(&mut conn, collection, &key, msg.payload).unwrap() // TODO: handle error
+                    if let Err(e) = delete(&mut conn, collection, &key, msg.payload) {
+                        eprintln!("{}", e);
+                    }
                 }
             }
         }
@@ -236,11 +238,19 @@ fn read_list(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
     Ok(result)
 }
 
-fn insert(conn: &mut Connection, collection: &str, key: &str, value: &Vec<Vec<u8>>) -> Result<()> {
-    assert!(!value.is_empty(), "Empty `payload` for `insert`");
+fn insert(
+    conn: &mut Connection,
+    collection: &str,
+    key: &str,
+    value: Option<Vec<Vec<u8>>>,
+) -> Result<()> {
+    let value = value.ok_or_else(|| anyhow!("Null `payload` for `insert`"))?;
+    if value.is_empty() {
+        bail!("Empty `payload` for `insert`")
+    }
 
     match collection {
-        INDEX => insert_index(conn, key, value),
+        INDEX => insert_index(conn, key, &value),
         GENERAL => insert_string(conn, key, &value[0]),
         CURRENCIES => insert_string(conn, key, &value[0]),
         INSTRUMENTS => insert_string(conn, key, &value[0]),
@@ -250,9 +260,8 @@ fn insert(conn: &mut Connection, collection: &str, key: &str, value: &Vec<Vec<u8
         POSITIONS => insert_list(conn, key, &value[0]),
         ACTORS => insert_string(conn, key, &value[0]),
         STRATEGIES => insert_string(conn, key, &value[0]),
-        SNAPSHOTS_ORDERS => insert_list(conn, key, &value[0]),
-        SNAPSHOTS_POSITIONS => insert_list(conn, key, &value[0]),
-        HEARTBEAT => insert_string(conn, key, &value[0]),
+        SNAPSHOTS => insert_list(conn, key, &value[0]),
+        HEALTH => insert_string(conn, key, &value[0]),
         _ => bail!("Unsupported operation: `insert` for collection '{collection}'"),
     }
 }
@@ -295,8 +304,16 @@ fn insert_list(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> 
         .map_err(|e| anyhow!("Failed to rpush '{key}' in Redis: {e}"))
 }
 
-fn update(conn: &mut Connection, collection: &str, key: &str, value: &Vec<Vec<u8>>) -> Result<()> {
-    assert!(!value.is_empty(), "Empty `payload` for `update`");
+fn update(
+    conn: &mut Connection,
+    collection: &str,
+    key: &str,
+    value: Option<Vec<Vec<u8>>>,
+) -> Result<()> {
+    let value = value.ok_or_else(|| anyhow!("Null `payload` for `update`"))?;
+    if value.is_empty() {
+        bail!("Empty `payload` for `update`")
+    }
 
     match collection {
         ACCOUNTS => update_list(conn, key, &value[0]),
@@ -318,14 +335,14 @@ fn delete(
     value: Option<Vec<Vec<u8>>>,
 ) -> Result<()> {
     match collection {
-        INDEX => remove_from_index(conn, key, value),
+        INDEX => remove_index(conn, key, value),
         ACTORS => delete_string(conn, key),
         STRATEGIES => delete_string(conn, key),
         _ => bail!("Collection '{collection}' not recognized for `delete`"),
     }
 }
 
-fn remove_from_index(conn: &mut Connection, key: &str, value: Option<Vec<Vec<u8>>>) -> Result<()> {
+fn remove_index(conn: &mut Connection, key: &str, value: Option<Vec<Vec<u8>>>) -> Result<()> {
     let value = value.ok_or_else(|| anyhow!("Empty `payload` for `delete` '{key}'"))?;
     let index_key = get_index_key(key)?;
 
