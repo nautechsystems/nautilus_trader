@@ -24,7 +24,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
 use redis::{Commands, Connection};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
 
@@ -86,7 +86,6 @@ impl CacheDatabase for RedisCacheDatabase {
         let conn = client.get_connection().unwrap();
 
         let (tx, rx) = channel::<DatabaseCommand>();
-        let _encoding = get_encoding(&config);
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
@@ -117,7 +116,7 @@ impl CacheDatabase for RedisCacheDatabase {
     }
 
     fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>> {
-        let collection = get_collection_key(key);
+        let collection = get_collection_key(key)?;
         let key = format!("{}{DELIMITER}{}", self.trader_key, key);
 
         match collection {
@@ -170,23 +169,30 @@ impl CacheDatabase for RedisCacheDatabase {
 
         // Continue to receive and handle bus messages until channel is hung up
         while let Ok(msg) = rx.recv() {
-            let collection = get_collection_key(&msg.key);
+            let collection = match get_collection_key(&msg.key) {
+                Ok(collection) => collection,
+                Err(e) => {
+                    eprintln!("{e}");
+                    continue; // Continue to next message
+                }
+            };
+
             let key = format!("{trader_key}{DELIMITER}{}", msg.key);
 
             match msg.op_type {
                 DatabaseOperation::Insert => {
                     if let Err(e) = insert(&mut conn, collection, &key, msg.payload) {
-                        eprintln!("{}", e);
+                        eprintln!("{e}");
                     }
                 }
                 DatabaseOperation::Update => {
                     if let Err(e) = update(&mut conn, collection, &key, msg.payload) {
-                        eprintln!("{}", e);
+                        eprintln!("{e}");
                     }
                 }
                 DatabaseOperation::Delete => {
                     if let Err(e) = delete(&mut conn, collection, &key, msg.payload) {
-                        eprintln!("{}", e);
+                        eprintln!("{e}");
                     }
                 }
             }
@@ -296,7 +302,7 @@ fn insert_set(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> {
 
 fn insert_hset(conn: &mut Connection, key: &str, name: &Vec<u8>, value: &Vec<u8>) -> Result<()> {
     conn.hset(key, name, value)
-        .map_err(|e| anyhow!("Failed to sadd '{key}' in Redis: {e}"))
+        .map_err(|e| anyhow!("Failed to hset '{key}' in Redis: {e}"))
 }
 
 fn insert_list(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> {
@@ -338,7 +344,7 @@ fn delete(
         INDEX => remove_index(conn, key, value),
         ACTORS => delete_string(conn, key),
         STRATEGIES => delete_string(conn, key),
-        _ => bail!("Collection '{collection}' not recognized for `delete`"),
+        _ => bail!("Unsupported operation: `delete` for collection '{collection}'"),
     }
 }
 
@@ -364,7 +370,7 @@ fn remove_from_set(conn: &mut Connection, key: &str, member: &Vec<u8>) -> Result
 
 fn delete_string(conn: &mut Connection, key: &str) -> Result<()> {
     conn.del(key)
-        .map_err(|e| anyhow!("Failed to delete '{key}' in Redis: {e}"))
+        .map_err(|e| anyhow!("Failed to del '{key}' in Redis: {e}"))
 }
 
 fn get_redis_url(config: &HashMap<String, Value>) -> String {
@@ -378,7 +384,7 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
     let password = config
         .get("password")
         .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = config.get("ssl").unwrap_or(&Value::Bool(false));
+    let use_ssl = config.get("ssl").unwrap_or(&json!(false));
 
     format!(
         "redis{}://{}:{}@{}:{}",
@@ -401,13 +407,13 @@ fn get_trader_key(
 ) -> String {
     let mut key = String::new();
 
-    if let Some(Value::Bool(true)) = config.get("use_trader_prefix") {
+    if let Some(json!(true)) = config.get("use_trader_prefix") {
         key.push_str("trader-");
     }
 
     key.push_str(trader_id.value.as_str());
 
-    if let Some(Value::Bool(true)) = config.get("use_instance_id") {
+    if let Some(json!(true)) = config.get("use_instance_id") {
         key.push(DELIMITER);
         key.push_str(&format!("{instance_id}"));
     }
@@ -415,18 +421,20 @@ fn get_trader_key(
     key
 }
 
-fn get_collection_key(key: &str) -> &str {
+fn get_collection_key(key: &str) -> Result<&str> {
     key.split_once(DELIMITER)
-        .unwrap_or_else(|| panic!("Invalid `key` '{}'", key))
-        .0
+        .map(|(collection, _)| collection)
+        .ok_or_else(|| anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}"))
 }
 
 fn get_index_key(key: &str) -> Result<&str> {
-    key.split_once(':')
+    key.split_once(DELIMITER)
         .map(|(_, index_key)| index_key)
-        .ok_or_else(|| anyhow!("Invalid key, missing ':' delimiter, was {}", key))
+        .ok_or_else(|| anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}"))
 }
 
+// This function can be used when we handle cache serialization in Rust
+#[allow(dead_code)]
 fn get_encoding(config: &HashMap<String, Value>) -> String {
     config
         .get("encoding")
@@ -435,13 +443,73 @@ fn get_encoding(config: &HashMap<String, Value>) -> String {
         .to_string()
 }
 
+// This function can be used when we handle cache serialization in Rust
 #[allow(dead_code)]
-fn deserialize_payload(encoding: &str, payload: &[u8]) -> Result<HashMap<String, Value>, String> {
+fn deserialize_payload(encoding: &str, payload: &[u8]) -> Result<HashMap<String, Value>> {
     match encoding {
         "msgpack" => rmp_serde::from_slice(payload)
-            .map_err(|e| format!("Failed to deserialize msgpack `payload`: {e}")),
+            .map_err(|e| anyhow!("Failed to deserialize msgpack `payload`: {e}")),
         "json" => serde_json::from_slice(payload)
-            .map_err(|e| format!("Failed to deserialize json `payload`: {e}")),
-        _ => Err(format!("Unsupported encoding: {encoding}")),
+            .map_err(|e| anyhow!("Failed to deserialize json `payload`: {e}")),
+        _ => Err(anyhow!("Unsupported encoding: {encoding}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use rstest::rstest;
+    use serde_json::json;
+
+    use super::*;
+
+    #[rstest]
+    fn test_get_redis_url() {
+        let mut config = HashMap::new();
+        config.insert("host".to_string(), json!("localhost"));
+        config.insert("port".to_string(), json!("1234"));
+        config.insert("username".to_string(), json!("user"));
+        config.insert("password".to_string(), json!("pass"));
+        config.insert("ssl".to_string(), json!(true));
+
+        assert_eq!(get_redis_url(&config), "rediss://user:pass@localhost:1234");
+    }
+
+    #[rstest]
+    fn test_get_trader_key_with_prefix_and_instance_id() {
+        let trader_id = TraderId::from("tester-123");
+        let instance_id = UUID4::new();
+        let mut config = HashMap::new();
+        config.insert("use_trader_prefix".to_string(), json!(true));
+        config.insert("use_instance_id".to_string(), json!(true));
+
+        let key = get_trader_key(trader_id, instance_id, &config);
+        assert!(key.starts_with("trader-tester-123:"));
+        assert!(key.ends_with(&instance_id.to_string()));
+    }
+
+    #[rstest]
+    fn test_get_collection_key_valid() {
+        let key = "collection:123";
+        assert_eq!(get_collection_key(key).unwrap(), "collection");
+    }
+
+    #[rstest]
+    fn test_get_collection_key_invalid() {
+        let key = "no_delimiter";
+        assert!(get_collection_key(key).is_err());
+    }
+
+    #[rstest]
+    fn test_get_index_key_valid() {
+        let key = "index:123";
+        assert_eq!(get_index_key(key).unwrap(), "123");
+    }
+
+    #[rstest]
+    fn test_get_index_key_invalid() {
+        let key = "no_delimiter";
+        assert!(get_index_key(key).is_err());
     }
 }
