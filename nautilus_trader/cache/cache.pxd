@@ -19,7 +19,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.calculators cimport ExchangeRateCalculator
 from nautilus_trader.cache.base cimport CacheFacade
-from nautilus_trader.cache.database cimport CacheDatabase
+from nautilus_trader.cache.facade cimport CacheDatabaseFacade
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.common.logging cimport LoggerAdapter
 from nautilus_trader.core.rust.model cimport OmsType
@@ -53,7 +53,7 @@ from nautilus_trader.trading.strategy cimport Strategy
 
 cdef class Cache(CacheFacade):
     cdef LoggerAdapter _log
-    cdef CacheDatabase _database
+    cdef CacheDatabaseFacade _database
     cdef ExchangeRateCalculator _xrate_calculator
 
     cdef dict _general

@@ -18,10 +18,10 @@ from decimal import Decimal
 
 import msgspec
 import pytest
-import redis
 
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
+from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogLevel
@@ -32,7 +32,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
@@ -77,7 +76,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-class TestRedisCacheDatabase:
+class TestCacheDatabaseAdapter:
     def setup(self):
         # Fixture Setup
         self.clock = TestClock()
@@ -136,17 +135,15 @@ class TestRedisCacheDatabase:
             logger=self.logger,
         )
 
-        self.database = RedisCacheDatabase(
+        self.database = CacheDatabaseAdapter(
             trader_id=self.trader_id,
             logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
         )
 
-        self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
-
     def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
-        self.test_redis.flushall()  # Comment this line out to preserve data between tests
+        self.database.flush()  # Comment this line out to preserve data between tests
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -800,9 +797,8 @@ class TestRedisCacheDatabase:
         # Assert
         assert result is None
 
-    @pytest.mark.skip
     @pytest.mark.asyncio
-    async def test_load_position_when_instrument_in_database_returns_none(self):
+    async def test_load_position_when_no_instrument_in_database_returns_none(self):
         # Arrange
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -1074,6 +1070,15 @@ class TestRedisCacheDatabase:
 class TestRedisCacheDatabaseIntegrity:
     def setup(self):
         # Fixture Setup
+        self.clock = TestClock()
+        self.logger = Logger(
+            clock=self.clock,
+            level_stdout=LogLevel.DEBUG,
+            bypass=True,
+        )
+
+        self.trader_id = TestIdStubs.trader_id()
+
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
             run_analysis=False,
@@ -1101,11 +1106,15 @@ class TestRedisCacheDatabaseIntegrity:
         self.engine.add_instrument(self.usdjpy)
         self.engine.add_data(ticks)
 
-        self.test_redis = redis.Redis(host="localhost", port=6379, db=0)
+        self.database = CacheDatabaseAdapter(
+            trader_id=self.trader_id,
+            logger=self.logger,
+            serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
+        )
 
     def teardown(self):
         # Tests will start failing if redis is not flushed on tear down
-        self.test_redis.flushall()  # Comment this line out to preserve data between tests
+        self.database.flush()  # Comment this line out to preserve data between tests
 
     @pytest.mark.asyncio
     async def test_rerunning_backtest_with_redis_db_builds_correct_index(self):

@@ -24,11 +24,10 @@ Install optional dependencies as 'extras' for specific integrations:
 - `betfair`: Betfair adapter
 - `docker`: Needed for Docker when using the IB gateway
 - `ib`: Interactive Brokers adapter
-- `redis`: Use Redis as a cache database
 
 To install with specific extras using _pip_:
 
-    pip install -U "nautilus_trader[docker,ib,redis]"
+    pip install -U "nautilus_trader[docker,ib]"
 
 ## From Source
 Installation from source requires the `Python.h` header file, which is included in development releases such as `python-dev`. 
@@ -75,4 +74,4 @@ To install a binary wheel from GitHub, first navigate to the [latest release](ht
 Download the appropriate `.whl` for your operating system and Python version, then run:
 
     pip install <file-name>.whl
-    
+
