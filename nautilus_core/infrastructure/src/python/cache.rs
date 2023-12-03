@@ -70,7 +70,7 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "insert")]
     fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
-        match self.insert(key, payload) {
+        match self.insert(key, Some(payload)) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }
@@ -78,7 +78,7 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "update")]
     fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
-        match self.insert(key, payload) {
+        match self.insert(key, Some(payload)) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }
