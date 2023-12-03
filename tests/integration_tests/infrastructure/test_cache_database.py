@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 import sys
 from decimal import Decimal
 
@@ -142,8 +143,8 @@ class TestCacheDatabaseAdapter:
         )
 
     def teardown(self):
-        # Tests will start failing if redis is not flushed on tear down
-        self.database.flush()  # Comment this line out to preserve data between tests
+        # Tests will fail if Redis is not flushed on tear down
+        self.database.flush()  # Comment this line out to preserve data between tests for debugging
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
@@ -350,6 +351,9 @@ class TestCacheDatabaseAdapter:
 
         order.apply(fill)
 
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order.client_order_id))
+
         # Act
         self.database.update_order(order)
 
@@ -360,6 +364,9 @@ class TestCacheDatabaseAdapter:
     async def test_update_position_for_closed_position(self):
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
 
         order1 = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
@@ -857,6 +864,9 @@ class TestCacheDatabaseAdapter:
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+
         order = self.strategy.order_factory.market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -952,6 +962,9 @@ class TestCacheDatabaseAdapter:
         # Arrange
         self.database.add_instrument(AUDUSD_SIM)
 
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(AUDUSD_SIM.id))
+
         order1 = self.strategy.order_factory.stop_market(
             AUDUSD_SIM.id,
             OrderSide.BUY,
@@ -960,6 +973,9 @@ class TestCacheDatabaseAdapter:
         )
 
         self.database.add_order(order1)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_orders())
 
         position_id = PositionId("P-1")
         order1.apply(TestEventStubs.order_submitted(order1))
@@ -1051,6 +1067,9 @@ class TestCacheDatabaseAdapter:
         )
 
         self.database.add_order(order1)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_order(order1.client_order_id))
 
         position1_id = PositionId("P-1")
         fill = TestEventStubs.order_filled(
@@ -1153,14 +1172,20 @@ class TestRedisCacheDatabaseIntegrity:
         strategy = EMACross(config=config)
         self.engine.add_strategy(strategy)
 
+        await asyncio.sleep(0.5)
+
         # Generate a lot of data
         self.engine.run()
+
+        await asyncio.sleep(0.5)
 
         # Reset engine
         self.engine.reset()
 
         # Act
         self.engine.run()
+
+        await asyncio.sleep(0.5)
 
         # Assert
         assert eventually(lambda: self.engine.cache.check_integrity())
