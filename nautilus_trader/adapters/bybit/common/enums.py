@@ -127,6 +127,19 @@ class BybitContractType(Enum):
     INVERSE_FUTURE = "InverseFutures"
 
 
+@unique
+class BybitTransactionType(Enum):
+    # Assets that transferred into Unified wallet
+    TRANSFER_IN = "TRANSFER_IN"
+    # Assets that transferred out of Unified wallet
+    TRANSFER_OUT = "TRANSFER_OUT"
+    TRADE = "TRADE"
+    SETTLEMENT = "SETTLEMENT"
+    DELIVERY = "DELIVERY"
+    LIQUIDATION = "LIQUIDATION"
+    AIRDROP = "AIRDRP"
+
+
 def check_dict_keys(key, data):
     try:
         return data[key]

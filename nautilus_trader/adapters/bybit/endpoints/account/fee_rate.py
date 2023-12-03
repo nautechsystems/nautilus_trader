@@ -13,42 +13,40 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalanceResponse
+from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRateResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
-class BybitWalletBalanceGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    accountType: str = None
-    coin: str = None
+class BybitFeeRateGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
+    category: BybitInstrumentType = None
+    symbol: str = None
+    baseCoin: str = None
 
 
-class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
+class BybitFeeRateEndpoint(BybitHttpEndpoint):
     def __init__(
         self,
         client: BybitHttpClient,
         base_endpoint: str,
     ):
         self.http_method = HttpMethod.GET
-        url_path = base_endpoint + "/account/wallet-balance"
+        url_path = base_endpoint + "/account/fee-rate"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.ACCOUNT,
             url_path=url_path,
         )
-        self._get_resp_decoder = msgspec.json.Decoder(BybitWalletBalanceResponse)
+        self._get_resp_decoder = msgspec.json.Decoder(BybitFeeRateResponse)
 
-    async def get(self, parameters: BybitWalletBalanceGetParameters) -> BybitWalletBalanceResponse:
+    async def get(self, parameters: BybitFeeRateGetParameters) -> BybitFeeRateResponse:
         raw = await self._method(self.http_method, parameters)
         try:
             return self._get_resp_decoder.decode(raw)
         except Exception as e:
-            decoded_raw = raw.decode("utf-8")
-            raise RuntimeError(
-                f"Failed to decode response wallet balance response: {decoded_raw}",
-            ) from e
+            raise RuntimeError(f"Failed to decode response fee rate response: {raw!s}") from e

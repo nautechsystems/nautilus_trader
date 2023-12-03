@@ -22,14 +22,14 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsLinearResponse
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsOptionResponse
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsSpotResponse
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsLinearResponse
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsOptionResponse
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSpotResponse
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKlinesResponse
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTimeResponse
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from tests.integration_tests.adapters.bybit.utils.get_mock import get_mock
 
 
@@ -44,20 +44,9 @@ class TestBybitMarketHttpAPI:
             api_secret="SOME_BYBIT_API_SECRET",
             base_url="https://api-testnet.bybit.com",
         )
-        self.linear_api = BybitMarketHttpAPI(
+        self.http_api = BybitMarketHttpAPI(
             client=self.client,
             clock=clock,
-            instrument_type=BybitInstrumentType.LINEAR,
-        )
-        self.spot_api = BybitMarketHttpAPI(
-            client=self.client,
-            clock=clock,
-            instrument_type=BybitInstrumentType.SPOT,
-        )
-        self.option_api = BybitMarketHttpAPI(
-            client=self.client,
-            clock=clock,
-            instrument_type=BybitInstrumentType.OPTION,
         )
 
     @pytest.mark.asyncio()
@@ -69,7 +58,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitServerTimeResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        server_time = await self.spot_api.fetch_server_time()
+        server_time = await self.http_api.fetch_server_time()
         assert server_time.timeSecond == response_decoded.result.timeSecond
         assert server_time.timeNano == response_decoded.result.timeNano
 
@@ -82,7 +71,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitInstrumentsSpotResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        instruments = await self.spot_api.fetch_instruments()
+        instruments = await self.http_api.fetch_instruments(BybitInstrumentType.SPOT)
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
@@ -96,7 +85,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitInstrumentsLinearResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        instruments = await self.linear_api.fetch_instruments()
+        instruments = await self.http_api.fetch_instruments(BybitInstrumentType.LINEAR)
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
@@ -110,7 +99,7 @@ class TestBybitMarketHttpAPI:
         response_decoded = msgspec.json.Decoder(BybitInstrumentsOptionResponse).decode(response)
 
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        instruments = await self.option_api.fetch_instruments()
+        instruments = await self.http_api.fetch_instruments(BybitInstrumentType.OPTION)
         assert len(instruments) == 2
         assert response_decoded.result.list[0] == instruments[0]
         assert response_decoded.result.list[1] == instruments[1]
@@ -123,7 +112,12 @@ class TestBybitMarketHttpAPI:
         )
         response_decoded = msgspec.json.Decoder(BybitKlinesResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        klines = await self.spot_api.fetch_klines("BTCUSDT", BybitKlineInterval.DAY_1, 3)
+        klines = await self.http_api.fetch_klines(
+            BybitInstrumentType.SPOT,
+            "BTCUSDT",
+            BybitKlineInterval.DAY_1,
+            3,
+        )
         assert len(klines) == 3
         assert response_decoded.result.list[0] == klines[0]
         assert response_decoded.result.list[1] == klines[1]
@@ -137,7 +131,12 @@ class TestBybitMarketHttpAPI:
         )
         response_decoded = msgspec.json.Decoder(BybitKlinesResponse).decode(response)
         monkeypatch.setattr(HttpClient, "request", get_mock(response))
-        klines = await self.linear_api.fetch_klines("BTCUSDT", BybitKlineInterval.DAY_1, 3)
+        klines = await self.http_api.fetch_klines(
+            BybitInstrumentType.LINEAR,
+            "BTCUSDT",
+            BybitKlineInterval.DAY_1,
+            3,
+        )
         assert len(klines) == 3
         assert response_decoded.result.list[0] == klines[0]
         assert response_decoded.result.list[1] == klines[1]

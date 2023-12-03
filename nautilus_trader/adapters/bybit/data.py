@@ -25,13 +25,14 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
-from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_millis
@@ -43,12 +44,6 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.msgbus.bus import MessageBus
-
-
-class BybitWsTopicCheck(msgspec.Struct):
-    topic: str
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -92,7 +87,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._ws_clients[instrument_type] = BybitWebsocketClient(
                 clock=clock,
                 logger=logger,
-                handler=self._handle_ws_message,
+                handler=lambda x: self._handle_ws_message(instrument_type, x),
                 base_url=ws_urls[instrument_type],
             )
 
@@ -104,8 +99,7 @@ class BybitDataClient(LiveMarketDataClient):
             "trade": decoder_ws_trade(),
             "ticker": decoder_ws_ticker(instrument_type),
         }
-        self._decoder_ws_topic_check = msgspec.json.Decoder(BybitWsTopicCheck)
-        self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
+        self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
@@ -140,69 +134,64 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         symbol = BybitSymbol(instrument_id.symbol.value)
-        await self._ws_client.subscribe_trades(symbol)
+        ws_client = self._ws_clients[symbol.instrument_type]
+        await ws_client.subscribe_trades(symbol.raw_symbol)
         self._log.info(f"Subscribed to trade ticks for {instrument_id}.")
 
     async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
         symbol = BybitSymbol(instrument_id.symbol.value)
-        await self._ws_client.subscribe_tickers(symbol)
+        ws_client = self._ws_clients[symbol.instrument_type]
+        await ws_client.subscribe_tickers(symbol.raw_symbol)
         self._log.info(f"Subscribed to ticker for {instrument_id}.")
 
-    def _handle_ws_message(self, raw: bytes) -> None:
+    def _handle_ws_message(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         try:
-            ws_message = self._decoder_ws_topic_check.decode(raw)
-            self._topic_check(ws_message.topic, raw)
-        except Exception:
-            try:
-                ws_message_subscription = self._decoder_ws_subscription.decode(raw)
-                if ws_message_subscription.success:
-                    self._log.info("Success subscribing")
-                else:
-                    self._log.error("Failed to subscribe.")
-            except Exception as e:
-                decoded_raw = raw.decode("utf-8")
-                raise RuntimeError(f"Unknown websocket message type: {decoded_raw}") from e
+            ws_message = self._decoder_ws_msg_general.decode(raw)
+            if ws_message.success is False:
+                self._log.error(f"Error in ws_message: {ws_message.ret_msg}")
+                return
+            ## check if there is topic, if not discard it
+            if ws_message.topic:
+                self._topic_check(instrument_type, ws_message.topic, raw)
+        except Exception as e:
+            decoded_raw = raw.decode("utf-8")
+            raise RuntimeError(f"Unknown websocket message type: {decoded_raw}") from e
 
-    def _handle_trade(self, raw: bytes) -> None:
+    def _handle_trade(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         try:
             msg = self._decoders["trade"].decode(raw)
             for trade in msg.data:
-                instrument_id: InstrumentId = self._get_cached_instrument_id(trade.s)
+                symbol = trade.s + f"-{instrument_type.value.upper()}"
+                instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
                 trade_tick: TradeTick = trade.parse_to_trade_tick(
                     instrument_id,
                     self._clock.timestamp_ns(),
                 )
                 self._handle_data(trade_tick)
-        except Exception:
+        except Exception as e:
+            print("error in handle trade", e)
             decoded_raw = raw.decode("utf-8")
             self._log.error(f"Failed to parse trade tick: {decoded_raw}")
 
-    def _handle_ticker(self, raw: bytes) -> None:
+    def _handle_ticker(self, instrument_type: BybitInstrumentType, raw: bytes) -> None:
         try:
             self._decoders["ticker"].decode(raw)
         except Exception:
             print("failed to parse ticker ", raw)
 
-    def _topic_check(self, topic: str, raw: bytes) -> None:
+    def _topic_check(self, instrument_type: BybitInstrumentType, topic: str, raw: bytes) -> None:
         if "publicTrade" in topic:
-            self._handle_trade(raw)
+            self._handle_trade(instrument_type, raw)
         elif "tickers" in topic:
-            self._handle_ticker(raw)
+            self._handle_ticker(instrument_type, raw)
         else:
             self._log.error(f"Unknown websocket message topic: {topic} in Bybit")
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
         # Parse instrument ID
-        binance_symbol = BybitSymbol(symbol)
-        assert binance_symbol
-        nautilus_symbol: str = binance_symbol.parse_as_nautilus(
-            self._instrument_type,
-        )
-        instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
-        if not instrument_id:
-            instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
-            self._instrument_ids[nautilus_symbol] = instrument_id
-        return instrument_id
+        bybit_symbol = BybitSymbol(symbol)
+        nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
+        return nautilus_instrument_id
 
     async def _request_bars(
         self,
@@ -244,6 +233,8 @@ class BybitDataClient(LiveMarketDataClient):
         if end is not None:
             end_time_ms = secs_to_millis(end.timestamp())
         bars = await self._http_market.request_bybit_bars(
+            # TODO fixing instrument here so that mypy passes,need to determine how to get instrument type from bar
+            instrument_type=BybitInstrumentType.SPOT,
             bar_type=bar_type,
             interval=bybit_interval,
             start=start_time_ms,

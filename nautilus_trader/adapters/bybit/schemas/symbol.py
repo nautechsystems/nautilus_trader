@@ -12,36 +12,45 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Symbol
 
 
 class BybitSymbol(str):
     def __new__(cls, symbol: str | None):
         if symbol is not None:
+            # check if it contains one dot BTCUSDT-LINEAR for example is the correct
+            # bybit symbol format
+            if (
+                symbol.find("-SPOT") == -1
+                and symbol.find("-LINEAR") == -1
+                and symbol.find("-OPTION") == -1
+            ):
+                raise ValueError(
+                    f"Invalid symbol {symbol}. Does not contain -LINEAR, -SPOT or -OPTION suffix",
+                )
             return super().__new__(
                 cls,
-                symbol.upper().replace(" ", "").replace("/", "").replace("-PERP", ""),
+                symbol.upper(),
             )
 
-    def get_instrument_type(self) -> BybitInstrumentType:
-        if self.endswith("_PERP"):
+    @property
+    def raw_symbol(self) -> str:
+        return str(self).split("-")[0]
+
+    @property
+    def instrument_type(self) -> BybitInstrumentType:
+        if "-LINEAR" in self:
             return BybitInstrumentType.LINEAR
-        elif self.endswith("_USDT"):
+        elif "-SPOT" in self:
             return BybitInstrumentType.SPOT
-        elif self.index("CALL") or self.index("PUT"):
+        elif "-OPTION" in self:
             return BybitInstrumentType.OPTION
         else:
             raise ValueError(f"Unknown instrument type for symbol {self}")
 
-    def parse_as_nautilus(self, instrument_type: BybitInstrumentType) -> str:
-        if instrument_type.is_spot_or_margin:
-            return str(self)
-
-        if self[-1].isdigit():
-            return str(self)
-        if self.endswith("_PERP"):
-            return str(self).replace("_", "-")
-        else:
-            return str(self) + "-PERP"
+    def parse_as_nautilus(self) -> InstrumentId:
+        instrument = InstrumentId(Symbol(str(self)), BYBIT_VENUE)
+        return instrument

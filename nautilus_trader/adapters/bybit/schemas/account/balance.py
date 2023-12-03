@@ -18,8 +18,8 @@ from decimal import Decimal
 import msgspec
 
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
-from nautilus_trader.model.currency import Currency
 from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 

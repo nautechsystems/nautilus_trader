@@ -17,14 +17,15 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.order import BybitOpenOrdersResponseStruct
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitOpenOrdersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: str = None
+    category: BybitInstrumentType = None
     symbol: str = None
     baseCoin: str | None = None
     settleCoin: str | None = None
@@ -38,7 +39,7 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ):
-        url_path = base_endpoint + "order/realtime"
+        url_path = base_endpoint + "/order/realtime"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.TRADE,

@@ -23,7 +23,6 @@ from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
-from nautilus_trader.adapters.bybit.data import BybitWsTopicCheck
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
@@ -33,9 +32,11 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
@@ -67,7 +68,6 @@ from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.position import Position
-from nautilus_trader.msgbus.bus import MessageBus
 
 
 class BybitExecutionClient(LiveExecutionClient):
@@ -136,7 +136,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._order_retries: dict[ClientOrderId, int] = {}
 
         # decoders
-        self._decoder_ws_topic_check = msgspec.json.Decoder(BybitWsTopicCheck)
+        self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
         self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
         self._decoder_ws_account_execution_update = msgspec.json.Decoder(
@@ -147,8 +147,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _connect(self) -> None:
-        # Initialize instrument provider
-        await self._instrument_provider.initialize()
         # Update account state
         await self._update_account_state()
         # Connect to websocket
@@ -170,17 +168,20 @@ class BybitExecutionClient(LiveExecutionClient):
             symbol = instrument_id.symbol.value if instrument_id is not None else None
             # active_symbols = self._get_cache_active_symbols()
             # active_symbols.update(await self._get_active_position_symbols(symbol))
-            open_orders = await self._http_account.query_open_orders(symbol)
-            for order in open_orders:
-                report = order.parse_to_order_status_report(
-                    account_id=self.account_id,
-                    instrument_id=self._get_cached_instrument_id(order.symbol),
-                    report_id=UUID4(),
-                    enum_parser=self._enum_parser,
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                reports.append(report)
-                self._log.debug(f"Received {report}")
+            # open_orders: dict[BybitInstrumentType,list[BybitOrder]] = dict()
+            for instr in self._instrument_types:
+                open_orders = await self._http_account.query_open_orders(instr, symbol)
+                for order in open_orders:
+                    symbol = BybitSymbol(order.symbol + f"-{instr.value.upper()}")
+                    report = order.parse_to_order_status_report(
+                        account_id=self.account_id,
+                        instrument_id=symbol.parse_as_nautilus(),
+                        report_id=UUID4(),
+                        enum_parser=self._enum_parser,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    reports.append(report)
+                    self._log.debug(f"Received {report}")
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
         len_reports = len(reports)
@@ -271,7 +272,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId | None:
         # parse instrument id
-        nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus(self._bybit_instrument_type)
+        nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus()
         instrument_id: InstrumentId = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
             instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
@@ -292,7 +293,7 @@ class BybitExecutionClient(LiveExecutionClient):
         # positions = await self._http_account.query_position_info()
         [instrument_type_balances, ts_event] = await self._http_account.query_wallet_balance()
         if instrument_type_balances:
-            self._log.info("Binance API key authenticated.", LogColor.GREEN)
+            self._log.info("Bybit API key authenticated.", LogColor.GREEN)
             self._log.info(f"API key {self._http_account.client.api_key} has trading permissions.")
         for balance in instrument_type_balances:
             balances = balance.parse_to_account_balance()
@@ -384,7 +385,7 @@ class BybitExecutionClient(LiveExecutionClient):
     ################################################################################
     def _handle_ws_message(self, raw: bytes) -> None:
         try:
-            ws_message = self._decoder_ws_topic_check.decode(raw)
+            ws_message = self._decoder_ws_msg_general.decode(raw)
             self._topic_check(ws_message.topic, raw)
         except Exception:
             ws_message_sub = self._decoder_ws_subscription.decode(raw)

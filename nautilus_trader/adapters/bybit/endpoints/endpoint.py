@@ -22,9 +22,6 @@ from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 
 
-# from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-
-
 def enc_hook(obj: Any) -> Any:
     if isinstance(obj, BybitSymbol):
         return str(obj)

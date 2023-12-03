@@ -23,10 +23,21 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.core.nautilus_pyo3.network import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
 class BybitWebsocketClient:
+    """
+    Provides a `Bybit` streaming WebSocket client.
+
+    Parameters
+    ----------
+    clock : LiveClock
+        The clock instance.
+
+    """
+
     def __init__(
         self,
         clock: LiveClock,
@@ -96,10 +107,15 @@ class BybitWebsocketClient:
 
     async def connect(self) -> None:
         self._log.debug(f"Connecting to {self._url} websocket stream")
-        client = await WebSocketClient.connect(
+        config = WebSocketConfig(
             url=self._url,
             handler=self._handler,
-            heartbeat=15,
+            heartbeat=20,
+            heartbeat_msg=json.dumps({"op": "ping"}),
+            headers=[],
+        )
+        client = await WebSocketClient.connect(
+            config=config,
         )
         self._client = client
         self._log.info(f"Connected to {self._url}.", LogColor.BLUE)

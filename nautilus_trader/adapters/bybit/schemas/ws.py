@@ -38,6 +38,13 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
 
+class BybitWsMessageGeneral(msgspec.Struct):
+    topic: str = None
+    success: bool = None
+    ret_msg: str = None
+    op: str = None
+
+
 ################################################################################
 # Public - Kline
 ################################################################################

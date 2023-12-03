@@ -12,12 +12,19 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+import msgspec as msgspec
 
-from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 
 
-def get_mock(response):
-    async def mock(*args, **kwargs):
-        return HttpResponse(status=200, body=response)
+class BybitFeeRate(msgspec.Struct):
+    symbol: str
+    takerFeeRate: str
+    makerFeeRate: str
 
-    return mock
+
+class BybitFeeRateResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: BybitListResult[BybitFeeRate]
+    time: int

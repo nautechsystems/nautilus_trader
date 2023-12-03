@@ -26,10 +26,10 @@ from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.logging import LoggerAdapter
-from nautilus_trader.core.nautilus_pyo3.network import HttpClient
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
-from nautilus_trader.core.nautilus_pyo3.network import HttpResponse
-from nautilus_trader.core.nautilus_pyo3.network import Quota
+from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
 def create_string_from_dict(data):
@@ -116,6 +116,7 @@ class BybitHttpClient:
         # first check for server error
         if 400 <= response.status < 500:
             message = msgspec.json.decode(response.body) if response.body else None
+            print(str(response.body))
             raise BybitError(
                 status=response.status,
                 message=message,

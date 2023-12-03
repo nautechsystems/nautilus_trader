@@ -17,10 +17,12 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
+from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParameters
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
-from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import WalletBalanceGetParameters
+from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParameters
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import BybitPositionInfoEndpoint
 from nautilus_trader.adapters.bybit.endpoints.position.position_info import PositionInfoGetParameters
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
@@ -33,6 +35,7 @@ from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlac
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.account.balance import BybitWalletBalance
+from nautilus_trader.adapters.bybit.schemas.account.fee_rate import BybitFeeRate
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrder
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
@@ -51,15 +54,31 @@ class BybitAccountHttpAPI:
         PyCondition.not_none(client, "client")
         self.client = client
         self._clock = clock
-        self.base_endpoint = "/v5/"
+        self.base_endpoint = "/v5"
         self.default_settle_coin = "USDT"
 
         # endpoints
+        self._endpoint_fee_rate = BybitFeeRateEndpoint(client, self.base_endpoint)
         self._endpoint_position_info = BybitPositionInfoEndpoint(client, self.base_endpoint)
         self._endpoint_open_orders = BybitOpenOrdersHttp(client, self.base_endpoint)
         self._endpoint_wallet_balance = BybitWalletBalanceEndpoint(client, self.base_endpoint)
         self._endpoint_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_all_orders = BybitCancelAllOrdersEndpoint(client, self.base_endpoint)
+
+    async def fetch_fee_rate(
+        self,
+        instrument_type: BybitInstrumentType,
+        symbol: str | None = None,
+        base_coin: str | None = None,
+    ) -> list[BybitFeeRate]:
+        response = await self._endpoint_fee_rate.get(
+            BybitFeeRateGetParameters(
+                category=instrument_type,
+                symbol=symbol,
+                baseCoin=base_coin,
+            ),
+        )
+        return response.result.list
 
     async def query_position_info(
         self,
@@ -88,7 +107,7 @@ class BybitAccountHttpAPI:
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
-                category=get_category_from_instrument_type(instrument_type),
+                category=instrument_type,
                 symbol=BybitSymbol(symbol) if symbol else None,
                 settleCoin=self.default_settle_coin if symbol is None else None,
             ),
@@ -103,7 +122,7 @@ class BybitAccountHttpAPI:
     ) -> list[BybitOrder]:
         response = await self._endpoint_open_orders.get(
             BybitOpenOrdersGetParameters(
-                category=get_category_from_instrument_type(instrument_type),
+                category=instrument_type,
                 symbol=BybitSymbol(symbol) if symbol else None,
                 orderId=order_id,
             ),
@@ -128,7 +147,7 @@ class BybitAccountHttpAPI:
         coin: str | None = None,
     ) -> tuple[list[BybitWalletBalance], int]:
         response = await self._endpoint_wallet_balance.get(
-            WalletBalanceGetParameters(
+            BybitWalletBalanceGetParameters(
                 accountType="UNIFIED",
             ),
         )

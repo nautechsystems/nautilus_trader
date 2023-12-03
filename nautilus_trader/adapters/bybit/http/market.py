@@ -26,7 +26,8 @@ from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEn
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParameters
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
@@ -67,17 +68,27 @@ class BybitMarketHttpAPI:
 
     async def fetch_instruments(
         self,
-        instrument_types: list[BybitInstrumentType],
-    ) -> list[BybitInstrument]:
-        instruments: list[BybitInstrument] = []
-        for instrument_type in instrument_types:
-            response = await self._endpoint_instruments.get(
-                BybitInstrumentsInfoGetParameters(
-                    category=instrument_type,
-                ),
-            )
-            instruments.extend(response.result.list)
-        return instruments
+        instrument_type: BybitInstrumentType,
+    ) -> BybitInstrumentList:
+        response = await self._endpoint_instruments.get(
+            BybitInstrumentsInfoGetParameters(
+                category=instrument_type,
+            ),
+        )
+        return response.result.list
+
+    async def fetch_instrument(
+        self,
+        instrument_type: BybitInstrumentType,
+        symbol: str,
+    ) -> BybitInstrument:
+        response = await self._endpoint_instruments.get(
+            BybitInstrumentsInfoGetParameters(
+                category=instrument_type,
+                symbol=symbol,
+            ),
+        )
+        return response.result.list[0]
 
     async def fetch_klines(
         self,
@@ -102,6 +113,7 @@ class BybitMarketHttpAPI:
 
     async def request_bybit_bars(
         self,
+        instrument_type: BybitInstrumentType,
         bar_type: BarType,
         interval: BybitKlineInterval,
         ts_init: int,
@@ -114,7 +126,7 @@ class BybitMarketHttpAPI:
             bybit_symbol: BybitSymbol = BybitSymbol(bar_type.instrument_id.symbol.value)
             klines = await self.fetch_klines(
                 symbol=bybit_symbol,
-                instrument_type=bybit_symbol.get_instrument_type(),
+                instrument_type=instrument_type,
                 interval=interval,
                 limit=limit,
                 start=start,

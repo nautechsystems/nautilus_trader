@@ -22,15 +22,15 @@ from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.core.nautilus_pyo3.network import Quota
+from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.msgbus.bus import MessageBus
 from nautilus_trader.utils.env import get_env_key
 
 
@@ -103,7 +103,6 @@ def get_bybit_instrument_provider(
     logger: Logger,
     clock: LiveClock,
     instrument_types: list[BybitInstrumentType],
-    is_testnet: bool,
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
     """
@@ -138,7 +137,6 @@ def get_bybit_instrument_provider(
         config=config,
         clock=clock,
         instrument_types=instrument_types,
-        is_testnet=is_testnet,
     )
 
 
@@ -172,17 +170,16 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             The message bus for the client.
         cache : Cache
             The cache for the client.
-         clock : LiveClock
-            The clock for the client.
+        clock: LiveClock
+            The clock for the instrument provider.
         logger : Logger
-            The logger for the client.
+            The logger for the instrument provider.
 
         Returns
         -------
         BybitDataClient
 
         """
-
         client: BybitHttpClient = get_bybit_http_client(
             clock=clock,
             logger=logger,
@@ -196,7 +193,6 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             logger=logger,
             clock=clock,
             instrument_types=config.instrument_types,
-            is_testnet=config.testnet,
             config=config.instrument_provider,
         )
         ws_base_urls: dict[BybitInstrumentType, str] = {}
@@ -272,7 +268,6 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             logger=logger,
             clock=clock,
             instrument_types=config.instrument_types,
-            is_testnet=config.testnet,
             config=config.instrument_provider,
         )
         default_base_url_ws: str = _get_ws_base_url_private(config.testnet)

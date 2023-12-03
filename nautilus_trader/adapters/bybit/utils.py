@@ -17,6 +17,7 @@
 import json
 import os.path
 import time
+from decimal import Decimal
 
 import msgspec
 
@@ -48,3 +49,8 @@ def get_category_from_instrument_type(instrument_type: BybitInstrumentType) -> s
         return "option"
     else:
         raise ValueError(f"Unknown account type: {instrument_type}")
+
+
+def tick_size_to_precision(tick_size: float | Decimal) -> int:
+    tick_size_str = f"{tick_size:.10f}"
+    return len(tick_size_str.partition(".")[2].rstrip("0"))

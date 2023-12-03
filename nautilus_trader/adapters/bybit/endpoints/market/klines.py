@@ -20,7 +20,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKlinesResponse
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitKlinesGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):

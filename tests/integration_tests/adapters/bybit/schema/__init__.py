@@ -12,12 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.core.nautilus_pyo3 import HttpResponse
-
-
-def get_mock(response):
-    async def mock(*args, **kwargs):
-        return HttpResponse(status=200, body=response)
-
-    return mock

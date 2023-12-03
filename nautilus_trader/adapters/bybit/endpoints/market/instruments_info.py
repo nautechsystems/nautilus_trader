@@ -20,10 +20,10 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsLinearResponse
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsOptionResponse
-from nautilus_trader.adapters.bybit.schemas.market.instrument import BybitInstrumentsSpotResponse
-from nautilus_trader.core.nautilus_pyo3.network import HttpMethod
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsLinearResponse
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsOptionResponse
+from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSpotResponse
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitInstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
