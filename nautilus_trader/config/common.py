@@ -147,6 +147,7 @@ class CacheDatabaseConfig(NautilusConfig, frozen=True):
         If database should be flushed on start.
     buffer_interval_ms : PositiveInt, optional
         The buffer interval (milliseconds) between pipelined/batched transactions.
+        The recommended range if using buffered pipeling is [10, 100] milliseconds.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is applied to keys.
     use_instance_id : bool, default False

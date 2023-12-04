@@ -147,7 +147,7 @@ class TestCacheDatabaseAdapter:
     def teardown(self):
         # Tests will fail if Redis is not flushed on tear down
         self.database.flush()  # Comment this line out to preserve data between tests for debugging
-        time.sleep(0.5)  # Ensure clean slate
+        time.sleep(1.0)  # Ensure clean slate
 
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):

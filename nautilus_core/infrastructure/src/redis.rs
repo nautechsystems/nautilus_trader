@@ -524,8 +524,8 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
 fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
     let buffer_interval_ms = config
         .get("buffer_interval_ms")
-        .map(|v| v.as_u64().unwrap_or(10));
-    Duration::from_millis(buffer_interval_ms.unwrap())
+        .map(|v| v.as_u64().unwrap_or(0));
+    Duration::from_millis(buffer_interval_ms.unwrap_or(0))
 }
 
 fn get_trader_key(
@@ -615,6 +615,22 @@ mod tests {
         let key = get_trader_key(trader_id, instance_id, &config);
         assert!(key.starts_with("trader-tester-123:"));
         assert!(key.ends_with(&instance_id.to_string()));
+    }
+
+    #[rstest]
+    fn test_get_buffer_interval_default() {
+        let config = HashMap::new();
+        let buffer_interval = get_buffer_interval(&config);
+        assert_eq!(buffer_interval, Duration::from_millis(0));
+    }
+
+    #[rstest]
+    fn test_get_buffer_interval() {
+        let mut config = HashMap::new();
+        config.insert("buffer_interval_ms".to_string(), json!(100));
+
+        let buffer_interval = get_buffer_interval(&config);
+        assert_eq!(buffer_interval, Duration::from_millis(100));
     }
 
     #[rstest]
