@@ -141,6 +141,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.type(config, CacheDatabaseConfig, "config")
         super().__init__(logger, config)
 
+        if config.buffer_interval_ms and config.buffer_interval_ms >= 1000:
+            self._log.warning(
+                f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
+                "recommended range is [10, 100] milliseconds.",
+            )
+
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
         self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
