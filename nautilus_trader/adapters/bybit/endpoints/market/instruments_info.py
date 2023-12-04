@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -27,9 +26,9 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitInstrumentsInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType = None
-    symbol: str = None
-    status: str = None
+    category: BybitInstrumentType | None = None
+    symbol: str | None = None
+    status: str | None = None
 
 
 class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
@@ -37,7 +36,7 @@ class BybitInstrumentsInfoEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "instruments-info"
         super().__init__(
             client=client,

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -24,8 +23,8 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitWalletBalanceGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    accountType: str = None
-    coin: str = None
+    accountType: str | None = None
+    coin: str | None = None
 
 
 class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
@@ -33,7 +32,7 @@ class BybitWalletBalanceEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         self.http_method = HttpMethod.GET
         url_path = base_endpoint + "/account/wallet-balance"
         super().__init__(

@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -25,9 +24,9 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 class BybitCancelAllOrdersPostParameters(msgspec.Struct, omit_defaults=True, frozen=False):
     category: str
-    symbol: str = None
-    baseCoin: str = None
-    settleCoin: str = None
+    symbol: str | None = None
+    baseCoin: str | None = None
+    settleCoin: str | None = None
 
 
 class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
@@ -35,7 +34,7 @@ class BybitCancelAllOrdersEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "order/cancel-all"
         super().__init__(
             client=client,

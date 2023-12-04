@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
 import msgspec as msgspec
 
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult

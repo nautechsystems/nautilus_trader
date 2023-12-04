@@ -24,9 +24,9 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitFeeRateGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType = None
-    symbol: str = None
-    baseCoin: str = None
+    category: BybitInstrumentType | None = None
+    symbol: str | None = None
+    baseCoin: str | None = None
 
 
 class BybitFeeRateEndpoint(BybitHttpEndpoint):
@@ -34,7 +34,7 @@ class BybitFeeRateEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         self.http_method = HttpMethod.GET
         url_path = base_endpoint + "/account/fee-rate"
         super().__init__(

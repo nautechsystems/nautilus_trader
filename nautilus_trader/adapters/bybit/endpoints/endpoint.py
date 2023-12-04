@@ -35,7 +35,7 @@ class BybitHttpEndpoint:
         client: BybitHttpClient,
         endpoint_type: BybitEndpointType,
         url_path: str,
-    ):
+    ) -> None:
         self.client = client
         self.endpoint_type = endpoint_type
         self.url_path = url_path

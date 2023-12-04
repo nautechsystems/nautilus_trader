@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
@@ -39,10 +38,10 @@ from nautilus_trader.model.objects import Quantity
 
 
 class BybitWsMessageGeneral(msgspec.Struct):
-    topic: str = None
-    success: bool = None
-    ret_msg: str = None
-    op: str = None
+    topic: str | None = None
+    success: bool | None = None
+    ret_msg: str | None = None
+    op: str | None = None
 
 
 ################################################################################

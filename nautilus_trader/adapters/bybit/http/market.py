@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.common.enums import BybitKlineInterval
 
@@ -28,6 +27,7 @@ from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitSer
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
+from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
@@ -37,15 +37,12 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 
 
-# fmt: on
-
-
 class BybitMarketHttpAPI:
     def __init__(
         self,
         client: BybitHttpClient,
         clock: LiveClock,
-    ):
+    ) -> None:
         PyCondition.not_none(client, "client")
         self.client = client
         self._clock = clock
@@ -59,7 +56,7 @@ class BybitMarketHttpAPI:
         self._endpoint_server_time = BybitServerTimeEndpoint(client, self.base_endpoint)
         self._endpoint_klines = BybitKlinesEndpoint(client, self.base_endpoint)
 
-    def _get_url(self, url: str):
+    def _get_url(self, url: str) -> str:
         return self.base_endpoint + url
 
     async def fetch_server_time(self) -> BybitServerTime:
@@ -98,7 +95,7 @@ class BybitMarketHttpAPI:
         limit: int | None = None,
         start: int | None = None,
         end: int | None = None,
-    ):
+    ) -> list[BybitKline]:
         response = await self._endpoint_klines.get(
             parameters=BybitKlinesGetParameters(
                 category=get_category_from_instrument_type(instrument_type),
@@ -120,7 +117,7 @@ class BybitMarketHttpAPI:
         limit: int = 100,
         start: int | None = None,
         end: int | None = None,
-    ):
+    ) -> list[Bar]:
         all_bars = []
         while True:
             bybit_symbol: BybitSymbol = BybitSymbol(bar_type.instrument_id.symbol.value)
