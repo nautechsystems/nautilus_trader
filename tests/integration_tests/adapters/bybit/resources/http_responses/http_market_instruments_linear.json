@@ -1,0 +1,60 @@
+[{
+    "symbol": "BTCUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "BTC",
+    "quoteCoin": "USDT",
+    "launchTime": "1585526400000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "2",
+    "leverageFilter": {
+        "minLeverage": "1",
+        "maxLeverage": "100.00",
+        "leverageStep": "0.01"
+    },
+    "priceFilter": {
+        "minPrice": "0.10",
+        "maxPrice": "199999.80",
+        "tickSize": "0.10"
+    },
+    "lotSizeFilter": {
+        "maxOrderQty": "100.000",
+        "minOrderQty": "0.001",
+        "qtyStep": "0.001",
+        "postOnlyMaxOrderQty": "1000.000"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDT"
+},
+{
+    "symbol": "ETHUSDT",
+    "contractType": "LinearPerpetual",
+    "status": "Trading",
+    "baseCoin": "ETH",
+    "quoteCoin": "USDT",
+    "launchTime": "1690164367000",
+    "deliveryTime": "0",
+    "deliveryFeeRate": "",
+    "priceScale": "2",
+    "leverageFilter": {
+        "minLeverage": "1",
+        "maxLeverage": "100.00",
+        "leverageStep": "0.01"
+    },
+    "priceFilter": {
+        "minPrice": "0.01",
+        "maxPrice": "19999.98",
+        "tickSize": "0.01"
+    },
+    "lotSizeFilter": {
+        "maxOrderQty": "1500.00",
+        "minOrderQty": "0.01",
+        "qtyStep": "0.01",
+        "postOnlyMaxOrderQty": "15000.00"
+    },
+    "unifiedMarginTrade": true,
+    "fundingInterval": 480,
+    "settleCoin": "USDT"
+}]
