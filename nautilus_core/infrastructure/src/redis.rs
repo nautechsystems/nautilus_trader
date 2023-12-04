@@ -14,16 +14,17 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    collections::HashMap,
-    sync::mpsc::{channel, Receiver, Sender},
+    collections::{HashMap, VecDeque},
+    sync::mpsc::{channel, Receiver, Sender, TryRecvError},
     thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{anyhow, bail, Result};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
-use redis::{Commands, Connection};
+use redis::{Commands, Connection, Pipeline};
 use serde_json::{json, Value};
 
 use crate::cache::{CacheDatabase, DatabaseCommand, DatabaseOperation};
@@ -90,7 +91,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let trader_key_clone = trader_key.clone();
 
         thread::spawn(move || {
-            Self::handle_ops(rx, trader_key_clone, config);
+            Self::handle_messages(rx, trader_key_clone, config);
         });
 
         Ok(RedisCacheDatabase {
@@ -158,7 +159,7 @@ impl CacheDatabase for RedisCacheDatabase {
         }
     }
 
-    fn handle_ops(
+    fn handle_messages(
         rx: Receiver<DatabaseCommand>,
         trader_key: String,
         config: HashMap<String, Value>,
@@ -167,36 +168,64 @@ impl CacheDatabase for RedisCacheDatabase {
         let client = redis::Client::open(redis_url).unwrap();
         let mut conn = client.get_connection().unwrap();
 
-        // Continue to receive and handle bus messages until channel is hung up
-        while let Ok(msg) = rx.recv() {
-            let collection = match get_collection_key(&msg.key) {
-                Ok(collection) => collection,
-                Err(e) => {
-                    eprintln!("{e}");
-                    continue; // Continue to next message
-                }
-            };
+        // Buffering machinery
+        let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
+        let mut last_drain = Instant::now();
+        let recv_interval = Duration::from_millis(1);
+        let buffer_interval = get_buffer_interval(&config);
 
-            let key = format!("{trader_key}{DELIMITER}{}", msg.key);
-
-            match msg.op_type {
-                DatabaseOperation::Insert => {
-                    if let Err(e) = insert(&mut conn, collection, &key, msg.payload) {
-                        eprintln!("{e}");
-                    }
-                }
-                DatabaseOperation::Update => {
-                    if let Err(e) = update(&mut conn, collection, &key, msg.payload) {
-                        eprintln!("{e}");
-                    }
-                }
-                DatabaseOperation::Delete => {
-                    if let Err(e) = delete(&mut conn, collection, &key, msg.payload) {
-                        eprintln!("{e}");
-                    }
+        loop {
+            if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
+                drain_buffer(&mut conn, &trader_key, &mut buffer);
+                last_drain = Instant::now();
+            } else {
+                // Continue to receive and handle messages until channel is hung up
+                match rx.try_recv() {
+                    Ok(msg) => buffer.push_back(msg),
+                    Err(TryRecvError::Empty) => thread::sleep(recv_interval),
+                    Err(TryRecvError::Disconnected) => return, // Channel hung up
                 }
             }
         }
+    }
+}
+
+fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<DatabaseCommand>) {
+    let mut pipe = redis::pipe();
+    pipe.atomic();
+
+    for msg in buffer.drain(..) {
+        let collection = match get_collection_key(&msg.key) {
+            Ok(collection) => collection,
+            Err(e) => {
+                eprintln!("{e}");
+                continue; // Continue to next message
+            }
+        };
+
+        let key = format!("{trader_key}{DELIMITER}{}", msg.key);
+
+        match msg.op_type {
+            DatabaseOperation::Insert => {
+                if let Err(e) = insert(&mut pipe, collection, &key, msg.payload) {
+                    eprintln!("{e}");
+                }
+            }
+            DatabaseOperation::Update => {
+                if let Err(e) = update(&mut pipe, collection, &key, msg.payload) {
+                    eprintln!("{e}");
+                }
+            }
+            DatabaseOperation::Delete => {
+                if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
+                    eprintln!("{e}");
+                }
+            }
+        }
+    }
+
+    if let Err(e) = pipe.query::<()>(conn) {
+        eprintln!("{e}");
     }
 }
 
@@ -245,7 +274,7 @@ fn read_list(conn: &mut Connection, key: &str) -> Result<Vec<Vec<u8>>> {
 }
 
 fn insert(
-    conn: &mut Connection,
+    pipe: &mut Pipeline,
     collection: &str,
     key: &str,
     value: Option<Vec<Vec<u8>>>,
@@ -256,62 +285,124 @@ fn insert(
     }
 
     match collection {
-        INDEX => insert_index(conn, key, &value),
-        GENERAL => insert_string(conn, key, &value[0]),
-        CURRENCIES => insert_string(conn, key, &value[0]),
-        INSTRUMENTS => insert_string(conn, key, &value[0]),
-        SYNTHETICS => insert_string(conn, key, &value[0]),
-        ACCOUNTS => insert_list(conn, key, &value[0]),
-        ORDERS => insert_list(conn, key, &value[0]),
-        POSITIONS => insert_list(conn, key, &value[0]),
-        ACTORS => insert_string(conn, key, &value[0]),
-        STRATEGIES => insert_string(conn, key, &value[0]),
-        SNAPSHOTS => insert_list(conn, key, &value[0]),
-        HEALTH => insert_string(conn, key, &value[0]),
+        INDEX => insert_index(pipe, key, &value),
+        GENERAL => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
+        CURRENCIES => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
+        INSTRUMENTS => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
+        SYNTHETICS => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
+        ACCOUNTS => {
+            insert_list(pipe, key, &value[0]);
+            Ok(())
+        }
+        ORDERS => {
+            insert_list(pipe, key, &value[0]);
+            Ok(())
+        }
+        POSITIONS => {
+            insert_list(pipe, key, &value[0]);
+            Ok(())
+        }
+        ACTORS => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
+        STRATEGIES => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
+        SNAPSHOTS => {
+            insert_list(pipe, key, &value[0]);
+            Ok(())
+        }
+        HEALTH => {
+            insert_string(pipe, key, &value[0]);
+            Ok(())
+        }
         _ => bail!("Unsupported operation: `insert` for collection '{collection}'"),
     }
 }
 
-fn insert_index(conn: &mut Connection, key: &str, value: &[Vec<u8>]) -> Result<()> {
+fn insert_index(pipe: &mut Pipeline, key: &str, value: &[Vec<u8>]) -> Result<()> {
     let index_key = get_index_key(key)?;
     match index_key {
-        INDEX_ORDER_IDS => insert_set(conn, key, &value[0]),
-        INDEX_ORDER_POSITION => insert_hset(conn, key, &value[0], &value[1]),
-        INDEX_ORDER_CLIENT => insert_hset(conn, key, &value[0], &value[1]),
-        INDEX_ORDERS => insert_set(conn, key, &value[0]),
-        INDEX_ORDERS_OPEN => insert_set(conn, key, &value[0]),
-        INDEX_ORDERS_CLOSED => insert_set(conn, key, &value[0]),
-        INDEX_ORDERS_EMULATED => insert_set(conn, key, &value[0]),
-        INDEX_ORDERS_INFLIGHT => insert_set(conn, key, &value[0]),
-        INDEX_POSITIONS => insert_set(conn, key, &value[0]),
-        INDEX_POSITIONS_OPEN => insert_set(conn, key, &value[0]),
-        INDEX_POSITIONS_CLOSED => insert_set(conn, key, &value[0]),
+        INDEX_ORDER_IDS => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDER_POSITION => {
+            insert_hset(pipe, key, &value[0], &value[1]);
+            Ok(())
+        }
+        INDEX_ORDER_CLIENT => {
+            insert_hset(pipe, key, &value[0], &value[1]);
+            Ok(())
+        }
+        INDEX_ORDERS => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_OPEN => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_CLOSED => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_EMULATED => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_INFLIGHT => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_POSITIONS => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_POSITIONS_OPEN => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_POSITIONS_CLOSED => {
+            insert_set(pipe, key, &value[0]);
+            Ok(())
+        }
         _ => bail!("Index unknown '{index_key}' on insert"),
     }
 }
 
-fn insert_string(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> {
-    conn.set(key, value)
-        .map_err(|e| anyhow!("Failed to set '{key}' in Redis: {e}"))
+fn insert_string(pipe: &mut Pipeline, key: &str, value: &Vec<u8>) {
+    pipe.set(key, value);
 }
 
-fn insert_set(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> {
-    conn.sadd(key, value)
-        .map_err(|e| anyhow!("Failed to sadd '{key}' in Redis: {e}"))
+fn insert_set(pipe: &mut Pipeline, key: &str, value: &Vec<u8>) {
+    pipe.sadd(key, value);
 }
 
-fn insert_hset(conn: &mut Connection, key: &str, name: &Vec<u8>, value: &Vec<u8>) -> Result<()> {
-    conn.hset(key, name, value)
-        .map_err(|e| anyhow!("Failed to hset '{key}' in Redis: {e}"))
+fn insert_hset(pipe: &mut Pipeline, key: &str, name: &Vec<u8>, value: &Vec<u8>) {
+    pipe.hset(key, name, value);
 }
 
-fn insert_list(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> {
-    conn.rpush(key, value)
-        .map_err(|e| anyhow!("Failed to rpush '{key}' in Redis: {e}"))
+fn insert_list(pipe: &mut Pipeline, key: &str, value: &Vec<u8>) {
+    pipe.rpush(key, value);
 }
 
 fn update(
-    conn: &mut Connection,
+    pipe: &mut Pipeline,
     collection: &str,
     key: &str,
     value: Option<Vec<Vec<u8>>>,
@@ -322,55 +413,85 @@ fn update(
     }
 
     match collection {
-        ACCOUNTS => update_list(conn, key, &value[0]),
-        ORDERS => update_list(conn, key, &value[0]),
-        POSITIONS => update_list(conn, key, &value[0]),
+        ACCOUNTS => {
+            update_list(pipe, key, &value[0]);
+            Ok(())
+        }
+        ORDERS => {
+            update_list(pipe, key, &value[0]);
+            Ok(())
+        }
+        POSITIONS => {
+            update_list(pipe, key, &value[0]);
+            Ok(())
+        }
         _ => bail!("Unsupported operation: `update` for collection '{collection}'"),
     }
 }
 
-fn update_list(conn: &mut Connection, key: &str, value: &Vec<u8>) -> Result<()> {
-    conn.rpush_exists(key, value)
-        .map_err(|e| anyhow!("Failed to rpush '{key}' in Redis: {e}"))
+fn update_list(pipe: &mut Pipeline, key: &str, value: &Vec<u8>) {
+    pipe.rpush_exists(key, value);
 }
 
 fn delete(
-    conn: &mut Connection,
+    pipe: &mut Pipeline,
     collection: &str,
     key: &str,
     value: Option<Vec<Vec<u8>>>,
 ) -> Result<()> {
     match collection {
-        INDEX => remove_index(conn, key, value),
-        ACTORS => delete_string(conn, key),
-        STRATEGIES => delete_string(conn, key),
+        INDEX => remove_index(pipe, key, value),
+        ACTORS => {
+            delete_string(pipe, key);
+            Ok(())
+        }
+        STRATEGIES => {
+            delete_string(pipe, key);
+            Ok(())
+        }
         _ => bail!("Unsupported operation: `delete` for collection '{collection}'"),
     }
 }
 
-fn remove_index(conn: &mut Connection, key: &str, value: Option<Vec<Vec<u8>>>) -> Result<()> {
+fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<Vec<u8>>>) -> Result<()> {
     let value = value.ok_or_else(|| anyhow!("Empty `payload` for `delete` '{key}'"))?;
     let index_key = get_index_key(key)?;
 
     match index_key {
-        INDEX_ORDERS_OPEN => remove_from_set(conn, key, &value[0]),
-        INDEX_ORDERS_CLOSED => remove_from_set(conn, key, &value[0]),
-        INDEX_ORDERS_EMULATED => remove_from_set(conn, key, &value[0]),
-        INDEX_ORDERS_INFLIGHT => remove_from_set(conn, key, &value[0]),
-        INDEX_POSITIONS_OPEN => remove_from_set(conn, key, &value[0]),
-        INDEX_POSITIONS_CLOSED => remove_from_set(conn, key, &value[0]),
+        INDEX_ORDERS_OPEN => {
+            remove_from_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_CLOSED => {
+            remove_from_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_EMULATED => {
+            remove_from_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_ORDERS_INFLIGHT => {
+            remove_from_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_POSITIONS_OPEN => {
+            remove_from_set(pipe, key, &value[0]);
+            Ok(())
+        }
+        INDEX_POSITIONS_CLOSED => {
+            remove_from_set(pipe, key, &value[0]);
+            Ok(())
+        }
         _ => bail!("Unsupported index operation: remove from '{index_key}'"),
     }
 }
 
-fn remove_from_set(conn: &mut Connection, key: &str, member: &Vec<u8>) -> Result<()> {
-    conn.srem(key, member)
-        .map_err(|e| anyhow!("Failed to srem '{key}' in Redis: {e}"))
+fn remove_from_set(pipe: &mut Pipeline, key: &str, member: &Vec<u8>) {
+    pipe.srem(key, member);
 }
 
-fn delete_string(conn: &mut Connection, key: &str) -> Result<()> {
-    conn.del(key)
-        .map_err(|e| anyhow!("Failed to del '{key}' in Redis: {e}"))
+fn delete_string(pipe: &mut Pipeline, key: &str) {
+    pipe.del(key);
 }
 
 fn get_redis_url(config: &HashMap<String, Value>) -> String {
@@ -398,6 +519,13 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
         host.unwrap(),
         port.unwrap(),
     )
+}
+
+fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
+    let buffer_interval_ms = config
+        .get("buffer_interval_ms")
+        .map(|v| v.as_u64().unwrap_or(10));
+    Duration::from_millis(buffer_interval_ms.unwrap())
 }
 
 fn get_trader_key(
