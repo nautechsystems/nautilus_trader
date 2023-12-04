@@ -656,15 +656,16 @@ cdef class OrderMatchingEngine:
                 self._log.info(f"Pending OTO {order.client_order_id} triggers from {parent.client_order_id}")
                 return  # Pending trigger
 
-            # Check contingent orders are still open
-            for client_order_id in order.linked_order_ids:
-                contingent_order = self.cache.order(client_order_id)
-                if contingent_order is None:
-                    raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
-                if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
-                    if not order.is_closed_c() and contingent_order.is_closed_c():
-                        self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
-                        return  # Order rejected
+            if order.linked_order_ids is not None:
+                # Check contingent orders are still open
+                for client_order_id in order.linked_order_ids:
+                    contingent_order = self.cache.order(client_order_id)
+                    if contingent_order is None:
+                        raise RuntimeError(f"Cannot find contingent order for {repr(client_order_id)}")  # pragma: no cover
+                    if order.contingency_type == ContingencyType.OCO or order.contingency_type == ContingencyType.OUO:
+                        if not order.is_closed_c() and contingent_order.is_closed_c():
+                            self._generate_order_rejected(order, f"Contingent order {client_order_id} already closed")
+                            return  # Order rejected
 
         # Check reduce-only instruction
         cdef Position position
