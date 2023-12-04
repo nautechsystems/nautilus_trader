@@ -13,18 +13,18 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import json
 import os.path
 import time
 from decimal import Decimal
+from typing import Any
 
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 
 
-def msgspec_bybit_item_save(filename, obj):
+def msgspec_bybit_item_save(filename: str, obj: Any) -> None:
     item = msgspec.to_builtins(obj)
     timestamp = round(time.time() * 1000)
     item_json = json.dumps(

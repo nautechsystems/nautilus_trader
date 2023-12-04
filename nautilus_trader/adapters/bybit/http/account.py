@@ -50,7 +50,7 @@ class BybitAccountHttpAPI:
         self,
         client: BybitHttpClient,
         clock: LiveClock,
-    ):
+    ) -> None:
         PyCondition.not_none(client, "client")
         self.client = client
         self._clock = clock

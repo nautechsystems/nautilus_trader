@@ -81,7 +81,7 @@ class BybitHttpClient:
         return self._api_key
 
     @property
-    def api_secret(self):
+    def api_secret(self) -> str:
         return self._api_secret
 
     async def send_request(
@@ -92,7 +92,7 @@ class BybitHttpClient:
         signature: str | None = None,
         timestamp: str | None = None,
         ratelimiter_keys: list[str] | None = None,
-    ):
+    ) -> bytes | None:
         if payload and http_method == HttpMethod.GET:
             url_path += "?" + urllib.parse.urlencode(payload)
             payload = None
@@ -128,6 +128,7 @@ class BybitHttpClient:
             return response.body
         else:
             self._handle_error_by_code(response_status.retCode)
+        return None
 
     def _handle_error_by_code(self, code: int):
         pass

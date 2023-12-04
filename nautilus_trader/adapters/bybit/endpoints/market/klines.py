@@ -27,9 +27,9 @@ class BybitKlinesGetParameters(msgspec.Struct, omit_defaults=True, frozen=False)
     category: str
     symbol: str
     interval: BybitKlineInterval
-    start: int = None
-    end: int = None
-    limit: int = None
+    start: int | None = None
+    end: int | None = None
+    limit: int | None = None
 
 
 class BybitKlinesEndpoint(BybitHttpEndpoint):
@@ -37,7 +37,7 @@ class BybitKlinesEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "kline"
         super().__init__(
             client=client,

@@ -27,7 +27,7 @@ class BybitServerTimeEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "time"
         super().__init__(
             client=client,

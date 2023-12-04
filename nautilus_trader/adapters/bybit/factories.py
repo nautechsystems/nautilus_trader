@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import asyncio
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType

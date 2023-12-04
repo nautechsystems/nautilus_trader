@@ -22,6 +22,10 @@ from nautilus_trader.config.validation import PositiveInt
 
 
 class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
+    """
+    Configuration for ``BybitDataClient`` instances.
+    """
+
     api_key: str | None = None
     api_secret: str | None = None
     instrument_types: list[BybitInstrumentType] = []
@@ -30,6 +34,10 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
+    """
+    Configuration for ``BybitExecutionClient`` instances.
+    """
+
     api_key: str | None = None
     api_secret: str | None = None
     instrument_types: list[BybitInstrumentType] = []

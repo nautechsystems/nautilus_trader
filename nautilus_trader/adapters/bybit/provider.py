@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_VENUE
@@ -61,7 +60,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         clock: LiveClock,
         instrument_types: list[BybitInstrumentType],
         config: InstrumentProviderConfig | None = None,
-    ):
+    ) -> None:
         super().__init__(
             logger=logger,
             config=config,
@@ -147,7 +146,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         self,
         instrument: BybitInstrument,
         fee_rate: BybitFeeRate,
-    ):
+    ) -> None:
         if isinstance(instrument, BybitInstrumentSpot):
             self._parse_spot_instrument(instrument, fee_rate)
         elif isinstance(instrument, BybitInstrumentLinear):
@@ -164,7 +163,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         self,
         data: BybitInstrumentSpot,
         fee_rate: BybitFeeRate,
-    ):
+    ) -> None:
         try:
             base_currency = data.parse_to_base_currency()
             quote_currency = data.parse_to_quote_currency()
@@ -185,7 +184,7 @@ class BybitInstrumentProvider(InstrumentProvider):
     def _parse_option_instrument(
         self,
         instrument: BybitInstrumentOption,
-    ):
+    ) -> None:
         try:
             pass
         except ValueError as e:
@@ -196,7 +195,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         self,
         data: BybitInstrumentLinear,
         fee_rate: BybitFeeRate,
-    ):
+    ) -> None:
         try:
             base_currency = data.parse_to_base_currency()
             quote_currency = data.parse_to_quote_currency()
@@ -212,4 +211,4 @@ class BybitInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
         except ValueError as e:
             if self._log_warnings:
-                self._log.warning(f"Unable to parse instrument {instrument.symbol}, {e}.")
+                self._log.warning(f"Unable to parse instrument {data.symbol}, {e}.")
