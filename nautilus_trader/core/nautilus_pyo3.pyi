@@ -620,12 +620,145 @@ class Quantity:
 
 ### Instruments
 
-class CryptoFuture: ...
-class CryptoPerpetual: ...
-class CurrencyPair: ...
-class Equity: ...
-class FuturesContract: ...
-class OptionsContract: ...
+class CryptoFuture:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        activation_ns: int,
+        expiration_ns: int,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class CryptoPerpetual:
+    def __init__(
+        self,
+        id: InstrumentId,
+        symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class CurrencyPair:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class Equity:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        isin: str,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        multiplier: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class FuturesContract:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        activation_ns: int,
+        expiration_ns: int,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        multiplier: Quantity,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class OptionsContract:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        option_kind: OptionKind,
+        activation_ns: int,
+        expiration_ns: int,
+        strike_price: Price,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None : ...
 class SyntheticInstrument: ...
 
 ### Events

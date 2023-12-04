@@ -40,6 +40,7 @@ def test_to_dict():
         "base_currency": "ETH",
         "quote_currency": "USDT",
         "settlement_currency": "USDT",
+        "is_inverse": False,
         "price_precision": 2,
         "size_precision": 0,
         "price_increment": "0.01",

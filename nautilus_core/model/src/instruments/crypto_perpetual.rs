@@ -41,6 +41,7 @@ pub struct CryptoPerpetual {
     pub base_currency: Currency,
     pub quote_currency: Currency,
     pub settlement_currency: Currency,
+    pub is_inverse: bool,
     pub price_precision: u8,
     pub size_precision: u8,
     pub price_increment: Price,
@@ -66,6 +67,7 @@ impl CryptoPerpetual {
         base_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -88,6 +90,7 @@ impl CryptoPerpetual {
             base_currency,
             quote_currency,
             settlement_currency,
+            is_inverse,
             price_precision,
             size_precision,
             price_increment,
@@ -143,7 +146,7 @@ impl Instrument for CryptoPerpetual {
     }
 
     fn base_currency(&self) -> Option<&Currency> {
-        None
+        Some(&self.base_currency)
     }
 
     fn settlement_currency(&self) -> &Currency {
@@ -151,7 +154,7 @@ impl Instrument for CryptoPerpetual {
     }
 
     fn is_inverse(&self) -> bool {
-        false
+        self.is_inverse
     }
 
     fn price_precision(&self) -> u8 {
