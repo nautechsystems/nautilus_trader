@@ -29,6 +29,7 @@ from typing import Optional
 
 import cython
 
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 
@@ -156,7 +157,7 @@ cdef class Strategy(Actor):
 
         # Public components
         self.clock = self._clock
-        self.cache = None          # Initialized when registered
+        self.cache: Cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
 
