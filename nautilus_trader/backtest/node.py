@@ -24,6 +24,7 @@ from nautilus_trader.config import ActorFactory
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config.error import InvalidConfiguration
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
@@ -158,15 +159,15 @@ class BacktestNode:
                     end = dt_to_unix_nanos(data_config.end_time)
 
                     if end < start:
-                        raise ValueError(
-                            f"Invalid data config: end_time ({data_config.end_time}) is before start_time ({data_config.start_time}).",
+                        raise InvalidConfiguration(
+                            f"`end_time` ({data_config.end_time}) is before `start_time` ({data_config.start_time})",
                         )
 
                 instrument_id: InstrumentId = InstrumentId.from_str(data_config.instrument_id)
                 if instrument_id.venue not in venue_ids:
-                    raise ValueError(
+                    raise InvalidConfiguration(
                         f"Venue '{instrument_id.venue}' for {instrument_id} "
-                        f"does not have a `BacktestVenueConfig`.",
+                        f"does not have a `BacktestVenueConfig`",
                     )
 
     def _create_engine(
