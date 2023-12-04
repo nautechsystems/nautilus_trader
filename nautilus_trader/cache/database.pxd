@@ -13,74 +13,37 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
-
-from nautilus_trader.accounting.accounts.base cimport Account
-from nautilus_trader.common.actor cimport Actor
-from nautilus_trader.common.logging cimport LoggerAdapter
-from nautilus_trader.execution.messages cimport SubmitOrder
-from nautilus_trader.execution.messages cimport SubmitOrderList
-from nautilus_trader.model.identifiers cimport AccountId
-from nautilus_trader.model.identifiers cimport ClientId
-from nautilus_trader.model.identifiers cimport ClientOrderId
-from nautilus_trader.model.identifiers cimport ComponentId
-from nautilus_trader.model.identifiers cimport InstrumentId
-from nautilus_trader.model.identifiers cimport OrderListId
-from nautilus_trader.model.identifiers cimport PositionId
-from nautilus_trader.model.identifiers cimport StrategyId
-from nautilus_trader.model.identifiers cimport VenueOrderId
-from nautilus_trader.model.instruments.base cimport Instrument
-from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
-from nautilus_trader.model.objects cimport Currency
-from nautilus_trader.model.objects cimport Money
-from nautilus_trader.model.orders.base cimport Order
-from nautilus_trader.model.position cimport Position
-from nautilus_trader.trading.strategy cimport Strategy
+from nautilus_trader.cache.facade cimport CacheDatabaseFacade
+from nautilus_trader.serialization.base cimport Serializer
 
 
-cdef class CacheDatabase:
-    cdef LoggerAdapter _log
+cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
+    cdef str _key_trader
+    cdef str _key_general
+    cdef str _key_currencies
+    cdef str _key_instruments
+    cdef str _key_synthetics
+    cdef str _key_accounts
+    cdef str _key_orders
+    cdef str _key_positions
+    cdef str _key_actors
+    cdef str _key_strategies
 
-    cpdef void flush(self)
-    cpdef dict load(self)
-    cpdef dict load_currencies(self)
-    cpdef dict load_instruments(self)
-    cpdef dict load_synthetics(self)
-    cpdef dict load_accounts(self)
-    cpdef dict load_orders(self)
-    cpdef dict load_positions(self)
-    cpdef dict load_index_order_position(self)
-    cpdef dict load_index_order_client(self)
-    cpdef Currency load_currency(self, str code)
-    cpdef Instrument load_instrument(self, InstrumentId instrument_id)
-    cpdef SyntheticInstrument load_synthetic(self, InstrumentId instrument_id)
-    cpdef Account load_account(self, AccountId account_id)
-    cpdef Order load_order(self, ClientOrderId order_id)
-    cpdef Position load_position(self, PositionId position_id)
-    cpdef dict load_actor(self, ComponentId component_id)
-    cpdef void delete_actor(self, ComponentId component_id)
-    cpdef dict load_strategy(self, StrategyId strategy_id)
-    cpdef void delete_strategy(self, StrategyId strategy_id)
+    cdef str _key_index_order_ids
+    cdef str _key_index_order_position
+    cdef str _key_index_order_client
+    cdef str _key_index_orders
+    cdef str _key_index_orders_open
+    cdef str _key_index_orders_closed
+    cdef str _key_index_orders_emulated
+    cdef str _key_index_orders_inflight
+    cdef str _key_index_positions
+    cdef str _key_index_positions_open
+    cdef str _key_index_positions_closed
 
-    cpdef void add(self, str key, bytes value)
-    cpdef void add_currency(self, Currency currency)
-    cpdef void add_instrument(self, Instrument instrument)
-    cpdef void add_synthetic(self, SyntheticInstrument instrument)
-    cpdef void add_account(self, Account account)
-    cpdef void add_order(self, Order order, PositionId position_id=*, ClientId client_id=*)
-    cpdef void add_position(self, Position position)
+    cdef str _key_snapshots_orders
+    cdef str _key_snapshots_positions
+    cdef str _key_heartbeat
 
-    cpdef void index_venue_order_id(self, ClientOrderId client_order_id, VenueOrderId venue_order_id)
-    cpdef void index_order_position(self, ClientOrderId client_order_id, PositionId position_id)
-
-    cpdef void update_account(self, Account account)
-    cpdef void update_order(self, Order order)
-    cpdef void update_position(self, Position position)
-    cpdef void update_actor(self, Actor actor)
-    cpdef void update_strategy(self, Strategy strategy)
-
-    cpdef void snapshot_order_state(self, Order order)
-    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl=*)
-
-    cpdef void heartbeat(self, datetime timestamp)
+    cdef Serializer _serializer
+    cdef object _backing

@@ -15,8 +15,13 @@
 
 
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
+from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
+from nautilus_trader.core.nautilus_pyo3 import OrderRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderReleased
+from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
+from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 
 
@@ -82,4 +87,90 @@ def test_order_initialized():
         + "contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], "
         + "parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, "
         + "tags=ENTRY, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )
+
+
+def test_order_rejected():
+    event = TestEventsProviderPyo3.order_rejected_insufficient_margin()
+    result_dict = OrderRejected.to_dict(event)
+    order_denied = OrderRejected.from_dict(result_dict)
+    assert order_denied == event
+    assert (
+        str(event)
+        == "OrderRejected(instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, "
+        + "account_id=SIM-000, reason=INSUFFICIENT_MARGIN, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderRejected(trader_id=TESTER-001, strategy_id=S-001, "
+        + "instrument_id=AUD/USD.SIM, client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
+        + "reason=INSUFFICIENT_MARGIN, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_triggered():
+    event = TestEventsProviderPyo3.order_triggered()
+    result_dict = OrderTriggered.to_dict(event)
+    order_triggered = OrderTriggered.from_dict(result_dict)
+    assert order_triggered == event
+    assert (
+        str(event)
+        == "OrderTriggered(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderTriggered(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_submitted():
+    event = TestEventsProviderPyo3.order_submitted()
+    result_dict = OrderSubmitted.to_dict(event)
+    order_submitted = OrderSubmitted.from_dict(result_dict)
+    assert order_submitted == event
+    assert (
+        str(event)
+        == "OrderSubmitted(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderSubmitted(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_emulated():
+    event = TestEventsProviderPyo3.order_emulated()
+    result_dict = OrderEmulated.to_dict(event)
+    order_emulated = OrderEmulated.from_dict(result_dict)
+    assert order_emulated == event
+    assert (
+        str(event)
+        == "OrderEmulated(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1)"
+    )
+    assert (
+        repr(event)
+        == "OrderEmulated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )
+
+
+def test_order_released():
+    event = TestEventsProviderPyo3.order_released()
+    result_dict = OrderReleased.to_dict(event)
+    order_released = OrderReleased.from_dict(result_dict)
+    assert order_released == event
+    assert (
+        str(event)
+        == "OrderReleased(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, released_price=22000.0)"
+    )
+    assert (
+        repr(event)
+        == "OrderReleased(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, released_price=22000.0, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
     )

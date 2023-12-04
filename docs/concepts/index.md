@@ -17,6 +17,7 @@
    data.md
    adapters.md
    logging.md
+   message_bus.md
    advanced/index.md
 ```
 
@@ -75,6 +76,10 @@ through adapter implementations, these can be found in the top level `adapters` 
 
 ## [Logging](logging.md)
 The platform provides logging for both backtesting and live trading using a high-performance logger implemented in Rust.
+
+## [Message Bus](message_bus.md)
+The heart of the communication channels between components, providing decoupled messaging patterns such as
+point-to-point, publish/subscribe and request/response.
 
 ## [Advanced](advanced/index.md)
 Here you will find more detailed documentation and examples covering the more advanced

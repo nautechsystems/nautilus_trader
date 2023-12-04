@@ -1,9 +1,31 @@
-# NautilusTrader 1.181.0 Beta
+# NautilusTrader 1.182.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
+- Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
+- Removed `redis` and `hiredis` dependencies from Python codebase
+
+### Breaking Changes
+- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
+- Changed `Actor` state loading to now use the standard `Serializer`
+- Removed `infrastructure` subpackage (now redundant with new Rust implementation)
+
+### Fixes
+None
+
+---
+
+# NautilusTrader 1.181.0 Beta
+
+Released on 2nd December (UTC).
+
+This release adds support for Python 3.12.
+
+### Enhancements
 - Rewrote Interactive Brokers integration documentation, many thanks @benjaminsingleton
+- Added Interactive Brokers adapter support for crypto instruments with cash quantity, thanks @benjaminsingleton
 - Added `HistoricInteractiveBrokerClient`, thanks @benjaminsingleton and @limx0
 - Added `DataEngineConfig.time_bars_interval_type` (determines the type of interval used for time aggregation `left-open` or `right-open`)
 - Added `LoggingConfig.log_colors` to optionally use ANSI codes to produce colored logs (default true to retain current behavior)
@@ -28,6 +50,8 @@ Released on TBD (UTC).
 - Fixed missing `trader_id` in `Position` dictionary representation, thanks @filipmacek
 - Fixed conversion of fixed precision integers to floats (should be dividing to avoid rounding errors), thanks for reporting @filipmacek
 - Fixed daily timestamp parsing for Interactive Brokers, thanks @benjaminsingleton
+- Fixed live reconciliation trade processing for partially filled then canceled orders
+- Fixed `RiskEngine` cumulative notional risk check for `CurrencyPair` SELL orders on multi-currency cash accounts
 
 ---
 

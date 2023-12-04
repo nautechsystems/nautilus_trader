@@ -27,6 +27,7 @@ import msgspec
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
@@ -63,7 +64,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -208,7 +208,7 @@ class NautilusKernel:
             cache_db = None
         elif config.cache_database.type == "redis":
             encoding = config.cache_database.encoding.lower()
-            cache_db = RedisCacheDatabase(
+            cache_db = CacheDatabaseAdapter(
                 trader_id=self._trader_id,
                 logger=self._logger,
                 serializer=MsgSpecSerializer(

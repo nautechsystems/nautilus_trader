@@ -215,7 +215,7 @@ EXTERNAL_PUBLISHING_TYPES = (
 
 
 cpdef void register_serializable_object(
-    obj,
+    obj: type,
     to_dict: Callable[[Any], dict[str, Any]],
     from_dict: Callable[[dict[str, Any]], Any],
 ):
@@ -224,8 +224,8 @@ cpdef void register_serializable_object(
 
     Parameters
     ----------
-    obj : object
-        The object to register.
+    obj : type
+        The object type to register.
     to_dict : Callable[[Any], dict[str, Any]]
         The delegate to instantiate a dict of primitive types from the object.
     from_dict : Callable[[dict[str, Any]], Any]

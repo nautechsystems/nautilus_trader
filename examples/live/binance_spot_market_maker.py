@@ -52,7 +52,7 @@ config_node = TradingNodeConfig(
     #     stream="quoters",
     #     use_instance_id=False,
     #     timestamps_as_iso8601=True,
-    #     types_filter=[QuoteTick],
+    #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
     # ),
     # heartbeat_interval=1.0,

@@ -620,12 +620,145 @@ class Quantity:
 
 ### Instruments
 
-class CryptoFuture: ...
-class CryptoPerpetual: ...
-class CurrencyPair: ...
-class Equity: ...
-class FuturesContract: ...
-class OptionsContract: ...
+class CryptoFuture:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        activation_ns: int,
+        expiration_ns: int,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class CryptoPerpetual:
+    def __init__(
+        self,
+        id: InstrumentId,
+        symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class CurrencyPair:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class Equity:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        isin: str,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        multiplier: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class FuturesContract:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        activation_ns: int,
+        expiration_ns: int,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        multiplier: Quantity,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class OptionsContract:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        option_kind: OptionKind,
+        activation_ns: int,
+        expiration_ns: int,
+        strike_price: Price,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None : ...
 class SyntheticInstrument: ...
 
 ### Events
@@ -643,6 +776,42 @@ class OrderDenied:
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OrderDenied: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderTriggered:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderRejected:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderRejected: ...
     def to_dict(self) -> dict[str, str]: ...
 
 class OrderFilled:
@@ -715,6 +884,53 @@ class OrderInitialized:
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OrderInitialized: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderSubmitted:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderSubmitted: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderEmulated:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderEmulated: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderReleased:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        released_price: Price,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderReleased: ...
     def to_dict(self) -> dict[str, str]: ...
 
 

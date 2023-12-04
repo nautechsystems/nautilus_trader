@@ -20,10 +20,15 @@ from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
+from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderListId
+from nautilus_trader.core.nautilus_pyo3 import OrderRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderReleased
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
+from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
+from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
 from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import Price
@@ -47,6 +52,22 @@ class TestEventsProviderPyo3:
             event_id=UUID4(uuid),
             ts_init=0,
             ts_event=0,
+        )
+
+    @staticmethod
+    def order_rejected_insufficient_margin() -> OrderRejected:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderRejected(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.audusd_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            reason="INSUFFICIENT_MARGIN",
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
         )
 
     @staticmethod
@@ -102,6 +123,63 @@ class TestEventsProviderPyo3:
             exec_algorithm_params=None,
             exec_spawn_id=None,
             tags="ENTRY",
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def order_triggered() -> OrderTriggered:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderTriggered(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_submitted() -> OrderSubmitted:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderSubmitted(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def order_emulated() -> OrderEmulated:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderEmulated(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+        )
+
+    @staticmethod
+    def order_released() -> OrderReleased:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderReleased(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            released_price=Price.from_str("22000.0"),
+            event_id=UUID4(uuid),
             ts_init=0,
             ts_event=0,
         )

@@ -157,7 +157,7 @@ def market_catalog_to_instruments(
             market_type=market_catalog.description.market_type,
             selection_id=runner.selection_id,
             selection_name=runner.runner_name,
-            selection_handicap=runner.handicap,
+            selection_handicap=runner.handicap or null_handicap(),
             currency=currency,
             tick_scheme_name=BETFAIR_TICK_SCHEME.name,
             ts_event=time.time_ns(),

@@ -17,6 +17,7 @@ import datetime
 from decimal import Decimal
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -72,7 +73,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     max_trade_size: Decimal
     trigger_min_size: float = 100.0
     trigger_imbalance_ratio: float = 0.20
-    min_seconds_between_triggers: float = 0.0
+    min_seconds_between_triggers: float = 1.0
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = False
     subscribe_ticker: bool = False
@@ -185,6 +186,9 @@ class OrderBookImbalance(Strategy):
         ).total_seconds()
 
         if larger > self.trigger_min_size and ratio < self.trigger_imbalance_ratio:
+            self.log.info(
+                "Trigger conditions met, checking for existing orders and time since last order",
+            )
             if len(self.cache.orders_inflight(strategy_id=self.id)) > 0:
                 self.log.info("Already have orders in flight - skipping.")
             elif seconds_since_last_trigger < self.min_seconds_between_triggers:
@@ -199,6 +203,7 @@ class OrderBookImbalance(Strategy):
                     time_in_force=TimeInForce.FOK,
                 )
                 self._last_trigger_timestamp = self.clock.utc_now()
+                self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
                 self.submit_order(order)
 
             else:
@@ -211,6 +216,7 @@ class OrderBookImbalance(Strategy):
                     time_in_force=TimeInForce.FOK,
                 )
                 self._last_trigger_timestamp = self.clock.utc_now()
+                self.log.info(f"Hitting! {order=}", color=LogColor.BLUE)
                 self.submit_order(order)
 
     def on_stop(self) -> None:

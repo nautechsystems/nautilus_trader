@@ -61,6 +61,7 @@ from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
+from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
@@ -627,6 +628,7 @@ cdef class RiskEngine(Component):
             Money cum_notional_buy = None
             Money cum_notional_sell = None
             Money order_balance_impact = None
+            Currency base_currency = None
             double xrate
         for order in orders:
             if order.order_type == OrderType.MARKET or order.order_type == OrderType.MARKET_TO_LIMIT:
@@ -666,17 +668,18 @@ cdef class RiskEngine(Component):
             ####################################################################
             # CASH account balance risk check
             ####################################################################
-            if max_notional and isinstance(instrument, CurrencyPair) and order.side == OrderSide.SELL:
+            if isinstance(instrument, CurrencyPair) and order.side == OrderSide.SELL:
                 xrate = 1.0 / last_px.as_f64_c()
                 notional = Money(order.quantity.as_f64_c() * xrate, instrument.base_currency)
-                max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
+                if max_notional:
+                    max_notional = Money(max_notional * Decimal(xrate), instrument.base_currency)
             else:
                 notional = instrument.notional_value(order.quantity, last_px, use_quote_for_inverse=True)
 
             if max_notional and notional._mem.raw > max_notional._mem.raw:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER {max_notional.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_MAX_PER_ORDER: max_notional={max_notional.to_str()}, notional={notional.to_str()}",
                 )
                 return False  # Denied
 
@@ -688,7 +691,7 @@ cdef class RiskEngine(Component):
             ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT {instrument.min_notional.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_LESS_THAN_MIN_FOR_INSTRUMENT: min_notional={instrument.min_notional.to_str()} , notional={notional.to_str()}",
                 )
                 return False  # Denied
 
@@ -700,7 +703,7 @@ cdef class RiskEngine(Component):
             ):
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT {instrument.max_notional.to_str()} @ {notional.to_str()}",
+                    reason=f"NOTIONAL_GREATER_THAN_MAX_FOR_INSTRUMENT: max_notional={instrument.max_notional.to_str()}, notional={notional.to_str()}",
                 )
                 return False  # Denied
 
@@ -709,9 +712,12 @@ cdef class RiskEngine(Component):
             if free is not None and (free._mem.raw + order_balance_impact._mem.raw) < 0:
                 self._deny_order(
                     order=order,
-                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {order_balance_impact.to_str()}",
+                    reason=f"NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, notional={order_balance_impact.to_str()}",
                 )
                 return False  # Denied
+
+            if base_currency is None:
+                base_currency = instrument.get_base_currency()
 
             if order.is_buy_c():
                 if cum_notional_buy is None:
@@ -721,20 +727,33 @@ cdef class RiskEngine(Component):
                 if free is not None and cum_notional_buy._mem.raw >= free._mem.raw:
                     self._deny_order(
                         order=order,
-                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {cum_notional_buy.to_str()}",
+                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_buy.to_str()}",
                     )
                     return False  # Denied
             elif order.is_sell_c():
-                if cum_notional_sell is None:
-                    cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
-                else:
-                    cum_notional_sell._mem.raw += order_balance_impact._mem.raw
-                if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
-                    self._deny_order(
-                        order=order,
-                        reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE {free.to_str()} @ {cum_notional_sell.to_str()}",
-                    )
-                    return False  # Denied
+                if account.base_currency is not None:
+                    if cum_notional_sell is None:
+                        cum_notional_sell = Money(order_balance_impact, order_balance_impact.currency)
+                    else:
+                        cum_notional_sell._mem.raw += order_balance_impact._mem.raw
+                    if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
+                        self._deny_order(
+                            order=order,
+                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
+                        )
+                        return False  # Denied
+                elif base_currency is not None:
+                    free = account.balance_free(base_currency)
+                    if cum_notional_sell is None:
+                        cum_notional_sell = notional
+                    else:
+                        cum_notional_sell._mem.raw += notional._mem.raw
+                    if free is not None and cum_notional_sell._mem.raw >= free._mem.raw:
+                        self._deny_order(
+                            order=order,
+                            reason=f"CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free.to_str()}, cum_notional={cum_notional_sell.to_str()}",
+                        )
+                        return False  # Denied
 
         # Finally
         return True  # Passed

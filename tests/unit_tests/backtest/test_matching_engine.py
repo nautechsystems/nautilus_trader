@@ -87,7 +87,7 @@ class TestOrderMatchingEngine:
         # Arrange
         fill_model = FillModel()
 
-        # , Act
+        # Act
         self.matching_engine.set_fill_model(fill_model)
 
         # Assert

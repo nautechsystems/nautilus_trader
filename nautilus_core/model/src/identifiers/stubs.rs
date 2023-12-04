@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::uuid::UUID4;
 use rstest::fixture;
 
 use crate::identifiers::{
@@ -141,4 +142,10 @@ pub fn venue_sim() -> Venue {
 #[fixture]
 pub fn venue_order_id() -> VenueOrderId {
     VenueOrderId::from("001")
+}
+
+// ---- UUID ----
+#[fixture]
+pub fn uuid4() -> UUID4 {
+    UUID4::from("16578139-a945-4b65-b46c-bc131a15d8e7")
 }

@@ -12,10 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-"""
-The `infrastructure` subpackage provides technology specific infrastructure
-implementations.
 
-An *out of the box* `Redis <https://redis.io/>` backed cache is implemented.
 
-"""
+class BybitError(Exception):
+    def __init__(self, status, message, headers):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+        self.headers = headers

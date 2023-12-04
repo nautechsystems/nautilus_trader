@@ -145,11 +145,15 @@ cdef class MsgSpecSerializer(Serializer):
                 if re.match(r"^\d+$", value):  # Check if value is an integer-like string
                     value_uint64 = int(value)
                     obj_dict[key] = value_uint64
-                else:  # Else assume the value is in ISO 8601 format
+                else:  # Else assume the value is ISO 8601 format
                     value_uint64 = pd.Timestamp(value, tz=pytz.utc).value
                     obj_dict[key] = value_uint64
 
-        delegate = _OBJECT_FROM_DICT_MAP.get(obj_dict["type"])
+        cdef str obj_type = obj_dict.get("type")
+        if obj_type is None:
+            return obj_dict
+
+        delegate = _OBJECT_FROM_DICT_MAP.get(obj_type)
         if delegate is None:
             return obj_dict
 

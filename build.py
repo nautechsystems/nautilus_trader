@@ -159,6 +159,10 @@ def _build_extensions() -> list[Extension]:
             "User32.Lib",
             "UserEnv.Lib",
             "WS2_32.Lib",
+            "Crypt32.lib",
+            "secur32.lib",
+            "schannel.lib",
+            "ncrypt.lib",
         ]
 
     print("Creating C extension modules...")

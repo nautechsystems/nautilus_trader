@@ -15,6 +15,7 @@
 
 from decimal import Decimal
 
+# This needs to be a Python import so it can used in the FSM
 from nautilus_trader.model.enums import order_status_to_str
 
 from libc.stdint cimport int64_t

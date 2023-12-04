@@ -407,6 +407,10 @@ class BetfairResponses:
         return raw
 
     @staticmethod
+    def list_market_catalogue():
+        return BetfairResponses.load("list_market_catalogue.json")
+
+    @staticmethod
     def betting_list_market_catalogue(filter_: MarketFilter | None = None):
         result = BetfairResponses.load("betting_list_market_catalogue.json")
         if filter_:

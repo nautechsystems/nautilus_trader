@@ -296,5 +296,10 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::denied::OrderDenied>()?;
     m.add_class::<crate::events::order::filled::OrderFilled>()?;
     m.add_class::<crate::events::order::initialized::OrderInitialized>()?;
+    m.add_class::<crate::events::order::rejected::OrderRejected>()?;
+    m.add_class::<crate::events::order::triggered::OrderTriggered>()?;
+    m.add_class::<crate::events::order::submitted::OrderSubmitted>()?;
+    m.add_class::<crate::events::order::emulated::OrderEmulated>()?;
+    m.add_class::<crate::events::order::released::OrderReleased>()?;
     Ok(())
 }

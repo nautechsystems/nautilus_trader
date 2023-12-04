@@ -72,7 +72,7 @@ cdef class OrderManager:
     component_name : str
         The component name for the order manager.
     active_local : str
-        If the manager if for active local orders.
+        If the manager is for active local orders.
     submit_order_handler : Callable[[SubmitOrder], None], optional
         The handler to call when submitting orders.
     cancel_order_handler : Callable[[Order], None], optional
