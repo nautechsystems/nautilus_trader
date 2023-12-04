@@ -348,9 +348,9 @@ class TradingNode:
                     self.kernel.msgbus.publish(topic="health:heartbeat", msg=str(msg))
         except asyncio.CancelledError:
             pass
-        except Exception as ex:
+        except Exception as e:
             # Catch-all exceptions for development purposes (unexpected errors)
-            self.kernel.log.error(str(ex))
+            self.kernel.log.error(str(e))
 
     async def snapshot_open_positions(self, interval: float) -> None:
         """
@@ -388,9 +388,9 @@ class TradingNode:
                         )
         except asyncio.CancelledError:
             pass
-        except Exception as ex:
+        except Exception as e:
             # Catch-all exceptions for development purposes (unexpected errors)
-            self.kernel.log.error(str(ex))
+            self.kernel.log.error(str(e))
 
     def stop(self) -> None:
         """
