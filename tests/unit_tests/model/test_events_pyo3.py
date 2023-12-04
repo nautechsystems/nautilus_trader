@@ -19,6 +19,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderReleased
 from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
 from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
@@ -156,4 +157,20 @@ def test_order_emulated():
         == "OrderEmulated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
         + "client_order_id=O-20210410-022422-001-001-1, "
         + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )
+
+
+def test_order_released():
+    event = TestEventsProviderPyo3.order_released()
+    result_dict = OrderReleased.to_dict(event)
+    order_released = OrderReleased.from_dict(result_dict)
+    assert order_released == event
+    assert (
+        str(event)
+        == "OrderReleased(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, released_price=22000.0)"
+    )
+    assert (
+        repr(event)
+        == "OrderReleased(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, released_price=22000.0, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
     )
