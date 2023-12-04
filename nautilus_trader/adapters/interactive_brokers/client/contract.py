@@ -16,6 +16,8 @@
 import functools
 from typing import TYPE_CHECKING, Any
 
+from ibapi.common import SetOfFloat
+from ibapi.common import SetOfString
 from ibapi.contract import ContractDetails
 from ibapi.utils import current_fn_name
 
@@ -37,7 +39,7 @@ class InteractiveBrokersContractManager:
 
     """
 
-    def __init__(self, client: InteractiveBrokersClient):
+    def __init__(self, client: "InteractiveBrokersClient"):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -166,6 +168,33 @@ class InteractiveBrokersContractManager:
         """
         After all contracts matching the request were returned, this method will mark
         the end of their reception.
+        """
+        self._client.logAnswer(current_fn_name(), vars())
+        self._client.end_request(req_id)
+
+    def securityDefinitionOptionParameter(
+        self,
+        req_id: int,
+        exchange: str,
+        underlying_con_id: int,
+        trading_class: str,
+        multiplier: str,
+        expirations: SetOfString,
+        strikes: SetOfFloat,
+    ) -> None:
+        """
+        Return the option chain for an underlying on an exchange specified in
+        reqSecDefOptParams There will be multiple callbacks to
+        securityDefinitionOptionParameter if multiple exchanges are specified in
+        reqSecDefOptParams.
+        """
+        self._client.logAnswer(current_fn_name(), vars())
+        if request := self._client.requests.get(req_id=req_id):
+            request.result.append((exchange, expirations))
+
+    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
+        """
+        Call when all callbacks to securityDefinitionOptionParameter are complete.
         """
         self._client.logAnswer(current_fn_name(), vars())
         self._client.end_request(req_id)

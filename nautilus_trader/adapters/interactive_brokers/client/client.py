@@ -128,7 +128,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.event_subscriptions: dict[str, Callable] = {}
 
         # Reset
-        self._reset()
+        self.reset()
         self._request_id_seq = 10000
 
         # Subscriptions
@@ -255,7 +255,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             return await asyncio.wait_for(request.future, timeout)
         except asyncio.TimeoutError as e:
             self._log.info(f"Request timed out for {request}")
-            self._end_request(request.req_id, success=False, exception=e)
+            self.end_request(request.req_id, success=False, exception=e)
             return None
 
     def end_request(
@@ -310,8 +310,8 @@ class InteractiveBrokersClient(Component, EWrapper):
                 data = await self.loop.run_in_executor(None, self._eclient.conn.recvMsg)
                 buf += data
                 while buf:
-                    size, msg, buf = comm.read_msg(buf)
-                    self._log.debug(f"Msg received: {buf!s}")
+                    _, msg, buf = comm.read_msg(buf)
+                    self._log.debug(f"Msg buffer received: {buf!s}")
                     if msg:
                         # Place msg in the internal queue for processing
                         self._internal_msg_queue.put_nowait(msg)
@@ -407,7 +407,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._request_id_seq += 1
         return new_id
 
-    def _start(self) -> None:
+    def start(self) -> None:
         """
         Start the client.
 
@@ -447,7 +447,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.is_ready.clear()
         self.account_manager.account_ids = set()
 
-    def _reset(self) -> None:
+    def reset(self) -> None:
         """
         Reset the client state and restart connection watchdog.
 
@@ -462,7 +462,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         # Start the Watchdog
         self._watch_dog_task = self.create_task(self.connection_manager.run_watch_dog())
 
-    def _resume(self) -> None:
+    def resume(self) -> None:
         """
         Resume the client and reset the connection attempt counter.
 
@@ -474,7 +474,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self.is_ready.set()
         self._connection_attempt_counter = 0
 
-    def _degrade(self) -> None:
+    def degrade(self) -> None:
         """
         Degrade the client when connectivity is lost.
 
@@ -508,6 +508,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             return False
         fields: tuple[bytes] = comm.read_fields(msg)
+        self._log.debug(f"Msg received: {msg}")
         self._log.debug(f"Msg received fields: {fields}")
 
         # The decoder identifies the message type based on its payload (e.g., open
@@ -525,7 +526,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         Override the logging for ibapi EClient.sendMsg.
         """
         full_msg = comm.make_msg(msg)
-        self._log.debug(f"TWS API Sending: function={current_fn_name(1)} msg={full_msg}")
+        self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 
     def logRequest(self, fnName, fnParams):
@@ -537,7 +538,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             del prms["self"]
         else:
             prms = fnParams
-        self._log.debug(f"TWS API Request: function={fnName} data={prms}")
+        self._log.debug(f"TWS API prepared request: function={fnName} data={prms}")
 
     def logAnswer(self, fnName, fnParams):
         """
@@ -548,7 +549,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             del prms["self"]
         else:
             prms = fnParams
-        self._log.debug(f"TWS API Response: function={fnName} data={prms}")
+        self._log.debug(f"Msg handled: function={fnName} data={prms}")
 
     # -- InteractiveBrokersConnectionManager -----------------------------------------------------
     def connectionClosed(self) -> None:
@@ -597,6 +598,29 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     def contractDetailsEnd(self, req_id: int) -> None:
         self.contract_manager.contractDetailsEnd(req_id)
+
+    def securityDefinitionOptionParameter(
+        self,
+        req_id: int,
+        exchange: str,
+        underlying_con_id: int,
+        trading_class: str,
+        multiplier: str,
+        expirations: SetOfString,
+        strikes: SetOfFloat,
+    ) -> None:
+        self.contract_manager.securityDefinitionOptionParameter(
+            req_id,
+            exchange,
+            underlying_con_id,
+            trading_class,
+            multiplier,
+            expirations,
+            strikes,
+        )
+
+    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
+        self.contract_manager.securityDefinitionOptionParameterEnd(req_id)
 
     def symbolSamples(self, req_id: int, contract_descriptions: list) -> None:
         self.contract_manager.symbolSamples(req_id, contract_descriptions)
@@ -693,29 +717,6 @@ class InteractiveBrokersClient(Component, EWrapper):
 
     def historicalTicks(self, req_id: int, ticks: list, done: bool) -> None:
         self.market_data_manager.historicalTicks(req_id, ticks, done)
-
-    def securityDefinitionOptionParameter(
-        self,
-        req_id: int,
-        exchange: str,
-        underlying_con_id: int,
-        trading_class: str,
-        multiplier: str,
-        expirations: SetOfString,
-        strikes: SetOfFloat,
-    ) -> None:
-        self.market_data_manager.securityDefinitionOptionParameter(
-            req_id,
-            exchange,
-            underlying_con_id,
-            trading_class,
-            multiplier,
-            expirations,
-            strikes,
-        )
-
-    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
-        self.market_data_manager.securityDefinitionOptionParameterEnd(req_id)
 
     # -- InteractiveBrokersOrderManager -----------------------------------------------------------
     def nextValidId(self, order_id: int) -> None:

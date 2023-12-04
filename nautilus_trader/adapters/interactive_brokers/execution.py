@@ -356,6 +356,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         positions: list[IBPosition] = await self._client.account_manager.get_positions(
             self.account_id.get_id(),
         )
+        if not positions:
+            return []
         ts_init = self._clock.timestamp_ns()
         for position in positions:
             self._log.debug(
@@ -396,7 +398,9 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             report.append(order_status)
 
         # Create the Open OrderStatusReport from Open Orders
-        ib_orders = await self._client.order_manager.get_open_orders(self.account_id.get_id())
+        ib_orders: list[IBOrder] = await self._client.order_manager.get_open_orders(
+            self.account_id.get_id(),
+        )
         for ib_order in ib_orders:
             order_status = await self._parse_ib_order_to_order_status_report(ib_order)
             report.append(order_status)
@@ -458,9 +462,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         """
         report = []
-        positions: list[IBPosition] = await self._client.account_manager.get_positions(
+        positions: list[IBPosition] | None = await self._client.account_manager.get_positions(
             self.account_id.get_id(),
         )
+        if not positions:
+            return []
         for position in positions:
             self._log.debug(f"Trying PositionStatusReport for {position.contract.conId}")
             if position.quantity > 0:

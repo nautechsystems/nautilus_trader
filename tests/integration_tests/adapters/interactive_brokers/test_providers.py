@@ -36,7 +36,7 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 def mock_ib_contract_calls(mocker, instrument_provider, contract_details: ContractDetails):
     mocker.patch.object(
-        instrument_provider._client,
+        instrument_provider._client.contract_manager,
         "get_contract_details",
         side_effect=AsyncMock(return_value=[contract_details]),
     )

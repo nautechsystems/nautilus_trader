@@ -34,8 +34,8 @@ if TYPE_CHECKING:
 
 class InteractiveBrokersAccountManager:
     """
-    Manages IB accounts for the InteractiveBrokersClient. It extends the EWrapper
-    interface, handling various account and position related requests and responses.
+    Handles various account and position related requests for the
+    InteractiveBrokersClient.
 
     Parameters
     ----------
@@ -44,7 +44,7 @@ class InteractiveBrokersAccountManager:
 
     """
 
-    def __init__(self, client: InteractiveBrokersClient):
+    def __init__(self, client: "InteractiveBrokersClient"):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -109,7 +109,13 @@ class InteractiveBrokersAccountManager:
         None
 
         """
-        raise NotImplementedError
+        name = "accountSummary"
+        if subscription := self._client.subscriptions.get(name=name):
+            self._client.subscriptions.remove(subscription.req_id)
+            self._eclient.cancelAccountSummary(reqId=subscription.req_id)
+            self._log.debug(f"Unsubscribed from {subscription}")
+        else:
+            self._log.debug(f"Subscription doesn't exist for {name}")
 
     def position(
         self,

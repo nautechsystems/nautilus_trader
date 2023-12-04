@@ -42,7 +42,7 @@ class InteractiveBrokersOrderManager:
 
     """
 
-    def __init__(self, client: InteractiveBrokersClient):
+    def __init__(self, client: "InteractiveBrokersClient"):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -161,7 +161,7 @@ class InteractiveBrokersOrderManager:
                     orders.append(order)
         return orders
 
-    def next_order_id(self):
+    def next_order_id(self) -> int:
         """
         Retrieve the next valid order ID to be used for a new order.
 

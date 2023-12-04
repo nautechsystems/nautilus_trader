@@ -21,6 +21,16 @@ def base():
     return ConcreteBase()
 
 
+@pytest.fixture
+def subscriptions():
+    return Subscriptions()
+
+
+@pytest.fixture
+def requests():
+    return Requests()
+
+
 def test_add_req_id(base):
     mock_handle = Mock()
     mock_cancel = Mock()
@@ -67,66 +77,61 @@ def test_remove_by_name(base):
     assert 1 not in base._req_id_to_name
 
 
-class TestSubscriptions:
-    def setup_method(self):
-        self.subscriptions = Subscriptions()
-
-    def test_add_subscription(self):
-        handle = Mock()
-        cancel = Mock()
-        subscription = self.subscriptions.add(1, "test", handle, cancel)
-        assert subscription.req_id == 1
-        assert subscription.name == "test"
-        assert subscription.handle == handle
-        assert subscription.cancel == cancel
-        assert subscription.last is None
-
-    def test_remove_subscription_by_req_id(self):
-        self.subscriptions.add(1, "test", Mock(), Mock())
-        self.subscriptions.remove(req_id=1)
-        assert self.subscriptions.get(req_id=1) is None
-
-    def test_remove_subscription_by_name(self):
-        self.subscriptions.add(1, "test", Mock(), Mock())
-        self.subscriptions.remove(name="test")
-        assert self.subscriptions.get(name="test") is None
-
-    def test_update_last(self):
-        self.subscriptions.add(1, "test", Mock(), Mock())
-        self.subscriptions.update_last(1, "updated")
-        assert self.subscriptions.get(req_id=1).last == "updated"
+def test_add_subscription(subscriptions):
+    handle = Mock()
+    cancel = Mock()
+    subscription = subscriptions.add(1, "test", handle, cancel)
+    assert subscription.req_id == 1
+    assert subscription.name == "test"
+    assert subscription.handle == handle
+    assert subscription.cancel == cancel
+    assert subscription.last is None
 
 
-class TestRequests:
-    @pytest.fixture(autouse=True)
-    def setup_method(self):
-        self.requests = Requests()
+def test_remove_subscription_by_req_id(subscriptions):
+    subscriptions.add(1, "test", Mock(), Mock())
+    subscriptions.remove(req_id=1)
+    assert subscriptions.get(req_id=1) is None
 
-    def test_add_request(self):
-        handle = Mock()
-        cancel = Mock()
-        self.requests.add(1, "test", handle, cancel)
-        request = self.requests.get(req_id=1)
 
-        assert request.req_id == 1
-        assert request.name == "test"
-        assert request.handle == handle
-        assert request.cancel == cancel
-        assert isinstance(request.future, asyncio.Future)
-        assert request.result == []
+def test_remove_subscription_by_name(subscriptions):
+    subscriptions.add(1, "test", Mock(), Mock())
+    subscriptions.remove(name="test")
+    assert subscriptions.get(name="test") is None
 
-    def test_remove_request_by_req_id(self):
-        handle = Mock()
-        cancel = Mock()
-        self.requests.add(1, "test", handle, cancel)
-        self.requests.remove(req_id=1)
 
-        assert self.requests.get(req_id=1) is None
+def test_update_last(subscriptions):
+    subscriptions.add(1, "test", Mock(), Mock())
+    subscriptions.update_last(1, "updated")
+    assert subscriptions.get(req_id=1).last == "updated"
 
-    def test_remove_request_by_name(self):
-        handle = Mock()
-        cancel = Mock()
-        self.requests.add(1, "test", handle, cancel)
-        self.requests.remove(name="test")
 
-        assert self.requests.get(name="test") is None
+def test_add_request(requests):
+    handle = Mock()
+    cancel = Mock()
+    requests.add(1, "test", handle, cancel)
+    request = requests.get(req_id=1)
+
+    assert request.req_id == 1
+    assert request.name == "test"
+    assert request.handle == handle
+    assert request.cancel == cancel
+    assert isinstance(request.future, asyncio.Future)
+    assert request.result == []
+
+
+def test_remove_request_by_req_id(requests):
+    handle = Mock()
+    cancel = Mock()
+    requests.add(1, "test", handle, cancel)
+    requests.remove(req_id=1)
+
+    assert requests.get(req_id=1) is None
+
+
+def test_remove_request_by_name(requests):
+    handle = Mock()
+    cancel = Mock()
+    requests.add(1, "test", handle, cancel)
+    requests.remove(name="test")
+    assert requests.get(name="test") is None

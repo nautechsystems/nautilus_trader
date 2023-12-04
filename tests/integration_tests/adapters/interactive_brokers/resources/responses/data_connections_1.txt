@@ -1,0 +1,1 @@
+4\x002\x00-1\x002104\x00Market data farm connection is OK:usfarm\x00\x00

@@ -22,8 +22,6 @@ import pandas as pd
 import pytz
 from ibapi.common import BarData
 from ibapi.common import MarketDataTypeEnum
-from ibapi.common import SetOfFloat
-from ibapi.common import SetOfString
 from ibapi.common import TickAttribBidAsk
 from ibapi.common import TickAttribLast
 from ibapi.utils import current_fn_name
@@ -53,7 +51,7 @@ if TYPE_CHECKING:
 
 class InteractiveBrokersMarketDataManager:
     """
-    Handles market data subscriptions and data processing for the
+    Handles market data requests, subscriptions and data processing for the
     InteractiveBrokersClient.
 
     This class handles real-time and historical market data subscription management,
@@ -63,7 +61,7 @@ class InteractiveBrokersMarketDataManager:
 
     """
 
-    def __init__(self, client: InteractiveBrokersClient):
+    def __init__(self, client: "InteractiveBrokersClient"):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -917,30 +915,3 @@ class InteractiveBrokersMarketDataManager:
         if not done:
             return
         self._process_trade_ticks(req_id, ticks)
-
-    def securityDefinitionOptionParameter(
-        self,
-        req_id: int,
-        exchange: str,
-        underlying_con_id: int,
-        trading_class: str,
-        multiplier: str,
-        expirations: SetOfString,
-        strikes: SetOfFloat,
-    ) -> None:
-        """
-        Return the option chain for an underlying on an exchange specified in
-        reqSecDefOptParams There will be multiple callbacks to
-        securityDefinitionOptionParameter if multiple exchanges are specified in
-        reqSecDefOptParams.
-        """
-        self._client.logAnswer(current_fn_name(), vars())
-        if request := self._client.requests.get(req_id=req_id):
-            request.result.append((exchange, expirations))
-
-    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
-        """
-        Call when all callbacks to securityDefinitionOptionParameter are complete.
-        """
-        self._client.logAnswer(current_fn_name(), vars())
-        self._client.end_request(req_id)

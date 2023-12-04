@@ -36,11 +36,11 @@ class InteractiveBrokersErrorHandler:
 
     WARNING_CODES = {1101, 1102, 110, 165, 202, 399, 404, 434, 492, 10167}
     CLIENT_ERRORS = {502, 503, 504, 10038, 10182, 1100, 2110}
-    CONNECTIVITY_LOST_CODES = {1100, 2110}
+    CONNECTIVITY_LOST_CODES = {1100, 1300, 2110}
     CONNECTIVITY_RESTORED_CODES = {1101, 1102}
     ORDER_REJECTION_CODES = {201, 203, 321, 10289, 10293}
 
-    def __init__(self, client: InteractiveBrokersClient):
+    def __init__(self, client: "InteractiveBrokersClient"):
         self._client = client
         self._eclient = client._eclient
         self._log = client._log
@@ -222,8 +222,11 @@ class InteractiveBrokersErrorHandler:
             if handler:
                 handler(order_ref=order_ref.order_id, order_status="Cancelled", reason=error_string)
         else:
-            # Log unknown order errors
-            self._log.warning(f"Unknown order error: {error_code} for req_id {req_id}")
+            # Log unknown order warnings / errors
+            self._log.warning(
+                f"Unhandled order warning or error code {error_code} for req_id {req_id} - "
+                f"{error_string}",
+            )
 
     # -- EWrapper overrides -----------------------------------------------------------------------
     def error(

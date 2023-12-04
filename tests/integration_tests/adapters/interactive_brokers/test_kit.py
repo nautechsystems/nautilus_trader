@@ -39,9 +39,15 @@ from tests import TESTS_PACKAGE_ROOT
 
 
 TEST_PATH = pathlib.Path(TESTS_PACKAGE_ROOT + "/integration_tests/adapters/interactive_brokers/")
-RESPONSES_PATH = pathlib.Path(TEST_PATH / "responses")
-STREAMING_PATH = pathlib.Path(TEST_PATH / "streaming")
-CONTRACT_PATH = pathlib.Path(RESPONSES_PATH / "contracts")
+RESPONSES_PATH = pathlib.Path(TEST_PATH / "resources" / "responses")
+STREAMING_PATH = pathlib.Path(TEST_PATH / "resources" / "streaming")
+
+
+class IBTestIncomingMessages:
+    @staticmethod
+    def get_msg(msg_type: str) -> bytes:
+        with open(RESPONSES_PATH / f"{msg_type}.txt", "rb") as f:
+            return f.read()
 
 
 class IBTestProviderStubs:

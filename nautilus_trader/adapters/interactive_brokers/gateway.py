@@ -24,6 +24,7 @@ from nautilus_trader.adapters.interactive_brokers.config import InteractiveBroke
 
 try:
     import docker
+    from docker.models.containers import ContainerCollection
 except ImportError as e:
     raise RuntimeError("Docker required for Gateway, install via `pip install docker`") from e
 
@@ -88,7 +89,7 @@ class InteractiveBrokersGateway:
             self.start(timeout)
 
     @classmethod
-    def from_container(cls, **kwargs):
+    def from_container(cls, **kwargs) -> "InteractiveBrokersGateway":
         """Connect to an already running container - don't stop/start"""
         self = cls(username="", password="", **kwargs)
         assert self.container, "Container does not exist"
@@ -96,7 +97,7 @@ class InteractiveBrokersGateway:
 
     @property
     def container_status(self) -> ContainerStatus:
-        container = self.container
+        container: ContainerCollection = self.container
         if container is None:
             return ContainerStatus.NO_CONTAINER
         elif container.status == "running":
@@ -110,14 +111,14 @@ class InteractiveBrokersGateway:
             return ContainerStatus.UNKNOWN
 
     @property
-    def container(self):
+    def container(self) -> ContainerCollection:
         if self._container is None:
             all_containers = {c.name: c for c in self._docker.containers.list(all=True)}
             self._container = all_containers.get(f"{self.CONTAINER_NAME}-{self.port}")
         return self._container
 
     @staticmethod
-    def is_logged_in(container) -> bool:
+    def is_logged_in(container: ContainerCollection) -> bool:
         try:
             logs = container.logs()
         except NoContainer:

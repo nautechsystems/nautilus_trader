@@ -1,0 +1,1 @@
+4\x002\x00-1\x002107\x00HMDS data farm connection is inactive but should be available upon demand.ushmds\x00\x00

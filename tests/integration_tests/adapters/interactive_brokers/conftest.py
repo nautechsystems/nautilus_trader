@@ -45,11 +45,6 @@ def instrument():
     return IBTestProviderStubs.aapl_instrument()
 
 
-# @pytest.fixture()
-# def ibapi_client() -> InteractiveBrokersClient:
-#     return InteractiveBrokersClient()
-
-
 @pytest.fixture()
 def gateway_config():
     return InteractiveBrokersGatewayConfig(
@@ -78,7 +73,7 @@ def exec_client_config():
 
 
 @pytest.fixture()
-def interactive_brokers_client(data_client_config, loop, msgbus, cache, clock, logger):
+def ib_client(data_client_config, loop, msgbus, cache, clock, logger):
     client = InteractiveBrokersClient(
         loop=loop,
         msgbus=msgbus,
@@ -94,9 +89,9 @@ def interactive_brokers_client(data_client_config, loop, msgbus, cache, clock, l
 
 
 @pytest.fixture()
-def instrument_provider(interactive_brokers_client, logger):
+def instrument_provider(ib_client, logger):
     return InteractiveBrokersInstrumentProvider(
-        client=interactive_brokers_client,
+        client=ib_client,
         config=InteractiveBrokersInstrumentProviderConfig(),
         logger=logger,
     )
