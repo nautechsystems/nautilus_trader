@@ -430,7 +430,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             return {}
 
         cdef dict raw_index = msgspec.json.decode(result[0])
-        return {ClientOrderId(k.decode("utf-8")): PositionId(v.decode("utf-8")) for k, v in raw_index.items()}
+        return {ClientOrderId(k): PositionId(v) for k, v in raw_index.items()}
 
     cpdef dict load_index_order_client(self):
         """
@@ -446,7 +446,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             return {}
 
         cdef dict raw_index = msgspec.json.decode(result[0])
-        return {ClientOrderId(k.decode("utf-8")): ClientId(v.decode("utf-8")) for k, v in raw_index.items()}
+        return {ClientOrderId(k): ClientId(v) for k, v in raw_index.items()}
 
     cpdef Currency load_currency(self, str code):
         """
