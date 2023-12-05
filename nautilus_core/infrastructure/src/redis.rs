@@ -21,6 +21,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
+use nautilus_common::redis::get_buffer_interval;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
@@ -168,7 +169,7 @@ impl CacheDatabase for RedisCacheDatabase {
         let client = redis::Client::open(redis_url).unwrap();
         let mut conn = client.get_connection().unwrap();
 
-        // Buffering machinery
+        // Buffering
         let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
         let mut last_drain = Instant::now();
         let recv_interval = Duration::from_millis(1);
@@ -183,9 +184,14 @@ impl CacheDatabase for RedisCacheDatabase {
                 match rx.try_recv() {
                     Ok(msg) => buffer.push_back(msg),
                     Err(TryRecvError::Empty) => thread::sleep(recv_interval),
-                    Err(TryRecvError::Disconnected) => return, // Channel hung up
+                    Err(TryRecvError::Disconnected) => break, // Channel hung up
                 }
             }
+        }
+
+        // Drain any remaining messages
+        if !buffer.is_empty() {
+            drain_buffer(&mut conn, &trader_key, &mut buffer);
         }
     }
 }
@@ -521,13 +527,6 @@ fn get_redis_url(config: &HashMap<String, Value>) -> String {
     )
 }
 
-fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
-    let buffer_interval_ms = config
-        .get("buffer_interval_ms")
-        .map(|v| v.as_u64().unwrap_or(0));
-    Duration::from_millis(buffer_interval_ms.unwrap_or(0))
-}
-
 fn get_trader_key(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -615,22 +614,6 @@ mod tests {
         let key = get_trader_key(trader_id, instance_id, &config);
         assert!(key.starts_with("trader-tester-123:"));
         assert!(key.ends_with(&instance_id.to_string()));
-    }
-
-    #[rstest]
-    fn test_get_buffer_interval_default() {
-        let config = HashMap::new();
-        let buffer_interval = get_buffer_interval(&config);
-        assert_eq!(buffer_interval, Duration::from_millis(0));
-    }
-
-    #[rstest]
-    fn test_get_buffer_interval() {
-        let mut config = HashMap::new();
-        config.insert("buffer_interval_ms".to_string(), json!(100));
-
-        let buffer_interval = get_buffer_interval(&config);
-        assert_eq!(buffer_interval, Duration::from_millis(100));
     }
 
     #[rstest]
