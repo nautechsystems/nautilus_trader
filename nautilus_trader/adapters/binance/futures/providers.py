@@ -319,7 +319,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     taker_fee=taker_fee,
                     ts_event=ts_event,
                     ts_init=ts_init,
-                    info=self._decoder.decode(self._encoder.encode(symbol_info)),
+                    info=msgspec.structs.asdict(symbol_info),
                 )
                 self.add_currency(currency=instrument.base_currency)
             elif contract_type in (
@@ -358,7 +358,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                     taker_fee=taker_fee,
                     ts_event=ts_event,
                     ts_init=ts_init,
-                    info=self._decoder.decode(self._encoder.encode(symbol_info)),
+                    info=msgspec.structs.asdict(symbol_info),
                 )
                 self.add_currency(currency=instrument.underlying)
             else:

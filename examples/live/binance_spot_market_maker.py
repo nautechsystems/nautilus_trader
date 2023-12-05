@@ -46,11 +46,13 @@ config_node = TradingNodeConfig(
     ),
     # cache_database=CacheDatabaseConfig(
     #     type="redis",
+    #     # encoding="json",
     #     buffer_interval_ms=100,
     # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",
+    #     buffer_interval_ms=100,
     #     stream="quoters",
     #     use_instance_id=False,
     #     timestamps_as_iso8601=True,
