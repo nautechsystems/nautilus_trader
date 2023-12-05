@@ -531,13 +531,12 @@ class InteractiveBrokersMarketDataManager:
                     return None  # The bar is incomplete
 
         # Process the bar
-        bar = self._ib_bar_to_nautilus_bar(
+        return self._ib_bar_to_nautilus_bar(
             bar_type=bar_type,
             bar=bar,
             ts_init=ts_init,
             is_revision=not is_new_bar,
         )
-        return bar
 
     def _convert_ib_bar_date_to_unix_nanos(self, bar: BarData, bar_type: BarType) -> int:
         """
@@ -620,7 +619,7 @@ class InteractiveBrokersMarketDataManager:
 
         ts_event = self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
 
-        bar = Bar(
+        return Bar(
             bar_type=bar_type,
             open=instrument.make_price(bar.open),
             high=instrument.make_price(bar.high),
@@ -631,8 +630,6 @@ class InteractiveBrokersMarketDataManager:
             ts_init=ts_init,
             is_revision=is_revision,
         )
-
-        return bar
 
     def _process_trade_ticks(self, req_id: int, ticks: list) -> None:
         """

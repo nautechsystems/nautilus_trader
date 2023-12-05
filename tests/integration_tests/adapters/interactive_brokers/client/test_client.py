@@ -69,85 +69,103 @@ def test_constructor_initializes_properties(ib_client):
 
 @pytest.mark.asyncio
 async def test_create_task(ib_client):
+    # Arrange
     async def sample_coro():
         return "completed"
 
+    # Act
     task = ib_client.create_task(sample_coro(), log_msg="sample task")
+
+    # Assert
     assert not task.done()
     await task
     assert task.done()
     assert task.result() == "completed"
 
 
-def test_subscribe_and_unsubscribe_event(ib_client):
+def test_subscribe_event(ib_client):
+    # Arrange
     def sample_handler():
         pass
 
+    # Act
     ib_client.subscribe_event("test_event", sample_handler)
+
+    # Assert
     assert "test_event" in ib_client.event_subscriptions
     assert ib_client.event_subscriptions["test_event"] == sample_handler
 
+
+def test_unsubscribe_event(ib_client):
+    # Arrange
+
+    # Act
     ib_client.unsubscribe_event("test_event")
+
+    # Assert
     assert "test_event" not in ib_client.event_subscriptions
 
 
 def test_next_req_id(ib_client):
+    # Arrange
     first_id = ib_client.next_req_id()
+
+    # Act
     second_id = ib_client.next_req_id()
+
+    # Assert
     assert first_id + 1 == second_id
 
 
 def test_start(ib_client):
+    # Act
     ib_client._start()
+
+    # Assert
     assert ib_client.is_ready.is_set()
 
 
 @pytest.mark.asyncio
 async def test_stop(ib_client):
-    # Mocking the necessary attributes
+    # Arrange
     ib_client._watch_dog_task = MagicMock()
     ib_client.tws_incoming_msg_reader_task = MagicMock()
     ib_client.internal_msg_queue_task = MagicMock()
     ib_client._eclient.disconnect = MagicMock()
 
+    # Act
     ib_client._stop()
 
-    # Verify that the tasks were cancelled
+    # Assert
     assert ib_client._watch_dog_task.cancel.called
     assert ib_client.tws_incoming_msg_reader_task.cancel.called
     assert ib_client.internal_msg_queue_task.cancel.called
-
-    # Verify that the client was disconnected
     assert ib_client._eclient.disconnect.called
-
-    # Verify that is_ready is cleared
     assert not ib_client.is_ready.is_set()
 
 
 @pytest.mark.asyncio
 async def test_reset(ib_client):
-    # Mocking the necessary methods
+    # Arrange
     ib_client._stop = MagicMock()
     ib_client._eclient.reset = MagicMock()
     ib_client.create_task = MagicMock()
 
+    # Act
     ib_client._reset()
 
-    # Verify that stop and reset were called
+    # Assert
     assert ib_client._stop.called
     assert ib_client._eclient.reset.called
-
-    # Verify that the watch dog task was created
     assert ib_client.create_task.called
 
 
 def test_resume(ib_client):
+    # Act
     ib_client.resume()
 
-    # Verify that is_ready is set
+    # Assert
     assert ib_client.is_ready.is_set()
-
-    # Verify that the connection attempt counter is reset
     assert ib_client._connection_attempt_counter == 0
 
 
@@ -161,42 +179,38 @@ async def test_is_running_async_ready(ib_client):
 
 
 @patch("nautilus_trader.adapters.interactive_brokers.client._eclient.comm.read_msg")
-def test_run_tws_incoming_msg_reader(ib_client, mock_read_msg):
-    # Mock the data received from the connection
+def test_run_tws_incoming_msg_reader(mock_read_msg, ib_client):
+    # Arrange
     mock_data = b"mock_data"
     ib_client.loop.run_in_executor.return_value = mock_data
-
-    # Mock the message and remaining buffer returned by read_msg
     mock_msg = b"mock_msg"
     mock_buf = b""
     mock_read_msg.return_value = (len(mock_msg), mock_msg, mock_buf)
 
-    # Run the method until it has processed one message
+    # Act
     ib_client.loop.run_until_complete(
         ib_client.run_tws_incoming_msg_reader(),
     )
 
-    # Check that the message was added to the internal message queue
+    # Assert
     ib_client._internal_msg_queue.put_nowait.assert_called_once_with(mock_msg)
 
 
 @patch("nautilus_trader.adapters.interactive_brokers.client.client.comm.read_msg")
-def test_run_tws_incoming_msg_reader_add_to_queue(ib_client, mock_read_msg):
-    # Mock the data received from the connection
+def test_run_tws_incoming_msg_reader_add_to_queue(mock_read_msg, ib_client):
+    # Arrange
     mock_data = b"mock_data"
     ib_client.loop.run_in_executor.return_value = mock_data
-
-    # Mock the message and remaining buffer returned by read_msg
     mock_msg = b"mock_msg"
-    # mock_buf = b""
-    # read_msg.return_value = (len(mock_msg), mock_msg, mock_buf)
+    mock_buf = b""
+    mock_read_msg.return_value = (len(mock_msg), mock_msg, mock_buf)
 
-    # Run the method until it has processed one message
+    # Act
     ib_client.loop.run_until_complete(
         ib_client.run_tws_incoming_msg_reader(),
     )
 
-    # Check that the message was added to the internal message queue
+    # Assert
     assert ib_client._internal_msg_queue.get_nowait() == mock_msg
 
 
@@ -249,37 +263,3 @@ def test_ib_is_ready_by_data_probe(ib_client):
 
     # Assert
     assert ib_client.is_ib_ready.is_set()
-
-
-# class MockConnection:
-#     def __init__(self, host, port):
-#         self.host = host
-#         self.port = port
-#         self.socket = None
-#         self.wrapper = None
-#         self.mock_response = [b""]
-#
-#     def connect(self):
-#         self.socket = MagicMock()
-#         self.mock_response = [b"\x00\x00\x00\x1a176\x0020230228 17:24:14 EST\x00"]
-#
-#     def disconnect(self):
-#         self.socket = None
-#         if self.wrapper:
-#             self.wrapper.connectionClosed()
-#
-#     def isConnected(self):
-#         return self.socket is not None
-#
-#     def sendMsg(self, msg):
-#         return len(msg)
-#
-#     def recvMsg(self):
-#         if not self.isConnected():
-#             return b""
-#         if self.mock_response:
-#             return self.mock_response.pop()
-#         else:
-#             return b""
-#
-#

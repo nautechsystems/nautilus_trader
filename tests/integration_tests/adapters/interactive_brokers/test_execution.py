@@ -143,7 +143,7 @@ async def test_factory(exec_client_config, venue, event_loop, msgbus, cache, clo
 async def test_connect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "reqAccountSummary",
         side_effect=partial(account_summary_setup, exec_client._client),
     )
@@ -160,7 +160,7 @@ async def test_connect(mocker, exec_client):
 async def test_disconnect(mocker, exec_client):
     # Arrange
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "reqAccountSummary",
         side_effect=partial(account_summary_setup, exec_client._client),
     )
@@ -195,7 +195,7 @@ async def test_submit_order(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -241,7 +241,7 @@ async def test_submit_order_what_if(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "PreSubmitted"),
     )
@@ -293,7 +293,7 @@ async def test_submit_order_list(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -344,7 +344,7 @@ async def test_modify_order(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -393,7 +393,7 @@ async def test_modify_order_quantity(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -440,7 +440,7 @@ async def test_modify_order_price(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
@@ -486,12 +486,12 @@ async def test_cancel_order(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "cancelOrder",
         side_effect=partial(on_cancel_order_setup, exec_client._client, "Cancelled"),
     )
@@ -533,7 +533,7 @@ async def test_on_exec_details(
     exec_client.connect()
     await asyncio.sleep(0)
     mocker.patch.object(
-        exec_client._client._client,
+        exec_client._client._eclient,
         "placeOrder",
         side_effect=partial(on_open_order_setup, exec_client._client, "Submitted"),
     )

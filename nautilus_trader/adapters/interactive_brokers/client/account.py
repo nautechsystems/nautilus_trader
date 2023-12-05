@@ -57,7 +57,7 @@ class InteractiveBrokersAccountManager:
 
         Returns
         -------
-        str
+        set[str]
 
         """
         return self.account_ids.copy()
@@ -117,7 +117,7 @@ class InteractiveBrokersAccountManager:
         else:
             self._log.debug(f"Subscription doesn't exist for {name}")
 
-    def position(
+    def process_position(
         self,
         account_id: str,
         contract: IBContract,
@@ -147,7 +147,7 @@ class InteractiveBrokersAccountManager:
         if request := self._client.requests.get(name="OpenPositions"):
             request.result.append(IBPosition(account_id, contract, position, avg_cost))
 
-    async def get_positions(self, account_id: str) -> Position | None:
+    async def get_positions(self, account_id: str) -> list[Position] | None:
         """
         Fetch open positions for a specified account.
 
@@ -158,7 +158,7 @@ class InteractiveBrokersAccountManager:
 
         Returns
         -------
-        Position | None
+        list[Position] | None
 
         """
         self._log.debug(f"Requesting Open Positions for {account_id}")

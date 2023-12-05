@@ -496,7 +496,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return report
 
-    def _transform_order(self, order: Order) -> IBOrder:
+    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:
         ib_order = IBOrder()
         for key, field, fn in map_order_fields:
             if value := getattr(order, key, None):
@@ -567,7 +567,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             )
             return
 
-        ib_order: IBOrder = self._transform_order(command.order)
+        ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
         ib_order.orderId = self._client.order_manager.next_order_id()
         self._client.order_manager.place_order(ib_order)
         self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
@@ -584,7 +584,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_id_map[order.client_order_id.value] = self._client.order_manager.next_order_id()
             client_id_to_orders[order.client_order_id.value] = order
 
-            ib_order = self._transform_order(order)
+            ib_order = self._transform_order_to_ib_order(order)
             ib_order.transmit = False
             ib_order.orderId = order_id_map[order.client_order_id.value]
             ib_orders.append(ib_order)
@@ -611,7 +611,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
         self._log.info(f"Nautilus order status is {nautilus_order.status!r}", LogColor.GREEN)
-        ib_order: IBOrder = self._transform_order(nautilus_order)
+        ib_order: IBOrder = self._transform_order_to_ib_order(nautilus_order)
         ib_order.orderId = int(command.venue_order_id.value)
         if ib_order.parentId:
             parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
@@ -652,9 +652,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 self._log.error(f"VenueOrderId not found for {order.client_order_id}")
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
-        raise NotImplementedError(  # pragma: no cover
-            "implement the `_batch_cancel_orders` coroutine",  # pragma: no cover
-        )
+        for order in command.cancels:
+            await self._cancel_order(order)
 
     def _on_account_summary(self, tag: str, value: str, currency: str) -> None:
         if not self._account_summary.get(currency):

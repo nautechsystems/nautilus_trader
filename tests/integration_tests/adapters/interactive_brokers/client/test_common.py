@@ -8,9 +8,6 @@ from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
 
 
-# Assuming Base and other required classes are imported or defined above
-
-
 class ConcreteBase(Base):
     def get(self, req_id=None, name=None):
         return "mocked get response"
@@ -31,23 +28,36 @@ def requests():
     return Requests()
 
 
-def test_add_req_id(base):
-    mock_handle = Mock()
-    mock_cancel = Mock()
+@pytest.fixture
+def mock_handle():
+    return Mock()
+
+
+@pytest.fixture
+def mock_cancel():
+    return Mock()
+
+
+def test_add_req_id(base, mock_handle, mock_cancel):
+    # Arrange
+
+    # Act
     base.add_req_id(1, "test_name", mock_handle, mock_cancel)
 
+    # Assert
     assert 1 in base._req_id_to_name
     assert 1 in base._req_id_to_handle
     assert 1 in base._req_id_to_cancel
 
 
-def test_remove_req_id_existing(base):
-    mock_handle = Mock()
-    mock_cancel = Mock()
+def test_remove_req_id_existing(base, mock_handle, mock_cancel):
+    # Arrange
     base.add_req_id(1, "test_name", mock_handle, mock_cancel)
 
+    # Act
     base.remove_req_id(1)
 
+    # Assert
     assert 1 not in base._req_id_to_name
     assert 1 not in base._req_id_to_handle
     assert 1 not in base._req_id_to_cancel
@@ -57,81 +67,108 @@ def test_remove_req_id_non_existing(base):
     base.remove_req_id(999)  # Removing a non-existing req_id should not raise an error
 
 
-def test_remove_by_req_id(base):
-    mock_handle = Mock()
-    mock_cancel = Mock()
+def test_remove_by_req_id(base, mock_handle, mock_cancel):
+    # Arrange
     base.add_req_id(1, "test_name", mock_handle, mock_cancel)
 
+    # Act
     base.remove(req_id=1)
 
+    # Assert
     assert 1 not in base._req_id_to_name
 
 
-def test_remove_by_name(base):
-    mock_handle = Mock()
-    mock_cancel = Mock()
+def test_remove_by_name(base, mock_handle, mock_cancel):
+    # Arrange
     base.add_req_id(1, "test_name", mock_handle, mock_cancel)
 
+    # Act
     base.remove(name="test_name")
 
+    # Assert
     assert 1 not in base._req_id_to_name
 
 
-def test_add_subscription(subscriptions):
-    handle = Mock()
-    cancel = Mock()
-    subscription = subscriptions.add(1, "test", handle, cancel)
+def test_add_subscription(subscriptions, mock_handle, mock_cancel):
+    # Arrange
+
+    # Act
+    subscription = subscriptions.add(1, "test", mock_handle, mock_cancel)
+
+    # Assert
     assert subscription.req_id == 1
     assert subscription.name == "test"
-    assert subscription.handle == handle
-    assert subscription.cancel == cancel
+    assert subscription.handle == mock_handle
+    assert subscription.cancel == mock_cancel
     assert subscription.last is None
 
 
-def test_remove_subscription_by_req_id(subscriptions):
-    subscriptions.add(1, "test", Mock(), Mock())
+def test_remove_subscription_by_req_id(subscriptions, mock_handle, mock_cancel):
+    # Arrange
+    subscriptions.add(1, "test", mock_handle, mock_cancel)
+
+    # Act
     subscriptions.remove(req_id=1)
+
+    # Assert
     assert subscriptions.get(req_id=1) is None
 
 
-def test_remove_subscription_by_name(subscriptions):
-    subscriptions.add(1, "test", Mock(), Mock())
+def test_remove_subscription_by_name(subscriptions, mock_handle, mock_cancel):
+    # Arrange
+    subscriptions.add(1, "test", mock_handle, mock_cancel)
+
+    # Act
     subscriptions.remove(name="test")
+
+    # Assert
     assert subscriptions.get(name="test") is None
 
 
-def test_update_last(subscriptions):
-    subscriptions.add(1, "test", Mock(), Mock())
+def test_update_last(subscriptions, mock_handle, mock_cancel):
+    # Arrange
+    subscriptions.add(1, "test", mock_handle, mock_cancel)
+
+    # Act
     subscriptions.update_last(1, "updated")
+
+    # Assert
     assert subscriptions.get(req_id=1).last == "updated"
 
 
-def test_add_request(requests):
-    handle = Mock()
-    cancel = Mock()
-    requests.add(1, "test", handle, cancel)
+def test_add_request(requests, mock_handle, mock_cancel):
+    # Arrange
+
+    # Act
+    requests.add(1, "test", mock_handle, mock_cancel)
     request = requests.get(req_id=1)
 
+    # Assert
     assert request.req_id == 1
     assert request.name == "test"
-    assert request.handle == handle
-    assert request.cancel == cancel
+    assert request.handle == mock_handle
+    assert request.cancel == mock_cancel
     assert isinstance(request.future, asyncio.Future)
     assert request.result == []
 
 
-def test_remove_request_by_req_id(requests):
-    handle = Mock()
-    cancel = Mock()
-    requests.add(1, "test", handle, cancel)
+def test_remove_request_by_req_id(requests, mock_handle, mock_cancel):
+    # Arrange
+    requests.add(1, "test", mock_handle, mock_cancel)
+
+    # Act
     requests.remove(req_id=1)
 
+    # Assert
     assert requests.get(req_id=1) is None
 
 
-def test_remove_request_by_name(requests):
-    handle = Mock()
-    cancel = Mock()
-    requests.add(1, "test", handle, cancel)
+def test_remove_request_by_name(requests, mock_handle, mock_cancel):
+    # Arrange
+    requests.add(1, "test", mock_handle, mock_cancel)
+
+    # Act
     requests.remove(name="test")
+
+    # Assert
     assert requests.get(name="test") is None
