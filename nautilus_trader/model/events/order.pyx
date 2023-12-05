@@ -195,7 +195,7 @@ cdef class OrderEvent(Event):
         raise NotImplementedError("abstract property must be implemented")
 
     def set_client_order_id(self, ClientOrderId client_order_id):
-        raise NotImplementedError("abstract method must be implemented")
+        raise NotImplementedError("abstract method `set_client_order_i` must be implemented")
 
 
 cdef class OrderInitialized(OrderEvent):

@@ -36,14 +36,20 @@ class TemplateInstrumentProvider(InstrumentProvider):
     """
 
     async def load_all_async(self, filters: dict | None = None) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `load_all_async` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def load_ids_async(
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `load_ids_async` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `load_async` must be implemented in the subclass",
+        )  # pragma: no cover
