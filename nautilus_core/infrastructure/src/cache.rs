@@ -69,7 +69,7 @@ pub trait CacheDatabase {
     fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
     fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
     fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
-    fn handle_ops(
+    fn handle_messages(
         rx: Receiver<DatabaseCommand>,
         trader_key: String,
         config: HashMap<String, Value>,

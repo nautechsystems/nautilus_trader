@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -25,9 +24,9 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class PositionInfoGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: str = None
+    category: str | None = None
     symbol: BybitSymbol | None = None
-    settleCoin: str = None
+    settleCoin: str | None = None
 
 
 class BybitPositionInfoEndpoint(BybitHttpEndpoint):
@@ -35,7 +34,7 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "position/list"
         super().__init__(
             client=client,

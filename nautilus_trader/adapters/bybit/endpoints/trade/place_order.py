@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -46,7 +45,7 @@ class BybitPlaceOrderEndpoint(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "order/create"
         super().__init__(
             client=client,

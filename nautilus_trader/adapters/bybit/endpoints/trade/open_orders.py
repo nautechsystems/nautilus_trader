@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
@@ -25,8 +24,8 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 class BybitOpenOrdersGetParameters(msgspec.Struct, omit_defaults=True, frozen=False):
-    category: BybitInstrumentType = None
-    symbol: str = None
+    category: BybitInstrumentType | None = None
+    symbol: str | None = None
     baseCoin: str | None = None
     settleCoin: str | None = None
     orderId: str | None = None
@@ -38,7 +37,7 @@ class BybitOpenOrdersHttp(BybitHttpEndpoint):
         self,
         client: BybitHttpClient,
         base_endpoint: str,
-    ):
+    ) -> None:
         url_path = base_endpoint + "/order/realtime"
         super().__init__(
             client=client,

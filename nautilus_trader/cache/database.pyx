@@ -141,6 +141,12 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         Condition.type(config, CacheDatabaseConfig, "config")
         super().__init__(logger, config)
 
+        if config.buffer_interval_ms and config.buffer_interval_ms >= 1000:
+            self._log.warning(
+                f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
+                "recommended range is [10, 100] milliseconds.",
+            )
+
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
         self._key_general     = f"{self._key_trader}:{_GENERAL}:"     # noqa
@@ -430,7 +436,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             return {}
 
         cdef dict raw_index = msgspec.json.decode(result[0])
-        return {ClientOrderId(k.decode("utf-8")): PositionId(v.decode("utf-8")) for k, v in raw_index.items()}
+        return {ClientOrderId(k): PositionId(v) for k, v in raw_index.items()}
 
     cpdef dict load_index_order_client(self):
         """
@@ -446,7 +452,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
             return {}
 
         cdef dict raw_index = msgspec.json.decode(result[0])
-        return {ClientOrderId(k.decode("utf-8")): ClientId(v.decode("utf-8")) for k, v in raw_index.items()}
+        return {ClientOrderId(k): ClientId(v) for k, v in raw_index.items()}
 
     cpdef Currency load_currency(self, str code):
         """

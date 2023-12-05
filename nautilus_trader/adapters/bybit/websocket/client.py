@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import hashlib
 import hmac
 import json
@@ -53,7 +52,7 @@ class BybitWebsocketClient:
         self._log: LoggerAdapter = LoggerAdapter(type(self).__name__, logger=logger)
         self._url: str = base_url
         self._handler: Callable[[bytes], None] = handler
-        self._client: WebSocketClient = None
+        self._client: WebSocketClient | None = None
         self._is_private = is_private
         self._api_key = api_key
         self._api_secret = api_secret
@@ -73,12 +72,20 @@ class BybitWebsocketClient:
     ################################################################################
 
     async def subscribe_trades(self, symbol: str) -> None:
+        if self._client is None:
+            self._log.warning("Cannot subscribe: not connected.")
+            return
+
         subscription = f"publicTrade.{symbol}"
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.append(subscription)
 
     async def subscribe_tickers(self, symbol: str) -> None:
+        if self._client is None:
+            self._log.warning("Cannot subscribe: not connected.")
+            return
+
         subscription = f"tickers.{symbol}"
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
@@ -94,12 +101,20 @@ class BybitWebsocketClient:
     #     self._subscriptions.append(subsscription)
 
     async def subscribe_orders_update(self) -> None:
+        if self._client is None:
+            self._log.warning("Cannot subscribe: not connected.")
+            return
+
         subscription = "order"
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
         self._subscriptions.append(subscription)
 
     async def subscribe_executions_update(self) -> None:
+        if self._client is None:
+            self._log.warning("Cannot subscribe: not connected.")
+            return
+
         subscription = "execution"
         sub = {"op": "subscribe", "args": [subscription]}
         await self._client.send_text(json.dumps(sub))
@@ -138,6 +153,10 @@ class BybitWebsocketClient:
         }
 
     async def disconnect(self) -> None:
+        if self._client is None:
+            self._log.warning("Cannot disconnect: not connected.")
+            return
+
         await self._client.send_text(json.dumps({"op": "unsubscribe", "args": self._subscriptions}))
         await self._client.disconnect()
         self._log.info(f"Disconnected from {self._url}.", LogColor.BLUE)

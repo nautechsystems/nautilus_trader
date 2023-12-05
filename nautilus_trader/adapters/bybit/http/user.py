@@ -21,6 +21,6 @@ class BybitUserHttpAPI:
     def __init__(
         self,
         client: BybitHttpClient,
-    ):
+    ) -> None:
         PyCondition.not_none(client, "client")
         self.client = client
