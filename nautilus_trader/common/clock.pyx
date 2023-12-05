@@ -94,7 +94,7 @@ cdef class Clock:
         list[str]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `timer_names` must be implemented in the subclass")  # pragma: no cover
 
     @property
     def timer_count(self) -> int:
@@ -106,7 +106,7 @@ cdef class Clock:
         int
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `timer_count` must be implemented in the subclass")  # pragma: no cover
 
     cpdef double timestamp(self):
         """
@@ -121,7 +121,7 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `timestamp` must be implemented in the subclass")  # pragma: no cover
 
     cpdef uint64_t timestamp_ms(self):
         """
@@ -136,7 +136,7 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `timestamp_ms` must be implemented in the subclass")  # pragma: no cover
 
     cpdef uint64_t timestamp_ns(self):
         """
@@ -151,7 +151,7 @@ cdef class Clock:
         https://en.wikipedia.org/wiki/Unix_time
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `timestamp_ns` must be implemented in the subclass")  # pragma: no cover
 
     cpdef datetime utc_now(self):
         """
@@ -196,7 +196,7 @@ cdef class Clock:
             If `handler` is not of type `Callable`.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `register_default_handler` must be implemented in the subclass")  # pragma: no cover
 
     cpdef uint64_t next_time_ns(self, str name):
         """
@@ -217,7 +217,7 @@ cdef class Clock:
             If `name` is not a valid string.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `next_time_ns` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void set_time_alert(
         self,
@@ -303,7 +303,7 @@ cdef class Clock:
         time event will be generated (rather than being invalid and failing a condition check).
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `set_time_alert_ns` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void set_timer(
         self,
@@ -407,7 +407,7 @@ cdef class Clock:
             If `callback` is ``None`` and no default handler is registered.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `set_timer_ns` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void cancel_timer(self, str name):
         """
@@ -426,13 +426,13 @@ cdef class Clock:
             If `name` is not an active timer name for this clock.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `cancel_timer` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void cancel_timers(self):
         """
         Cancel all timers.
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `cancel_timers` must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class TestClock(Clock):
@@ -1114,7 +1114,7 @@ cdef class LiveTimer:
 
     cdef object _start_timer(self, uint64_t ts_now):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_start_timer` must be implemented in the subclass")  # pragma: no cover
 
 
 cdef class ThreadTimer(LiveTimer):

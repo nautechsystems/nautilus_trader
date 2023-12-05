@@ -122,7 +122,7 @@ class Base:
         req_id: int | None = None,
         name: str | tuple | None = None,
     ):
-        raise NotImplementedError("method must be implemented in the subclass")
+        raise NotImplementedError("method `get` must be implemented in the subclass")
 
 
 class Subscriptions(Base):

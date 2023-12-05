@@ -65,7 +65,9 @@ class LiveDataClientFactory:
         LiveDataClient
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `create` must be implemented in the subclass",
+        )  # pragma: no cover
 
 
 class LiveExecClientFactory:
@@ -108,4 +110,6 @@ class LiveExecClientFactory:
         LiveExecutionClient
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `create' must be implemented in the subclass",
+        )  # pragma: no cover
