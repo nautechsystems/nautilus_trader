@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
 ### Breaking Changes
+- Changed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization due below fix (you'll need to flush your cache)
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
 - Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
 - Changed `Actor` state loading to now use the standard `Serializer`
@@ -15,7 +16,8 @@ Released on TBD (UTC).
 - Removed `infrastructure` subpackage (now redundant with new Rust implementation)
 
 ### Fixes
-None
+- Fixed `json` encoding for `CacheDatabaseAdapter` from `info` field serialization fix below
+- Fixed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization to retain JSON serializable dicts (rather than double encoding and losing information)
 
 ---
 
