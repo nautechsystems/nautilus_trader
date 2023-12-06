@@ -933,6 +933,27 @@ class OrderReleased:
     def from_dict(cls, values: dict[str, str]) -> OrderReleased: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderUpdated:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        quantity: Quantity,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderUpdated: ...
+    def to_dict(self) -> dict[str, str]: ...
+
 
 ###################################################################################################
 # Infrastructure

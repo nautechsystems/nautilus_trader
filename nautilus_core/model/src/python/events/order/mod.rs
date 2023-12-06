@@ -21,3 +21,4 @@ pub mod rejected;
 pub mod released;
 pub mod submitted;
 pub mod triggered;
+pub mod updated;
