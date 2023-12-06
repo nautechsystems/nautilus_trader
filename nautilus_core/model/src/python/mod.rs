@@ -301,5 +301,6 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::submitted::OrderSubmitted>()?;
     m.add_class::<crate::events::order::emulated::OrderEmulated>()?;
     m.add_class::<crate::events::order::released::OrderReleased>()?;
+    m.add_class::<crate::events::order::updated::OrderUpdated>()?;
     Ok(())
 }
