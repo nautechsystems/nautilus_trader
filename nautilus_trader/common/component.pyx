@@ -755,11 +755,11 @@ cdef class MessageBus:
         # Configuration
         self._log.info(f"{config.database=}", LogColor.BLUE)
         self._log.info(f"{config.encoding=}", LogColor.BLUE)
+        self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
         self._log.info(f"{config.buffer_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.autotrim_mins=}", LogColor.BLUE)
         self._log.info(f"{config.stream=}", LogColor.BLUE)
         self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
-        self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
         self._log.info(f"{config.types_filter=}", LogColor.BLUE)
 
         # Copy and clear `types_filter` before passing down to the core MessageBus

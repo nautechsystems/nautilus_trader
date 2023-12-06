@@ -151,11 +151,11 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         # Configuration
         self._log.info(f"{config.database=}", LogColor.BLUE)
         self._log.info(f"{config.encoding=}", LogColor.BLUE)
+        self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
         self._log.info(f"{config.buffer_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.flush_on_start=}", LogColor.BLUE)
         self._log.info(f"{config.use_trader_prefix=}", LogColor.BLUE)
         self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
-        self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa
