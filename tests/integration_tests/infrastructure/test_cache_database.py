@@ -28,8 +28,9 @@ from nautilus_trader.common.clock import TestClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config.common import CacheConfig
+from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
@@ -142,6 +143,7 @@ class TestCacheDatabaseAdapter:
             trader_id=self.trader_id,
             logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
+            config=CacheConfig(database=DatabaseConfig()),
         )
 
     def teardown(self):
@@ -1083,7 +1085,7 @@ class TestRedisCacheDatabaseIntegrity:
         config = BacktestEngineConfig(
             logging=LoggingConfig(bypass_logging=True),
             run_analysis=False,
-            cache_database=CacheDatabaseConfig(),  # default redis
+            cache=CacheConfig(database=DatabaseConfig()),  # default redis
         )
 
         self.engine = BacktestEngine(config=config)
@@ -1111,6 +1113,7 @@ class TestRedisCacheDatabaseIntegrity:
             trader_id=self.trader_id,
             logger=self.logger,
             serializer=MsgSpecSerializer(encoding=msgspec.msgpack, timestamps_as_str=True),
+            config=CacheConfig(database=DatabaseConfig()),
         )
 
     def teardown(self):

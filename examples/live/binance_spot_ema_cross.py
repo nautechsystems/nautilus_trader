@@ -44,12 +44,12 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    # cache_database=CacheDatabaseConfig(
-    #     type="redis",
+    # cache=CacheConfig(
+    #     database=DatabaseConfig(),
     #     buffer_interval_ms=100,
     # ),
     # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),  # No yet for operational use
+    #     database=DatabaseConfig(),
     #     encoding="json",
     #     stream="quoters",
     #     use_instance_id=False,

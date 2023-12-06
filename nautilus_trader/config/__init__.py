@@ -26,7 +26,6 @@ from nautilus_trader.config.backtest import BacktestVenueConfig
 from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.config.common import ActorFactory
 from nautilus_trader.config.common import CacheConfig
-from nautilus_trader.config.common import CacheDatabaseConfig
 from nautilus_trader.config.common import DataCatalogConfig
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecAlgorithmConfig
@@ -61,7 +60,6 @@ __all__ = [
     "ActorConfig",
     "ActorFactory",
     "CacheConfig",
-    "CacheDatabaseConfig",
     "DataCatalogConfig",
     "DataEngineConfig",
     "ExecAlgorithmConfig",

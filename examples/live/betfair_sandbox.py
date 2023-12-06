@@ -28,7 +28,6 @@ from nautilus_trader.adapters.sandbox.execution import SandboxExecutionClient
 from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -68,7 +67,6 @@ async def main(instrument_config: BetfairInstrumentProviderConfig):
     config = TradingNodeConfig(
         timeout_connection=30.0,
         logging=LoggingConfig(log_level="DEBUG"),
-        cache_database=CacheDatabaseConfig(type="in-memory"),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
                 account_currency=account_currency,

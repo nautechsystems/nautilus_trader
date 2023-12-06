@@ -81,7 +81,7 @@ class TradingNode:
         )
 
         # Configuration
-        cache_db = config.cache_database
+        cache_db = config.cache.database if config.cache is not None else None
         msgbus_db = config.message_bus.database if config.message_bus is not None else None
 
         # Operation flags

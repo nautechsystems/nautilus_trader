@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
@@ -99,7 +98,6 @@ class TestTradingNodeConfiguration:
 
         config = TradingNodeConfig(
             logging=LoggingConfig(bypass_logging=True),
-            cache_database=CacheDatabaseConfig(type="in-memory"),
         )
 
         # Act
@@ -115,7 +113,6 @@ class TestTradingNodeConfiguration:
 
         config = TradingNodeConfig(
             logging=LoggingConfig(bypass_logging=True),
-            cache_database=CacheDatabaseConfig(type="in-memory"),
         )
         node = TradingNode(config=config, loop=loop)
 

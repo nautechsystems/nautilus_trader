@@ -25,6 +25,10 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+
+# from nautilus_trader.config.common import CacheConfig
+# from nautilus_trader.config.common import DatabaseConfig
+# from nautilus_trader.config.common import MessageBusConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
@@ -44,8 +48,8 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    # cache_database=CacheDatabaseConfig(
-    #     type="redis",
+    # cache=CacheConfig(
+    #     database=DatabaseConfig(),  # Default redis
     #     # encoding="json",
     #     buffer_interval_ms=100,
     # ),

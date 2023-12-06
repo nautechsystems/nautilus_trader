@@ -21,7 +21,7 @@ use std::{
 };
 
 use anyhow::{anyhow, bail, Result};
-use nautilus_common::redis::get_buffer_interval;
+use nautilus_common::redis::{get_buffer_interval, get_redis_url};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use pyo3::prelude::*;
@@ -500,33 +500,6 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
     pipe.del(key);
 }
 
-fn get_redis_url(config: &HashMap<String, Value>) -> String {
-    let host = config
-        .get("host")
-        .map(|v| v.as_str().unwrap_or("127.0.0.1"));
-    let port = config.get("port").map(|v| v.as_str().unwrap_or("6379"));
-    let username = config
-        .get("username")
-        .map(|v| v.as_str().unwrap_or_default());
-    let password = config
-        .get("password")
-        .map(|v| v.as_str().unwrap_or_default());
-    let use_ssl = config.get("ssl").unwrap_or(&json!(false));
-
-    format!(
-        "redis{}://{}:{}@{}:{}",
-        if use_ssl.as_bool().unwrap_or(false) {
-            "s"
-        } else {
-            ""
-        },
-        username.unwrap_or(""),
-        password.unwrap_or(""),
-        host.unwrap(),
-        port.unwrap(),
-    )
-}
-
 fn get_trader_key(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -590,18 +563,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-
-    #[rstest]
-    fn test_get_redis_url() {
-        let mut config = HashMap::new();
-        config.insert("host".to_string(), json!("localhost"));
-        config.insert("port".to_string(), json!("1234"));
-        config.insert("username".to_string(), json!("user"));
-        config.insert("password".to_string(), json!("pass"));
-        config.insert("ssl".to_string(), json!(true));
-
-        assert_eq!(get_redis_url(&config), "rediss://user:pass@localhost:1234");
-    }
 
     #[rstest]
     fn test_get_trader_key_with_prefix_and_instance_id() {
