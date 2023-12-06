@@ -21,11 +21,11 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import CacheConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
@@ -51,8 +51,8 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
         filter_position_reports=True,
     ),
-    cache_database=CacheDatabaseConfig(
-        type="in-memory",
+    cache=CacheConfig(
+        database=None,
         flush_on_start=False,
         timestamps_as_iso8601=True,
     ),

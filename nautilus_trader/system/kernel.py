@@ -204,19 +204,19 @@ class NautilusKernel:
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
 
-        if config.cache_database is None or config.cache_database.type == "in-memory":
+        if config.cache is None or config.cache.database is None:
             cache_db = None
-        elif config.cache_database.type == "redis":
-            encoding = config.cache_database.encoding.lower()
+        elif config.cache.database.type == "redis":
+            encoding = config.cache.encoding.lower()
             cache_db = CacheDatabaseAdapter(
                 trader_id=self._trader_id,
                 logger=self._logger,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                     timestamps_as_str=True,  # Hardcoded for now
-                    timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
+                    timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
-                config=config.cache_database,
+                config=config.cache,
             )
         else:
             raise ValueError(
@@ -957,7 +957,7 @@ class NautilusKernel:
             exec_algorithm.register_executor(self._loop, self._executor)
 
     def _start_engines(self) -> None:
-        if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
+        if self._config.cache is not None and self._config.cache.flush_on_start:
             self._cache.flush_db()
 
         self._data_engine.start()

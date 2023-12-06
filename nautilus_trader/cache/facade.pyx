@@ -15,7 +15,7 @@
 
 from typing import Optional
 
-from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import CacheConfig
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -60,7 +60,7 @@ cdef class CacheDatabaseFacade:
     ----------
     logger : Logger
         The logger for the database.
-    config : CacheDatabaseConfig, optional
+    config : CacheConfig, optional
         The configuration for the database.
 
     Warnings
@@ -71,7 +71,7 @@ cdef class CacheDatabaseFacade:
     def __init__(
         self,
         Logger logger not None,
-        config: Optional[CacheDatabaseConfig] = None,
+        config: Optional[CacheConfig] = None,
     ):
         self._log = LoggerAdapter(component_name=type(self).__name__, logger=logger)
 

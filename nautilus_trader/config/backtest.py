@@ -170,8 +170,6 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     cache : CacheConfig, optional
         The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
     data_engine : DataEngineConfig, optional
         The live data engine configuration.
     risk_engine : RiskEngineConfig, optional
