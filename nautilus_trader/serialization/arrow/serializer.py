@@ -30,6 +30,7 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.events import PositionEvent
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.wranglers_v2 import BarDataWrangler
@@ -38,6 +39,7 @@ from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import TradeTickDataWrangler
 from nautilus_trader.serialization.arrow.implementations import account_state
 from nautilus_trader.serialization.arrow.implementations import instruments
+from nautilus_trader.serialization.arrow.implementations import order_events
 from nautilus_trader.serialization.arrow.implementations import position_events
 from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
@@ -283,6 +285,14 @@ register_arrow(
     serializer=account_state.serialize,
     deserializer=account_state.deserialize,
 )
+
+register_arrow(
+    OrderFilled,
+    schema=NAUTILUS_ARROW_SCHEMA[OrderFilled],
+    serializer=order_events.serialize,
+    deserializer=order_events.deserialize(OrderFilled),
+)
+
 for position_cls in PositionEvent.__subclasses__():
     register_arrow(
         position_cls,
