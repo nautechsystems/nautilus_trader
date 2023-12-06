@@ -46,7 +46,7 @@ config_node = TradingNodeConfig(
     ),
     # cache=CacheConfig(
     #     database=DatabaseConfig(),
-    #     # encoding="json",
+    #     encoding="json",
     #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
     # ),
