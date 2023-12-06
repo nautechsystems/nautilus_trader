@@ -54,15 +54,15 @@ config_node = TradingNodeConfig(
     ),
     cache=CacheConfig(
         # database=DatabaseConfig(),
-        flush_on_start=False,
         timestamps_as_iso8601=True,
+        flush_on_start=False,
     ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",
+    #     timestamps_as_iso8601=True,
     #     stream="quoters",
     #     use_instance_id=False,
-    #     timestamps_as_iso8601=True,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
     # ),

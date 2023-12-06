@@ -53,8 +53,8 @@ config_node = TradingNodeConfig(
     ),
     cache=CacheConfig(
         database=None,
-        flush_on_start=False,
         timestamps_as_iso8601=True,
+        flush_on_start=False,
     ),
     # snapshot_orders=True,
     # snapshot_positions=True,

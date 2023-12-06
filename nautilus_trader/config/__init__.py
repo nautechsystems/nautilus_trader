@@ -26,6 +26,7 @@ from nautilus_trader.config.backtest import BacktestVenueConfig
 from nautilus_trader.config.common import ActorConfig
 from nautilus_trader.config.common import ActorFactory
 from nautilus_trader.config.common import CacheConfig
+from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.config.common import DataCatalogConfig
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecAlgorithmConfig
@@ -37,6 +38,7 @@ from nautilus_trader.config.common import ImportableExecAlgorithmConfig
 from nautilus_trader.config.common import ImportableStrategyConfig
 from nautilus_trader.config.common import InstrumentProviderConfig
 from nautilus_trader.config.common import LoggingConfig
+from nautilus_trader.config.common import MessageBusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import OrderEmulatorConfig
 from nautilus_trader.config.common import RiskEngineConfig
@@ -60,6 +62,7 @@ __all__ = [
     "ActorConfig",
     "ActorFactory",
     "CacheConfig",
+    "DatabaseConfig",
     "DataCatalogConfig",
     "DataEngineConfig",
     "ExecAlgorithmConfig",
@@ -70,6 +73,7 @@ __all__ = [
     "ImportableStrategyConfig",
     "InstrumentProviderConfig",
     "LoggingConfig",
+    "MessageBusConfig",
     "NautilusKernelConfig",
     "OrderEmulatorConfig",
     "RiskEngineConfig",

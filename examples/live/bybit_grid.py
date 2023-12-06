@@ -27,7 +27,7 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
     ),
     cache=CacheConfig(
-        database=DatabaseConfig(),  # Default redis
+        database=DatabaseConfig(),
         buffer_interval_ms=100,
     ),
     data_clients={
