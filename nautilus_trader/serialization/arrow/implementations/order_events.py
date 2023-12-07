@@ -21,7 +21,7 @@ from nautilus_trader.serialization.arrow.schema import NAUTILUS_ARROW_SCHEMA
 
 
 def serialize(event: OrderFilled) -> pa.RecordBatch:
-    data = {k: v for k, v in event.to_dict(event).items() if k not in ("order_fill",)}
+    data = event.to_dict(event)
     data["info"] = msgspec.json.encode(data["info"])
     return pa.RecordBatch.from_pylist([data], schema=NAUTILUS_ARROW_SCHEMA[OrderFilled])
 
