@@ -95,7 +95,8 @@ cdef class Actor(Component):
 
     Warnings
     --------
-    This class should not be used directly, but through a concrete subclass.
+    - This class should not be used directly, but through a concrete subclass.
+    - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
     def __init__(self, config: Optional[ActorConfig] = None):
@@ -109,8 +110,8 @@ cdef class Actor(Component):
             component_id = None
 
         super().__init__(
-            clock=Clock(),  # Use placeholder abstract clock until registered
-            logger=Logger(clock=Clock(), dummy=True),  # Use dummy logger until registered
+            clock=LiveClock(),  # Use placeholder live clock until registered
+            logger=Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
             component_id=component_id,
             config=config.dict(),
         )

@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
 - Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
+- Improved `Actor` and `Strategy` usability to be more lenient to mistaken calls to `clock` and `logger` from the constructor (warnings also added to docs)
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
 ### Breaking Changes
