@@ -112,6 +112,7 @@ strat_config = VolatilityMarketMakerConfig(
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.010"),
+    # manage_gtd_expiry=True,
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)
