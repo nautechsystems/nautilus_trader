@@ -24,7 +24,6 @@ from nautilus_trader.common import Environment
 from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
 def resolve_path(path: str) -> type:
@@ -381,7 +380,9 @@ class StreamingConfig(NautilusConfig, frozen=True):
     def fs(self):
         return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
 
-    def as_catalog(self) -> ParquetDataCatalog:
+    def as_catalog(self):
+        from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+
         return ParquetDataCatalog(
             path=self.catalog_path,
             fs_protocol=self.fs_protocol,
