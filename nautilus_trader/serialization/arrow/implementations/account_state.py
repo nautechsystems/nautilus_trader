@@ -30,7 +30,7 @@ def serialize(state: AccountState) -> RecordBatch:
 
     base = state.to_dict(state)
 
-    # Ensure 'info' is encoded as bytes if it is present
+    # Ensure 'info' is encoded as bytes
     if "info" in base and isinstance(base["info"], dict):
         base["info"] = msgspec.json.encode(base["info"])
 
@@ -118,7 +118,7 @@ def _deserialize(values: list[Any]) -> AccountState:
     state["balances"] = balances
     state["margins"] = margins
 
-    # Ensure 'info' is decoded to a dict if it is present
+    # Ensure 'info' is decoded to a dict
     if "info" in state:
         state["info"] = msgspec.json.decode(state["info"])
     else:
