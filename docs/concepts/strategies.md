@@ -39,6 +39,11 @@ class MyStrategy(Strategy):
         super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
 
+```{warning}
+Do not call components such as `clock` and `logger` in the `__init__` constructor (which is prior to registration).
+This is because the systems clock and MPSC channel thread for logging have not yet been setup on initialization.
+```
+
 From here, you can implement handlers as necessary to perform actions based on state transitions
 and events.
 

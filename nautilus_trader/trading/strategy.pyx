@@ -134,7 +134,8 @@ cdef class Strategy(Actor):
 
     Warnings
     --------
-    This class should not be used directly, but through a concrete subclass.
+    - This class should not be used directly, but through a concrete subclass.
+    - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
     def __init__(self, config: Optional[StrategyConfig] = None):
