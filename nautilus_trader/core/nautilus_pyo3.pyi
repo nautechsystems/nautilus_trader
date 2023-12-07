@@ -954,6 +954,26 @@ class OrderUpdated:
     def from_dict(cls, values: dict[str, str]) -> OrderUpdated: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderPendingUpdate:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderPendingUpdate: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
+
 
 ###################################################################################################
 # Infrastructure

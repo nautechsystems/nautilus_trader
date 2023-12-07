@@ -18,6 +18,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
+from nautilus_trader.core.nautilus_pyo3 import OrderPendingUpdate
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderReleased
 from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
@@ -192,4 +193,21 @@ def test_order_updated():
         == "OrderUpdated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
         + "venue_order_id=123456, account_id=SIM-000, quantity=1.5, price=1500.0, trigger_price=None, "
         + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_pending_update():
+    event = TestEventsProviderPyo3.order_pending_update()
+    result_dict = OrderPendingUpdate.to_dict(event)
+    order_pending_update = OrderPendingUpdate.from_dict(result_dict)
+    assert order_pending_update == event
+    assert (
+        str(event)
+        == "OrderPendingUpdate(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderPendingUpdate(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
