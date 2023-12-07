@@ -972,8 +972,23 @@ class OrderPendingUpdate:
     def from_dict(cls, values: dict[str, str]) -> OrderPendingUpdate: ...
     def to_dict(self) -> dict[str, str]: ...
 
-
-
+class OrderPendingCancel:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderPendingCancel: ...
+    def to_dict(self) -> dict[str, str]: ...
 
 ###################################################################################################
 # Infrastructure
