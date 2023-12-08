@@ -184,6 +184,7 @@ class ActorExecutor:
             return
 
         self._active_tasks.pop(task_id, None)
+        self._queued_tasks.discard(task_id)
 
         if task.done():
             try:
