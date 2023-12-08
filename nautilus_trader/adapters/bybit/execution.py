@@ -32,6 +32,8 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
+from nautilus_trader.adapters.bybit.utils import get_api_key
+from nautilus_trader.adapters.bybit.utils import get_api_secret
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -110,15 +112,15 @@ class BybitExecutionClient(LiveExecutionClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
 
-        # Websocket API
+        # WebSocket API
         self._ws_client = BybitWebsocketClient(
             clock=clock,
             logger=logger,
             handler=self._handle_ws_message,
             base_url=base_url_ws,
             is_private=True,
-            api_key=config.api_key,
-            api_secret=config.api_secret,
+            api_key=config.api_key or get_api_key(config.testnet),
+            api_secret=config.api_secret or get_api_secret(config.testnet),
         )
 
         # Http API

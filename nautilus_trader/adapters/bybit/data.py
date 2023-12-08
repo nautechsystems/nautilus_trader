@@ -28,6 +28,8 @@ from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
+from nautilus_trader.adapters.bybit.utils import get_api_key
+from nautilus_trader.adapters.bybit.utils import get_api_secret
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -71,16 +73,17 @@ class BybitDataClient(LiveMarketDataClient):
             clock=clock,
             logger=logger,
         )
-        # hot cache
+
+        # Hot cache
         self._instrument_ids: dict[str, InstrumentId] = {}
 
-        # http API
+        # HTTP API
         self._http_market = BybitMarketHttpAPI(
             client=client,
             clock=clock,
         )
 
-        # websocket API
+        # WebSocket API
         self._ws_clients: dict[BybitInstrumentType, BybitWebsocketClient] = {}
         for instrument_type in instrument_types:
             self._ws_clients[instrument_type] = BybitWebsocketClient(
@@ -88,17 +91,19 @@ class BybitDataClient(LiveMarketDataClient):
                 logger=logger,
                 handler=lambda x: self._handle_ws_message(instrument_type, x),
                 base_url=ws_urls[instrument_type],
+                api_key=config.api_key or get_api_key(config.testnet),
+                api_secret=config.api_secret or get_api_secret(config.testnet),
             )
+
+            # web socket decoders
+            self._decoders = {
+                "trade": decoder_ws_trade(),
+                "ticker": decoder_ws_ticker(instrument_type),
+            }
+            self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: asyncio.Task | None = None
-
-        # web socket decoders
-        self._decoders = {
-            "trade": decoder_ws_trade(),
-            "ticker": decoder_ws_ticker(instrument_type),
-        }
-        self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
