@@ -133,11 +133,9 @@ class NautilusKernel:
 
         # Identifiers
         self._name: str = name
-        self._trader_id: TraderId = TraderId(config.trader_id)
+        self._trader_id: TraderId = config.trader_id
         self._machine_id: str = socket.gethostname()
-        self._instance_id: UUID4 = (
-            UUID4(config.instance_id) if config.instance_id is not None else UUID4()
-        )
+        self._instance_id: UUID4 = config.instance_id or UUID4()
         self._ts_created: int = time.time_ns()
 
         # Components

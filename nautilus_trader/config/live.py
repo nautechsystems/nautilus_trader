@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig
@@ -24,6 +23,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.config.validation import NonNegativeInt
 from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
+from nautilus_trader.model.identifiers import TraderId
 
 
 class LiveDataEngineConfig(DataEngineConfig, frozen=True):
@@ -159,7 +159,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
 
     Parameters
     ----------
-    trader_id : str, default "TRADER-000"
+    trader_id : TraderId, default "TRADER-000"
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
@@ -181,7 +181,7 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     """
 
     environment: Environment = Environment.LIVE
-    trader_id: str = "TRADER-001"
+    trader_id: TraderId = TraderId("TRADER-001")
     data_engine: LiveDataEngineConfig = LiveDataEngineConfig()
     risk_engine: LiveRiskEngineConfig = LiveRiskEngineConfig()
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()

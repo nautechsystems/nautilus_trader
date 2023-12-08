@@ -24,6 +24,14 @@ from nautilus_trader.common import Environment
 from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
+from nautilus_trader.model.identifiers import Identifier
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import StrategyId
+from nautilus_trader.model.identifiers import TraderId
 
 
 def resolve_path(path: str) -> type:
@@ -31,6 +39,34 @@ def resolve_path(path: str) -> type:
     mod = importlib.import_module(module)
     cls: type = getattr(mod, cls_str)
     return cls
+
+
+def msgspec_encoding_hook(obj: Any) -> Any:
+    if isinstance(obj, UUID4):
+        return obj.value
+    if issubclass(obj, Identifier):
+        return obj.value
+    if isinstance(obj, TraderId):
+        return obj.value
+    if isinstance(obj, BarType):
+        return str(obj)
+    else:
+        return obj
+
+
+def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
+    if obj_type == UUID4:
+        return obj_type(obj)
+    if obj_type == InstrumentId:
+        return InstrumentId.from_str(obj)
+    if issubclass(obj_type, Identifier):
+        return obj_type(obj)
+    if obj_type == TraderId:
+        return obj_type(obj)
+    if obj_type == BarType:
+        return BarType.from_str(obj)
+    else:
+        return obj_type(obj)
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
@@ -74,7 +110,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         bytes
 
         """
-        return msgspec.json.encode(self)
+        return msgspec.json.encode(self, enc_hook=msgspec_encoding_hook)
 
     @classmethod
     def parse(cls, raw: bytes) -> Any:
@@ -93,7 +129,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         Any
 
         """
-        return msgspec.json.decode(raw, type=cls)
+        return msgspec.json.decode(raw, type=cls, dec_hook=msgspec_decoding_hook)
 
     def validate(self) -> bool:
         """
@@ -104,7 +140,7 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         bool
 
         """
-        return bool(msgspec.json.decode(self.json(), type=self.__class__))
+        return bool(self.parse(self.json()))
 
 
 class DatabaseConfig(NautilusConfig, frozen=True):
@@ -231,7 +267,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     ----------
     load_all : bool, default False
         If all venue instruments should be loaded on start.
-    load_ids : FrozenSet[str], optional
+    load_ids : FrozenSet[InstrumentId], optional
         The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
     filters : frozendict, optional
         The venue specific instrument loading filters to apply.
@@ -254,7 +290,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         return hash((self.load_all, self.load_ids, self.filters))
 
     load_all: bool = False
-    load_ids: frozenset[str] | None = None
+    load_ids: frozenset[InstrumentId] | None = None
     filters: dict[str, Any] | None = None
     filter_callable: str | None = None
     log_warnings: bool = True
@@ -416,13 +452,13 @@ class ActorConfig(NautilusConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
-    component_id : str, optional
+    component_id : ComponentId, optional
         The component ID. If ``None`` then the identifier will be taken from
         `type(self).__name__`.
 
     """
 
-    component_id: str | None = None
+    component_id: ComponentId | None = None
 
 
 class ImportableActorConfig(NautilusConfig, frozen=True):
@@ -482,7 +518,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
-    strategy_id : str, optional
+    strategy_id : StrategyId, optional
         The unique ID for the strategy. Will become the strategy ID if not None.
     order_id_tag : str, optional
         The unique order ID tag for the strategy. Must be unique
@@ -490,7 +526,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-    external_order_claims : list[str], optional
+    external_order_claims : list[InstrumentId | str], optional
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.
     manage_contingent_orders : bool, default False
@@ -502,10 +538,10 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
 
     """
 
-    strategy_id: str | None = None
+    strategy_id: StrategyId | None = None
     order_id_tag: str | None = None
     oms_type: str | None = None
-    external_order_claims: list[str] | None = None
+    external_order_claims: list[InstrumentId | str] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
 
@@ -616,13 +652,13 @@ class ExecAlgorithmConfig(NautilusConfig, kw_only=True, frozen=True):
 
     Parameters
     ----------
-    exec_algorithm_id : str, optional
+    exec_algorithm_id : ExecAlgorithmId, optional
         The unique ID for the execution algorithm.
         If not ``None`` then will become the execution algorithm ID.
 
     """
 
-    exec_algorithm_id: str | None = None
+    exec_algorithm_id: ExecAlgorithmId | None = None
 
 
 class ImportableExecAlgorithmConfig(NautilusConfig, frozen=True):
@@ -754,7 +790,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     ----------
     environment : Environment { ``BACKTEST``, ``SANDBOX``, ``LIVE`` }
         The kernel environment context.
-    trader_id : str
+    trader_id : TraderId
         The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
@@ -817,8 +853,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     """
 
     environment: Environment
-    trader_id: str
-    instance_id: str | None = None
+    trader_id: TraderId
+    instance_id: UUID4 | None = None
     cache: CacheConfig | None = None
     message_bus: MessageBusConfig | None = None
     data_engine: DataEngineConfig | None = None

@@ -33,6 +33,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import TraderId
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -162,7 +163,7 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
 
     Parameters
     ----------
-    trader_id : str
+    trader_id : TraderId
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     log_level : str, default "INFO"
         The stdout log level for the node.
@@ -197,8 +198,8 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
 
     """
 
+    trader_id: TraderId = TraderId("BACKTESTER-001")
     environment: Environment = Environment.BACKTEST
-    trader_id: str = "BACKTESTER-001"
     data_engine: DataEngineConfig = DataEngineConfig()
     risk_engine: RiskEngineConfig = RiskEngineConfig()
     exec_engine: ExecEngineConfig = ExecEngineConfig()
