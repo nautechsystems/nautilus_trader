@@ -59,7 +59,7 @@ frozendict = "^2.3.10"
 fsspec = "==2023.6.0"  # Pinned for stability
 importlib_metadata = "^6.11.0"
 msgspec = "^0.18.4"
-pandas = "^2.1.3"
+pandas = "^2.1.4"
 psutil = "^5.9.6"
 pyarrow = ">=14.0.1"  # Minimum version set one major version behind the latest for compatibility
 pytz = "^2023.3.0"

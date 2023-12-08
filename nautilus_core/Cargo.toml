@@ -26,7 +26,7 @@ anyhow = "1.0.75"
 chrono = "0.4.31"
 futures = "0.3.29"
 indexmap = "2.1.0"
-once_cell = "1.18.0"
+once_cell = "1.19.0"
 pyo3 = { version = "0.20.0", features = ["rust_decimal"] }
 pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
