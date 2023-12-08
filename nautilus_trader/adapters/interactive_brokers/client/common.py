@@ -256,11 +256,8 @@ class Base(ABC):
 
 class Subscriptions(Base):
     """
-    Manages and stores subscription details, inheriting common functionalities from the
-    Base class.
-
-    Subscriptions are identified and accessed using request IDs.
-
+    Manages and stores Subscriptions which are identified and accessed using request
+    IDs.
     """
 
     def __init__(self):

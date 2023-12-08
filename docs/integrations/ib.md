@@ -71,7 +71,7 @@ The adapter includes several major components:
 
 ## The Interactive Brokers Client
 
-The `InteractiveBrokersClient` serves as the central component of the IB adapter, overseeing a range of critical functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market, contract/instrument, and account details.
+The `InteractiveBrokersClient` serves as the central component of the IB adapter, overseeing a range of critical functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
 
 To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized classes. This modular approach enhances manageability and clarity. The key subcomponents are:
 - `InteractiveBrokersConnectionManager`: This class is dedicated to managing the connection with TWS/Gateway.
@@ -82,7 +82,7 @@ To ensure efficient management of these diverse responsibilities, the `Interacti
 - `InteractiveBrokersOrderManager`: Oversees all aspects of order placement and management.
 
 ```{tip}
-For troubleshooting API-related issues, a recommended starting point is the `InteractiveBrokersClient._process_message` method. This function acts as the primary gateway for processing all messages received from the API, making it a central point for diagnosing problems.
+To troubleshoot TWS API incoming message issues, consider starting at the `InteractiveBrokersClient._process_message` method, which acts as the primary gateway for processing all messages received from the API.
 ```
 
 ## Instruments & Contracts

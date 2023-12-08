@@ -21,12 +21,6 @@ from unittest.mock import patch
 import pytest
 
 
-# fmt: off
-
-
-# fmt: on
-
-
 def test_start(ib_client):
     # Arrange, Act
     ib_client._start()
