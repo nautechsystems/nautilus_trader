@@ -18,7 +18,7 @@ from typing import Optional
 
 import msgspec
 
-from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.core.nautilus_pyo3 import UUID4 as RustUUID4
 from nautilus_trader.core.nautilus_pyo3 import RedisCacheDatabase as RustRedisCacheDatabase
 from nautilus_trader.core.nautilus_pyo3 import TraderId as RustTraderId
@@ -110,13 +110,13 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         The logger for the database.
     serializer : Serializer
         The serializer for database operations.
-    config : CacheDatabaseConfig, optional
+    config : CacheConfig, optional
         The configuration for the instance.
 
     Raises
     ------
     TypeError
-        If `config` is not of type `CacheDatabaseConfig`.
+        If `config` is not of type `CacheConfig`.
 
     Warnings
     --------
@@ -134,18 +134,28 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         TraderId trader_id not None,
         Logger logger not None,
         Serializer serializer not None,
-        config: Optional[CacheDatabaseConfig] = None,
+        config: Optional[CacheConfig] = None,
     ):
         if config is None:
-            config = CacheDatabaseConfig()
-        Condition.type(config, CacheDatabaseConfig, "config")
+            config = CacheConfig()
+        Condition.type(config, CacheConfig, "config")
         super().__init__(logger, config)
 
-        if config.buffer_interval_ms and config.buffer_interval_ms >= 1000:
+        # Validate configuration
+        if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
             self._log.warning(
                 f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
-                "recommended range is [10, 100] milliseconds.",
+                "recommended range is [10, 1000] milliseconds.",
             )
+
+        # Configuration
+        self._log.info(f"{config.database=}", LogColor.BLUE)
+        self._log.info(f"{config.encoding=}", LogColor.BLUE)
+        self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
+        self._log.info(f"{config.buffer_interval_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.flush_on_start=}", LogColor.BLUE)
+        self._log.info(f"{config.use_trader_prefix=}", LogColor.BLUE)
+        self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
 
         # Database keys
         self._key_trader      = f"{_TRADER}-{trader_id}"              # noqa

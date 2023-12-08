@@ -28,52 +28,52 @@ cdef class PortfolioFacade:
 
     cpdef Account account(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `account` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict balances_locked(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `balances_locked` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict margins_init(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `margins_init` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict margins_maint(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `margins_maint` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict unrealized_pnls(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `unrealized_pnls` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict net_exposures(self, Venue venue):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `net_exposure` must be implemented in the subclass")  # pragma: no cover
 
     cpdef Money unrealized_pnl(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `unrealized_pnl` must be implemented in the subclass")  # pragma: no cover
 
     cpdef Money net_exposure(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `next_exposure` must be implemented in the subclass")  # pragma: no cover
 
     cpdef object net_position(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `net_position` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_net_long(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `is_net_long` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_net_short(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `is_net_short` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_flat(self, InstrumentId instrument_id):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `is_flat` must be implemented in the subclass")  # pragma: no cover
 
     cpdef bint is_completely_flat(self):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `is_completely_flat` must be implemented in the subclass")  # pragma: no cover

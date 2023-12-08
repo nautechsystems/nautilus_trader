@@ -163,8 +163,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
     data_engine : LiveDataEngineConfig, optional
         The live data engine configuration.
     risk_engine : LiveRiskEngineConfig, optional

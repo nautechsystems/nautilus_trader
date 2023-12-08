@@ -324,7 +324,7 @@ cdef class BarAggregator:
         self._builder.set_partial(partial_bar)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_apply_update` must be implemented in the subclass")  # pragma: no cover
 
     cdef void _build_now_and_send(self):
         cdef Bar bar = self._builder.build_now()

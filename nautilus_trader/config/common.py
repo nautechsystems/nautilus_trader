@@ -24,7 +24,6 @@ from nautilus_trader.common import Environment
 from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
 def resolve_path(path: str) -> type:
@@ -108,72 +107,6 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
         return bool(msgspec.json.decode(self.json(), type=self.__class__))
 
 
-class CacheConfig(NautilusConfig, frozen=True):
-    """
-    Configuration for ``Cache`` instances.
-
-    Parameters
-    ----------
-    tick_capacity : PositiveInt, default 10_000
-        The maximum length for internal tick dequeues.
-    bar_capacity : PositiveInt, default 10_000
-        The maximum length for internal bar dequeues.
-
-    """
-
-    tick_capacity: PositiveInt = 10_000
-    bar_capacity: PositiveInt = 10_000
-
-
-class CacheDatabaseConfig(NautilusConfig, frozen=True):
-    """
-    Configuration for ``CacheDatabase`` instances.
-
-    Parameters
-    ----------
-    type : str, {'in-memory', 'redis'}, default 'in-memory'
-        The database type.
-    host : str, default 'localhost'
-        The database host address.
-    port : int, optional
-        The database port.
-    username : str, optional
-        The account username for the database connection.
-    password : str, optional
-        The account password for the database connection.
-    ssl : bool, default False
-        If database should use an SSL enabled connection.
-    flush_on_start : bool, default False
-        If database should be flushed on start.
-    buffer_interval_ms : PositiveInt, optional
-        The buffer interval (milliseconds) between pipelined/batched transactions.
-        The recommended range if using buffered pipeling is [10, 100] milliseconds.
-    use_trader_prefix : bool, default True
-        If a 'trader-' prefix is applied to keys.
-    use_instance_id : bool, default False
-        If the traders instance ID should be used for keys.
-    encoding : str, {'msgpack', 'json'}, default 'msgpack'
-        The encoding for database operations, controls the type of serializer used.
-    timestamps_as_iso8601, default False
-        If timestamps should be persisted as ISO 8601 strings.
-        If `False` then will persit as UNIX nanoseconds.
-
-    """
-
-    type: str = "in-memory"
-    host: str = "localhost"
-    port: int | None = None
-    username: str | None = None
-    password: str | None = None
-    ssl: bool = False
-    flush_on_start: bool = False
-    buffer_interval_ms: PositiveInt | None = None
-    use_trader_prefix: bool = True
-    use_instance_id: bool = False
-    encoding: str = "msgpack"
-    timestamps_as_iso8601: bool = False
-
-
 class DatabaseConfig(NautilusConfig, frozen=True):
     """
     Configuration for database connections.
@@ -195,7 +128,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
 
     Notes
     -----
-    Requires Redis version 6.2.0 and above for correct operation.
+    If `type` is 'redis' then requires Redis version 6.2.0 and above for correct operation.
 
     """
 
@@ -207,6 +140,47 @@ class DatabaseConfig(NautilusConfig, frozen=True):
     ssl: bool = False
 
 
+class CacheConfig(NautilusConfig, frozen=True):
+    """
+    Configuration for ``Cache`` instances.
+
+    Parameters
+    ----------
+    database : DatabaseConfig, optional
+        The configuration for the cache backing database.
+    encoding : str, {'msgpack', 'json'}, default 'msgpack'
+        The encoding for database operations, controls the type of serializer used.
+    timestamps_as_iso8601, default False
+        If timestamps should be persisted as ISO 8601 strings.
+        If `False` then will persit as UNIX nanoseconds.
+    buffer_interval_ms : PositiveInt, optional
+        The buffer interval (milliseconds) between pipelined/batched transactions.
+        The recommended range if using buffered pipeling is [10, 1000] milliseconds,
+        with a good compromise being 100 milliseconds.
+    flush_on_start : bool, default False
+        If database should be flushed on start.
+    use_trader_prefix : bool, default True
+        If a 'trader-' prefix is applied to keys.
+    use_instance_id : bool, default False
+        If the traders instance ID should be used for keys.
+    tick_capacity : PositiveInt, default 10_000
+        The maximum length for internal tick dequeues.
+    bar_capacity : PositiveInt, default 10_000
+        The maximum length for internal bar dequeues.
+
+    """
+
+    database: DatabaseConfig | None = None
+    encoding: str = "msgpack"
+    timestamps_as_iso8601: bool = False
+    buffer_interval_ms: PositiveInt | None = None
+    flush_on_start: bool = False
+    use_trader_prefix: bool = True
+    use_instance_id: bool = False
+    tick_capacity: PositiveInt = 10_000
+    bar_capacity: PositiveInt = 10_000
+
+
 class MessageBusConfig(NautilusConfig, frozen=True):
     """
     Configuration for ``MessageBus`` instances.
@@ -215,33 +189,38 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     ----------
     database : DatabaseConfig, optional
         The configuration for the message bus backing database.
-    stream : str, optional
-        The additional prefix for externally published stream names (must have a `database` config).
-    use_instance_id : bool, default False
-        If the traders instance ID should be used in stream names.
     encoding : str, {'msgpack', 'json'}, default 'msgpack'
         The encoding for database operations, controls the type of serializer used.
     timestamps_as_iso8601, default False
         If timestamps should be persisted as ISO 8601 strings.
         If `False` then will persit as UNIX nanoseconds.
-    types_filter : list[type], optional
-        A list of serializable types *not* to publish externally.
+    buffer_interval_ms : PositiveInt, optional
+        The buffer interval (milliseconds) between pipelined/batched transactions.
+        The recommended range if using buffered pipeling is [10, 1000] milliseconds,
+        with a good compromise being 100 milliseconds.
     autotrim_mins : int, optional
         The lookback window in minutes for automatic stream trimming.
         The actual window may extend up to one minute beyond the specified value since streams are
         trimmed at most once every minute.
         Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
         in acommand syntax error.
+    stream : str, optional
+        The additional prefix for externally published stream names (must have a `database` config).
+    use_instance_id : bool, default False
+        If the traders instance ID should be used in stream names.
+    types_filter : list[type], optional
+        A list of serializable types *not* to publish externally.
 
     """
 
     database: DatabaseConfig | None = None
-    stream: str | None = None
-    use_instance_id: bool = False
     encoding: str = "msgpack"
     timestamps_as_iso8601: bool = False
-    types_filter: list[type] | None = None
+    buffer_interval_ms: PositiveInt | None = None
     autotrim_mins: int | None = None
+    stream: str | None = None
+    use_instance_id: bool = False
+    types_filter: list[type] | None = None
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):
@@ -401,7 +380,9 @@ class StreamingConfig(NautilusConfig, frozen=True):
     def fs(self):
         return fsspec.filesystem(protocol=self.fs_protocol, **(self.fs_storage_options or {}))
 
-    def as_catalog(self) -> ParquetDataCatalog:
+    def as_catalog(self):
+        from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
+
         return ParquetDataCatalog(
             path=self.catalog_path,
             fs_protocol=self.fs_protocol,
@@ -777,8 +758,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The trader ID for the kernel (must be a name and ID tag separated by a hyphen).
     cache : CacheConfig, optional
         The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
     message_bus : MessageBusConfig, optional
         The message bus configuration.
     data_engine : DataEngineConfig, optional
@@ -841,7 +820,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     trader_id: str
     instance_id: str | None = None
     cache: CacheConfig | None = None
-    cache_database: CacheDatabaseConfig | None = None
     message_bus: MessageBusConfig | None = None
     data_engine: DataEngineConfig | None = None
     risk_engine: RiskEngineConfig | None = None

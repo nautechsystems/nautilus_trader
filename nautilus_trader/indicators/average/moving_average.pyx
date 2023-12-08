@@ -78,7 +78,7 @@ cdef class MovingAverage(Indicator):
             The update value.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `update_raw` must be implemented in the subclass")  # pragma: no cover
 
     cpdef void _increment_count(self):
         self.count += 1

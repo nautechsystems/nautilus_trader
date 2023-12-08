@@ -21,7 +21,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -52,17 +52,17 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
         filter_position_reports=True,
     ),
-    cache_database=CacheDatabaseConfig(
-        type="in-memory",
-        flush_on_start=False,
+    cache=CacheConfig(
+        # database=DatabaseConfig(),
         timestamps_as_iso8601=True,
+        flush_on_start=False,
     ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",
+    #     timestamps_as_iso8601=True,
     #     stream="quoters",
     #     use_instance_id=False,
-    #     timestamps_as_iso8601=True,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
     # ),
@@ -112,6 +112,7 @@ strat_config = VolatilityMarketMakerConfig(
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.010"),
+    # manage_gtd_expiry=True,
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

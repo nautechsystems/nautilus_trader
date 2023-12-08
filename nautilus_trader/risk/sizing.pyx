@@ -73,7 +73,7 @@ cdef class PositionSizer:
         int units=1,
     ):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `calculate` must be implemented in the subclass")  # pragma: no cover
 
     cdef object _calculate_risk_ticks(self, Price entry, Price stop_loss):
         return abs(entry - stop_loss) / self.instrument.price_increment

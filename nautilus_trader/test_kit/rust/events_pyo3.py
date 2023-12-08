@@ -24,12 +24,14 @@ from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderListId
+from nautilus_trader.core.nautilus_pyo3 import OrderPendingUpdate
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderReleased
 from nautilus_trader.core.nautilus_pyo3 import OrderSide
 from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
 from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
 from nautilus_trader.core.nautilus_pyo3 import OrderType
+from nautilus_trader.core.nautilus_pyo3 import OrderUpdated
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
@@ -182,4 +184,39 @@ class TestEventsProviderPyo3:
             event_id=UUID4(uuid),
             ts_init=0,
             ts_event=0,
+        )
+
+    @staticmethod
+    def order_updated() -> OrderUpdated:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderUpdated(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            quantity=Quantity.from_str("1.5"),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            price=Price.from_str("1500.0"),
+            trigger_price=None,
+        )
+
+    @staticmethod
+    def order_pending_update() -> OrderPendingUpdate:
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderPendingUpdate(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
         )

@@ -4,11 +4,12 @@ from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
 from nautilus_trader.common import Environment
-from nautilus_trader.config import CacheDatabaseConfig
+from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.examples.strategies.grid import GridConfig
 from nautilus_trader.examples.strategies.grid import GridStrategy
 from nautilus_trader.live.node import TradingNode
@@ -25,7 +26,10 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache_database=CacheDatabaseConfig(type="redis"),
+    cache=CacheConfig(
+        database=DatabaseConfig(),
+        buffer_interval_ms=100,
+    ),
     data_clients={
         "BYBIT": BybitDataClientConfig(
             api_key=bybit_testnet_api_key,

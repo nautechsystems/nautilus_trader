@@ -25,7 +25,6 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig

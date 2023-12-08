@@ -33,8 +33,6 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.types import CatalogDataResult
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -119,7 +117,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
             return sys.maxsize
         return dt_to_unix_nanos(self.end_time)
 
-    def catalog(self) -> ParquetDataCatalog:
+    def catalog(self):
         from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
         return ParquetDataCatalog(
@@ -132,7 +130,9 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
         self,
         start_time: pd.Timestamp | None = None,
         end_time: pd.Timestamp | None = None,
-    ) -> CatalogDataResult:
+    ):
+        from nautilus_trader.persistence.catalog.types import CatalogDataResult
+
         query = self.query
         query.update(
             {
@@ -170,8 +170,6 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     cache : CacheConfig, optional
         The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
     data_engine : DataEngineConfig, optional
         The live data engine configuration.
     risk_engine : RiskEngineConfig, optional
