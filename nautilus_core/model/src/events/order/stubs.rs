@@ -23,9 +23,9 @@ use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
         denied::OrderDenied, emulated::OrderEmulated, filled::OrderFilled,
-        initialized::OrderInitialized, pending_update::OrderPendingUpdate, rejected::OrderRejected,
-        released::OrderReleased, submitted::OrderSubmitted, triggered::OrderTriggered,
-        updated::OrderUpdated,
+        initialized::OrderInitialized, pending_cancel::OrderPendingCancel,
+        pending_update::OrderPendingUpdate, rejected::OrderRejected, released::OrderReleased,
+        submitted::OrderSubmitted, triggered::OrderTriggered, updated::OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
@@ -287,6 +287,31 @@ pub fn order_pending_update(
     uuid4: UUID4,
 ) -> OrderPendingUpdate {
     OrderPendingUpdate::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        account_id,
+        uuid4,
+        0,
+        0,
+        false,
+        Some(venue_order_id),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_pending_cancel(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    venue_order_id: VenueOrderId,
+    uuid4: UUID4,
+) -> OrderPendingCancel {
+    OrderPendingCancel::new(
         trader_id,
         strategy_id_ema_cross,
         instrument_id_btc_usdt,
