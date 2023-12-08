@@ -22,6 +22,7 @@ from nautilus_trader.adapters.bybit.data import BybitDataClient
 from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.provider import BybitInstrumentProvider
+from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -30,7 +31,6 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
-from nautilus_trader.utils.env import get_env_key
 
 
 HTTP_CLIENTS: dict[str, BybitHttpClient] = {}
@@ -76,8 +76,8 @@ def get_bybit_http_client(
     http_base_url = base_url or _get_http_base_url(is_testnet)
     client_key: str = "|".join((key, secret))
 
-    # setup rate limit quotas
-    # current rate limit in bybit is 120 requests in any 5-second window.
+    # Setup rate limit quotas
+    # Current rate limit in bybit is 120 requests in any 5-second window,
     # and that is 24 request per second.
     # https://bybit-exchange.github.io/docs/v5/rate-limit
     ratelimiter_default_quota = Quota.rate_per_second(24)

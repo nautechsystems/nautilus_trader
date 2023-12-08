@@ -22,6 +22,7 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
+from nautilus_trader.adapters.env import get_env_key
 
 
 def msgspec_bybit_item_save(filename: str, obj: Any) -> None:
@@ -54,3 +55,17 @@ def get_category_from_instrument_type(instrument_type: BybitInstrumentType) -> s
 def tick_size_to_precision(tick_size: float | Decimal) -> int:
     tick_size_str = f"{tick_size:.10f}"
     return len(tick_size_str.partition(".")[2].rstrip("0"))
+
+
+def get_api_key(is_testnet: bool) -> str:
+    if is_testnet:
+        return get_env_key("BYBIT_TESTNET_API_KEY")
+    else:
+        return get_env_key("BYBIT_API_KEY")
+
+
+def get_api_secret(is_testnet: bool) -> str:
+    if is_testnet:
+        return get_env_key("BYBIT_TESTNET_API_SECRET")
+    else:
+        return get_env_key("BYBIT_API_SECRET")
