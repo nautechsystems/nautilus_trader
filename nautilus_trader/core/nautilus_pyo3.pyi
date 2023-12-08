@@ -990,6 +990,25 @@ class OrderPendingCancel:
     def from_dict(cls, values: dict[str, str]) -> OrderPendingCancel: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderModifyRejected:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderModifyRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
 ###################################################################################################
 # Infrastructure
 ###################################################################################################

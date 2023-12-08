@@ -22,7 +22,7 @@ pub mod event;
 pub mod expired;
 pub mod filled;
 pub mod initialized;
-pub mod modified_rejected;
+pub mod modify_rejected;
 pub mod pending_cancel;
 pub mod pending_update;
 pub mod rejected;
