@@ -220,7 +220,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         Parameters
         ----------
-        timeout : int, optional
+        timeout : int
             Time in seconds to wait for the client to be ready. Defaults to 300 seconds.
 
         Returns
@@ -273,7 +273,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             The request ID to conclude.
         success : bool, optional
             Whether the request was successful. Defaults to True.
-        exception : asyncio.TimeoutError | None, optional
+        exception : type | BaseException | None, optional
             An exception to set on request failure. Defaults to None.
 
         Returns

@@ -179,7 +179,7 @@ class InteractiveBrokersAccountManager:
             return None
         positions = []
         for position in all_positions:
-            if position.account == account_id:
+            if position.account_id == account_id:
                 positions.append(position)
         return positions
 
