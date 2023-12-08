@@ -68,7 +68,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     """
 
     catalog_path: str
-    data_cls: str
+    data_cls: Callable
     catalog_fs_protocol: str | None = None
     catalog_fs_storage_options: dict | None = None
     instrument_id: str | None = None
@@ -235,7 +235,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
 
     @property
     def id(self):
-        return tokenize_config(self.dict())
+        return tokenize_config(self)
 
 
 def parse_filters_expr(s: str | None):
@@ -290,6 +290,5 @@ def register_json_encoding(type_: type, encoder: Callable) -> None:
     CUSTOM_ENCODINGS[type_] = encoder
 
 
-def tokenize_config(obj: dict) -> str:
-    value: bytes = msgspec.json.encode(obj, enc_hook=json_encoder)
-    return hashlib.sha256(value).hexdigest()
+def tokenize_config(obj: NautilusConfig) -> str:
+    return hashlib.sha256(obj.json()).hexdigest()

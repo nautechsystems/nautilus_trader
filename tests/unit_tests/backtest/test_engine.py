@@ -228,7 +228,7 @@ class TestBacktestEngine:
 
     def test_set_instance_id(self):
         # Arrange
-        instance_id = UUID4().value
+        instance_id = UUID4()
 
         # Act
         engine1 = self.create_engine(
@@ -244,8 +244,8 @@ class TestBacktestEngine:
         )  # Engine sets instance id
 
         # Assert
-        assert engine1.kernel.instance_id.value == instance_id
-        assert engine2.kernel.instance_id.value != instance_id
+        assert engine1.kernel.instance_id == instance_id
+        assert engine2.kernel.instance_id != instance_id
 
     def test_controller(self):
         # Arrange - Controller class

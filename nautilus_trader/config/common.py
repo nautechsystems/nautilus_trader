@@ -16,6 +16,7 @@
 import importlib
 import importlib.util
 from typing import Any
+from typing import Callable
 
 import fsspec
 import msgspec
@@ -44,14 +45,12 @@ def resolve_path(path: str) -> type:
 def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, UUID4):
         return obj.value
-    if issubclass(obj, Identifier):
-        return obj.value
-    if isinstance(obj, TraderId):
+    if isinstance(obj, Identifier):
         return obj.value
     if isinstance(obj, BarType):
         return str(obj)
-    else:
-        return obj
+    if isinstance(obj, Callable):
+        return obj.fully_qualified_name()
 
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
@@ -61,12 +60,10 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return InstrumentId.from_str(obj)
     if issubclass(obj_type, Identifier):
         return obj_type(obj)
-    if obj_type == TraderId:
-        return obj_type(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
-    else:
-        return obj_type(obj)
+    if issubclass(obj_type, Callable):
+        return resolve_path(obj)
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):

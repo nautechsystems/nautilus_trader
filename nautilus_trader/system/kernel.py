@@ -478,7 +478,7 @@ class NautilusKernel:
         # Save a copy of the config for this kernel to the streaming folder.
         full_path = f"{self._writer.path}/config.json"
         with self._writer.fs.open(full_path, "wb") as f:
-            f.write(msgspec.json.encode(self._config))
+            f.write(self._config.json())
 
     @property
     def environment(self) -> Environment:
