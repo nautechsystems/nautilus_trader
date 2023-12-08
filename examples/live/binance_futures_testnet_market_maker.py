@@ -72,8 +72,8 @@ config_node = TradingNodeConfig(
     # snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
-            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -84,8 +84,8 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
-            api_key=None,  # "YOUR_BINANCE_TESTNET_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_TESTNET_API_SECRET"
+            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
