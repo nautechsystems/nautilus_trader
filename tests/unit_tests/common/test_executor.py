@@ -134,6 +134,7 @@ async def test_run_in_executor_execution(actor_executor: ActorExecutor) -> None:
 
     # Assert
     assert msg in handler
+    assert actor_executor.queued_task_ids() == []  # <--- Not queued
 
 
 @pytest.mark.asyncio
@@ -145,6 +146,7 @@ async def test_queue_for_executor_execution(actor_executor: ActorExecutor) -> No
     # Act
     actor_executor.queue_for_executor(handler.append, msg)
     await eventually(lambda: bool(handler))
+    await eventually(lambda: not actor_executor.queued_task_ids())
 
     # Assert
     assert msg in handler
