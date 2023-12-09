@@ -24,6 +24,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderListId
+from nautilus_trader.core.nautilus_pyo3 import OrderModifyRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderPendingCancel
 from nautilus_trader.core.nautilus_pyo3 import OrderPendingUpdate
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
@@ -236,4 +237,21 @@ class TestEventsProviderPyo3:
             ts_event=0,
             reconciliation=False,
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
+        )
+
+    @staticmethod
+    def order_modified_rejected():
+        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+        return OrderModifyRejected(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            event_id=UUID4(uuid),
+            reason="ORDER_DOES_NOT_EXIST",
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
         )
