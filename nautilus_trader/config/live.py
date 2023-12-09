@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
 from nautilus_trader.config.common import ExecEngineConfig

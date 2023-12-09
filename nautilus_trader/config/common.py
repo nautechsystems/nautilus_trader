@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 import hashlib
 import importlib
 from collections.abc import Callable
@@ -660,7 +662,6 @@ class ControllerFactory:
         from nautilus_trader.trading.trader import Trader
 
         PyCondition.type(trader, Trader, "trader")
-
         controller_cls = resolve_path(config.controller_path)
         config_cls = resolve_path(config.config_path)
         config = config_cls(**config.config)
@@ -929,10 +930,10 @@ class ImportableConfig(NautilusConfig, frozen=True):
     factory: ImportableFactoryConfig | None = None
 
     @staticmethod
-    def is_importable(data: dict):
+    def is_importable(data: dict) -> bool:
         return set(data) == {"path", "config"}
 
-    def create(self):
+    def create(self) -> ImportableConfig:
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config)
