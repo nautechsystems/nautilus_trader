@@ -37,15 +37,15 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_millis
+from nautilus_trader.core.message import Request
 from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.core.uuid import UUID4
-
-from nautilus_trader.core.message import Request
-
 from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.live.data_client import LiveMarketDataClient
-from nautilus_trader.model.data import Bar, DataType, GenericData
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
@@ -111,16 +111,21 @@ class BybitDataClient(LiveMarketDataClient):
         self._update_instruments_task: asyncio.Task | None = None
 
         # Register custom endpoint for fetching tickers
-        self._msgbus.register(endpoint="bybit.data.tickers",handler=self.complete_fetch_tickers_task)
-
+        self._msgbus.register(
+            endpoint="bybit.data.tickers",
+            handler=self.complete_fetch_tickers_task,
+        )
 
     async def fetch_send_tickers(
         self,
         id: UUID4,
         instrument_type: BybitInstrumentType,
-        symbol: str
+        symbol: str,
     ):
-        tickers = await self._http_market.fetch_tickers(instrument_type=instrument_type, symbol=symbol)
+        tickers = await self._http_market.fetch_tickers(
+            instrument_type=instrument_type,
+            symbol=symbol,
+        )
         data = DataResponse(
             client_id=ClientId(BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
@@ -132,15 +137,23 @@ class BybitDataClient(LiveMarketDataClient):
         )
         self._msgbus.response(data)
 
-    def complete_fetch_tickers_task(self,request: Request):
+    def complete_fetch_tickers_task(self, request: Request):
         # extract symbol from metadat
         if "symbol" not in request.metadata:
             raise ValueError("Symbol not in request metadata")
         symbol = request.metadata["symbol"]
-        if not isinstance(symbol,Symbol):
-            raise ValueError(f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}")
+        if not isinstance(symbol, Symbol):
+            raise ValueError(
+                f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
+            )
         bybit_symbol = BybitSymbol(symbol.value)
-        self._loop.create_task(self.fetch_send_tickers(request.id,bybit_symbol.instrument_type,bybit_symbol.raw_symbol))
+        self._loop.create_task(
+            self.fetch_send_tickers(
+                request.id,
+                bybit_symbol.instrument_type,
+                bybit_symbol.raw_symbol,
+            ),
+        )
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")

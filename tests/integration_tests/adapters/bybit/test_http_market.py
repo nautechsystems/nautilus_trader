@@ -27,8 +27,9 @@ from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsOp
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentsSpotResponse
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKlinesResponse
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTimeResponse
-from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersLinearResponse, BybitTickersOptionResponse, \
-    BybitTickersSpotResponse
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersLinearResponse
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersOptionResponse
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersSpotResponse
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
@@ -54,7 +55,6 @@ class TestBybitMarketHttpAPI:
     ################################################################################
     # Server time
     ################################################################################
-
 
     @pytest.mark.asyncio()
     async def test_server_time(self, monkeypatch):
@@ -162,7 +162,7 @@ class TestBybitMarketHttpAPI:
     ################################################################################
 
     @pytest.mark.asyncio()
-    async def test_fetch_tickers_linear(self,monkeypatch):
+    async def test_fetch_tickers_linear(self, monkeypatch):
         response = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.http_responses.linear",
             "tickers.json",
@@ -176,7 +176,7 @@ class TestBybitMarketHttpAPI:
         assert tickers[0].lastPrice == "16597.00"
 
     @pytest.mark.asyncio()
-    async def test_fetch_tickers_option(self,monkeypatch):
+    async def test_fetch_tickers_option(self, monkeypatch):
         response = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.http_responses.option",
             "tickers.json",
@@ -189,9 +189,8 @@ class TestBybitMarketHttpAPI:
         assert tickers[0].symbol == "BTC-30DEC22-18000-C"
         assert tickers[0].lastPrice == "435"
 
-
     @pytest.mark.asyncio()
-    async def test_fetch_tickers_spot(self,monkeypatch):
+    async def test_fetch_tickers_spot(self, monkeypatch):
         response = pkgutil.get_data(
             "tests.integration_tests.adapters.bybit.resources.http_responses.spot",
             "tickers.json",
@@ -203,6 +202,3 @@ class TestBybitMarketHttpAPI:
         assert len(tickers) == 1
         assert tickers[0].symbol == "BTCUSDT"
         assert tickers[0].lastPrice == "20533.13"
-
-
-

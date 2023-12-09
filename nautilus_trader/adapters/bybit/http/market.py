@@ -24,13 +24,14 @@ from nautilus_trader.adapters.bybit.endpoints.market.instruments_info import Byb
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesEndpoint
 from nautilus_trader.adapters.bybit.endpoints.market.klines import BybitKlinesGetParameters
 from nautilus_trader.adapters.bybit.endpoints.market.server_time import BybitServerTimeEndpoint
-from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersEndpoint, BybitTickersGetParameters
+from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersEndpoint
+from nautilus_trader.adapters.bybit.endpoints.market.tickers import BybitTickersGetParameters
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrument
 from nautilus_trader.adapters.bybit.schemas.instrument import BybitInstrumentList
 from nautilus_trader.adapters.bybit.schemas.market.kline import BybitKline
 from nautilus_trader.adapters.bybit.schemas.market.server_time import BybitServerTime
-from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerLinear, BybitTicker
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerList
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.utils import get_category_from_instrument_type
 from nautilus_trader.common.clock import LiveClock
@@ -65,15 +66,14 @@ class BybitMarketHttpAPI:
     async def fetch_tickers(
         self,
         instrument_type: BybitInstrumentType,
-        symbol: str = None,
-        base_coin: str = None
-    ) -> list[BybitTicker]:
+        symbol: str | None = None,
+        base_coin: str | None = None,
+    ) -> BybitTickerList:
         response = await self._endpoint_tickers.get(
             BybitTickersGetParameters(
                 category=instrument_type,
                 symbol=symbol,
                 baseCoin=base_coin,
-
             ),
         )
         return response.result.list

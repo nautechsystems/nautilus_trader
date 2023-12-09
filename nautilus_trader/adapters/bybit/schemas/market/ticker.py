@@ -18,7 +18,6 @@ import msgspec
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 
 
-
 class BybitTickerSpot(msgspec.Struct):
     symbol: str
     bid1Price: str
@@ -61,6 +60,7 @@ class BybitTickerOption(msgspec.Struct):
     theta: str
     predictedDeliveryPrice: str
     change24h: str
+
 
 class BybitTickerLinear(msgspec.Struct):
     symbol: str
@@ -109,5 +109,8 @@ class BybitTickersSpotResponse(msgspec.Struct):
 
 BybitTicker = BybitTickerLinear | BybitTickerOption | BybitTickerSpot
 
+BybitTickerList = list[BybitTickerLinear] | list[BybitTickerOption] | list[BybitTickerSpot]
 
-BybitTickersResponse = BybitTickersLinearResponse | BybitTickersSpotResponse | BybitTickersOptionResponse
+BybitTickersResponse = (
+    BybitTickersLinearResponse | BybitTickersSpotResponse | BybitTickersOptionResponse
+)

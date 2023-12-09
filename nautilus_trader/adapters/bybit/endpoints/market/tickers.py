@@ -15,12 +15,13 @@
 
 import msgspec
 
-from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType, BybitInstrumentType
+from nautilus_trader.adapters.bybit.common.enums import BybitEndpointType
+from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersLinearResponse
-from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersResponse
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersOptionResponse
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersResponse
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickersSpotResponse
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
@@ -49,7 +50,7 @@ class BybitTickersEndpoint(BybitHttpEndpoint):
 
     async def get(self, params: BybitTickersGetParameters) -> BybitTickersResponse:
         method_type = HttpMethod.GET
-        raw = await self._method(method_type,params)
+        raw = await self._method(method_type, params)
         try:
             if params.category == BybitInstrumentType.LINEAR:
                 return self._response_decoder_linear.decode(raw)
@@ -59,7 +60,7 @@ class BybitTickersEndpoint(BybitHttpEndpoint):
                 return self._response_decoder_spot.decode(raw)
             else:
                 raise RuntimeError(
-                    f"Unsuported instrument type: {params.category}"
+                    f"Unsupported instrument type: {params.category}",
                 )
         except Exception as e:
             decoder_raw = raw.decode("utf-8")

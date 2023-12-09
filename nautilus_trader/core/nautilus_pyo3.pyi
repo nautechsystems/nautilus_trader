@@ -468,6 +468,7 @@ class StrategyId:
 
 class Symbol:
     def __init__(self, value: str) -> None: ...
+    @property
     def value(self) -> str: ...
 
 class TradeId:
