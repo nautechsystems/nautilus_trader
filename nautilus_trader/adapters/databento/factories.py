@@ -37,9 +37,9 @@ def get_cached_databento_http_client(
     Parameters
     ----------
     key : str, optional
-        The API key for the client.
+        The Databento API secret key for the client.
     gateway : str, optional
-        The HTTP historical client gateway override.
+        The Databento historical HTTP client gateway override.
 
     Returns
     -------

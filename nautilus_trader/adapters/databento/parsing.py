@@ -297,11 +297,14 @@ def parse_ohlcv_msg(
 
 def parse_record(
     record: databento.DBNRecord,
-    instrument_map: databento.common.symbology.InstrumentMap,
     publishers: dict[int, DatabentoPublisher],
+    instrument_map: databento.InstrumentMap | None = None,
 ) -> Data:
     if isinstance(record, databento.InstrumentDefMsg):
         return parse_instrument_def(record, publishers)
+
+    if instrument_map is None:
+        raise ValueError("`instrument_map` was `None` when a value was expected")
 
     record_date = pd.Timestamp(record.ts_event, tz=pytz.utc).date()
     raw_symbol = instrument_map.resolve(record.instrument_id, date=record_date)

@@ -13,43 +13,36 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import os
-
-import databento
-import pytest
+import asyncio
 
 from nautilus_trader.adapters.databento.factories import get_cached_databento_http_client
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import InstrumentId
 
 
-@pytest.mark.asyncio()
-async def test_binance_futures_testnet_market_http_client():
+async def test_databento_instrument_provider():
+    http_client = get_cached_databento_http_client()
     clock = LiveClock()
-
-    key = os.getenv("DATABENTO_API_KEY")
-
-    http_client = get_cached_databento_http_client(
-        key=key,
-        # gateway=gateway,
-    )
-
-    live_client = databento.Live(
-        key=key,
-        # gateway=gateway,
-    )
 
     provider = DatabentoInstrumentProvider(
         http_client=http_client,
-        live_client=live_client,
         clock=clock,
-        logger=Logger(clock=clock),
+        logger=Logger(
+            clock=clock,
+            level_stdout=LogLevel.DEBUG,
+        ),
     )
 
     instrument_ids = [
-        InstrumentId.from_str("ESM2.GLBX"),
+        InstrumentId.from_str("ESZ3.GLBX"),
+        InstrumentId.from_str("ESH4.GLBX"),
+        InstrumentId.from_str("ESM4.GLBX"),
     ]
+    await provider.load_ids_async(instrument_ids)
 
-    provider.load_ids(instrument_ids)
+
+if __name__ == "__main__":
+    asyncio.run(test_databento_instrument_provider())

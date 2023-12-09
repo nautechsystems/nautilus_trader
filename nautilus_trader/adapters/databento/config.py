@@ -24,18 +24,13 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     Parameters
     ----------
     api_key : str, optional
-        The Binance API public key.
-        If ``None`` then will source the `BINANCE_API_KEY` or
-        `BINANCE_TESTNET_API_KEY` environment variables.
-    api_secret : str, optional
-        The Binance API public key.
-        If ``None`` then will source the `BINANCE_API_KEY` or
-        `BINANCE_TESTNET_API_KEY` environment variables.
+        The Databento API secret key.
+        If ``None`` then will source the `DATABENTO_API_KEY` or
+        `DATABENTO_API_KEY` environment variables.
     http_gateway : str, optional
-        The HTTP historical client gateway override.
+        The historical HTTP client gateway override.
 
     """
 
     api_key: str | None = None
-    api_secret: str | None = None
     http_gateway: str | None = None
