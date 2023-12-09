@@ -104,10 +104,10 @@ cdef class Actor(Component):
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
 
-        if config.component_id is not None:
-            component_id = config.component_id
+        if isinstance(config.component_id, str):
+            component_id = ComponentId(config.component_id)
         else:
-            component_id = None
+            component_id = config.component_id
 
         super().__init__(
             clock=LiveClock(),  # Use placeholder live clock until registered
