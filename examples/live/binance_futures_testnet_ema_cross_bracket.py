@@ -29,6 +29,7 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracket
 from nautilus_trader.examples.strategies.ema_cross_bracket import EMACrossBracketConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import TraderId
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -39,7 +40,7 @@ from nautilus_trader.live.node import TradingNode
 
 # Configure the trading node
 config_node = TradingNodeConfig(
-    trader_id="TESTER-001",
+    trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,

@@ -933,7 +933,7 @@ class ImportableConfig(NautilusConfig, frozen=True):
     def is_importable(data: dict) -> bool:
         return set(data) == {"path", "config"}
 
-    def create(self) -> ImportableConfig:
+    def create(self):
         assert ":" in self.path, "`path` variable should be of the form `path.to.module:class`"
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config)

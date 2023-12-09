@@ -105,7 +105,7 @@ cdef class Actor(Component):
         Condition.type(config, ActorConfig, "config")
 
         if config.component_id is not None:
-            component_id = ComponentId(config.component_id)
+            component_id = config.component_id
         else:
             component_id = None
 
