@@ -64,6 +64,8 @@ class InstrumentProvider:
         self._loaded = False
         self._loading = False
 
+        self._log.info("READY.")
+
     @property
     def count(self) -> int:
         """

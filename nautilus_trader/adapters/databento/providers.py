@@ -29,8 +29,10 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     Parameters
     ----------
-    client : databento.Historical
-        The Databento historical data client for the provider.
+    http_client : databento.Historical
+        The historical Databento data client for the provider.
+    live_client : databento.Live
+        The live Databento data client for the provider.
     logger : Logger
         The logger for the provider.
     clock : LiveClock
@@ -42,7 +44,8 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
     def __init__(
         self,
-        client: databento.Historical,
+        http_client: databento.Historical,
+        live_client: databento.Live,
         logger: Logger,
         clock: LiveClock,
         config: InstrumentProviderConfig | None = None,
@@ -55,10 +58,9 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         self._clock = clock
         self._config = config
 
+        self._http_client = http_client
+        self._live_client = live_client
         self._loader = DatabentoDataLoader()
-
-        # HTTP API
-        self._http_client = client
 
     async def load_all_async(self, filters: dict | None = None) -> None:
         raise RuntimeError(

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import databento
 import msgspec
+from databento import InstrumentMap
 
 from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.parsing import parse_record
@@ -34,7 +35,7 @@ class DatabentoDataLoader:
     Supported schemas:
      - MBO
      - MBP_1
-     - MBP_10 (top-level only)
+     - MBP_10 (decodes top-level only)
      - TBBO
      - TRADES
      - OHLCV_1S
@@ -169,7 +170,7 @@ class DatabentoDataLoader:
 
         """
         store = databento.from_dbn(path)
-        instrument_map = databento.common.symbology.InstrumentMap()
+        instrument_map = InstrumentMap()
         instrument_map.insert_metadata(metadata=store.metadata)
 
         output: list[Data] = []
