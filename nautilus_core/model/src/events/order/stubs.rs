@@ -22,11 +22,11 @@ use ustr::Ustr;
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
-        accepted::OrderAccepted, denied::OrderDenied, emulated::OrderEmulated, filled::OrderFilled,
-        initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
-        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated,
+        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, denied::OrderDenied,
+        emulated::OrderEmulated, filled::OrderFilled, initialized::OrderInitialized,
+        modify_rejected::OrderModifyRejected, pending_cancel::OrderPendingCancel,
+        pending_update::OrderPendingUpdate, rejected::OrderRejected, released::OrderReleased,
+        submitted::OrderSubmitted, triggered::OrderTriggered, updated::OrderUpdated,
     },
     identifiers::{
         account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
@@ -374,6 +374,32 @@ pub fn order_accepted(
         0,
         0,
         false,
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_cancel_rejected(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    account_id: AccountId,
+    uuid4: UUID4,
+) -> OrderCancelRejected {
+    OrderCancelRejected::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        Ustr::from("ORDER_DOES_NOT_EXISTS"),
+        uuid4,
+        0,
+        0,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
     )
     .unwrap()
 }
