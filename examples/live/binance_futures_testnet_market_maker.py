@@ -32,9 +32,6 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.identifiers import TraderId
 
 
-# from nautilus_trader.model.identifiers import TraderId
-
-
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 

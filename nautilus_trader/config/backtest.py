@@ -196,8 +196,8 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
 
     """
 
-    trader_id: TraderId = TraderId("BACKTESTER-001")
     environment: Environment = Environment.BACKTEST
+    trader_id: TraderId = TraderId("BACKTESTER-001")
     data_engine: DataEngineConfig = DataEngineConfig()
     risk_engine: RiskEngineConfig = RiskEngineConfig()
     exec_engine: ExecEngineConfig = ExecEngineConfig()
