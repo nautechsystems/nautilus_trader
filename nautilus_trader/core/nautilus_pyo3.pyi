@@ -1009,6 +1009,25 @@ class OrderModifyRejected:
     def from_dict(cls, values: dict[str, str]) -> OrderModifyRejected: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderAccepted:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderAccepted: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
 ###################################################################################################
 # Infrastructure
 ###################################################################################################

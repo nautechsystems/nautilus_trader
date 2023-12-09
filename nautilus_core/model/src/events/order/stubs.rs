@@ -22,7 +22,7 @@ use ustr::Ustr;
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
-        denied::OrderDenied, emulated::OrderEmulated, filled::OrderFilled,
+        accepted::OrderAccepted, denied::OrderDenied, emulated::OrderEmulated, filled::OrderFilled,
         initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
         pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
         rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
@@ -349,6 +349,31 @@ pub fn order_modify_rejected(
         false,
         Some(venue_order_id),
         Some(account_id),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn order_accepted(
+    trader_id: TraderId,
+    strategy_id_ema_cross: StrategyId,
+    instrument_id_btc_usdt: InstrumentId,
+    client_order_id: ClientOrderId,
+    account_id: AccountId,
+    venue_order_id: VenueOrderId,
+    uuid4: UUID4,
+) -> OrderAccepted {
+    OrderAccepted::new(
+        trader_id,
+        strategy_id_ema_cross,
+        instrument_id_btc_usdt,
+        client_order_id,
+        venue_order_id,
+        account_id,
+        uuid4,
+        0,
+        0,
+        false,
     )
     .unwrap()
 }
