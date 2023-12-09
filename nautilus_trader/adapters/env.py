@@ -16,14 +16,14 @@
 import os
 
 
-def get_env_key(key: str):
+def get_env_key(key: str) -> str:
     if key not in os.environ:
-        raise RuntimeError(f"Cannot find env var {key}")
+        raise RuntimeError(f"Cannot find env var '{key}'")
     else:
         return os.environ[key]
 
 
-def get_env_key_or(key: str, default: str):
+def get_env_key_or(key: str, default: str) -> str:
     if key not in os.environ:
         return default
     else:
