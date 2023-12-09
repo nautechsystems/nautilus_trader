@@ -13,13 +13,15 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import hashlib
 import importlib
-import importlib.util
+from collections.abc import Callable
+from decimal import Decimal
 from typing import Any
-from typing import Callable
 
 import fsspec
 import msgspec
+import pandas as pd
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.validation import PositiveFloat
@@ -35,6 +37,11 @@ from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 
 
+CUSTOM_ENCODINGS: dict[type, Callable] = {
+    pd.DataFrame: lambda x: x.to_json(),
+}
+
+
 def resolve_path(path: str) -> type:
     module, cls_str = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
@@ -43,14 +50,19 @@ def resolve_path(path: str) -> type:
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:
+    if isinstance(obj, str | Decimal):
+        return str(obj)
     if isinstance(obj, UUID4):
         return obj.value
     if isinstance(obj, Identifier):
         return obj.value
     if isinstance(obj, BarType):
         return str(obj)
-    if isinstance(obj, Callable):
+    if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
         return obj.fully_qualified_name()
+    if type(obj) in CUSTOM_ENCODINGS:
+        func = CUSTOM_ENCODINGS[type(obj)]
+        return func(obj)
 
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
@@ -62,8 +74,11 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return obj_type(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
-    if issubclass(obj_type, Callable):
-        return resolve_path(obj)
+
+
+def register_json_encoding(type_: type, encoder: Callable) -> None:
+    global CUSTOM_ENCODINGS
+    CUSTOM_ENCODINGS[type_] = encoder
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
@@ -86,6 +101,18 @@ class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
 
         """
         return cls.__module__ + ":" + cls.__qualname__
+
+    @property
+    def id(self) -> str:
+        """
+        Return the hashed identifier for the configuration.
+
+        Returns
+        -------
+        str
+
+        """
+        return tokenize_config(self)
 
     def dict(self) -> dict[str, Any]:
         """
@@ -910,3 +937,7 @@ class ImportableConfig(NautilusConfig, frozen=True):
         cls = resolve_path(self.path)
         cfg = msgspec.json.encode(self.config)
         return msgspec.json.decode(cfg, type=cls)
+
+
+def tokenize_config(obj: NautilusConfig) -> str:
+    return hashlib.sha256(obj.json()).hexdigest()

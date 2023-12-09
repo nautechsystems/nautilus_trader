@@ -13,14 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
 import importlib
 import sys
-from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 
-import msgspec
 import pandas as pd
 
 from nautilus_trader.common import Environment
@@ -68,7 +64,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     """
 
     catalog_path: str
-    data_cls: Callable
+    data_cls: str
     catalog_fs_protocol: str | None = None
     catalog_fs_storage_options: dict | None = None
     instrument_id: str | None = None
@@ -233,10 +229,6 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     engine: BacktestEngineConfig | None = None
     batch_size_bytes: int | None = None
 
-    @property
-    def id(self):
-        return tokenize_config(self)
-
 
 def parse_filters_expr(s: str | None):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
@@ -267,28 +259,3 @@ def parse_filters_expr(s: str | None):
         return eval(code, {}, allowed_names)  # noqa
 
     return safer_eval(s)  # Only allow use of the field object
-
-
-CUSTOM_ENCODINGS: dict[type, Callable] = {
-    pd.DataFrame: lambda x: x.to_json(),
-}
-
-
-def json_encoder(x):
-    if isinstance(x, str | Decimal):
-        return str(x)
-    elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
-        return x.fully_qualified_name()
-    elif type(x) in CUSTOM_ENCODINGS:
-        func = CUSTOM_ENCODINGS[type(x)]
-        return func(x)
-    raise TypeError(f"Objects of type {type(x)} are not supported")
-
-
-def register_json_encoding(type_: type, encoder: Callable) -> None:
-    global CUSTOM_ENCODINGS
-    CUSTOM_ENCODINGS[type_] = encoder
-
-
-def tokenize_config(obj: NautilusConfig) -> str:
-    return hashlib.sha256(obj.json()).hexdigest()
