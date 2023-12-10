@@ -49,14 +49,14 @@ cdef class DataEngine(Component):
     cdef readonly DataClient _default_client
     cdef readonly object _catalog
 
-    cdef readonly dict _clients
-    cdef readonly dict _routing_map
+    cdef readonly dict[ClientId, DataClient] _clients
+    cdef readonly dict[Venue, DataClient] _routing_map
     cdef readonly dict _order_book_intervals
-    cdef readonly dict _bar_aggregators
-    cdef readonly dict _synthetic_quote_feeds
-    cdef readonly dict _synthetic_trade_feeds
-    cdef readonly list _subscribed_synthetic_quotes
-    cdef readonly list _subscribed_synthetic_trades
+    cdef readonly dict[BarType, BarAggregator] _bar_aggregators
+    cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_quote_feeds
+    cdef readonly dict[InstrumentId, list[SyntheticInstrument]] _synthetic_trade_feeds
+    cdef readonly list[InstrumentId] _subscribed_synthetic_quotes
+    cdef readonly list[InstrumentId] _subscribed_synthetic_trades
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
