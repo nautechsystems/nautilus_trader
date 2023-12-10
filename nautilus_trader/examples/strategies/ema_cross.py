@@ -19,6 +19,7 @@ import pandas as pd
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -68,11 +69,11 @@ class EMACrossConfig(StrategyConfig, frozen=True):
 
     """
 
-    instrument_id: str
-    bar_type: str
+    instrument_id: InstrumentId
+    bar_type: BarType
     trade_size: Decimal
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
+    fast_ema_period: PositiveInt = 10
+    slow_ema_period: PositiveInt = 20
     close_positions_on_stop: bool = True
 
 
@@ -105,9 +106,9 @@ class EMACross(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type)
-        self.trade_size = Decimal(config.trade_size)
+        self.instrument_id = config.instrument_id
+        self.bar_type = config.bar_type
+        self.trade_size = config.trade_size
 
         # Create the indicators for the strategy
         self.fast_ema = ExponentialMovingAverage(config.fast_ema_period)

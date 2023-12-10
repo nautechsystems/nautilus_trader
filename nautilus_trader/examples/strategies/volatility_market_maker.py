@@ -19,6 +19,8 @@ import pandas as pd
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.validation import PositiveFloat
+from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
 from nautilus_trader.indicators.atr import AverageTrueRange
@@ -53,9 +55,9 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    atr_period : int
+    atr_period : PositiveInt
         The period for the ATR indicator.
-    atr_multiple : float
+    atr_multiple : PositiveFloat
         The ATR multiple for bracketing limit orders.
     trade_size : Decimal
         The position size per trade.
@@ -71,10 +73,10 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
 
     """
 
-    instrument_id: str
-    bar_type: str
-    atr_period: int
-    atr_multiple: float
+    instrument_id: InstrumentId
+    bar_type: BarType
+    atr_period: PositiveInt
+    atr_multiple: PositiveFloat
     trade_size: Decimal
     emulation_trigger: str = "NO_TRIGGER"
 
@@ -97,8 +99,8 @@ class VolatilityMarketMaker(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type)
+        self.instrument_id = config.instrument_id
+        self.bar_type = config.bar_type
         self.atr_multiple = config.atr_multiple
         self.trade_size = Decimal(config.trade_size)
         self.emulation_trigger = TriggerType[config.emulation_trigger]

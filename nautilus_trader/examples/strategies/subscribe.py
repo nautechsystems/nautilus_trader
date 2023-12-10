@@ -38,7 +38,7 @@ class SubscribeStrategyConfig(StrategyConfig, frozen=True):
     Configuration for ``SubscribeStrategy`` instances.
     """
 
-    instrument_id: str
+    instrument_id: InstrumentId
     book_type: BookType | None = None
     snapshots: bool = False
     trade_ticks: bool = False
@@ -60,7 +60,7 @@ class SubscribeStrategy(Strategy):
 
     def __init__(self, config: SubscribeStrategyConfig) -> None:
         super().__init__(config)
-        self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
+        self.instrument_id = self.config.instrument_id
         self.book: OrderBook | None = None
 
     def on_start(self) -> None:

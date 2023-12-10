@@ -28,6 +28,8 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -101,9 +103,9 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id="ETHUSDT.BINANCE",
-    external_order_claims=["ETHUSDT.BINANCE"],
-    bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
+    external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
+    bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.010"),

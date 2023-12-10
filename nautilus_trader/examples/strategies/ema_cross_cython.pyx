@@ -68,8 +68,8 @@ class EMACrossConfig(StrategyConfig, frozen=True):
         how the `ExecutionEngine` handles position IDs (see docs).
     """
 
-    instrument_id: str
-    bar_type: str
+    instrument_id: InstrumentId
+    bar_type: BarType
     trade_size: Decimal
     fast_ema_period: int = 10
     slow_ema_period: int = 20
@@ -109,8 +109,8 @@ cdef class EMACross(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str_c(config.instrument_id)
-        self.bar_type = BarType.from_str_c(config.bar_type)
+        self.instrument_id = config.instrument_id
+        self.bar_type = config.bar_type
         self.trade_size = Decimal(config.trade_size)
 
         # Create the indicators for the strategy

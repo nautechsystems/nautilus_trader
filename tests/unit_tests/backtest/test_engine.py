@@ -191,7 +191,7 @@ class TestBacktestEngine:
 
     def test_backtest_engine_multiple_runs(self):
         for _ in range(2):
-            config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+            config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id)
             strategy = SignalStrategy(config)
             engine = self.create_engine(
                 config=BacktestEngineConfig(
@@ -205,7 +205,7 @@ class TestBacktestEngine:
 
     def test_backtest_engine_strategy_timestamps(self):
         # Arrange
-        config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+        config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id)
         strategy = SignalStrategy(config)
         engine = self.create_engine(
             config=BacktestEngineConfig(
@@ -640,8 +640,8 @@ class TestBacktestWithAddedBars:
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
-            instrument_id=str(GBPUSD_SIM.id),
-            bar_type=str(bar_type),
+            instrument_id=GBPUSD_SIM.id,
+            bar_type=bar_type,
             trade_size=Decimal(100_000),
             fast_ema_period=10,
             slow_ema_period=20,
@@ -673,8 +673,8 @@ class TestBacktestWithAddedBars:
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
-            instrument_id=str(GBPUSD_SIM.id),
-            bar_type=str(bar_type),
+            instrument_id=GBPUSD_SIM.id,
+            bar_type=bar_type,
             trade_size=Decimal(100_000),
             fast_ema_period=10,
             slow_ema_period=20,

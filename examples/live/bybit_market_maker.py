@@ -27,6 +27,8 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -96,9 +98,9 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 symbol = "ETHUSDT-LINEAR"
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id=f"{symbol}.BYBIT",
-    external_order_claims=[f"{symbol}.BYBIT"],
-    bar_type=f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=InstrumentId.from_str(f"{symbol}.BYBIT"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.BYBIT")],
+    bar_type=BarType.from_str(f"{symbol}.BYBIT-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.010"),

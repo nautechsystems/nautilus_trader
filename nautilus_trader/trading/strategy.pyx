@@ -178,7 +178,13 @@ cdef class Strategy(Actor):
         if config_claims is None:
             return []
 
-        return [InstrumentId.from_str(i) for i in config_claims]
+        order_claims: list[InstrumentId] = []
+        for instrument_id in config_claims:
+            if isinstance(instrument_id, str):
+                instrument_id = InstrumentId.from_str(instrument_id)
+            order_claims.append(instrument_id)
+
+        return order_claims
 
     def to_importable_config(self) -> ImportableStrategyConfig:
         """

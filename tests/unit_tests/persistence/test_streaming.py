@@ -50,7 +50,7 @@ class TestPersistenceStreaming:
         run_config = BetfairTestStubs.betfair_backtest_run_config(
             catalog_path=betfair_catalog.path,
             catalog_fs_protocol="file",
-            instrument_id=instrument.id.value,
+            instrument_id=instrument.id,
             flush_interval_ms=5_000,
             bypass_logging=False,
         )
@@ -146,7 +146,7 @@ class TestPersistenceStreaming:
     ) -> None:
         # Arrange
         self.catalog = betfair_catalog
-        instrument_id = self.catalog.instruments()[0].id.value
+        instrument_id = self.catalog.instruments()[0].id
         data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",
@@ -204,7 +204,7 @@ class TestPersistenceStreaming:
     ) -> None:
         # Arrange
         self.catalog = betfair_catalog
-        instrument_id = self.catalog.instruments()[0].id.value
+        instrument_id = self.catalog.instruments()[0].id
         streaming = BetfairTestStubs.streaming_config(
             catalog_path=self.catalog.path,
             catalog_fs_protocol="file",

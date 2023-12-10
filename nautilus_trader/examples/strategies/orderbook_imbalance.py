@@ -17,6 +17,8 @@ import datetime
 from decimal import Decimal
 
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.validation import NonNegativeFloat
+from nautilus_trader.config.validation import PositiveFloat
 from nautilus_trader.core.rust.common import LogColor
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import OrderBookDeltas
@@ -45,14 +47,14 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
         The instrument ID for the strategy.
     max_trade_size : str
         The max position size per trade (volume on the level can be less).
-    trigger_min_size : float, default 100.0
+    trigger_min_size : PositiveFloat, default 100.0
         The minimum size on the larger side to trigger an order.
-    trigger_imbalance_ratio : float, default 0.20
+    trigger_imbalance_ratio : PositiveFloat, default 0.20
         The ratio of bid:ask volume required to trigger an order (smaller
         value / larger value) ie given a trigger_imbalance_ratio=0.2, and a
         bid volume of 100, we will send a buy order if the ask volume is <
         20).
-    min_seconds_between_triggers : float, default 0.0
+    min_seconds_between_triggers : NonNegativeFloat, default 1.0
         The minimum time between triggers.
     book_type : str, default 'L2_MBP'
         The order book type for the strategy.
@@ -69,11 +71,11 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
 
     """
 
-    instrument_id: str
+    instrument_id: InstrumentId
     max_trade_size: Decimal
-    trigger_min_size: float = 100.0
-    trigger_imbalance_ratio: float = 0.20
-    min_seconds_between_triggers: float = 1.0
+    trigger_min_size: PositiveFloat = 100.0
+    trigger_imbalance_ratio: PositiveFloat = 0.20
+    min_seconds_between_triggers: NonNegativeFloat = 1.0
     book_type: str = "L2_MBP"
     use_quote_ticks: bool = False
     subscribe_ticker: bool = False
@@ -98,8 +100,8 @@ class OrderBookImbalance(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.max_trade_size = Decimal(config.max_trade_size)
+        self.instrument_id = config.instrument_id
+        self.max_trade_size = config.max_trade_size
         self.trigger_min_size = config.trigger_min_size
         self.trigger_imbalance_ratio = config.trigger_imbalance_ratio
         self.min_seconds_between_triggers = config.min_seconds_between_triggers

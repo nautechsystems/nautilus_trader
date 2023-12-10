@@ -39,6 +39,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ComponentId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
@@ -320,7 +321,7 @@ class TestTrader:
     def test_add_strategies_with_duplicate_order_id_tags_raises_runtime_error(self) -> None:
         # Arrange
         config = MyStrategyConfig(
-            instrument_id=USDJPY_SIM.id.value,
+            instrument_id=USDJPY_SIM.id,
             order_id_tag="000",  # <-- will be a duplicate
         )
         strategies = [Strategy(), MyStrategy(config=config)]
@@ -432,8 +433,12 @@ class TestTrader:
 
     def test_change_exec_algorithms(self) -> None:
         # Arrange
-        exec_algorithm1 = ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="001"))
-        exec_algorithm2 = ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="002"))
+        exec_algorithm1 = ExecAlgorithm(
+            ExecAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("001")),
+        )
+        exec_algorithm2 = ExecAlgorithm(
+            ExecAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("002")),
+        )
         exec_algorithms = [exec_algorithm1, exec_algorithm2]
 
         # Act
@@ -450,8 +455,8 @@ class TestTrader:
     def test_clear_exec_algorithms(self) -> None:
         # Arrange
         exec_algorithms = [
-            ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="001")),
-            ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id="002")),
+            ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("001"))),
+            ExecAlgorithm(ExecAlgorithmConfig(exec_algorithm_id=ExecAlgorithmId("002"))),
         ]
 
         self.trader.add_exec_algorithms(exec_algorithms)
