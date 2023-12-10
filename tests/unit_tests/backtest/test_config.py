@@ -68,8 +68,9 @@ class TestBacktestConfig:
         pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301
 
     def test_backtest_data_config_load(self):
+        # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=QuoteTick,
@@ -78,7 +79,10 @@ class TestBacktestConfig:
             end_time=1580504394501000000,
         )
 
-        result = c.query
+        # Act
+        result = config.query
+
+        # Assert
         assert result == {
             "data_cls": QuoteTick,
             "instrument_ids": [InstrumentId.from_str("AUD/USD.SIM")],
@@ -94,7 +98,7 @@ class TestBacktestConfig:
         data = TestPersistenceStubs.news_events()
         self.catalog.write_data(data)
 
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
@@ -102,7 +106,10 @@ class TestBacktestConfig:
             metadata={"kind": "news"},
         )
 
-        result = c.load()
+        # Act
+        result = BacktestNode.load_data_config(config)
+
+        # Assert
         assert len(result.data) == 86985
         assert result.instrument is None
         assert result.client_id == ClientId("NewsClient")
@@ -114,8 +121,7 @@ class TestBacktestConfig:
         data = TestPersistenceStubs.news_events()
         self.catalog.write_data(data)
 
-        # Act
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
@@ -123,20 +129,28 @@ class TestBacktestConfig:
             client_id="NewsClient",
         )
 
-        result = c.load()
+        # Act
+        result = BacktestNode.load_data_config(config)
+
+        # Assert
         assert len(result.data) == 2745
 
     def test_backtest_data_config_status_updates(self):
+        # Arrange
         from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
         load_betfair_data(self.catalog)
 
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=InstrumentStatus,
         )
-        result = c.load()
+
+        # Act
+        result = BacktestNode.load_data_config(config)
+
+        # Assert
         assert len(result.data) == 2
         assert result.instrument is None
         assert result.client_id is None
