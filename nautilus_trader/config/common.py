@@ -46,6 +46,11 @@ CUSTOM_ENCODINGS: dict[type, Callable] = {
 }
 
 
+CUSTOM_DECODINGS: dict[type, Callable] = {
+    pd.DataFrame: lambda x: pd.read_json(x),
+}
+
+
 def resolve_path(path: str) -> type:
     module, cls_str = path.rsplit(":", maxsplit=1)
     mod = importlib.import_module(module)
@@ -90,6 +95,9 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return Quantity.from_str(obj)
     if obj_type in (pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
+    if obj_type in CUSTOM_DECODINGS:
+        func = CUSTOM_DECODINGS[obj_type]
+        return func(obj)
 
     raise TypeError(f"Decoding objects of type {obj_type} is unsupported")
 
@@ -97,6 +105,11 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
 def register_json_encoding(type_: type, encoder: Callable) -> None:
     global CUSTOM_ENCODINGS
     CUSTOM_ENCODINGS[type_] = encoder
+
+
+def register_json_decoding(type_: type, decoder: Callable) -> None:
+    global CUSTOM_DECODINGS
+    CUSTOM_DECODINGS[type_] = decoder
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
