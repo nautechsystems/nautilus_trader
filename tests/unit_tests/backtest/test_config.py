@@ -28,9 +28,9 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableActorConfig
-from nautilus_trader.config.backtest import json_encoder
-from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.config.common import msgspec_encoding_hook
+from nautilus_trader.config.common import tokenize_config
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
@@ -245,7 +245,10 @@ class TestBacktestConfigParsing:
     def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
         print("token:", token)
-        value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
+        value: bytes = msgspec.json.encode(
+            self.backtest_config.dict(),
+            enc_hook=msgspec_encoding_hook,
+        )
         print("token_value:", value.decode())
         assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"  # UNIX
 
@@ -325,6 +328,7 @@ class TestBacktestConfigParsing:
                     data=[],
                 ),
             ],
+            enc_hook=msgspec_encoding_hook,
         ).decode()
 
         # Act

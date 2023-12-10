@@ -29,10 +29,11 @@ from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.examples.strategies.grid import GridConfig
 from nautilus_trader.examples.strategies.grid import GridStrategy
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import TraderId
 
 
 config_node = TradingNodeConfig(
-    trader_id="FILIP-001",
+    trader_id=TraderId("TESTER-001"),
     environment=Environment.LIVE,
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
