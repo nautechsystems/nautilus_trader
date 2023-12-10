@@ -32,6 +32,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
+from nautilus_trader.model.enums import AssetType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OptionKind
@@ -98,6 +99,44 @@ def parse_option_kind(value: str) -> OptionKind:
             raise ValueError(f"Invalid `OptionKind`, was {value}")
 
 
+def parse_cfi_iso10926(value: str) -> tuple[AssetClass | None, AssetType | None]:
+    # This is a work in progress and will likely result in a shuffling of
+    # the `AssetClass` and `AssetType` enums
+
+    cfi_category = value[0]
+    cfi_group = value[1]
+    cfi_attribute1 = value[2]
+    # cfi_attribute2 = value[3]
+    # cfi_attribute3 = value[4]
+    # cfi_attribute4 = value[5]
+
+    match cfi_category:
+        case "D":
+            asset_class = AssetClass.BOND
+        case "E":
+            asset_class = AssetClass.EQUITY
+        case "S":
+            asset_class = None
+            asset_type = AssetType.SWAP
+        case "J":
+            asset_class = None
+            asset_type = AssetType.FORWARD
+        case _:
+            asset_class = None
+
+    match cfi_group:
+        case "I":
+            asset_type = AssetType.FUTURE
+        case _:
+            asset_type = None
+
+    match cfi_attribute1:
+        case "I":
+            asset_class = AssetClass.INDEX
+
+    return (asset_class, asset_type)
+
+
 def parse_min_price_increment(value: int, currency: Currency) -> Price:
     match value:
         case 0 | 9223372036854775807:  # 2**63-1 (TODO: Make limit constants)
@@ -132,17 +171,18 @@ def parse_futures_contract(
     instrument_id: InstrumentId,
 ) -> FuturesContract:
     currency = Currency.from_str(record.currency)
+    asset_class, _ = parse_cfi_iso10926(record.cfi)
 
     return FuturesContract(
         instrument_id=instrument_id,
         raw_symbol=Symbol(record.raw_symbol),
-        asset_class=AssetClass.EQUITY,
+        asset_class=asset_class or AssetClass.COMMODITY,  # WIP
         currency=currency,
         price_precision=currency.precision,
         price_increment=parse_min_price_increment(record.min_price_increment, currency),
         multiplier=Quantity(1, precision=0),
         lot_size=Quantity(record.min_lot_size_round_lot or 1, precision=0),
-        underlying=record.underlying,
+        underlying=record.asset,
         activation_ns=record.activation,
         expiration_ns=record.expiration,
         ts_event=record.ts_event,
@@ -161,7 +201,8 @@ def parse_options_contract(
         asset_class = AssetClass.EQUITY
     else:
         lot_size = Quantity(record.min_lot_size_round_lot or 1, precision=0)
-        asset_class = AssetClass.EQUITY  # TODO(proper sec sub types)
+        asset_class, _ = parse_cfi_iso10926(record.cfi)
+        asset_class = asset_class or AssetClass.EQUITY  # WIP
 
     return OptionsContract(
         instrument_id=instrument_id,

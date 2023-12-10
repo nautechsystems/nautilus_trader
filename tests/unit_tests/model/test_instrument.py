@@ -44,8 +44,8 @@ XBTUSD_BITMEX = TestInstrumentProvider.xbtusd_bitmex()
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 BTCUSDT_220325 = TestInstrumentProvider.btcusdt_future_binance()
 ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
-AAPL_EQUITY = TestInstrumentProvider.equity(symbol="AAPL", venue="NASDAQ")
-ES_FUTURE = TestInstrumentProvider.future(symbol="ESZ21", underlying="ES", venue="CME")
+AAPL_EQUITY = TestInstrumentProvider.equity(symbol="AAPL", venue="XNAS")
+ES_FUTURE = TestInstrumentProvider.es_future(expiry_year=2023, expiry_month=12)
 AAPL_OPTION = TestInstrumentProvider.aapl_option()
 
 
@@ -227,7 +227,7 @@ class TestInstrument:
         assert Equity.from_dict(result) == AAPL_EQUITY
         assert result == {
             "type": "Equity",
-            "id": "AAPL.NASDAQ",
+            "id": "AAPL.XNAS",
             "raw_symbol": "AAPL",
             "currency": "USD",
             "price_precision": 2,
@@ -254,20 +254,20 @@ class TestInstrument:
         assert result == {
             "asset_class": "INDEX",
             "currency": "USD",
-            "activation_ns": 1616160600000000000,
-            "expiration_ns": 1639751400000000000,
-            "id": "ESZ21.CME",
+            "activation_ns": 1622842200000000000,
+            "expiration_ns": 1702650600000000000,
+            "id": "ESZ3.GLBX",
             "lot_size": "1",
             "margin_init": "0",
             "margin_maint": "0",
             "multiplier": "1",
-            "raw_symbol": "ESZ21",
-            "price_increment": "0.01",
+            "raw_symbol": "ESZ3",
+            "price_increment": "0.25",
             "price_precision": 2,
             "size_increment": "1",
             "size_precision": 0,
-            "ts_event": 1638133151389539971,
-            "ts_init": 1638316800000000000,
+            "ts_event": 1622842200000000000,
+            "ts_init": 1622842200000000000,
             "type": "FuturesContract",
             "underlying": "ES",
         }
