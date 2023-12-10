@@ -480,7 +480,7 @@ class TestInstrumentProvider:
         activation_utc = pd.Timestamp(activation_date, tz=pytz.utc) + activation_time
         expiration_utc = pd.Timestamp(expiration_date, tz=pytz.utc) + expiration_time
 
-        raw_symbol = f"ES{get_futures_month_code(expiry_month)}{expiry_year % 10}"
+        raw_symbol = f"ES{get_contract_month_code(expiry_month)}{expiry_year % 10}"
 
         return FuturesContract(
             instrument_id=InstrumentId(symbol=Symbol(raw_symbol), venue=Venue("GLBX")),
@@ -608,7 +608,7 @@ def third_friday_of_month(year: int, month: int) -> dt.date:
     return third_friday
 
 
-def get_futures_month_code(expiry_month: int) -> str:
+def get_contract_month_code(expiry_month: int) -> str:
     match expiry_month:
         case 1:
             return "F"
@@ -635,7 +635,7 @@ def get_futures_month_code(expiry_month: int) -> str:
         case 12:
             return "Z"
         case _:
-            raise ValueError(f"invalid `expiry_month`, was {expiry_month}")
+            raise ValueError(f"invalid `expiry_month`, was {expiry_month}. Use [1, 12].")
 
 
 class TestDataProvider:
