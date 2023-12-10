@@ -78,7 +78,7 @@ if __name__ == "__main__":
     strategies = [
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
-                instrument_id=instrument.id.value,
+                instrument_id=instrument.id,
                 max_trade_size=Decimal(10),
                 order_id_tag=instrument.selection_id,
             ),

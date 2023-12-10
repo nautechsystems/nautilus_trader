@@ -31,6 +31,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -69,7 +70,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     data_cls: str
     catalog_fs_protocol: str | None = None
     catalog_fs_storage_options: dict | None = None
-    instrument_id: str | None = None
+    instrument_id: InstrumentId | None = None
     start_time: str | int | None = None
     end_time: str | int | None = None
     filter_expr: str | None = None

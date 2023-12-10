@@ -163,7 +163,7 @@ class BacktestNode:
                             f"`end_time` ({data_config.end_time}) is before `start_time` ({data_config.start_time})",
                         )
 
-                instrument_id: InstrumentId = InstrumentId.from_str(data_config.instrument_id)
+                instrument_id: InstrumentId = data_config.instrument_id
                 if instrument_id.venue not in venue_ids:
                     raise InvalidConfiguration(
                         f"Venue '{instrument_id.venue}' for {instrument_id} "

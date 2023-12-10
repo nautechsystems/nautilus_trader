@@ -109,8 +109,8 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine.add_data(ticks)
 
             config = EMACrossConfig(
-                instrument_id=str(USDJPY_SIM.id),
-                bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
+                instrument_id=USDJPY_SIM.id,
+                bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
                 trade_size=Decimal(1_000_000),
                 fast_ema_period=10,
                 slow_ema_period=20,
@@ -159,8 +159,8 @@ class TestBacktestEnginePerformance(PerformanceHarness):
             engine.add_data(ticks)
 
             config = EMACrossConfig(
-                instrument_id=str(USDJPY_SIM.id),
-                bar_type=str(TestDataStubs.bartype_usdjpy_1min_bid()),
+                instrument_id=USDJPY_SIM.id,
+                bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
                 trade_size=Decimal(1_000_000),
                 fast_ema_period=10,
                 slow_ema_period=20,

@@ -88,7 +88,7 @@ if __name__ == "__main__":
 
     # Configure your strategy
     config = OrderBookImbalanceConfig(
-        instrument_id=str(BTCUSDT_BINANCE.id),
+        instrument_id=BTCUSDT_BINANCE.id,
         max_trade_size=Decimal("1.000"),
         min_seconds_between_triggers=1.0,
         book_type=book_type_to_str(book_type),

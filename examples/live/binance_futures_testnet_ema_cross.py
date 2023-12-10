@@ -28,6 +28,8 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -82,9 +84,9 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = EMACrossConfig(
-    instrument_id="ETHUSDT-PERP.BINANCE",
-    external_order_claims=["ETHUSDT-PERP.BINANCE"],
-    bar_type="ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
+    bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     fast_ema_period=10,
     slow_ema_period=20,
     trade_size=Decimal("0.010"),

@@ -29,6 +29,8 @@ from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -83,9 +85,9 @@ node = TradingNode(config=config_node)
 # Configure your strategy
 symbol = "ETHUSDT-PERP"
 strat_config = EMACrossTWAPConfig(
-    instrument_id=f"{symbol}.BINANCE",
-    external_order_claims=[f"{symbol}.BINANCE"],
-    bar_type=f"{symbol}.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=InstrumentId.from_str(f"{symbol}.BINANCE"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.BINANCE")],
+    bar_type=BarType.from_str(f"{symbol}.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     fast_ema_period=10,
     slow_ema_period=20,
     twap_horizon_secs=5,

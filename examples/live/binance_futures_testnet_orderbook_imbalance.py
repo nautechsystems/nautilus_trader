@@ -29,6 +29,7 @@ from nautilus_trader.config.common import CacheConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalanceConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -96,8 +97,8 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = OrderBookImbalanceConfig(
-    instrument_id="ETHUSDT-PERP.BINANCE",
-    external_order_claims=["ETHUSDT-PERP.BINANCE"],
+    instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
+    external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
     max_trade_size=Decimal("0.010"),
 )
 

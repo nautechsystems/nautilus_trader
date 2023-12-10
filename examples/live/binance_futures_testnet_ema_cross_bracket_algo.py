@@ -29,6 +29,8 @@ from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
 from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgo
 from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgoConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
 
@@ -84,9 +86,9 @@ node = TradingNode(config=config_node)
 symbol = "ETHUSDT-PERP"
 strat_config = EMACrossBracketAlgoConfig(
     order_id_tag="001",
-    instrument_id=f"{symbol}.BINANCE",
-    external_order_claims=[f"{symbol}.BINANCE"],
-    bar_type=f"{symbol}.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=InstrumentId.from_str(f"{symbol}.BINANCE"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.BINANCE")],
+    bar_type=BarType.from_str(f"{symbol}.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     fast_ema_period=10,
     slow_ema_period=20,
     bracket_distance_atr=1.0,

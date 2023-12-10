@@ -19,6 +19,8 @@ from typing import Any
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.validation import PositiveFloat
+from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -55,26 +57,26 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
         The bar type for the strategy.
     trade_size : str
         The position size per trade (interpreted as Decimal).
-    atr_period : int, default 20
+    atr_period : PositiveInt, default 20
         The period for the ATR indicator.
-    fast_ema_period : int, default 10
+    fast_ema_period : PositiveInt, default 10
         The fast EMA period.
-    slow_ema_period : int, default 20
+    slow_ema_period : PositiveInt, default 20
         The slow EMA period.
     bracket_distance_atr : float, default 3.0
         The SL and TP bracket distance from entry ATR multiple.
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
-    entry_exec_algorithm_id : str, optional
+    entry_exec_algorithm_id : ExecAlgorithmId, optional
         The execution algorithm for entry orders.
     entry_exec_algorithm_params : dict[str, Any], optional
         The execution algorithm params for entry orders.
-    sl_exec_algorithm_id : str, optional
+    sl_exec_algorithm_id : ExecAlgorithmId, optional
         The execution algorithm for stop-loss (SL) orders.
     sl_exec_algorithm_params : dict[str, Any], optional
         The execution algorithm params for stop-loss (SL) orders.
-    tp_exec_algorithm_id : str, optional
+    tp_exec_algorithm_id : ExecAlgorithmId, optional
         The execution algorithm for take-profit (TP) orders.
     tp_exec_algorithm_params : dict[str, Any], optional
         The execution algorithm params for take-profit (TP) orders.
@@ -91,19 +93,19 @@ class EMACrossBracketAlgoConfig(StrategyConfig, frozen=True):
 
     """
 
-    instrument_id: str
-    bar_type: str
+    instrument_id: InstrumentId
+    bar_type: BarType
     trade_size: Decimal
-    atr_period: int = 20
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
-    bracket_distance_atr: float = 3.0
+    atr_period: PositiveInt = 20
+    fast_ema_period: PositiveInt = 10
+    slow_ema_period: PositiveInt = 20
+    bracket_distance_atr: PositiveFloat = 3.0
     emulation_trigger: str = "NO_TRIGGER"
-    entry_exec_algorithm_id: str | None = None
+    entry_exec_algorithm_id: ExecAlgorithmId | None = None
     entry_exec_algorithm_params: dict[str, Any] | None = None
-    sl_exec_algorithm_id: str | None = None
+    sl_exec_algorithm_id: ExecAlgorithmId | None = None
     sl_exec_algorithm_params: dict[str, Any] | None = None
-    tp_exec_algorithm_id: str | None = None
+    tp_exec_algorithm_id: ExecAlgorithmId | None = None
     tp_exec_algorithm_params: dict[str, Any] | None = None
     close_positions_on_stop: bool = True
 
@@ -137,8 +139,8 @@ class EMACrossBracketAlgo(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type)
+        self.instrument_id = config.instrument_id
+        self.bar_type = config.bar_type
         self.bracket_distance_atr = config.bracket_distance_atr
         self.trade_size = Decimal(config.trade_size)
         self.emulation_trigger = TriggerType[config.emulation_trigger]
@@ -149,25 +151,13 @@ class EMACrossBracketAlgo(Strategy):
         self.slow_ema = ExponentialMovingAverage(config.slow_ema_period)
 
         # Order management
-        self.entry_exec_algorithm_id = (
-            ExecAlgorithmId(config.entry_exec_algorithm_id)
-            if config.entry_exec_algorithm_id is not None
-            else None
-        )
+        self.entry_exec_algorithm_id = config.entry_exec_algorithm_id
         self.entry_exec_algorithm_params = config.entry_exec_algorithm_params
 
-        self.sl_exec_algorithm_id = (
-            ExecAlgorithmId(config.sl_exec_algorithm_id)
-            if config.sl_exec_algorithm_id is not None
-            else None
-        )
+        self.sl_exec_algorithm_id = config.sl_exec_algorithm_id
         self.sl_exec_algorithm_params = config.sl_exec_algorithm_params
 
-        self.tp_exec_algorithm_id = (
-            ExecAlgorithmId(config.tp_exec_algorithm_id)
-            if config.tp_exec_algorithm_id is not None
-            else None
-        )
+        self.tp_exec_algorithm_id = config.tp_exec_algorithm_id
         self.tp_exec_algorithm_params = config.tp_exec_algorithm_params
 
         self.close_positions_on_stop = config.close_positions_on_stop

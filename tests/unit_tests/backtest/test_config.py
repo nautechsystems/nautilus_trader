@@ -36,6 +36,7 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
@@ -72,7 +73,7 @@ class TestBacktestConfig:
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=QuoteTick,
-            instrument_id=instrument.id.value,
+            instrument_id=instrument.id,
             start_time=1580398089820000000,
             end_time=1580504394501000000,
         )
@@ -80,7 +81,7 @@ class TestBacktestConfig:
         result = c.query
         assert result == {
             "data_cls": QuoteTick,
-            "instrument_ids": ["AUD/USD.SIM"],
+            "instrument_ids": [InstrumentId.from_str("AUD/USD.SIM")],
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,
@@ -146,7 +147,7 @@ class TestBacktestConfig:
             data_cls="nautilus_trader.model.data:QuoteTick",
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             catalog_fs_storage_options={},
-            instrument_id="AUD/USD.IDEALPRO",
+            instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
             start_time=1580398089820000,
             end_time=1580504394501000,
         )
@@ -160,7 +161,7 @@ class TestBacktestConfig:
                 data_cls=QuoteTick.fully_qualified_name(),
                 catalog_fs_protocol="memory",
                 catalog_fs_storage_options={},
-                instrument_id="AUD/USD.IDEALPRO",
+                instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
                 start_time=1580398089820000,
                 end_time=1580504394501000,
             ),
@@ -214,7 +215,7 @@ class TestBacktestConfigParsing:
             ],
         )
         raw = msgspec.json.encode(run_config)
-        config = msgspec.json.decode(raw, type=BacktestRunConfig)
+        config = BacktestRunConfig.parse(raw)
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
@@ -344,7 +345,7 @@ class TestBacktestConfigParsing:
         interest_rate_data = TestDataProvider().read_csv("short-term-interest.csv")
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
-            instrument_ids=[self.instrument.id.value],
+            instrument_ids=[self.instrument.id],
             venues=[
                 BacktestVenueConfig(
                     name="SIM",
