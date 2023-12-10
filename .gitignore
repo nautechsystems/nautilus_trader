@@ -50,6 +50,7 @@ venv*/
 PERF.JSON
 output.json
 *dask-worker-space*
+.cursorignore
 
 docs/**/*.ipynb
 examples/backtest/notebooks/catalog
@@ -60,4 +61,3 @@ bench_data/
 
 !tests/integration_tests/adapters/betfair/responses/*.log
 **/test_db.sqlite
-.cursorignore
