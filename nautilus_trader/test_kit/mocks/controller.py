@@ -29,6 +29,6 @@ class MyController(Controller):
         Dynamically add a new strategy after startup.
         """
         instruments = self.cache.instruments()
-        strategy_config = SignalStrategyConfig(instrument_id=instruments[0].id.value)
+        strategy_config = SignalStrategyConfig(instrument_id=instruments[0].id)
         strategy = SignalStrategy(strategy_config)
         self.create_strategy(strategy)

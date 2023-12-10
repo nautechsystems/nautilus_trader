@@ -41,7 +41,7 @@ class MyStrategyConfig(StrategyConfig, frozen=True):
 
     """
 
-    instrument_id: str
+    instrument_id: InstrumentId
 
 
 class MyStrategy(Strategy):
@@ -59,7 +59,7 @@ class MyStrategy(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+        self.instrument_id = config.instrument_id
 
     def on_start(self) -> None:
         """

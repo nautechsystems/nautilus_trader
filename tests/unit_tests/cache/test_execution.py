@@ -29,6 +29,7 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OmsType
@@ -1350,8 +1351,8 @@ class TestExecutionCacheIntegrityCheck:
     def test_exec_cache_check_integrity_when_index_cleared_fails(self):
         # Arrange
         config = EMACrossConfig(
-            instrument_id=str(self.usdjpy.id),
-            bar_type="USD/JPY.SIM-15-MINUTE-BID-INTERNAL",
+            instrument_id=self.usdjpy.id,
+            bar_type=BarType.from_str("USD/JPY.SIM-15-MINUTE-BID-INTERNAL"),
             trade_size=Decimal(1_000_000),
             fast_ema_period=10,
             slow_ema_period=20,

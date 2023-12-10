@@ -9,6 +9,11 @@ Released on TBD (UTC).
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
 ### Breaking Changes
+- Changed configuration objects to take stronger types as these are now serializable when registered (rather than primitives)
+- Changed `NautilusKernelConfig.trader_id` to type `TraderId`
+- Changed `BacktestDataConfig.instrument_id` to type `InstrumentId`
+- Changed `ActorConfig.component_id` to type `ComponentId | None`
+- Changed `StrategyConfig.strategy_id` to type `StrategyId | None`
 - Changed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization due below fix (you'll need to flush your cache)
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
 - Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
@@ -20,6 +25,7 @@ Released on TBD (UTC).
 - Fixed `json` encoding for `CacheDatabaseAdapter` from `info` field serialization fix below
 - Fixed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization to retain JSON serializable dicts (rather than double encoding and losing information)
 - Fixed Binance Futures `good_till_date` value when `time_in_force` not GTD, such as when strategy is managing the GTD (was incorrectly passing through UNIX milliseconds)
+- Fixed `Executor` handling of queued task IDs (was not discarding from queued tasks on completion)
 
 ---
 

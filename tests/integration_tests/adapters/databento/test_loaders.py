@@ -107,11 +107,11 @@ def test_loader_definition_glbx_futures() -> None:
     instrument = data[0]
     assert instrument.id == InstrumentId.from_str("ESM3.GLBX")
     assert instrument.raw_symbol == Symbol("ESM3")
-    assert instrument.asset_class == AssetClass.EQUITY
+    assert instrument.asset_class == AssetClass.INDEX
     assert instrument.asset_type == AssetType.FUTURE
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
-    assert instrument.underlying == ""
+    assert instrument.underlying == "ES"
     assert instrument.price_precision == 2
     assert instrument.price_increment == Price.from_str("0.25")
     assert instrument.size_precision == 0
@@ -137,11 +137,11 @@ def test_loader_definition_glbx_futures_spread() -> None:
     instrument = data[0]
     assert instrument.id == InstrumentId.from_str("ESH5-ESM5.GLBX")
     assert instrument.raw_symbol == Symbol("ESH5-ESM5")
-    assert instrument.asset_class == AssetClass.EQUITY
+    assert instrument.asset_class == AssetClass.INDEX
     assert instrument.asset_type == AssetType.FUTURE
     assert instrument.quote_currency == USD
     assert not instrument.is_inverse
-    assert instrument.underlying == ""
+    assert instrument.underlying == "ES"
     assert instrument.price_precision == 2
     assert instrument.price_increment == Price.from_str("0.05")
     assert instrument.size_precision == 0

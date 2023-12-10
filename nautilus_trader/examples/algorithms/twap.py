@@ -25,6 +25,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.identifiers import ClientOrderId
+from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
@@ -41,12 +42,12 @@ class TWAPExecAlgorithmConfig(ExecAlgorithmConfig, frozen=True):
 
     Parameters
     ----------
-    exec_algorithm_id : InstrumentId
+    exec_algorithm_id : ExecAlgorithmId
         The execution algorithm ID (will override default which is the class name).
 
     """
 
-    exec_algorithm_id: str | None = "TWAP"
+    exec_algorithm_id: ExecAlgorithmId | None = ExecAlgorithmId("TWAP")
 
 
 class TWAPExecAlgorithm(ExecAlgorithm):

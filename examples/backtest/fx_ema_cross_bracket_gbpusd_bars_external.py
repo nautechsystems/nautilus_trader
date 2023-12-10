@@ -106,8 +106,8 @@ if __name__ == "__main__":
 
     # Configure your strategy
     config = EMACrossBracketConfig(
-        instrument_id=str(GBPUSD_SIM.id),
-        bar_type="GBP/USD.SIM-1-MINUTE-BID-EXTERNAL",
+        instrument_id=GBPUSD_SIM.id,
+        bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
         fast_ema_period=10,
         slow_ema_period=20,
         bracket_distance_atr=3.0,

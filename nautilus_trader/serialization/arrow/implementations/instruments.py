@@ -216,8 +216,13 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
         b"FuturesContract": FuturesContract,
         b"OptionsContract": OptionsContract,
     }[ins_type]
+
     maps = batch.to_pylist()
     for m in maps:
-        if "info" in m:
-            m["info"] = msgspec.json.decode(m["info"])
+        info = m.get("info")
+        if info is not None:
+            m["info"] = msgspec.json.decode(info)
+        else:
+            m["info"] = None
+
     return [Cls.from_dict(data) for data in maps]

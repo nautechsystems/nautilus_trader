@@ -132,12 +132,14 @@ class NautilusKernel:
         self._save_state: bool = config.save_state
 
         # Identifiers
+        trader_id = config.trader_id
+        if isinstance(trader_id, str):
+            trader_id = TraderId(trader_id)
+
         self._name: str = name
-        self._trader_id: TraderId = TraderId(config.trader_id)
+        self._trader_id: TraderId = trader_id
         self._machine_id: str = socket.gethostname()
-        self._instance_id: UUID4 = (
-            UUID4(config.instance_id) if config.instance_id is not None else UUID4()
-        )
+        self._instance_id: UUID4 = config.instance_id or UUID4()
         self._ts_created: int = time.time_ns()
 
         # Components
@@ -186,6 +188,13 @@ class NautilusKernel:
             component_name=name,
             logger=self._logger,
         )
+
+        if isinstance(config.trader_id, str):
+            self._log.warning(
+                "The configurations 'trader_id' must be of type `TraderId`. "
+                "You can import `TraderId` from `nautilus_trader.model.identifiers`. "
+                "This warning will be removed in a future version, and become a hard requirement.",
+            )
 
         nautilus_header(self._log)
         self.log.info("Building system kernel...")
@@ -480,7 +489,7 @@ class NautilusKernel:
         # Save a copy of the config for this kernel to the streaming folder.
         full_path = f"{self._writer.path}/config.json"
         with self._writer.fs.open(full_path, "wb") as f:
-            f.write(msgspec.json.encode(self._config))
+            f.write(self._config.json())
 
     @property
     def environment(self) -> Environment:

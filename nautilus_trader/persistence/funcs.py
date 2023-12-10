@@ -15,6 +15,7 @@
 
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
@@ -91,10 +92,12 @@ def class_to_filename(cls: type) -> str:
     return name
 
 
-def urisafe_instrument_id(instrument_id: str) -> str:
+def urisafe_instrument_id(instrument_id: InstrumentId | str) -> str:
     """
     Convert an instrument_id into a valid URI for writing to a file path.
     """
+    if isinstance(instrument_id, InstrumentId):
+        instrument_id = instrument_id.value
     return instrument_id.replace("/", "")
 
 

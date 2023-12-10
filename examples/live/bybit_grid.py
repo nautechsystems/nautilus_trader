@@ -1,3 +1,19 @@
+#!/usr/bin/env python3
+# -------------------------------------------------------------------------------------------------
+#  Copyright (C) 2015-2023 Nautech Systems Pty Ltd. All rights reserved.
+#  https://nautechsystems.io
+#
+#  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+#  You may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+# -------------------------------------------------------------------------------------------------
+
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
@@ -13,13 +29,11 @@ from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.examples.strategies.grid import GridConfig
 from nautilus_trader.examples.strategies.grid import GridStrategy
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.identifiers import TraderId
 
-
-bybit_testnet_api_key = "puoVYU45dIfelFgOon"
-bybit_testnet_api_secret = "b1qY5GDzPR9RgcQvbnHhIT5W2iWmqTJJSRvT"
 
 config_node = TradingNodeConfig(
-    trader_id="FILIP-001",
+    trader_id=TraderId("TESTER-001"),
     environment=Environment.LIVE,
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
@@ -32,8 +46,8 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         "BYBIT": BybitDataClientConfig(
-            api_key=bybit_testnet_api_key,
-            api_secret=bybit_testnet_api_secret,
+            api_key=None,  # 'BYBIT_API_KEY' env var
+            api_secret=None,  # 'BYBIT_API_SECRET' env var
             instrument_types=[BybitInstrumentType.LINEAR],
             testnet=True,
             instrument_provider=InstrumentProviderConfig(load_all=True),
@@ -41,8 +55,8 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         "BYBIT": BybitExecClientConfig(
-            api_key=bybit_testnet_api_key,
-            api_secret=bybit_testnet_api_secret,
+            api_key=None,  # 'BYBIT_API_KEY' env var
+            api_secret=None,  # 'BYBIT_API_SECRET' env var
             instrument_types=[BybitInstrumentType.LINEAR],
             testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),

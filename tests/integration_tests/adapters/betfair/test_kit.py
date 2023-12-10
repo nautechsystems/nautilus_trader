@@ -56,6 +56,7 @@ from nautilus_trader.config import StreamingConfig
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
@@ -213,11 +214,11 @@ class BetfairTestStubs:
     @staticmethod
     def betfair_backtest_run_config(
         catalog_path: str,
-        instrument_id: str,
+        instrument_id: InstrumentId,
         catalog_fs_protocol: str = "memory",
-        persist=True,
-        add_strategy=True,
-        bypass_risk=False,
+        persist: bool = True,
+        add_strategy: bool = True,
+        bypass_risk: bool = False,
         flush_interval_ms: int | None = None,
         bypass_logging: bool = True,
         log_level: str = "WARNING",

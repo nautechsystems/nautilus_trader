@@ -24,6 +24,7 @@ from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAP
 from nautilus_trader.examples.strategies.ema_cross_twap import EMACrossTWAPConfig
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USDT
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import Venue
@@ -72,8 +73,8 @@ if __name__ == "__main__":
 
         # Configure your strategy
         config = EMACrossTWAPConfig(
-            instrument_id=str(ETHUSDT_BINANCE.id),
-            bar_type="ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL",
+            instrument_id=ETHUSDT_BINANCE.id,
+            bar_type=BarType.from_str("ETHUSDT.BINANCE-250-TICK-LAST-INTERNAL"),
             trade_size=Decimal("0.05"),
             fast_ema_period=10,
             slow_ema_period=20,

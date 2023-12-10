@@ -17,6 +17,8 @@ from decimal import Decimal
 
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
+from nautilus_trader.config.validation import PositiveFloat
+from nautilus_trader.config.validation import PositiveInt
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
@@ -53,9 +55,9 @@ class EMACrossStopEntryConfig(StrategyConfig, frozen=True):
         The instrument ID for the strategy.
     bar_type : BarType
         The bar type for the strategy.
-    atr_period : int
+    atr_period : PositiveInt
         The period for the ATR indicator.
-    trailing_atr_multiple : float
+    trailing_atr_multiple : PositiveFloat
         The ATR multiple for the trailing stop.
     trailing_offset_type : str
         The trailing offset type (interpreted as `TrailingOffsetType`).
@@ -65,9 +67,9 @@ class EMACrossStopEntryConfig(StrategyConfig, frozen=True):
         The trailing stop trigger type (interpreted as `TriggerType`).
     trade_size : str
         The position size per trade (interpreted as Decimal).
-    fast_ema_period : int, default 10
+    fast_ema_period : PositiveInt, default 10
         The fast EMA period.
-    slow_ema_period : int, default 20
+    slow_ema_period : PositiveInt, default 20
         The slow EMA period.
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
@@ -81,16 +83,16 @@ class EMACrossStopEntryConfig(StrategyConfig, frozen=True):
 
     """
 
-    instrument_id: str
-    bar_type: str
-    atr_period: int
-    trailing_atr_multiple: float
+    instrument_id: InstrumentId
+    bar_type: BarType
+    atr_period: PositiveInt
+    trailing_atr_multiple: PositiveFloat
     trailing_offset_type: str
     trailing_offset: Decimal
     trigger_type: str
     trade_size: Decimal
-    fast_ema_period: int = 10
-    slow_ema_period: int = 20
+    fast_ema_period: PositiveInt = 10
+    slow_ema_period: PositiveInt = 20
     emulation_trigger: str = "NO_TRIGGER"
 
 
@@ -128,8 +130,8 @@ class EMACrossStopEntry(Strategy):
         super().__init__(config)
 
         # Configuration
-        self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.bar_type = BarType.from_str(config.bar_type)
+        self.instrument_id = config.instrument_id
+        self.bar_type = config.bar_type
         self.trade_size = Decimal(config.trade_size)
         self.trailing_atr_multiple = config.trailing_atr_multiple
         self.trailing_offset_type = TrailingOffsetType[config.trailing_offset_type]

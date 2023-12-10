@@ -33,7 +33,7 @@ from nautilus_trader.adapters.bybit.factories import get_bybit_http_client
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.utils.save_struct_to_file import save_struct_to_file
+from tests.integration_tests.adapters.bybit.utils.save_struct_to_file import save_struct_to_file
 
 
 force_create = True if "FORCE_CREATE" in os.environ else False

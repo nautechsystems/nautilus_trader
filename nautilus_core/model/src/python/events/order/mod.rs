@@ -17,6 +17,8 @@ pub mod denied;
 pub mod emulated;
 pub mod filled;
 pub mod initialized;
+pub mod modify_rejected;
+pub mod pending_cancel;
 pub mod pending_update;
 pub mod rejected;
 pub mod released;

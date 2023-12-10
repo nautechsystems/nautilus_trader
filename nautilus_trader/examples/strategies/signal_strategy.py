@@ -30,7 +30,7 @@ class SignalStrategyConfig(StrategyConfig, frozen=True):
     Configuration for ``SignalStrategy`` instances.
     """
 
-    instrument_id: str
+    instrument_id: InstrumentId
 
 
 class SignalStrategy(Strategy):
@@ -46,7 +46,7 @@ class SignalStrategy(Strategy):
 
     def __init__(self, config: SignalStrategyConfig) -> None:
         super().__init__(config)
-        self.instrument_id = InstrumentId.from_str(self.config.instrument_id)
+        self.instrument_id = self.config.instrument_id
         self.instrument: Instrument | None = None
         self.counter = 0
 

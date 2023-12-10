@@ -28,6 +28,9 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TraderId
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -38,7 +41,7 @@ from nautilus_trader.live.node import TradingNode
 
 # Configure the trading node
 config_node = TradingNodeConfig(
-    trader_id="TESTER-001",
+    trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
@@ -66,8 +69,8 @@ config_node = TradingNodeConfig(
     # snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
-            api_key=None,  # "YOUR_BINANCE_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_API_SECRET"
+            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -78,8 +81,8 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
-            api_key=None,  # "YOUR_BINANCE_API_KEY"
-            api_secret=None,  # "YOUR_BINANCE_API_SECRET"
+            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
@@ -100,9 +103,9 @@ node = TradingNode(config=config_node)
 
 # Configure your strategy
 strat_config = VolatilityMarketMakerConfig(
-    instrument_id="ETHUSDT.BINANCE",
-    external_order_claims=["ETHUSDT.BINANCE"],
-    bar_type="ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
+    instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
+    external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
+    bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=6.0,
     trade_size=Decimal("0.010"),

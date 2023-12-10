@@ -13,13 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import click
 import fsspec
 import msgspec
 
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
+from nautilus_trader.config.common import msgspec_decoding_hook
 
 
 @click.command()
@@ -28,7 +28,7 @@ from nautilus_trader.config import BacktestRunConfig
 def main(
     raw: str | None = None,
     fsspec_url: str | None = None,
-):
+) -> None:
     if raw is None and fsspec_url is None:
         raise ValueError("Must pass one of `raw` or `fsspec_url`")
 
@@ -38,7 +38,11 @@ def main(
     else:
         data = raw.encode()
 
-    configs = msgspec.json.decode(data, type=list[BacktestRunConfig])
+    configs = msgspec.json.decode(
+        data,
+        type=list[BacktestRunConfig],
+        dec_hook=msgspec_decoding_hook,
+    )
     node = BacktestNode(configs=configs)
     node.run()
 

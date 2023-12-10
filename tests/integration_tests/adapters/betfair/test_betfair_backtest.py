@@ -11,6 +11,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.objects import Money
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
@@ -19,7 +20,7 @@ from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 def test_betfair_backtest():
     # Arrange
     config = BacktestEngineConfig(
-        trader_id="BACKTESTER-001",
+        trader_id=TraderId("BACKTESTER-001"),
         logging=LoggingConfig(bypass_logging=True),
     )
 
@@ -62,7 +63,7 @@ def test_betfair_backtest():
     strategies = [
         OrderBookImbalance(
             config=OrderBookImbalanceConfig(
-                instrument_id=instrument.id.value,
+                instrument_id=instrument.id,
                 max_trade_size=Decimal(10),
                 order_id_tag=instrument.selection_id,
             ),

@@ -22,8 +22,10 @@ import msgspec
 from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -34,7 +36,7 @@ class DatabentoDataLoader:
     Supported schemas:
      - MBO
      - MBP_1
-     - MBP_10 (top-level only)
+     - MBP_10 (decodes top-level only)
      - TBBO
      - TRADES
      - OHLCV_1S
@@ -89,6 +91,48 @@ class DatabentoDataLoader:
         """
         return self._instruments.copy()
 
+    def get_venue_for_dataset(self, dataset: str) -> Venue:
+        """
+        Return a venue for the given `dataset`.
+
+        Parameters
+        ----------
+        dataset : str
+            The dataset for the venue.
+
+        Returns
+        -------
+        Venue
+
+        Raises
+        ------
+        KeyError
+            If `dataset` is not in the map of publishers.
+
+        """
+        return self._dataset_venue[dataset]
+
+    def get_dataset_for_venue(self, venue: Venue) -> str:
+        """
+        Return a dataset for the given `venue`.
+
+        Parameters
+        ----------
+        venue : Venue
+            The venue for the given dataset.
+
+        Returns
+        -------
+        str
+
+        Raises
+        ------
+        KeyError
+            If `venue` is not in the map of publishers.
+
+        """
+        return self._venue_dataset[venue]
+
     def load_publishers(self, path: PathLike[str] | str) -> None:
         """
         Load publisher details from the JSON file at the given path.
@@ -106,6 +150,8 @@ class DatabentoDataLoader:
         publishers: list[DatabentoPublisher] = decoder.decode(path.read_bytes())
 
         self._publishers = {p.publisher_id: p for p in publishers}
+        self._dataset_venue: dict[str, Venue] = {p.dataset: Venue(p.venue) for p in publishers}
+        self._venue_dataset: dict[Venue, str] = {Venue(p.venue): p.dataset for p in publishers}
 
     def load_instruments(self, path: PathLike[str] | str) -> None:
         """
@@ -120,8 +166,10 @@ class DatabentoDataLoader:
         path = Path(path)
         check_file_path(path)
 
-        # TODO: Validate actually definitions schema
         instruments = self.from_dbn(path)
+
+        PyCondition.not_empty(instruments, "instruments")
+        PyCondition.type(instruments[0], Instrument, "instruments")
 
         self._instruments = {i.id: i for i in instruments}
 
@@ -169,13 +217,17 @@ class DatabentoDataLoader:
 
         """
         store = databento.from_dbn(path)
-        instrument_map = databento.common.symbology.InstrumentMap()
+        instrument_map = databento.InstrumentMap()
         instrument_map.insert_metadata(metadata=store.metadata)
 
         output: list[Data] = []
 
         for record in store:
-            data = parse_record(record, instrument_map, self._publishers)
+            data = parse_record(
+                record=record,
+                publishers=self._publishers,
+                instrument_map=instrument_map,
+            )
             if isinstance(data, tuple):
                 output.extend(data)
             else:

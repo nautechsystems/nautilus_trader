@@ -18,6 +18,8 @@ from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
+from nautilus_trader.core.nautilus_pyo3 import OrderModifyRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderPendingCancel
 from nautilus_trader.core.nautilus_pyo3 import OrderPendingUpdate
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderReleased
@@ -210,4 +212,39 @@ def test_order_pending_update():
         repr(event)
         == "OrderPendingUpdate(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
         + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_pending_cancel():
+    event = TestEventsProviderPyo3.order_pending_cancel()
+    result_dict = OrderPendingCancel.to_dict(event)
+    order_pending_update = OrderPendingCancel.from_dict(result_dict)
+    assert order_pending_update == event
+    assert (
+        str(event)
+        == "OrderPendingCancel(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderPendingCancel(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_modified_rejected():
+    event = TestEventsProviderPyo3.order_modified_rejected()
+    result_dict = OrderModifyRejected.to_dict(event)
+    order_modified_rejected = OrderModifyRejected.from_dict(result_dict)
+    assert order_modified_rejected == event
+    assert (
+        str(event)
+        == "OrderModifyRejected(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
+        + "account_id=SIM-000, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderModifyRejected(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "reason=ORDER_DOES_NOT_EXIST, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
