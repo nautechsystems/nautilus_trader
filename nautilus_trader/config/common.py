@@ -37,6 +37,8 @@ from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 CUSTOM_ENCODINGS: dict[type, Callable] = {
@@ -60,11 +62,17 @@ def msgspec_encoding_hook(obj: Any) -> Any:
         return obj.value
     if isinstance(obj, BarType):
         return str(obj)
+    if isinstance(obj, (Price, Quantity)):
+        return obj.as_double()
+    if isinstance(obj, (pd.Timestamp, pd.Timedelta)):
+        return obj.isoformat()
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
         return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
+
+    raise TypeError(f"Encoding objects of type {obj.__class__} is unsupported")
 
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
@@ -76,6 +84,12 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return obj_type(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
+    if obj_type in (Price, Quantity):
+        return obj_type.from_str(obj)
+    if obj_type in (pd.Timestamp, pd.Timedelta):
+        return obj_type(obj)
+
+    raise TypeError(f"Decoding objects of type {obj_type.__class__} is unsupported")
 
 
 def register_json_encoding(type_: type, encoder: Callable) -> None:
