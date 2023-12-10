@@ -89,7 +89,7 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
     if obj_type in (pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
 
-    raise TypeError(f"Decoding objects of type {obj_type.__class__} is unsupported")
+    raise TypeError(f"Decoding objects of type {obj_type} is unsupported")
 
 
 def register_json_encoding(type_: type, encoder: Callable) -> None:
