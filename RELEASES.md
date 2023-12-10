@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
 ### Breaking Changes
+- Changed configuration objects to take stronger types as these are now serializable when registered (rather than primitives)
 - Changed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization due below fix (you'll need to flush your cache)
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
 - Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
