@@ -113,7 +113,10 @@ cdef class ExecAlgorithm(Actor):
 
         super().__init__()
         # Assign Execution Algorithm ID after base class initialized
-        self.id = config.exec_algorithm_id or ExecAlgorithmId(type(self).__name__)
+        if isinstance(config.exec_algorithm_id, str):
+            self.id = ExecAlgorithmId(config.exec_algorithm_id)
+        else:
+            self.id = config.exec_algorithm_id or ExecAlgorithmId(type(self).__name__)
 
         # Configuration
         self.config = config
