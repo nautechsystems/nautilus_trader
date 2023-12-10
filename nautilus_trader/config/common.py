@@ -37,10 +37,17 @@ from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 CUSTOM_ENCODINGS: dict[type, Callable] = {
     pd.DataFrame: lambda x: x.to_json(),
+}
+
+
+CUSTOM_DECODINGS: dict[type, Callable] = {
+    pd.DataFrame: lambda x: pd.read_json(x),
 }
 
 
@@ -60,11 +67,17 @@ def msgspec_encoding_hook(obj: Any) -> Any:
         return obj.value
     if isinstance(obj, BarType):
         return str(obj)
+    if isinstance(obj, (Price | Quantity)):
+        return str(obj)
+    if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
+        return obj.isoformat()
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
         return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
+
+    raise TypeError(f"Encoding objects of type {obj.__class__} is unsupported")
 
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
@@ -76,11 +89,27 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return obj_type(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
+    if obj_type == Price:
+        return Price.from_str(obj)
+    if obj_type == Quantity:
+        return Quantity.from_str(obj)
+    if obj_type in (pd.Timestamp, pd.Timedelta):
+        return obj_type(obj)
+    if obj_type in CUSTOM_DECODINGS:
+        func = CUSTOM_DECODINGS[obj_type]
+        return func(obj)
+
+    raise TypeError(f"Decoding objects of type {obj_type} is unsupported")
 
 
 def register_json_encoding(type_: type, encoder: Callable) -> None:
     global CUSTOM_ENCODINGS
     CUSTOM_ENCODINGS[type_] = encoder
+
+
+def register_json_decoding(type_: type, decoder: Callable) -> None:
+    global CUSTOM_DECODINGS
+    CUSTOM_DECODINGS[type_] = decoder
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
