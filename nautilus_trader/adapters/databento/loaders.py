@@ -22,6 +22,7 @@ import msgspec
 from nautilus_trader.adapters.databento.common import check_file_path
 from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
+from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -165,8 +166,10 @@ class DatabentoDataLoader:
         path = Path(path)
         check_file_path(path)
 
-        # TODO: Validate actually definitions schema
         instruments = self.from_dbn(path)
+
+        PyCondition.not_empty(instruments, "instruments")
+        PyCondition.type(instruments[0], Instrument, "instruments")
 
         self._instruments = {i.id: i for i in instruments}
 
