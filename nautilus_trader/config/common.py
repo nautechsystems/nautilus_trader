@@ -63,7 +63,7 @@ def msgspec_encoding_hook(obj: Any) -> Any:
     if isinstance(obj, BarType):
         return str(obj)
     if isinstance(obj, (Price | Quantity)):
-        return obj.as_double()
+        return str(obj)
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
