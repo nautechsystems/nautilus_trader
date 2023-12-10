@@ -286,16 +286,32 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
 
 def _get_api_key(is_testnet: bool) -> str:
     if is_testnet:
-        return get_env_key("BYBIT_TESTNET_API_KEY")
+        key = get_env_key("BYBIT_TESTNET_API_KEY")
+        if not key:
+            raise ValueError(
+                "BYBIT_TESTNET_API_KEY environment variable not set",
+            )
+        return key
     else:
-        return get_env_key("BYBIT_API_KEY")
+        key = get_env_key("BYBIT_API_KEY")
+        if not key:
+            raise ValueError("BYBIT_API_KEY environment variable not set")
+        return key
 
 
 def _get_api_secret(is_testnet: bool) -> str:
     if is_testnet:
-        return get_env_key("BYBIT_TESTNET_API_SECRET")
+        secret = get_env_key("BYBIT_TESTNET_API_SECRET")
+        if not secret:
+            raise ValueError(
+                "BYBIT_TESTNET_API_SECRET environment variable not set",
+            )
+        return secret
     else:
-        return get_env_key("BYBIT_API_SECRET")
+        secret = get_env_key("BYBIT_API_SECRET")
+        if not secret:
+            raise ValueError("BYBIT_API_SECRET environment variable not set")
+        return secret
 
 
 def _get_http_base_url(is_testnet: bool):

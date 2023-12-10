@@ -16,6 +16,8 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.execution.reports import PositionStatusReport
+from nautilus_trader.model.identifiers import AccountId, InstrumentId
 
 
 class BybitPositionStruct(msgspec.Struct):
@@ -46,6 +48,21 @@ class BybitPositionStruct(msgspec.Struct):
     cumRealisedPnl: str
     createdTime: str
     updatedTime: str
+
+
+    def parse_to_position_status_report(
+        self,
+        account_id: AccountId,
+        instrument_id: InstrumentId
+    ) -> PositionStatusReport:
+        position_side = BybitPositionSide(self.side).parse_to_position_side()
+
+        return PositionStatusReport(
+            account_id=account_id,
+            instrument_id=instrument_id,
+            position_side=
+
+        )
 
 
 class BybitPositionResponseStruct(msgspec.Struct):

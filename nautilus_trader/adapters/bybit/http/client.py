@@ -22,6 +22,7 @@ import aiohttp
 import msgspec
 
 import nautilus_trader
+from nautilus_trader.adapters.bybit.common.error import raise_bybit_error
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -45,6 +46,7 @@ def create_string_from_dict(data):
 
 class ResponseCode(msgspec.Struct):
     retCode: int
+
 
 
 class BybitHttpClient:
@@ -127,11 +129,8 @@ class BybitHttpClient:
         if response_status.retCode == 0:
             return response.body
         else:
-            self._handle_error_by_code(response_status.retCode)
+            raise_bybit_error(response_status.retCode)
         return None
-
-    def _handle_error_by_code(self, code: int):
-        pass
 
     async def sign_request(
         self,

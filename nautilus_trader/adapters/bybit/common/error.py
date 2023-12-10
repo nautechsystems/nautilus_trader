@@ -12,3 +12,29 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
+
+
+class BybitError(Exception):
+    """
+    The base class for all `Bybit` specific errors.
+    """
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+class BybitKeyExpiredError(BybitError):
+    code = 33004
+    message = "Your api key has expired."
+
+    def __init__(self):
+        super().__init__(self.code, self.message)
+
+
+def raise_bybit_error(code):
+    if code == BybitKeyExpiredError.code:
+        raise BybitKeyExpiredError()
+    else:
+        raise BybitError(code, "Unknown bybit error")

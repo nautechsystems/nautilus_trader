@@ -70,11 +70,11 @@ class RequestDemoStrategy(Strategy):
 
     def start(self):
         seconds_delta = timedelta(seconds=self.interval)
-        self.clock.set_timer(
-            name="fetch_ticker",
-            interval=seconds_delta,
-            callback=self.send_tickers_request,
-        )
+        # self.clock.set_timer(
+        #     name="fetch_ticker",
+        #     interval=seconds_delta,
+        #     callback=self.send_tickers_request,
+        # )
 
     def send_tickers_request(self, time_event: TimeEvent):
         request = Request(
@@ -93,8 +93,10 @@ class RequestDemoStrategy(Strategy):
                 self.log.info(f"{ticker}")
 
 
-bybit_api_key = os.getenv("BYBIT_API_KEY", None)
-bybit_api_secret = os.getenv("BYBIT_API_SECRET", None)
+# bybit_api_key = os.getenv("BYBIT_API_KEY", None)
+# bybit_api_key = "puoVYU45dIfelFgOon"
+# bybit_api_secret = os.getenv("BYBIT_API_SECRET", None)
+# bybit_api_secret = "b1qY5GDzPR9RgcQvbnHhIT5W2iWmqTJJSRvT"
 
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
@@ -106,18 +108,20 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         "BYBIT": BybitDataClientConfig(
-            api_key=bybit_api_key,
-            api_secret=bybit_api_secret,
+            api_key=None,
+            api_secret=None,
             instrument_types=[BybitInstrumentType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            testnet=True,
         ),
     },
     exec_clients={
         "BYBIT": BybitExecClientConfig(
-            api_key=bybit_api_key,
-            api_secret=bybit_api_secret,
+            api_key=None,
+            api_secret=None,
             instrument_types=[BybitInstrumentType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            testnet=True,
         ),
     },
     timeout_connection=20.0,

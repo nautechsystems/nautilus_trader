@@ -59,7 +59,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
@@ -258,7 +257,16 @@ class BybitExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         self._log.info("Requesting PositionStatusReports...")
-        return []
+        reports: list[PositionStatusReport] = []
+        for instrument_type in self._instrument_types:
+            positions = await self._http_account.query_position_info(instrument_type)
+            for position in positions:
+                instrument_id : InstrumentId = BybitSymbol(position.symbol + "-" + instrument_type.value.upper()).parse_as_nautilus()
+                position_report = position.parse_to_position_status_report(
+                    account_id=self.account_id,
+                    instrument_id=instrument_id,
+                )
+
 
     def _get_cache_active_symbols(self) -> set[str]:
         # check in cache for all active orders
@@ -271,14 +279,6 @@ class BybitExecutionClient(LiveExecutionClient):
             active_symbols.add(BybitSymbol(position.instrument_id.symbol.value))
         return active_symbols
 
-    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId | None:
-        # parse instrument id
-        nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus()
-        instrument_id: InstrumentId = self._instrument_ids.get(nautilus_symbol)
-        if not instrument_id:
-            instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
-            self._instrument_ids[nautilus_symbol] = instrument_id
-        return instrument_id
 
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
@@ -506,3 +506,4 @@ class BybitExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self) -> None:
         await self._ws_client.disconnect()
+
