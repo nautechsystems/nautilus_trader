@@ -13,14 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
+from __future__ import annotations
+
 import importlib
 import sys
-from collections.abc import Callable
-from decimal import Decimal
 from typing import Any
 
-import msgspec
 import pandas as pd
 
 from nautilus_trader.common import Environment
@@ -33,6 +31,7 @@ from nautilus_trader.config.common import RiskEngineConfig
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import TraderId
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -162,7 +161,7 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
 
     Parameters
     ----------
-    trader_id : str
+    trader_id : TraderId
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     log_level : str, default "INFO"
         The stdout log level for the node.
@@ -198,7 +197,7 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     """
 
     environment: Environment = Environment.BACKTEST
-    trader_id: str = "BACKTESTER-001"
+    trader_id: TraderId = TraderId("BACKTESTER-001")
     data_engine: DataEngineConfig = DataEngineConfig()
     risk_engine: RiskEngineConfig = RiskEngineConfig()
     exec_engine: ExecEngineConfig = ExecEngineConfig()
@@ -232,10 +231,6 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     engine: BacktestEngineConfig | None = None
     batch_size_bytes: int | None = None
 
-    @property
-    def id(self):
-        return tokenize_config(self.dict())
-
 
 def parse_filters_expr(s: str | None):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
@@ -266,29 +261,3 @@ def parse_filters_expr(s: str | None):
         return eval(code, {}, allowed_names)  # noqa
 
     return safer_eval(s)  # Only allow use of the field object
-
-
-CUSTOM_ENCODINGS: dict[type, Callable] = {
-    pd.DataFrame: lambda x: x.to_json(),
-}
-
-
-def json_encoder(x):
-    if isinstance(x, str | Decimal):
-        return str(x)
-    elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
-        return x.fully_qualified_name()
-    elif type(x) in CUSTOM_ENCODINGS:
-        func = CUSTOM_ENCODINGS[type(x)]
-        return func(x)
-    raise TypeError(f"Objects of type {type(x)} are not supported")
-
-
-def register_json_encoding(type_: type, encoder: Callable) -> None:
-    global CUSTOM_ENCODINGS
-    CUSTOM_ENCODINGS[type_] = encoder
-
-
-def tokenize_config(obj: dict) -> str:
-    value: bytes = msgspec.json.encode(obj, enc_hook=json_encoder)
-    return hashlib.sha256(value).hexdigest()

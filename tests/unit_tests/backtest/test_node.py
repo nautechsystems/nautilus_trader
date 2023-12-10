@@ -143,7 +143,7 @@ class TestBacktestNode:
                 "data": [
                     {
                         "catalog_path": "data_catalog",
-                        "data_cls": QuoteTick.fully_qualified_name(),
+                        "data_cls": "nautilus_trader.model.data:QuoteTick",
                         "instrument_id": "AUD/USD.SIM",
                         "start_time": 1580398089820000000,
                         "end_time": 1580504394501000000,
