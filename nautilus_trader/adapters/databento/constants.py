@@ -13,25 +13,12 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from nautilus_trader.config import LiveDataClientConfig
+from typing import Final
+
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import Venue
 
 
-class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
-    """
-    Configuration for ``DatabentoDataClient`` instances.
-
-    Parameters
-    ----------
-    api_key : str, optional
-        The Databento API secret key.
-        If ``None`` then will source the `DATABENTO_API_KEY` environment variable.
-    http_gateway : str, optional
-        The historical HTTP client gateway override.
-    live_gateway : str, optional
-        The live client gateway override.
-
-    """
-
-    api_key: str | None = None
-    http_gateway: str | None = None
-    live_gateway: str | None = None
+# Databento isn't a venue, this pattern should be changed
+DATABENTO_CLIENT_ID: Final[ClientId] = ClientId("DATABENTO")
+DATABENTO_VENUE: Final[Venue] = Venue("DATABENTO")
