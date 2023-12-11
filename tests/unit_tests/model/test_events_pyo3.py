@@ -15,6 +15,7 @@
 
 
 from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
+from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
@@ -265,4 +266,22 @@ def test_order_accepted():
         repr(event)
         == "OrderAccepted(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
         + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_cancel_rejected():
+    event = TestEventsProviderPyo3.order_cancel_rejected()
+    result_dict = OrderCancelRejected.to_dict(event)
+    order_cancel_rejected = OrderCancelRejected.from_dict(result_dict)
+    assert order_cancel_rejected == event
+    assert (
+        str(event)
+        == "OrderCancelRejected(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
+        + "account_id=SIM-000, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderCancelRejected(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "reason=ORDER_DOES_NOT_EXIST, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )
