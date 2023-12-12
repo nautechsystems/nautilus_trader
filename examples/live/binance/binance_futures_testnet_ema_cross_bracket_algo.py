@@ -25,8 +25,9 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.ema_cross import EMACross
-from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
+from nautilus_trader.examples.algorithms.twap import TWAPExecAlgorithm
+from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgo
+from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossBracketAlgoConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -36,8 +37,6 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -47,32 +46,15 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    # cache=CacheConfig(
-    #     database=DatabaseConfig(),
-    #     buffer_interval_ms=100,
-    # ),
-    # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),
-    #     encoding="json",
-    #     stream="quoters",
-    #     use_instance_id=False,
-    #     timestamps_as_iso8601=True,
-    #     # types_filter=[QuoteTick],
-    #     autotrim_mins=1,
-    # ),
-    # heartbeat_interval=1.0,
-    # snapshot_orders=True,
-    # snapshot_positions=True,
-    # snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.SPOT,
+            account_type=BinanceAccountType.USDT_FUTURE,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
-            testnet=False,  # If client uses the testnet
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -80,11 +62,11 @@ config_node = TradingNodeConfig(
         "BINANCE": BinanceExecClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
-            account_type=BinanceAccountType.SPOT,
+            account_type=BinanceAccountType.USDT_FUTURE,
             base_url_http=None,  # Override with custom endpoint
             base_url_ws=None,  # Override with custom endpoint
             us=False,  # If client is for Binance US
-            testnet=False,  # If client uses the testnet
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -92,27 +74,35 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=10.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=3.0,
 )
 
 # Instantiate the node with a configuration
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = EMACrossConfig(
-    instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
-    external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
-    bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+symbol = "ETHUSDT-PERP"
+strat_config = EMACrossBracketAlgoConfig(
+    order_id_tag="001",
+    instrument_id=InstrumentId.from_str(f"{symbol}.BINANCE"),
+    external_order_claims=[InstrumentId.from_str(f"{symbol}.BINANCE")],
+    bar_type=BarType.from_str(f"{symbol}.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     fast_ema_period=10,
     slow_ema_period=20,
-    trade_size=Decimal("0.010"),
-    order_id_tag="001",
+    bracket_distance_atr=1.0,
+    trade_size=Decimal("0.100"),
+    emulation_trigger="BID_ASK",
+    entry_exec_algorithm_id="TWAP",
+    entry_exec_algorithm_params={"horizon_secs": 5.0, "interval_secs": 0.5},
 )
-# Instantiate your strategy
-strategy = EMACross(config=strat_config)
 
-# Add your strategies and modules
+# Instantiate your strategy and execution algorithm
+strategy = EMACrossBracketAlgo(config=strat_config)
+exec_algorithm = TWAPExecAlgorithm()
+
+# Add your strategy and execution algorithm and modules
 node.trader.add_strategy(strategy)
+node.trader.add_exec_algorithm(exec_algorithm)
 
 # Register your client factories with the node (can take user defined factories)
 node.add_data_client_factory("BINANCE", BinanceLiveDataClientFactory)
