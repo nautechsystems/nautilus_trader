@@ -21,11 +21,12 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
-from nautilus_trader.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.config.common import CacheConfig
+from nautilus_trader.config.common import DatabaseConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
 from nautilus_trader.live.node import TradingNode
@@ -37,63 +38,32 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(
-        log_level="INFO",
-        # log_level_file="DEBUG",
-        # log_file_format="json",
-        log_colors=True,
-    ),
-    # tracing=TracingConfig(stdout_level="DEBUG"),
+    logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
-        filter_position_reports=True,
     ),
     cache=CacheConfig(
-        # database=DatabaseConfig(),
-        timestamps_as_iso8601=True,
-        flush_on_start=False,
+        database=DatabaseConfig(),  # default redis
+        buffer_interval_ms=100,
     ),
-    # message_bus=MessageBusConfig(
-    #     database=DatabaseConfig(),
-    #     encoding="json",
-    #     timestamps_as_iso8601=True,
-    #     stream="quoters",
-    #     use_instance_id=False,
-    #     # types_filter=[QuoteTick],
-    #     autotrim_mins=30,
-    # ),
-    # heartbeat_interval=1.0,
-    # snapshot_orders=True,
-    # snapshot_positions=True,
-    # snapshot_positions_interval=5.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
+            # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
+            # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
             account_type=BinanceAccountType.USDT_FUTURE,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
-            api_secret=None,  # 'BINANCE_API_SECRET' env var
+            # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
+            # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
             account_type=BinanceAccountType.USDT_FUTURE,
-            base_url_http=None,  # Override with custom endpoint
-            base_url_ws=None,  # Override with custom endpoint
-            us=False,  # If client is for Binance US
-            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -114,8 +84,7 @@ strat_config = VolatilityMarketMakerConfig(
     bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
     atr_period=20,
     atr_multiple=6.0,
-    trade_size=Decimal("0.010"),
-    # manage_gtd_expiry=True,
+    trade_size=Decimal("0.01"),
 )
 # Instantiate your strategy
 strategy = VolatilityMarketMaker(config=strat_config)

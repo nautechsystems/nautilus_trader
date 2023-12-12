@@ -25,10 +25,8 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.config.common import CacheConfig
-from nautilus_trader.config.common import DatabaseConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStop
+from nautilus_trader.examples.strategies.ema_cross_trailing_stop import EMACrossTrailingStopConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -38,8 +36,6 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -49,23 +45,27 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache=CacheConfig(
-        database=DatabaseConfig(),  # default redis
-        buffer_interval_ms=100,
-    ),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
-            # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
-            # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
+            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
     exec_clients={
         "BINANCE": BinanceExecClientConfig(
-            # api_key=os.getenv("BINANCE_FUTURES_API_KEY"),
-            # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
+            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
+            base_url_http=None,  # Override with custom endpoint
+            base_url_ws=None,  # Override with custom endpoint
+            us=False,  # If client is for Binance US
+            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
     },
@@ -80,16 +80,20 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
+strat_config = EMACrossTrailingStopConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     external_order_claims=[InstrumentId.from_str("ETHUSDT-PERP.BINANCE")],
     bar_type=BarType.from_str("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+    fast_ema_period=10,
+    slow_ema_period=20,
     atr_period=20,
-    atr_multiple=6.0,
-    trade_size=Decimal("0.01"),
+    trailing_atr_multiple=3.0,
+    trailing_offset_type="BASIS_POINTS",
+    trigger_type="LAST_TRADE",
+    trade_size=Decimal("0.010"),
 )
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = EMACrossTrailingStop(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

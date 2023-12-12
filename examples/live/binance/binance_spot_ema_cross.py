@@ -25,8 +25,8 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
-from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.examples.strategies.ema_cross import EMACross
+from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -36,8 +36,6 @@ from nautilus_trader.model.identifiers import TraderId
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
-# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
-# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -49,19 +47,16 @@ config_node = TradingNodeConfig(
     ),
     # cache=CacheConfig(
     #     database=DatabaseConfig(),
-    #     encoding="json",
-    #     timestamps_as_iso8601=True,
     #     buffer_interval_ms=100,
     # ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
     #     stream="quoters",
     #     use_instance_id=False,
+    #     timestamps_as_iso8601=True,
     #     # types_filter=[QuoteTick],
-    #     autotrim_mins=30,
+    #     autotrim_mins=1,
     # ),
     # heartbeat_interval=1.0,
     # snapshot_orders=True,
@@ -102,16 +97,17 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
+strat_config = EMACrossConfig(
     instrument_id=InstrumentId.from_str("ETHUSDT.BINANCE"),
     external_order_claims=[InstrumentId.from_str("ETHUSDT.BINANCE")],
     bar_type=BarType.from_str("ETHUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
-    atr_period=20,
-    atr_multiple=6.0,
+    fast_ema_period=10,
+    slow_ema_period=20,
     trade_size=Decimal("0.010"),
+    order_id_tag="001",
 )
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = EMACross(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
