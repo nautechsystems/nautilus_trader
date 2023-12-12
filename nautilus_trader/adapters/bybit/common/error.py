@@ -35,6 +35,6 @@ class BybitKeyExpiredError(BybitError):
 
 def raise_bybit_error(code):
     if code == BybitKeyExpiredError.code:
-        raise BybitKeyExpiredError()
+        raise BybitKeyExpiredError
     else:
         raise BybitError(code, "Unknown bybit error")

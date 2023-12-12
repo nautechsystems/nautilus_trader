@@ -48,7 +48,6 @@ class ResponseCode(msgspec.Struct):
     retCode: int
 
 
-
 class BybitHttpClient:
     def __init__(
         self,

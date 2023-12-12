@@ -24,6 +24,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
@@ -50,6 +51,8 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import Instrument
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -247,6 +250,37 @@ class BybitDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            return
+        data_type = DataType(
+            type=Instrument,
+            metadata={"instrument_id": instrument_id},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=instrument,
+            correlation_id=correlation_id,
+        )
+
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
+        all_instruments = self._instrument_provider.get_all()
+        target_instruments = []
+        for instrument in all_instruments.values():
+            if instrument.venue == venue:
+                target_instruments.append(instrument)
+        data_type = DataType(
+            type=Instrument,
+            metadata={"venue": venue},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=target_instruments,
+            correlation_id=correlation_id,
+        )
+
     async def _request_bars(
         self,
         bar_type: BarType,
@@ -306,3 +340,39 @@ class BybitDataClient(LiveMarketDataClient):
             self._update_instruments_task = None
         for instrument_type, ws_client in self._ws_clients.items():
             await ws_client.disconnect()
+
+    async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
+        bybit_symbol = BybitSymbol(symbol.value)
+        bybit_tickers = await self._http_market.fetch_tickers(
+            instrument_type=bybit_symbol.instrument_type,
+            symbol=bybit_symbol.raw_symbol,
+        )
+        data_type = DataType(
+            type=BybitTickerData,
+            metadata={"symbol": symbol},
+        )
+        result = []
+        for ticker in bybit_tickers:
+            ticker_data: BybitTickerData = BybitTickerData(
+                symbol=ticker.symbol,
+                bid1Price=ticker.bid1Price,
+                bid1Size=ticker.bid1Size,
+                ask1Price=ticker.ask1Price,
+                ask1Size=ticker.ask1Size,
+                lastPrice=ticker.lastPrice,
+                highPrice24h=ticker.highPrice24h,
+                lowPrice24h=ticker.lowPrice24h,
+                turnover24h=ticker.turnover24h,
+                volume24h=ticker.volume24h,
+            )
+            result.append(ticker_data)
+        self._handle_data_response(
+            data_type,
+            result,
+            correlation_id,
+        )
+
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        if data_type.type == BybitTickerData:
+            symbol = data_type.metadata["symbol"]
+            await self._handle_ticker_data_request(symbol, correlation_id)

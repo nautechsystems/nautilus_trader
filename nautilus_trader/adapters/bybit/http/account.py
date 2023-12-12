@@ -19,12 +19,12 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParameters
+from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
+from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParameters
 
 # fmt: off
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.wallet_balance import BybitWalletBalanceGetParameters
-from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
-from nautilus_trader.adapters.bybit.endpoints.account.position_info import PositionInfoGetParameters
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParameters
 

@@ -22,6 +22,7 @@ from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.common import Environment
 from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.config import InstrumentProviderConfig
@@ -29,11 +30,11 @@ from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.core.message import Request
-from nautilus_trader.core.nautilus_pyo3 import InstrumentId
-from nautilus_trader.core.uuid import UUID4
-from nautilus_trader.data.messages import DataResponse
+from nautilus_trader.core.data import Data
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading import Strategy
 
 
@@ -51,14 +52,12 @@ class RequestDemoStrategyConfig(StrategyConfig, frozen=True):
 
 class RequestDemoStrategy(Strategy):
     """
-    Strategy showcases how to request data from a custom bybit endpoint. Some adapter
-    endpoints are not connected to data engine, so they cannot be queried. We can use
-    the message bus to request data from these endpoints, as they are registered in
-    appropriate clients.
+    Strategy showcases how to request custom data from bybit adapter. BybitTickerData is
+    specific to Bybit adapter and you can request it with `request_data` method.
 
     Also this strategy demonstrate:
-    - how to use the message bus to request data from a custom endpoint.
-    - how to use clock to schedule this request periodically.
+    - how to request BybitTickerData
+    - how to use clock to schedule this request periodically by time interval in seconds.
 
     """
 
@@ -66,37 +65,29 @@ class RequestDemoStrategy(Strategy):
         super().__init__()
         self.interval = config.interval
         self.instrument_id = InstrumentId.from_str(config.instrument_id)
-        self.linear_request_ticker_uuid = UUID4()
 
-    def start(self):
+    def on_start(self):
         seconds_delta = timedelta(seconds=self.interval)
-        # self.clock.set_timer(
-        #     name="fetch_ticker",
-        #     interval=seconds_delta,
-        #     callback=self.send_tickers_request,
-        # )
+        self.clock.set_timer(
+            name="fetch_ticker",
+            interval=seconds_delta,
+            callback=self.send_tickers_request,
+        )
 
     def send_tickers_request(self, time_event: TimeEvent):
-        request = Request(
-            request_id=self.linear_request_ticker_uuid,
-            ts_init=self.clock.timestamp_ns(),
-            callback=self.on_data,
+        data_type = DataType(
+            BybitTickerData,
             metadata={"symbol": self.instrument_id.symbol},
         )
-        self.msgbus.request(endpoint="bybit.data.tickers", request=request)
+        self.request_data(data_type, ClientId("BYBIT"))
 
-    def on_data(self, data: DataResponse):
-        ## check generic data response by uuid
-        if data.correlation_id == self.linear_request_ticker_uuid:
-            tickers = data.data
-            for ticker in tickers:
-                self.log.info(f"{ticker}")
+    def on_historical_data(self, data: Data):
+        if isinstance(data, BybitTickerData):
+            self.log.info(f"{data}")
 
 
-# bybit_api_key = os.getenv("BYBIT_API_KEY", None)
-# bybit_api_key = "puoVYU45dIfelFgOon"
-# bybit_api_secret = os.getenv("BYBIT_API_SECRET", None)
-# bybit_api_secret = "b1qY5GDzPR9RgcQvbnHhIT5W2iWmqTJJSRvT"
+api_key = os.getenv("BYBIT_TESTNET_API_KEY")
+api_secret = os.getenv("BYBIT_TESTNET_API_SECRET")
 
 config_node = TradingNodeConfig(
     trader_id="TESTER-001",
@@ -108,8 +99,8 @@ config_node = TradingNodeConfig(
     ),
     data_clients={
         "BYBIT": BybitDataClientConfig(
-            api_key=None,
-            api_secret=None,
+            api_key=api_key,
+            api_secret=api_secret,
             instrument_types=[BybitInstrumentType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,
@@ -117,8 +108,8 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         "BYBIT": BybitExecClientConfig(
-            api_key=None,
-            api_secret=None,
+            api_key=api_key,
+            api_secret=api_secret,
             instrument_types=[BybitInstrumentType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,

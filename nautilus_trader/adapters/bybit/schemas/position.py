@@ -15,9 +15,13 @@
 
 import msgspec
 
+from nautilus_trader.adapters.bybit.common.enums import BybitPositionSide
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
-from nautilus_trader.model.identifiers import AccountId, InstrumentId
+from nautilus_trader.model.identifiers import AccountId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Quantity
 
 
 class BybitPositionStruct(msgspec.Struct):
@@ -25,7 +29,7 @@ class BybitPositionStruct(msgspec.Struct):
     riskId: int
     riskLimitValue: str
     symbol: str
-    side: str
+    side: BybitPositionSide
     size: str
     avgPrice: str
     positionValue: str
@@ -49,19 +53,23 @@ class BybitPositionStruct(msgspec.Struct):
     createdTime: str
     updatedTime: str
 
-
     def parse_to_position_status_report(
         self,
         account_id: AccountId,
-        instrument_id: InstrumentId
+        instrument_id: InstrumentId,
+        report_id: UUID4,
+        ts_init: int,
     ) -> PositionStatusReport:
-        position_side = BybitPositionSide(self.side).parse_to_position_side()
-
+        position_side = self.side.parse_to_position_side()
+        size = Quantity.from_str(self.positionValue)
         return PositionStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
-            position_side=
-
+            position_side=position_side,
+            quantity=size,
+            report_id=report_id,
+            ts_init=ts_init,
+            ts_last=ts_init,
         )
 
 

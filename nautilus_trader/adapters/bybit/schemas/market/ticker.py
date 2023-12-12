@@ -16,6 +16,59 @@
 import msgspec
 
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
+from nautilus_trader.core.data import Data
+
+
+class BybitTickerData(Data):
+    symbol: str
+    bid1Price: str
+    bid1Size: str
+    ask1Price: str
+    ask1Size: str
+    lastPrice: str
+    highPrice24h: str
+    lowPrice24h: str
+    turnover24h: str
+    volume24h: str
+
+    def __init__(
+        self,
+        symbol: str,
+        bid1Price: str,
+        bid1Size: str,
+        ask1Price: str,
+        ask1Size: str,
+        lastPrice: str,
+        highPrice24h: str,
+        lowPrice24h: str,
+        turnover24h: str,
+        volume24h: str,
+    ):
+        self.symbol = symbol
+        self.bid1Price = bid1Price
+        self.bid1Size = bid1Size
+        self.ask1Price = ask1Price
+        self.ask1Size = ask1Size
+        self.lastPrice = lastPrice
+        self.highPrice24h = highPrice24h
+        self.lowPrice24h = lowPrice24h
+        self.turnover24h = turnover24h
+        self.volume24h = volume24h
+
+    def __repr__(self):
+        return (
+            f"{self.__class__.__name__}("
+            f"symbol={self.symbol!r}, "
+            f"bid1Price={self.bid1Price!r}, "
+            f"bid1Size={self.bid1Size!r}, "
+            f"ask1Price={self.ask1Price!r}, "
+            f"ask1Size={self.ask1Size!r}, "
+            f"lastPrice={self.lastPrice!r}, "
+            f"highPrice24h={self.highPrice24h!r}, "
+            f"lowPrice24h={self.lowPrice24h!r}, "
+            f"turnover24h={self.turnover24h!r}, "
+            f"volume24h={self.volume24h!r})"
+        )
 
 
 class BybitTickerSpot(msgspec.Struct):
