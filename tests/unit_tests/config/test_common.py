@@ -22,8 +22,8 @@ from nautilus_trader.config.common import CUSTOM_DECODINGS
 from nautilus_trader.config.common import CUSTOM_ENCODINGS
 from nautilus_trader.config.common import msgspec_decoding_hook
 from nautilus_trader.config.common import msgspec_encoding_hook
-from nautilus_trader.config.common import register_json_decoding
-from nautilus_trader.config.common import register_json_encoding
+from nautilus_trader.config.common import register_config_decoding
+from nautilus_trader.config.common import register_config_encoding
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import ComponentId
@@ -55,7 +55,7 @@ def test_register_custom_encodings() -> None:
     test_encoder = str
 
     # Act
-    register_json_encoding(Price, test_encoder)
+    register_config_encoding(Price, test_encoder)
 
     # Assert
     assert CUSTOM_ENCODINGS[Price] == test_encoder
@@ -64,7 +64,7 @@ def test_register_custom_encodings() -> None:
 def test_register_custom_decodings() -> None:
     # Arrange
     test_decoder = Price.from_str
-    register_json_decoding(Price, test_decoder)
+    register_config_decoding(Price, test_decoder)
 
     # Assert
     assert CUSTOM_DECODINGS[Price] == test_decoder
@@ -196,7 +196,7 @@ def test_encoding_quatity() -> None:
     assert result == str(obj)
 
 
-def test_decoding_quatity() -> None:
+def test_decoding_quantity() -> None:
     # Arrange
     obj_type = Quantity
     obj = "100000"

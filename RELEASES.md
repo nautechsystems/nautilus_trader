@@ -18,6 +18,8 @@ Released on TBD (UTC).
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
 - Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
 - Changed `Actor` state loading to now use the standard `Serializer`
+- Renamed `register_json_encoding` to `register_config_encoding`
+- Renamed `register_json_decoding` to `register_config_decoding`
 - Removed `CacheDatabaseConfig` (due above config change)
 - Removed `infrastructure` subpackage (now redundant with new Rust implementation)
 
