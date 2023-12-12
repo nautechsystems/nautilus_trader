@@ -15,6 +15,7 @@
 
 pub mod accepted;
 pub mod cancel_rejected;
+pub mod canceled;
 pub mod denied;
 pub mod emulated;
 pub mod filled;
