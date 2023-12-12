@@ -15,6 +15,8 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
+from nautilus_trader.adapters.databento.constants import DATABENTO
+from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.factories import DatabentoLiveDataClientFactory
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
@@ -24,7 +26,6 @@ from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
@@ -33,6 +34,12 @@ from nautilus_trader.trading.strategy import Strategy
 # *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
 # *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
 
+# For correct subscription operation, you must specify all instruments to be immediately
+# subscribed for as part of the data client configuration
+instrument_ids = [
+    InstrumentId.from_str("AAPL.IEXG"),
+    InstrumentId.from_str("ESZ4.GLBX"),
+]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -63,10 +70,11 @@ config_node = TradingNodeConfig(
     # snapshot_positions=True,
     # snapshot_positions_interval=5.0,
     data_clients={
-        "DATABENTO": DatabentoDataClientConfig(
+        DATABENTO: DatabentoDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            # instrument_ids=instrument_ids,
         ),
     },
     timeout_connection=10.0,
@@ -110,7 +118,6 @@ class DataSubscriber(Strategy):
 
         # Configuration
         self.instrument_ids = config.instrument_ids
-        self.databento_id = ClientId("DATABENTO")
 
     def on_start(self) -> None:
         """
@@ -120,7 +127,9 @@ class DataSubscriber(Strategy):
 
         """
         for instrument_id in self.instrument_ids:
-            self.subscribe_quote_ticks(instrument_id, client_id=self.databento_id)
+            self.subscribe_order_book_deltas(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
 
     def on_stop(self) -> None:
         """
@@ -141,20 +150,15 @@ class DataSubscriber(Strategy):
         self.log.info(repr(tick), LogColor.CYAN)
 
 
-# Configure your strategy
-strat_config = DataSubscriberConfig(
-    instrument_ids=[
-        InstrumentId.from_str("AAPL.IEXG"),
-    ],
-)
-# Instantiate your strategy
+# Configure and initialize your strategy
+strat_config = DataSubscriberConfig(instrument_ids=instrument_ids)
 strategy = DataSubscriber(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
 # Register your client factories with the node (can take user defined factories)
-node.add_data_client_factory("DATABENTO", DatabentoLiveDataClientFactory)
+node.add_data_client_factory(DATABENTO, DatabentoLiveDataClientFactory)
 node.build()
 
 
