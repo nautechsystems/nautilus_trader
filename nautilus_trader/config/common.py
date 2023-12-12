@@ -59,7 +59,7 @@ def resolve_path(path: str) -> type:
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:
-    if isinstance(obj, str | Decimal):
+    if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
         return obj.value
@@ -81,7 +81,7 @@ def msgspec_encoding_hook(obj: Any) -> Any:
 
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
-    if obj_type == UUID4:
+    if obj_type in (Decimal, UUID4, pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
     if obj_type == InstrumentId:
         return InstrumentId.from_str(obj)
@@ -93,8 +93,6 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return Price.from_str(obj)
     if obj_type == Quantity:
         return Quantity.from_str(obj)
-    if obj_type in (pd.Timestamp, pd.Timedelta):
-        return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:
         func = CUSTOM_DECODINGS[obj_type]
         return func(obj)
@@ -102,12 +100,12 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
     raise TypeError(f"Decoding objects of type {obj_type} is unsupported")
 
 
-def register_json_encoding(type_: type, encoder: Callable) -> None:
+def register_config_encoding(type_: type, encoder: Callable) -> None:
     global CUSTOM_ENCODINGS
     CUSTOM_ENCODINGS[type_] = encoder
 
 
-def register_json_decoding(type_: type, decoder: Callable) -> None:
+def register_config_decoding(type_: type, decoder: Callable) -> None:
     global CUSTOM_DECODINGS
     CUSTOM_DECODINGS[type_] = decoder
 
