@@ -20,6 +20,7 @@ from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
 from nautilus_trader.core.nautilus_pyo3 import Money
 from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
+from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
 from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
@@ -274,6 +275,21 @@ class TestEventsProviderPyo3:
             account_id=TestIdProviderPyo3.account_id(),
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
             reason="ORDER_DOES_NOT_EXIST",
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_canceled() -> OrderCanceled:
+        return OrderCanceled(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
             event_id=UUID4(uuid),
             ts_init=0,
             ts_event=0,
