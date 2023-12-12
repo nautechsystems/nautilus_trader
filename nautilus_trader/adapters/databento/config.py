@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -29,9 +30,16 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The historical HTTP client gateway override.
     live_gateway : str, optional
         The live client gateway override.
+    datasets : list[str], optional
+        The datasets to prepare operations for (will be used for 'ALL_SYBOLS' requests).
+    instrument_ids : list[InstrumentId], optional
+        The instrument IDs to request definitions for on start.
+        Databento 'datasets' based on venues will be used for any 'ALL_SYMBOLS' requests.
 
     """
 
     api_key: str | None = None
     http_gateway: str | None = None
     live_gateway: str | None = None
+    datasets: list[str] | None = None
+    instrument_ids: list[InstrumentId] | None = None
