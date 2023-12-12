@@ -287,11 +287,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         match bar_type.spec.bar_aggregation:
             case BarAggregation.SECOND:
                 schema = databento.Schema.OHLCV_1S
-            case BarAggregation.SECOND:
+            case BarAggregation.MINUTE:
                 schema = databento.Schema.OHLCV_1M
-            case BarAggregation.SECOND:
+            case BarAggregation.HOUR:
                 schema = databento.Schema.OHLCV_1H
-            case BarAggregation.SECOND:
+            case BarAggregation.DAY:
                 schema = databento.Schema.OHLCV_1D
             case _:
                 self._log.error(
