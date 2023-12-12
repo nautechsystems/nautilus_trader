@@ -579,7 +579,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-    external_order_claims : list[InstrumentId | str], optional
+    external_order_claims : list[InstrumentId], optional
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.
     manage_contingent_orders : bool, default False
@@ -594,7 +594,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     strategy_id: StrategyId | None = None
     order_id_tag: str | None = None
     oms_type: str | None = None
-    external_order_claims: list[InstrumentId | str] | None = None
+    external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
 
