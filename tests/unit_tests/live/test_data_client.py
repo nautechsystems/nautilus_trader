@@ -120,11 +120,11 @@ class TestLiveMarketDataClientTests:
             loop=self.loop,
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            instrument_provider=InstrumentProvider(logger=self.logger),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
             logger=self.logger,
+            instrument_provider=InstrumentProvider(logger=self.logger),
         )
 
     def test_dummy_test(self):

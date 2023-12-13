@@ -33,7 +33,7 @@ cdef class DataClient(Component):
     cdef set _subscriptions_generic
 
     cdef readonly Venue venue
-    """The clients venue ID (if not a routing client).\n\n:returns: `Venue` or ``None``"""
+    """The clients venue ID (if applicable).\n\n:returns: `Venue` or ``None``"""
     cdef readonly bint is_connected
     """If the client is connected.\n\n:returns: `bool`"""
 
