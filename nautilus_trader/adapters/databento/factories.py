@@ -20,7 +20,6 @@ import databento
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.data import DatabentoDataClient
-from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
@@ -112,14 +111,6 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             gateway=config.http_gateway,
         )
 
-        provider = DatabentoInstrumentProvider(
-            http_client=http_client,
-            logger=logger,
-            clock=clock,
-            live_api_key=config.api_key,
-            live_gateway=config.live_gateway,
-        )
-
         return DatabentoDataClient(
             loop=loop,
             http_client=http_client,
@@ -127,6 +118,5 @@ class DatabentoLiveDataClientFactory(LiveDataClientFactory):
             cache=cache,
             clock=clock,
             logger=logger,
-            instrument_provider=provider,
             config=config,
         )

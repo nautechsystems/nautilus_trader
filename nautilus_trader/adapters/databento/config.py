@@ -31,10 +31,12 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     live_gateway : str, optional
         The live client gateway override.
     datasets : list[str], optional
-        The datasets to prepare operations for (will be used for 'ALL_SYBOLS' requests).
+        The datasets to prepare operations for.
     instrument_ids : list[InstrumentId], optional
         The instrument IDs to request definitions for on start.
-        Databento 'datasets' based on venues will be used for any 'ALL_SYMBOLS' requests.
+    initial_load_timeout : float, default 5.0
+        The timeout (seconds) to wait for instruments to load (per dataset).
+        Instruments will be requested concurrently per dataset.
 
     """
 
@@ -43,3 +45,4 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     live_gateway: str | None = None
     datasets: list[str] | None = None
     instrument_ids: list[InstrumentId] | None = None
+    initial_load_timeout: float | None = 5.0

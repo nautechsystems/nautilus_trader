@@ -25,7 +25,9 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
@@ -37,7 +39,7 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("AAPL.IEXG"),
+    InstrumentId.from_str("AAPL.XCHI"),
     InstrumentId.from_str("ESZ4.GLBX"),
 ]
 
@@ -74,7 +76,7 @@ config_node = TradingNodeConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            # instrument_ids=instrument_ids,
+            instrument_ids=instrument_ids,
         ),
     },
     timeout_connection=10.0,
@@ -137,6 +139,19 @@ class DataSubscriber(Strategy):
         """
         # Databento does not yet support live data unsubscribing
 
+    def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
+        """
+        Actions to be performed when the strategy is running and receives order book
+        deltas.
+
+        Parameters
+        ----------
+        deltas : OrderBookDeltas
+            The order book deltas received.
+
+        """
+        self.log.info(repr(deltas), LogColor.CYAN)
+
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a quote tick.
@@ -144,6 +159,18 @@ class DataSubscriber(Strategy):
         Parameters
         ----------
         tick : QuoteTick
+            The tick received.
+
+        """
+        self.log.info(repr(tick), LogColor.CYAN)
+
+    def on_trade_tick(self, tick: TradeTick) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a trade tick.
+
+        Parameters
+        ----------
+        tick : TradeTick
             The tick received.
 
         """

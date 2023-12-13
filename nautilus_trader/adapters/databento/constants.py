@@ -16,12 +16,7 @@
 from typing import Final
 
 from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.model.identifiers import Venue
 
 
-# Databento isn't a venue, this pattern should be changed
 DATABENTO: Final[str] = "DATABENTO"
 DATABENTO_CLIENT_ID: Final[ClientId] = ClientId(DATABENTO)
-DATABENTO_VENUE: Final[Venue] = Venue(DATABENTO)
-
-ALL_SYMBOLS = "ALL_SYMBOLS"
