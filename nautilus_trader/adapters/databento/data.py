@@ -14,17 +14,15 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from asyncio.futures import Future
 from collections.abc import Coroutine
 
 import databento
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
-from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
-from nautilus_trader.adapters.databento.constants import DATABENTO_VENUE
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record
-from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -57,8 +55,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
-    instrument_provider : DatabentoInstrumentProvider
-        The instrument provider.
     config : DatabentoDataClientConfig
         The configuration for the client.
 
@@ -76,14 +72,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
-        instrument_provider: DatabentoInstrumentProvider,
         config: DatabentoDataClientConfig,
     ) -> None:
         super().__init__(
             loop=loop,
             client_id=DATABENTO_CLIENT_ID,
-            venue=DATABENTO_VENUE,
-            instrument_provider=instrument_provider,
+            venue=None,  # Not applicable
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -95,6 +89,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._live_gateway: str | None = config.live_gateway
         self._datasets: list[str] = config.datasets or []
         self._instrument_ids: dict[str, set[InstrumentId]] = {}
+        self._initial_load_timeout: float | None = config.initial_load_timeout
 
         # Clients
         self._http_client: databento.Historical = http_client
@@ -110,16 +105,28 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._instrument_ids[dataset].add(instrument_id)
 
     async def _connect(self) -> None:
+        if not self._instrument_ids:
+            return  # Nothing else to do yet
+
         self._log.info("Initializing instruments...")
 
-        tasks: list[Coroutine] = []
-        for instrument_ids in self._instrument_ids.values():
-            task = self._instrument_provider.load_ids_async(sorted(instrument_ids))
+        tasks: list[Future] = []
+        for dataset, instrument_ids in self._instrument_ids.items():
+            task = self._loop.run_in_executor(
+                None,
+                self._load_instrument_ids,
+                dataset,
+                sorted(instrument_ids),
+            )
             tasks.append(task)
 
-        await asyncio.gather(*tasks)
-
-        self._send_all_instruments_to_data_engine()
+        try:
+            if self._initial_load_timeout:
+                await asyncio.wait_for(asyncio.gather(*tasks), timeout=self._initial_load_timeout)
+            else:
+                await asyncio.gather(*tasks)
+        except asyncio.TimeoutError:
+            self._log.warning("Timeout waiting for instruments...")
 
     async def _disconnect(self) -> None:
         tasks: list[Coroutine] = []
@@ -160,9 +167,31 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._instrument_ids[dataset].add(instrument_id)
         await self._subscribe_instrument(instrument_id)
 
-    def _send_all_instruments_to_data_engine(self) -> None:
-        for instrument in self._instrument_provider.get_all().values():
-            self._handle_data(instrument)
+    def _load_instrument_ids(self, dataset: str, instrument_ids: list[InstrumentId]) -> None:
+        instrument_ids_to_decode = set(instrument_ids)
+
+        # Use fresh live data client for a one off initial instruments load
+        live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
+
+        try:
+            live_client.subscribe(
+                dataset=dataset,
+                schema=databento.Schema.DEFINITION,
+                symbols=[i.symbol.value for i in instrument_ids],
+                stype_in=databento.SType.RAW_SYMBOL,
+                start=0,  # From start of current session (latest definition)
+            )
+            for record in live_client:
+                if isinstance(record, databento.InstrumentDefMsg):
+                    instrument = parse_record(record, self._loader.publishers())
+                    self._handle_data(instrument)
+
+                    instrument_ids_to_decode.discard(instrument.id)
+                    if not instrument_ids_to_decode:
+                        break
+        finally:
+            # Close the connection (we will still process all received data)
+            live_client.stop()
 
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
@@ -171,14 +200,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         raise NotImplementedError(f"Cannot subscribe to {data_type.type} (not implemented).")
 
     async def _subscribe_instruments(self) -> None:
-        for dataset in self._datasets:
-            live_client = self._get_live_client(dataset)
-            live_client.subscribe(
-                dataset=dataset,
-                schema=databento.Schema.DEFINITION,
-                symbols=ALL_SYMBOLS,
-            )
-            self._check_live_client_started(dataset, live_client)
+        # Replace method in child class, for exchange specific data types.
+        raise NotImplementedError("Cannot subscribe to all instruments (not currently supported).")
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
