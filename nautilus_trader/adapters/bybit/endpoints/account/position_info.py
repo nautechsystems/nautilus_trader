@@ -35,7 +35,7 @@ class BybitPositionInfoEndpoint(BybitHttpEndpoint):
         client: BybitHttpClient,
         base_endpoint: str,
     ) -> None:
-        url_path = base_endpoint + "position/list"
+        url_path = base_endpoint + "/position/list"
         super().__init__(
             client=client,
             endpoint_type=BybitEndpointType.ACCOUNT,
