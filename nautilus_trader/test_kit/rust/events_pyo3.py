@@ -24,6 +24,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
 from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
+from nautilus_trader.core.nautilus_pyo3 import OrderExpired
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderListId
@@ -284,6 +285,21 @@ class TestEventsProviderPyo3:
     @staticmethod
     def order_canceled() -> OrderCanceled:
         return OrderCanceled(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_expired() -> OrderExpired:
+        return OrderExpired(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
             instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
