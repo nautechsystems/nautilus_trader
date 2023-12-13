@@ -16,6 +16,7 @@
 from enum import Enum
 from enum import unique
 
+from nautilus_trader.core.nautilus_pyo3 import PositionSide
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderSide
@@ -36,6 +37,18 @@ class BybitPositionIdx(Enum):
     BUY_HEDGE = 1
     # sell side of hedge-mode position
     SELL_HEDGE = 2
+
+
+@unique
+class BybitPositionSide(Enum):
+    BUY = "Buy"
+    SELL = "Sell"
+
+    def parse_to_position_side(self) -> PositionSide:
+        if self == BybitPositionSide.BUY:
+            return PositionSide.LONG
+        elif self == BybitPositionSide.SELL:
+            return PositionSide.SHORT
 
 
 @unique

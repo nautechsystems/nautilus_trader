@@ -59,7 +59,6 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
@@ -258,7 +257,22 @@ class BybitExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
         self._log.info("Requesting PositionStatusReports...")
-        return []
+        reports: list[PositionStatusReport] = []
+        for instrument_type in self._instrument_types:
+            positions = await self._http_account.query_position_info(instrument_type)
+            for position in positions:
+                instr: InstrumentId = BybitSymbol(
+                    position.symbol + "-" + instrument_type.value.upper(),
+                ).parse_as_nautilus()
+                position_report = position.parse_to_position_status_report(
+                    account_id=self.account_id,
+                    instrument_id=instr,
+                    report_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._log.debug(f"Received {position_report}.")
+                reports.append(position_report)
+        return reports
 
     def _get_cache_active_symbols(self) -> set[str]:
         # check in cache for all active orders
@@ -270,15 +284,6 @@ class BybitExecutionClient(LiveExecutionClient):
         for position in open_positions:
             active_symbols.add(BybitSymbol(position.instrument_id.symbol.value))
         return active_symbols
-
-    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId | None:
-        # parse instrument id
-        nautilus_symbol: str = BybitSymbol(symbol).parse_as_nautilus()
-        instrument_id: InstrumentId = self._instrument_ids.get(nautilus_symbol)
-        if not instrument_id:
-            instrument_id = InstrumentId(Symbol(nautilus_symbol), BYBIT_VENUE)
-            self._instrument_ids[nautilus_symbol] = instrument_id
-        return instrument_id
 
     async def _get_active_position_symbols(self, symbol: str | None) -> set[str]:
         active_symbols: set[str] = set()
@@ -388,12 +393,12 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             self._topic_check(ws_message.topic, raw)
-        except Exception:
+        except Exception as e:
             ws_message_sub = self._decoder_ws_subscription.decode(raw)
             if ws_message_sub.success:
                 self._log.info("Success subscribing")
             else:
-                self._log.error("Failed to subscribe.")
+                self._log.error(f"Failed to subscribe. {e!s}")
 
     def _topic_check(self, topic: str, raw: bytes) -> None:
         if "order" in topic:
