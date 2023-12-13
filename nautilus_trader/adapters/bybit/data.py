@@ -75,11 +75,11 @@ class BybitDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
         )
 
         # Hot cache
