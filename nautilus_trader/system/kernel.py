@@ -213,7 +213,7 @@ class NautilusKernel:
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
 
-        if config.cache is None or config.cache.database is None:
+        if not config.cache or not config.cache.database:
             cache_db = None
         elif config.cache.database.type == "redis":
             encoding = config.cache.encoding.lower()
@@ -229,13 +229,25 @@ class NautilusKernel:
             )
         else:
             raise ValueError(
-                "The `cache_db_config.type` is unrecognized. "
-                "Use one of {{'in-memory', 'redis'}}.",
+                f"Unrecognized `config.cache.database.type`, was '{config.cache.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a cache database backing "
+                "then you can pass `None` for the `cache.database` ('in-memory' is no longer valid).",
             )
 
         ########################################################################
         # Core components
         ########################################################################
+        if (
+            config.message_bus
+            and config.message_bus.database
+            and config.message_bus.database.type != "redis"
+        ):
+            raise ValueError(
+                f"Unrecognized `config.message_bus.type, was '{config.message_bus.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a message bus database backing "
+                "then you can pass `None` for the `message_bus.database`.",
+            )
+
         msgbus_serializer = None
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
