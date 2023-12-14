@@ -1067,6 +1067,24 @@ class OrderCanceled:
     def from_dict(cls, values: dict[str, str]) -> OrderCanceled: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderExpired:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderExpired: ...
+    def to_dict(self) -> dict[str, str]: ...
+
 ###################################################################################################
 # Infrastructure
 ###################################################################################################
