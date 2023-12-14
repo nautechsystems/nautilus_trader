@@ -28,6 +28,7 @@ from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.trading.strategy import Strategy
@@ -39,14 +40,14 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("AAPL.XCHI"),
-    InstrumentId.from_str("ESZ4.GLBX"),
+    # InstrumentId.from_str("AAPL.XCHI"),
+    InstrumentId.from_str("ESZ3.GLBX"),
 ]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="DEBUG"),  # For development
+    logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
@@ -129,7 +130,11 @@ class DataSubscriber(Strategy):
 
         """
         for instrument_id in self.instrument_ids:
-            self.subscribe_order_book_deltas(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                book_type=BookType.L3_MBO,
+                client_id=DATABENTO_CLIENT_ID,
+            )
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
 

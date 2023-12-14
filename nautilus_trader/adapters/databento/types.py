@@ -16,6 +16,10 @@
 import msgspec
 
 
+Dataset = str
+PublisherId = int
+
+
 class DatabentoPublisher(msgspec.Struct, frozen=True):
     """
     Represents a Databento publisher including dataset name and venue.
