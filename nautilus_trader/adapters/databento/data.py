@@ -23,6 +23,8 @@ from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record
+from nautilus_trader.adapters.databento.types import Dataset
+from nautilus_trader.adapters.databento.types import PublisherId
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -87,19 +89,20 @@ class DatabentoDataClient(LiveMarketDataClient):
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
-        self._datasets: list[str] = config.datasets or []
-        self._instrument_ids: dict[str, set[InstrumentId]] = {}
+        self._datasets: list[Dataset] = config.datasets or []
+        self._instrument_ids: dict[Dataset, set[InstrumentId]] = {}
+        self._instrument_maps: dict[PublisherId, databento.InstrumentMap] = {}
         self._initial_load_timeout: float | None = config.initial_load_timeout
 
         # Clients
         self._http_client: databento.Historical = http_client
-        self._live_clients: dict[str, databento.Live] = {}
-        self._has_subscribed: dict[str, bool] = {}
+        self._live_clients: dict[Dataset, databento.Live] = {}
+        self._has_subscribed: dict[Dataset, bool] = {}
         self._loader = DatabentoDataLoader()
 
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
-            dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             if dataset not in self._instrument_ids:
                 self._instrument_ids[dataset] = set()
             self._instrument_ids[dataset].add(instrument_id)
@@ -137,7 +140,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         await asyncio.gather(*tasks)
 
-    def _get_live_client(self, dataset: str) -> databento.Live:
+    def _get_live_client(self, dataset: Dataset) -> databento.Live:
         client = self._live_clients.get(dataset)
 
         if client is None:
@@ -147,15 +150,15 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         return client
 
-    def _check_live_client_started(self, dataset: str, live_client: databento.Live) -> None:
+    def _check_live_client_started(self, dataset: Dataset, live_client: databento.Live) -> None:
         if not self._has_subscribed.get(dataset):
-            self._log.debug(f"Starting live client for {dataset}...", LogColor.MAGENTA)
+            self._log.debug(f"Starting {dataset} live client...", LogColor.MAGENTA)
             live_client.start()
             self._has_subscribed[dataset] = True
             self._log.info(f"Started {dataset} live feed.", LogColor.BLUE)
 
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
-        dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         subscribed_instruments = self._instrument_ids.get(dataset)
         if not subscribed_instruments:
             subscribed_instruments = set()
@@ -167,7 +170,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._instrument_ids[dataset].add(instrument_id)
         await self._subscribe_instrument(instrument_id)
 
-    def _load_instrument_ids(self, dataset: str, instrument_ids: list[InstrumentId]) -> None:
+    def _load_instrument_ids(self, dataset: Dataset, instrument_ids: list[InstrumentId]) -> None:
         instrument_ids_to_decode = set(instrument_ids)
 
         # Use fresh live data client for a one off initial instruments load
@@ -204,7 +207,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         raise NotImplementedError("Cannot subscribe to all instruments (not currently supported).")
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -221,7 +224,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         kwargs: dict | None = None,
     ) -> None:
         await self._ensure_subscribed_for_instrument(instrument_id)
-        dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -250,7 +253,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 )
                 return
 
-        dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -267,7 +270,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         await self._ensure_subscribed_for_instrument(instrument_id)
 
-        dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -282,7 +285,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         await self._ensure_subscribed_for_instrument(instrument_id)
 
-        dataset: str = self._loader.get_dataset_for_venue(instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -323,7 +326,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 )
                 return
 
-        dataset: str = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+        dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -384,8 +387,21 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
     def _handle_record(self, record: databento.DBNRecord) -> None:
-        self._log.info(f"Received {record}", LogColor.MAGENTA)
-        data = parse_record(record, self._loader.publishers())
+        try:
+            self._log.debug(f"Received {record}", LogColor.MAGENTA)
+            instrument_map = self._instrument_maps.get(0)  # Hardcode publisher ID for now
+            if not instrument_map:
+                instrument_map = databento.InstrumentMap()
+                self._instrument_maps[0] = instrument_map
+
+            if isinstance(record, databento.SymbolMappingMsg):
+                instrument_map.insert_symbol_mapping_msg(record)
+                return
+
+            data = parse_record(record, self._loader.publishers(), instrument_map)
+        except ValueError as e:
+            self._log.error(f"{e!r}")
+            return
 
         if isinstance(data, tuple):
             self._handle_data(data[0])
