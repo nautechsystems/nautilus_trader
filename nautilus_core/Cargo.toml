@@ -37,7 +37,7 @@ rust_decimal_macros = "1.33.1"
 serde = { version = "1.0.193", features = ["derive"] }
 serde_json = "1.0.108"
 strum = { version = "0.25.0", features = ["derive"] }
-thiserror = "1.0.50"
+thiserror = "1.0.51"
 tracing = "0.1.40"
 tokio = { version = "1.35.0", features = ["full"] }
 ustr = { git = "https://github.com/anderslanglands/ustr", features = ["serde"] }
