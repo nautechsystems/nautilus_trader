@@ -237,6 +237,6 @@ class InteractiveBrokersErrorHandler:
         advanced_order_reject_json: str = "",
     ) -> None:
         """
-        Errors sent by the TWS are received here.
+        Errors sent by TWS API are received here.
         """
         self._process_error(req_id, error_code, error_string)

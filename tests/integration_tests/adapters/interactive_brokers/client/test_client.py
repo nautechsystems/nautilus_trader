@@ -70,7 +70,7 @@ def test_resume(ib_client):
 
     # Assert
     assert ib_client.is_ready.is_set()
-    assert ib_client._connection_attempt_counter == 0
+    assert ib_client._connection_manager._connection_attempt_counter == 0
 
 
 @pytest.mark.asyncio

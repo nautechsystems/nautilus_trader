@@ -27,6 +27,8 @@ from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
 from ibapi.utils import current_fn_name
 
+from nautilus_trader.adapters.interactive_brokers.common import IBContract
+
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.model.identifiers import InstrumentId
@@ -55,8 +57,8 @@ class InteractiveBrokersConnectionManager:
         self.host: str = client.host
         self.port: int = client.port
 
-        self._connection_attempt_counter = 0
-        self._contract_for_probe = instrument_id_to_ib_contract(
+        self._connection_attempt_counter: int = 0
+        self._contract_for_probe: IBContract = instrument_id_to_ib_contract(
             InstrumentId.from_str("EUR/CHF.IDEALPRO"),
         )
 
@@ -210,7 +212,7 @@ class InteractiveBrokersConnectionManager:
 
         """
         if not self._eclient.conn.isConnected() or retries_remaining <= 0:
-            self._log.warning("Disconnected; resetting connection")
+            self._log.warning("Disconnected. Resetting connection...")
             self._client._reset()
             return
         if len(buf) > 0:
@@ -275,8 +277,7 @@ class InteractiveBrokersConnectionManager:
 
         """
         self._client.logAnswer(current_fn_name(), vars())
-        error = ConnectionError("Socket disconnect")
         for future in self._client.requests.get_futures():
             if not future.done():
-                future.set_exception(error)
+                future.set_exception(ConnectionError("Socket disconnect"))
         self._eclient.reset()

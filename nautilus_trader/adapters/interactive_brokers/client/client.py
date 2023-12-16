@@ -96,16 +96,15 @@ class InteractiveBrokersClient(Component, EWrapper):
         # Config
         self.loop = loop
         self.cache = cache
-        self.clock = self._clock
-        self.log = self._log
-        self.msgbus = self._msgbus
+        self.clock: LiveClock = self._clock
+        self.log: Logger = self._log
+        self.msgbus: MessageBus = self._msgbus
         self.host = host
         self.port = port
         self.client_id = client_id
 
         self._eclient: EClient = EClient(wrapper=self)
         self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
-        self._connection_attempt_counter = 0
 
         # Managers and handlers to handle different aspects of the client
         self._connection_manager = InteractiveBrokersConnectionManager(self)
@@ -130,7 +129,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # Reset
         self._reset()
-        self._request_id_seq = 10000
+        self._request_id_seq: int = 10000
 
         # Subscriptions
         self.requests = Requests()
@@ -227,7 +226,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         self._is_ready.set()
-        self._connection_attempt_counter = 0
+        self._connection_manager._connection_attempt_counter = 0
 
     def _degrade(self) -> None:
         """
