@@ -15,9 +15,10 @@
 
 use pyo3::prelude::*;
 
+use super::to_pyvalue_err;
 use crate::datetime::{
-    micros_to_nanos, millis_to_nanos, nanos_to_micros, nanos_to_millis, nanos_to_secs,
-    secs_to_millis, secs_to_nanos, unix_nanos_to_iso8601,
+    last_weekday_nanos, micros_to_nanos, millis_to_nanos, nanos_to_micros, nanos_to_millis,
+    nanos_to_secs, secs_to_millis, secs_to_nanos, unix_nanos_to_iso8601,
 };
 
 #[must_use]
@@ -66,4 +67,9 @@ pub fn py_nanos_to_micros(nanos: u64) -> u64 {
 #[pyfunction(name = "unix_nanos_to_iso8601")]
 pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     unix_nanos_to_iso8601(timestamp_ns)
+}
+
+#[pyfunction(name = "last_weekday_nanos")]
+pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
+    last_weekday_nanos(year, month, day).map_err(to_pyvalue_err)
 }
