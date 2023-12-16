@@ -12,27 +12,20 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
 import functools
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
-# fmt: off
 from ibapi.account_summary_tags import AccountSummaryTags
 from ibapi.utils import current_fn_name
 
+from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import IBPosition
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.position import Position
 
 
-# fmt: on
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-
-
-class InteractiveBrokersAccountManager:
+class InteractiveBrokersClientAccountMixin(BaseMixin):
     """
     Handles various account and position related requests for the
     InteractiveBrokersClient.
@@ -44,14 +37,7 @@ class InteractiveBrokersAccountManager:
 
     """
 
-    def __init__(self, client: "InteractiveBrokersClient"):
-        self._client = client
-        self._eclient = client._eclient
-        self._log = client._log
-
-        self.account_ids: set[str] = set()
-
-    def accounts(self) -> set[str]:
+    def _accounts(self) -> set[str]:
         """
         Return a set of account identifiers managed by this instance.
 
@@ -60,7 +46,7 @@ class InteractiveBrokersAccountManager:
         set[str]
 
         """
-        return self.account_ids.copy()
+        return self._account_ids.copy()
 
     def subscribe_account_summary(self) -> None:
         """
@@ -73,9 +59,9 @@ class InteractiveBrokersAccountManager:
 
         """
         name = "accountSummary"
-        if not (subscription := self._client.subscriptions.get(name=name)):
-            req_id = self._client.next_req_id()
-            subscription = self._client.subscriptions.add(
+        if not (subscription := self._subscriptions.get(name=name)):
+            req_id = self._next_req_id()
+            subscription = self._subscriptions.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
@@ -110,8 +96,8 @@ class InteractiveBrokersAccountManager:
 
         """
         name = "accountSummary"
-        if subscription := self._client.subscriptions.get(name=name):
-            self._client.subscriptions.remove(subscription.req_id)
+        if subscription := self._subscriptions.get(name=name):
+            self._subscriptions.remove(subscription.req_id)
             self._eclient.cancelAccountSummary(reqId=subscription.req_id)
             self._log.debug(f"Unsubscribed from {subscription}")
         else:
@@ -143,8 +129,8 @@ class InteractiveBrokersAccountManager:
         None
 
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if request := self._client.requests.get(name="OpenPositions"):
+        self.logAnswer(current_fn_name(), vars())
+        if request := self._requests.get(name="OpenPositions"):
             request.result.append(IBPosition(account_id, contract, position, avg_cost))
 
     async def get_positions(self, account_id: str) -> list[Position] | None:
@@ -163,18 +149,18 @@ class InteractiveBrokersAccountManager:
         """
         self._log.debug(f"Requesting Open Positions for {account_id}")
         name = "OpenPositions"
-        if not (request := self._client.requests.get(name=name)):
-            request = self._client.requests.add(
-                req_id=self._client.next_req_id(),
+        if not (request := self._requests.get(name=name)):
+            request = self._requests.add(
+                req_id=self._next_req_id(),
                 name=name,
                 handle=self._eclient.reqPositions,
             )
             if not request:
                 return None
             request.handle()
-            all_positions = await self._client.await_request(request, 30)
+            all_positions = await self._await_request(request, 30)
         else:
-            all_positions = await self._client.await_request(request, 30)
+            all_positions = await self._await_request(request, 30)
         if not all_positions:
             return None
         positions = []
@@ -195,9 +181,9 @@ class InteractiveBrokersAccountManager:
         """
         Receive account information.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         name = f"accountSummary-{account_id}"
-        if handler := self._client.event_subscriptions.get(name, None):
+        if handler := self._event_subscriptions.get(name, None):
             handler(tag, value, currency)
 
     def managedAccounts(self, accounts_list: str) -> None:
@@ -207,19 +193,16 @@ class InteractiveBrokersAccountManager:
         Occurs automatically on initial API client connection.
 
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        self.account_ids = {a for a in accounts_list.split(",") if a}
-        if (
-            self._client.order_manager.next_valid_order_id >= 0
-            and not self._client.is_ib_ready.is_set()
-        ):
+        self.logAnswer(current_fn_name(), vars())
+        self._account_ids = {a for a in accounts_list.split(",") if a}
+        if self._next_valid_order_id >= 0 and not self._is_ib_ready.is_set():
             self._log.info("`is_ib_ready` set by managedAccounts", LogColor.BLUE)
-            self._client.is_ib_ready.set()
+            self._is_ib_ready.set()
 
     def positionEnd(self) -> None:
         """
         Indicate that all the positions have been transmitted.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if request := self._client.requests.get(name="OpenPositions"):
-            self._client.end_request(request.req_id)
+        self.logAnswer(current_fn_name(), vars())
+        if request := self._requests.get(name="OpenPositions"):
+            self._end_request(request.req_id)

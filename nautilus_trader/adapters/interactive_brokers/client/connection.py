@@ -15,7 +15,6 @@
 
 import asyncio
 import functools
-from typing import TYPE_CHECKING
 
 from ibapi import comm
 from ibapi import decoder
@@ -27,20 +26,10 @@ from ibapi.server_versions import MAX_CLIENT_VER
 from ibapi.server_versions import MIN_CLIENT_VER
 from ibapi.utils import current_fn_name
 
-from nautilus_trader.adapters.interactive_brokers.common import IBContract
-
-# fmt: off
-from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 
 
-# fmt: on
-
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-
-
-class InteractiveBrokersConnectionManager:
+class InteractiveBrokersClientConnectionMixin(BaseMixin):
     """
     Manages the connection to TWS/Gateway for the InteractiveBrokersClient.
 
@@ -50,19 +39,7 @@ class InteractiveBrokersConnectionManager:
 
     """
 
-    def __init__(self, client: "InteractiveBrokersClient"):
-        self._client = client
-        self._eclient: EClient = client._eclient
-        self._log = client._log
-        self.host: str = client.host
-        self.port: int = client.port
-
-        self._connection_attempt_counter: int = 0
-        self._contract_for_probe: IBContract = instrument_id_to_ib_contract(
-            InstrumentId.from_str("EUR/CHF.IDEALPRO"),
-        )
-
-    async def establish_socket_connection(self) -> None:
+    async def _establish_socket_connection(self) -> None:
         """
         Establish the socket connection with TWS/Gateway. It initializes the connection,
         connects the socket, sends and receives version information, and then sets up
@@ -89,8 +66,8 @@ class InteractiveBrokersConnectionManager:
                 serverVersion=self._eclient.serverVersion(),
             )
             await self._receive_server_info()
-            self._client.setup_client()
-            self._log.debug("Connection established successfully.")
+            self._setup_client()
+            self._log.debug("TWS API connection established successfully.")
         except OSError as e:
             self._handle_connection_error(e)
         except Exception as e:
@@ -108,13 +85,13 @@ class InteractiveBrokersConnectionManager:
         None
 
         """
-        self._eclient.host = self._client.host
-        self._eclient.port = self._client.port
-        self._eclient.clientId = self._client.client_id
+        self._eclient._host = self._host
+        self._eclient._port = self._port
+        self._eclient.clientId = self._client_id
         self._connection_attempt_counter += 1
         self._log.info(
             f"Attempt {self._connection_attempt_counter}: "
-            f"Connecting to {self.host}:{self.port} w/ id:{self._client.client_id}",
+            f"Connecting to {self._host}:{self._port} w/ id:{self._client_id}",
         )
 
     async def _connect_socket(self) -> None:
@@ -128,8 +105,8 @@ class InteractiveBrokersConnectionManager:
         None
 
         """
-        self._eclient.conn = Connection(self.host, self.port)
-        await self._client.loop.run_in_executor(None, self._eclient.conn.connect)
+        self._eclient.conn = Connection(self._host, self._port)
+        await self._loop.run_in_executor(None, self._eclient.conn.connect)
         self._eclient.setConnState(EClient.CONNECTING)
 
     async def _send_version_info(self) -> None:
@@ -151,7 +128,7 @@ class InteractiveBrokersConnectionManager:
             v100version += f" {self._eclient.connectionOptions}"
         msg = comm.make_msg(v100version)
         msg2 = str.encode(v100prefix, "ascii") + msg
-        await self._client.loop.run_in_executor(
+        await self._loop.run_in_executor(
             None,
             functools.partial(self._eclient.conn.sendMsg, msg2),
         )
@@ -178,7 +155,7 @@ class InteractiveBrokersConnectionManager:
 
         while len(fields) != 2 and connection_retries_remaining > 0:
             await asyncio.sleep(1)
-            buf = await self._client.loop.run_in_executor(None, self._eclient.conn.recvMsg)
+            buf = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
             self._process_received_buffer(buf, connection_retries_remaining, fields)
 
         if len(fields) == 2:
@@ -213,7 +190,7 @@ class InteractiveBrokersConnectionManager:
         """
         if not self._eclient.conn.isConnected() or retries_remaining <= 0:
             self._log.warning("Disconnected. Resetting connection...")
-            self._client._reset()
+            self._reset()
             return
         if len(buf) > 0:
             _, msg, _ = comm.read_msg(buf)
@@ -276,8 +253,8 @@ class InteractiveBrokersConnectionManager:
         None
 
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        for future in self._client.requests.get_futures():
+        self.logAnswer(current_fn_name(), vars())
+        for future in self._requests.get_futures():
             if not future.done():
                 future.set_exception(ConnectionError("Socket disconnect"))
         self._eclient.reset()

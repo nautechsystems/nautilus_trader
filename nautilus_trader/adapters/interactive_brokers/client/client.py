@@ -17,7 +17,6 @@ import asyncio
 import functools
 from collections.abc import Callable
 from collections.abc import Coroutine
-from decimal import Decimal
 from inspect import iscoroutinefunction
 from typing import Any
 
@@ -27,30 +26,25 @@ from ibapi.commission_report import CommissionReport
 from ibapi.common import MAX_MSG_LEN
 from ibapi.common import NO_VALID_ID
 from ibapi.common import BarData
-from ibapi.common import SetOfFloat
-from ibapi.common import SetOfString
-from ibapi.common import TickAttribBidAsk
-from ibapi.common import TickAttribLast
-from ibapi.contract import ContractDetails
 from ibapi.errors import BAD_LENGTH
 from ibapi.execution import Execution
-from ibapi.order import Order as IBOrder
-from ibapi.order_state import OrderState as IBOrderState
 from ibapi.utils import current_fn_name
 from ibapi.wrapper import EWrapper
 
 # fmt: off
-from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersAccountManager
+from nautilus_trader.adapters.interactive_brokers.client.account import InteractiveBrokersClientAccountMixin
+from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
 from nautilus_trader.adapters.interactive_brokers.client.common import Request
 from nautilus_trader.adapters.interactive_brokers.client.common import Requests
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscriptions
-from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersConnectionManager
-from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersContractManager
-from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersErrorHandler
-from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersMarketDataManager
-from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersOrderManager
+from nautilus_trader.adapters.interactive_brokers.client.connection import InteractiveBrokersClientConnectionMixin
+from nautilus_trader.adapters.interactive_brokers.client.contract import InteractiveBrokersClientContractMixin
+from nautilus_trader.adapters.interactive_brokers.client.error import InteractiveBrokersClientErrorMixin
+from nautilus_trader.adapters.interactive_brokers.client.market_data import InteractiveBrokersClientMarketDataMixin
+from nautilus_trader.adapters.interactive_brokers.client.order import InteractiveBrokersClientOrderMixin
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import Component
@@ -58,17 +52,27 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 # fmt: on
 
 
-class InteractiveBrokersClient(Component, EWrapper):
+class InteractiveBrokersClient(
+    Component,
+    EWrapper,
+    InteractiveBrokersClientConnectionMixin,
+    InteractiveBrokersClientAccountMixin,
+    InteractiveBrokersClientMarketDataMixin,
+    InteractiveBrokersClientOrderMixin,
+    InteractiveBrokersClientContractMixin,
+    InteractiveBrokersClientErrorMixin,
+):
     """
     A client component that interfaces with the Interactive Brokers TWS or Gateway.
 
-    This class integrates various managers and handlers to provide functionality for
-    connection management, account management, market data, and order processing with
+    This class integrates various mixins to provide functionality for connection
+    management, account management, market data, and order processing with
     Interactive Brokers. It inherits from both `Component` and `EWrapper` to provide
     event-driven responses and custom component behavior.
 
@@ -94,25 +98,14 @@ class InteractiveBrokersClient(Component, EWrapper):
             config={"name": f"{type(self).__name__}-{client_id:03d}", "client_id": client_id},
         )
         # Config
-        self.loop = loop
-        self.cache = cache
-        self.clock: LiveClock = self._clock
-        self.log: Logger = self._log
-        self.msgbus: MessageBus = self._msgbus
-        self.host = host
-        self.port = port
-        self.client_id = client_id
+        self._loop = loop
+        self._cache = cache
+        self._host = host
+        self._port = port
+        self._client_id = client_id
 
         self._eclient: EClient = EClient(wrapper=self)
         self._internal_msg_queue: asyncio.Queue = asyncio.Queue()
-
-        # Managers and handlers to handle different aspects of the client
-        self._connection_manager = InteractiveBrokersConnectionManager(self)
-        self.account_manager = InteractiveBrokersAccountManager(self)
-        self.market_data_manager = InteractiveBrokersMarketDataManager(self)
-        self.order_manager = InteractiveBrokersOrderManager(self)
-        self.contract_manager = InteractiveBrokersContractManager(self)
-        self._error_handler = InteractiveBrokersErrorHandler(self)
 
         # Tasks
         self._watch_dog_task: asyncio.Task | None = None
@@ -121,25 +114,42 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         # Event flags
         self._is_ready: asyncio.Event = asyncio.Event()  # Client is fully functional
-        self.is_ib_ready: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
+        self._is_ib_ready: asyncio.Event = asyncio.Event()  # Connectivity between IB and TWS
 
         # Hot caches
         self.registered_nautilus_clients: set = set()
-        self.event_subscriptions: dict[str, Callable] = {}
+        self._event_subscriptions: dict[str, Callable] = {}
+        self._bar_type_to_last_bar: dict[str, BarData | None] = {}
+
+        # Temporary cache
+        self._exec_id_details: dict[
+            str,
+            dict[str, Execution | (CommissionReport | str)],
+        ] = {}
 
         # Reset
         self._reset()
         self._request_id_seq: int = 10000
 
         # Subscriptions
-        self.requests = Requests()
-        self.subscriptions = Subscriptions()
+        self._requests = Requests()
+        self._subscriptions = Subscriptions()
 
         # Overrides for EClient
         self._eclient.sendMsg = self.sendMsg
         self._eclient.logRequest = self.logRequest
 
-    def setup_client(self) -> None:
+        self._account_ids: set[str] = set()
+        self._connection_attempt_counter: int = 0
+        self._contract_for_probe: IBContract = instrument_id_to_ib_contract(
+            InstrumentId.from_str("EUR/CHF.IDEALPRO"),
+        )
+        self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
+        self._next_valid_order_id: int = -1
+
+        self._eclient.error = self.error
+
+    def _setup_client(self) -> None:
         """
         Set up the client after a successful connection. Changes the client state to
         CONNECTED, starts the incoming message reader and queue tasks, and initiates the
@@ -153,10 +163,10 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._eclient.setConnState(EClient.CONNECTED)
         if self._tws_incoming_msg_reader_task:
             self._tws_incoming_msg_reader_task.cancel()
-        self._tws_incoming_msg_reader_task = self.create_task(
+        self._tws_incoming_msg_reader_task = self._create_task(
             self._run_tws_incoming_msg_reader(),
         )
-        self._internal_msg_queue_task = self.create_task(
+        self._internal_msg_queue_task = self._create_task(
             self._run_internal_msg_queue(),
         )
         self._eclient.startApi()
@@ -182,24 +192,24 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         if self.registered_nautilus_clients != set():
-            self.log.warning(
+            self._log.warning(
                 f"Any registered Clients from {self.registered_nautilus_clients} will disconnect.",
             )
 
         # Cancel tasks
         if self._watch_dog_task:
-            self.log.debug("Stopping the watch dog...")
+            self._log.debug("Stopping the watch dog...")
             self._watch_dog_task.cancel()
         if self._tws_incoming_msg_reader_task:
-            self.log.debug("Stopping the TWS incoming message reader...")
+            self._log.debug("Stopping the TWS incoming message reader...")
             self._tws_incoming_msg_reader_task.cancel()
         if self._internal_msg_queue_task:
-            self.log.debug("Stopping the internal message queue...")
+            self._log.debug("Stopping the internal message queue...")
             self._internal_msg_queue_task.cancel()
 
         self._eclient.disconnect()
         self._is_ready.clear()
-        self.account_manager.account_ids = set()
+        self._account_ids = set()
 
     def _reset(self) -> None:
         """
@@ -214,7 +224,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._eclient.reset()
 
         # Start the Watchdog
-        self._watch_dog_task = self.create_task(self._run_watch_dog())
+        self._watch_dog_task = self._create_task(self._run_watch_dog())
 
     def _resume(self) -> None:
         """
@@ -226,7 +236,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         self._is_ready.set()
-        self._connection_manager._connection_attempt_counter = 0
+        self._connection_attempt_counter = 0
 
     def _degrade(self) -> None:
         """
@@ -238,7 +248,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         self._is_ready.clear()
-        self.account_manager.account_ids = set()
+        self._account_ids = set()
 
     async def _resume_client_if_degraded(self) -> None:
         """
@@ -257,15 +267,15 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         if self.is_degraded:
-            for subscription in self.subscriptions.get_all():
+            for subscription in self._subscriptions.get_all():
                 try:
                     subscription.cancel()
                     if iscoroutinefunction(subscription.handle):
                         await subscription.handle()
                     else:
-                        await self.loop.run_in_executor(None, subscription.handle)
+                        await self._loop.run_in_executor(None, subscription.handle)
                 except Exception as e:
-                    self.log.exception("Failed subscription", e)
+                    self._log.exception("Failed subscription", e)
             self._resume()
 
     async def _start_client_if_initialized_but_not_running(self) -> None:
@@ -298,7 +308,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             if not self._is_ready.is_set():
                 await asyncio.wait_for(self._is_ready.wait(), timeout)
         except asyncio.TimeoutError as e:
-            self.log.error(f"Client is not ready. {e}")
+            self._log.error(f"Client is not ready. {e}")
 
     async def _run_watch_dog(self):
         """
@@ -321,7 +331,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             while True:
                 await asyncio.sleep(1)
                 if self._eclient.isConnected():
-                    if self.is_ib_ready.is_set():
+                    if self._is_ib_ready.is_set():
                         await self._resume_client_if_degraded()
                         await self._start_client_if_initialized_but_not_running()
                     else:
@@ -329,7 +339,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 else:
                     await self._monitor_and_reconnect()
         except asyncio.CancelledError:
-            self.log.debug("`watch_dog` task was canceled.")
+            self._log.debug("`watch_dog` task was canceled.")
 
     async def _handle_ib_is_not_ready(self) -> None:
         """
@@ -385,22 +395,22 @@ class InteractiveBrokersClient(Component, EWrapper):
         """
         if self.is_running:
             self._degrade()
-        self.is_ib_ready.clear()
+        self._is_ib_ready.clear()
         await asyncio.sleep(5)  # Avoid too fast attempts
-        await self._connection_manager.establish_socket_connection()
+        await self._establish_socket_connection()
         try:
-            await asyncio.wait_for(self.is_ib_ready.wait(), 15)
-            self.log.info(
-                f"Connected to {self.host}:{self.port} w/ id:{self.client_id}",
+            await asyncio.wait_for(self._is_ib_ready.wait(), 15)
+            self._log.info(
+                f"Connected to {self._host}:{self._port} w/ id:{self._client_id}",
             )
         except asyncio.TimeoutError:
-            self.log.error(
-                f"Unable to connect to {self.host}:{self.port} w/ id:{self.client_id}",
+            self._log.error(
+                f"Unable to connect to {self._host}:{self._port} w/ id:{self._client_id}",
             )
         except Exception as e:
-            self.log.exception("Failed connection", e)
+            self._log.exception("Failed connection", e)
 
-    def create_task(
+    def _create_task(
         self,
         coro: Coroutine,
         log_msg: str | None = None,
@@ -427,8 +437,8 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         log_msg = log_msg or coro.__name__
-        self.log.debug(f"Creating task {log_msg}.")
-        task = self.loop.create_task(
+        self._log.debug(f"Creating task {log_msg}.")
+        task = self._loop.create_task(
             coro,
             name=coro.__name__,
         )
@@ -465,7 +475,7 @@ class InteractiveBrokersClient(Component, EWrapper):
 
         """
         if task.exception():
-            self.log.error(
+            self._log.error(
                 f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
             )
         else:
@@ -473,12 +483,12 @@ class InteractiveBrokersClient(Component, EWrapper):
                 try:
                     actions()
                 except Exception as e:
-                    self.log.error(
+                    self._log.error(
                         f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
                         f"{e!r}",
                     )
             if success:
-                self.log.info(success, LogColor.GREEN)
+                self._log.info(success, LogColor.GREEN)
 
     def subscribe_event(self, name: str, handler: Callable) -> None:
         """
@@ -496,7 +506,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         None
 
         """
-        self.event_subscriptions[name] = handler
+        self._event_subscriptions[name] = handler
 
     def unsubscribe_event(self, name: str) -> None:
         """
@@ -512,9 +522,9 @@ class InteractiveBrokersClient(Component, EWrapper):
         None
 
         """
-        self.event_subscriptions.pop(name)
+        self._event_subscriptions.pop(name)
 
-    async def await_request(self, request: Request, timeout: int) -> Any | None:
+    async def _await_request(self, request: Request, timeout: int) -> Any | None:
         """
         Await the completion of a request within a specified timeout.
 
@@ -534,11 +544,11 @@ class InteractiveBrokersClient(Component, EWrapper):
         try:
             return await asyncio.wait_for(request.future, timeout)
         except asyncio.TimeoutError as e:
-            self.log.info(f"Request timed out for {request}")
-            self.end_request(request.req_id, success=False, exception=e)
+            self._log.info(f"Request timed out for {request}")
+            self._end_request(request.req_id, success=False, exception=e)
             return None
 
-    def end_request(
+    def _end_request(
         self,
         req_id: int,
         success: bool = True,
@@ -561,7 +571,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         None
 
         """
-        if not (request := self.requests.get(req_id=req_id)):
+        if not (request := self._requests.get(req_id=req_id)):
             return
 
         if not request.future.done():
@@ -571,7 +581,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 request.cancel()
                 if exception:
                     request.future.set_exception(exception)
-        self.requests.remove(req_id=req_id)
+        self._requests.remove(req_id=req_id)
 
     async def _run_tws_incoming_msg_reader(self) -> None:
         """
@@ -583,27 +593,27 @@ class InteractiveBrokersClient(Component, EWrapper):
         None
 
         """
-        self.log.debug("Client TWS incoming message reader starting...")
+        self._log.debug("Client TWS incoming message reader starting...")
         buf = b""
         try:
             while self._eclient.conn and self._eclient.conn.isConnected():
-                data = await self.loop.run_in_executor(None, self._eclient.conn.recvMsg)
+                data = await self._loop.run_in_executor(None, self._eclient.conn.recvMsg)
                 buf += data
                 while buf:
                     _, msg, buf = comm.read_msg(buf)
-                    self.log.debug(f"Msg buffer received: {buf!s}")
+                    self._log.debug(f"Msg buffer received: {buf!s}")
                     if msg:
                         # Place msg in the internal queue for processing
                         self._internal_msg_queue.put_nowait(msg)
                     else:
-                        self.log.debug("More incoming packets are needed.")
+                        self._log.debug("More incoming packets are needed.")
                         break
         except asyncio.CancelledError:
-            self.log.debug("Client TWS incoming message reader was canceled.")
+            self._log.debug("Client TWS incoming message reader was canceled.")
         except Exception as e:
-            self.log.exception("Unhandled exception in EReader worker", e)
+            self._log.exception("Unhandled exception in EReader worker", e)
         finally:
-            self.log.debug("Client TWS incoming message reader stopped.")
+            self._log.debug("Client TWS incoming message reader stopped.")
 
     async def _run_internal_msg_queue(self) -> None:
         """
@@ -614,8 +624,8 @@ class InteractiveBrokersClient(Component, EWrapper):
         None
 
         """
-        self.log.debug(
-            "Internal message queue starting...",
+        self._log.debug(
+            "Client internal message queue starting...",
         )
         try:
             while (
@@ -629,7 +639,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 self._internal_msg_queue.task_done()
         except asyncio.CancelledError:
             log_msg = f"Internal message queue processing stopped. (qsize={self._internal_msg_queue.qsize()})."
-            self.log.warning(log_msg) if not self._internal_msg_queue.empty() else self.log.debug(
+            self._log.warning(log_msg) if not self._internal_msg_queue.empty() else self._log.debug(
                 log_msg,
             )
         finally:
@@ -657,8 +667,8 @@ class InteractiveBrokersClient(Component, EWrapper):
             )
             return False
         fields: tuple[bytes] = comm.read_fields(msg)
-        self.log.debug(f"Msg received: {msg}")
-        self.log.debug(f"Msg received fields: {fields}")
+        self._log.debug(f"Msg received: {msg}")
+        self._log.debug(f"Msg received fields: {fields}")
 
         # The decoder identifies the message type based on its payload (e.g., open
         # order, process real-time ticks, etc.) and then calls the corresponding
@@ -667,7 +677,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         self._eclient.decoder.interpret(fields)
         return True
 
-    def next_req_id(self) -> int:
+    def _next_req_id(self) -> int:
         """
         Generate the next sequential request ID.
 
@@ -687,7 +697,7 @@ class InteractiveBrokersClient(Component, EWrapper):
         Override the logging for ibapi EClient.sendMsg.
         """
         full_msg = comm.make_msg(msg)
-        self.log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
+        self._log.debug(f"TWS API request sent: function={current_fn_name(1)} msg={full_msg}")
         self._eclient.conn.sendMsg(full_msg)
 
     def logRequest(self, fnName, fnParams):
@@ -699,7 +709,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             del prms["self"]
         else:
             prms = fnParams
-        self.log.debug(f"TWS API prepared request: function={fnName} data={prms}")
+        self._log.debug(f"TWS API prepared request: function={fnName} data={prms}")
 
     # -- EWrapper overrides -----------------------------------------------------------------------
 
@@ -712,221 +722,4 @@ class InteractiveBrokersClient(Component, EWrapper):
             del prms["self"]
         else:
             prms = fnParams
-        self.log.debug(f"Msg handled: function={fnName} data={prms}")
-
-    # -- InteractiveBrokersConnectionManager -----------------------------------------------------
-    def connectionClosed(self) -> None:
-        self._connection_manager.connectionClosed()
-
-    # -- InteractiveBrokersErrorHandler -----------------------------------------------------------
-    def error(
-        self,
-        req_id: int,
-        error_code: int,
-        error_string: str,
-        advanced_order_reject_json: str = "",
-    ) -> None:
-        self._error_handler.error(req_id, error_code, error_string, advanced_order_reject_json)
-
-    # -- InteractiveBrokersAccountManager ---------------------------------------------------------
-    def accountSummary(
-        self,
-        req_id: int,
-        account_id: str,
-        tag: str,
-        value: str,
-        currency: str,
-    ) -> None:
-        self.account_manager.accountSummary(
-            req_id,
-            account_id,
-            tag,
-            value,
-            currency,
-        )
-
-    def managedAccounts(self, accounts_list: str) -> None:
-        self.account_manager.managedAccounts(accounts_list)
-
-    def positionEnd(self) -> None:
-        self.account_manager.positionEnd()
-
-    # -- InteractiveBrokersContractManager --------------------------------------------------------
-    def contractDetails(
-        self,
-        req_id: int,
-        contract_details: ContractDetails,
-    ) -> None:
-        self.contract_manager.contractDetails(req_id, contract_details)
-
-    def contractDetailsEnd(self, req_id: int) -> None:
-        self.contract_manager.contractDetailsEnd(req_id)
-
-    def securityDefinitionOptionParameter(
-        self,
-        req_id: int,
-        exchange: str,
-        underlying_con_id: int,
-        trading_class: str,
-        multiplier: str,
-        expirations: SetOfString,
-        strikes: SetOfFloat,
-    ) -> None:
-        self.contract_manager.securityDefinitionOptionParameter(
-            req_id,
-            exchange,
-            underlying_con_id,
-            trading_class,
-            multiplier,
-            expirations,
-            strikes,
-        )
-
-    def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
-        self.contract_manager.securityDefinitionOptionParameterEnd(req_id)
-
-    def symbolSamples(self, req_id: int, contract_descriptions: list) -> None:
-        self.contract_manager.symbolSamples(req_id, contract_descriptions)
-
-    # -- InteractiveBrokersMarketDataManager ------------------------------------------------------
-    def marketDataType(self, req_id: int, market_data_type: int) -> None:
-        self.market_data_manager.marketDataType(req_id, market_data_type)
-
-    def tickByTickBidAsk(
-        self,
-        req_id: int,
-        time: int,
-        bid_price: float,
-        ask_price: float,
-        bid_size: Decimal,
-        ask_size: Decimal,
-        tick_attrib_bid_ask: TickAttribBidAsk,
-    ) -> None:
-        self.market_data_manager.tickByTickBidAsk(
-            req_id,
-            time,
-            bid_price,
-            ask_price,
-            bid_size,
-            ask_size,
-            tick_attrib_bid_ask,
-        )
-
-    def tickByTickAllLast(
-        self,
-        req_id: int,
-        tick_type: int,
-        time: int,
-        price: float,
-        size: Decimal,
-        tick_attrib_last: TickAttribLast,
-        exchange: str,
-        special_conditions: str,
-    ) -> None:
-        self.market_data_manager.tickByTickAllLast(
-            req_id,
-            tick_type,
-            time,
-            price,
-            size,
-            tick_attrib_last,
-            exchange,
-            special_conditions,
-        )
-
-    def realtimeBar(
-        self,
-        req_id: int,
-        time: int,
-        open_: float,
-        high: float,
-        low: float,
-        close: float,
-        volume: Decimal,
-        wap: Decimal,
-        count: int,
-    ) -> None:
-        self.market_data_manager.realtimeBar(
-            req_id,
-            time,
-            open_,
-            high,
-            low,
-            close,
-            volume,
-            wap,
-            count,
-        )
-
-    def historicalData(self, req_id: int, bar: BarData) -> None:
-        self.market_data_manager.historicalData(req_id, bar)
-
-    def historicalDataEnd(self, req_id: int, start: str, end: str) -> None:
-        self.market_data_manager.historicalDataEnd(req_id, start, end)
-
-    def historicalDataUpdate(self, req_id: int, bar: BarData) -> None:
-        self.market_data_manager.historicalDataUpdate(req_id, bar)
-
-    def historicalTicksBidAsk(
-        self,
-        req_id: int,
-        ticks: list,
-        done: bool,
-    ) -> None:
-        self.market_data_manager.historicalTicksBidAsk(req_id, ticks, done)
-
-    def historicalTicksLast(self, req_id: int, ticks: list, done: bool) -> None:
-        self.market_data_manager.historicalTicksLast(req_id, ticks, done)
-
-    def historicalTicks(self, req_id: int, ticks: list, done: bool) -> None:
-        self.market_data_manager.historicalTicks(req_id, ticks, done)
-
-    # -- InteractiveBrokersOrderManager -----------------------------------------------------------
-    def nextValidId(self, order_id: int) -> None:
-        self.order_manager.nextValidId(order_id)
-
-    def openOrder(
-        self,
-        order_id: int,
-        contract: IBContract,
-        order: IBOrder,
-        order_state: IBOrderState,
-    ) -> None:
-        self.order_manager.openOrder(order_id, contract, order, order_state)
-
-    def openOrderEnd(self) -> None:
-        self.order_manager.openOrderEnd()
-
-    def orderStatus(
-        self,
-        order_id: int,
-        status: str,
-        filled: Decimal,
-        remaining: Decimal,
-        avg_fill_price: float,
-        perm_id: int,
-        parent_id: int,
-        last_fill_price: float,
-        client_id: int,
-        why_held: str,
-        mkt_cap_price: float,
-    ) -> None:
-        self.order_manager.orderStatus(
-            order_id,
-            status,
-            filled,
-            remaining,
-            avg_fill_price,
-            perm_id,
-            parent_id,
-            last_fill_price,
-            client_id,
-            why_held,
-            mkt_cap_price,
-        )
-
-    def execDetails(self, req_id: int, contract: IBContract, execution: Execution) -> None:
-        self.order_manager.execDetails(req_id, contract, execution)
-
-    def commissionReport(self, commission_report: CommissionReport) -> None:
-        self.order_manager.commissionReport(commission_report)
+        self._log.debug(f"Msg handled: function={fnName} data={prms}")

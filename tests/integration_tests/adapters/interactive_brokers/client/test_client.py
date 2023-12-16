@@ -53,24 +53,24 @@ async def test_reset(ib_client):
     # Arrange
     ib_client._stop = MagicMock()
     ib_client._eclient.reset = MagicMock()
-    ib_client.create_task = MagicMock()
+    ib_client._create_task = MagicMock()
 
     # Act
-    ib_client.reset()
+    ib_client._reset()
 
     # Assert
     assert ib_client._stop.called
     assert ib_client._eclient.reset.called
-    assert ib_client.create_task.called
+    assert ib_client._create_task.called
 
 
 def test_resume(ib_client):
     # Arrange, Act
-    ib_client.resume()
+    ib_client._resume()
 
     # Assert
     assert ib_client.is_ready.is_set()
-    assert ib_client._connection_manager._connection_attempt_counter == 0
+    assert ib_client._connection_attempt_counter == 0
 
 
 @pytest.mark.asyncio

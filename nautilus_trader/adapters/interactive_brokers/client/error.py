@@ -14,14 +14,11 @@
 # -------------------------------------------------------------------------------------------------
 
 from inspect import iscoroutinefunction
-from typing import TYPE_CHECKING
+
+from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 
 
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-
-
-class InteractiveBrokersErrorHandler:
+class InteractiveBrokersClientErrorMixin(BaseMixin):
     """
     Handles errors and warnings for the InteractiveBrokersClient.
 
@@ -39,13 +36,6 @@ class InteractiveBrokersErrorHandler:
     CONNECTIVITY_LOST_CODES = {1100, 1300, 2110}
     CONNECTIVITY_RESTORED_CODES = {1101, 1102}
     ORDER_REJECTION_CODES = {201, 203, 321, 10289, 10293}
-
-    def __init__(self, client: "InteractiveBrokersClient"):
-        self._client = client
-        self._eclient = client._eclient
-        self._log = client._log
-
-        self._eclient.error = self.error
 
     def _log_message(
         self,
@@ -104,21 +94,21 @@ class InteractiveBrokersErrorHandler:
         self._log_message(error_code, req_id, error_string, is_warning)
 
         if req_id != -1:
-            if self._client.subscriptions.get(req_id=req_id):
+            if self._subscriptions.get(req_id=req_id):
                 self._handle_subscription_error(req_id, error_code, error_string)
-            elif self._client.requests.get(req_id=req_id):
+            elif self._requests.get(req_id=req_id):
                 self._handle_request_error(req_id, error_code, error_string)
-            elif req_id in self._client.order_manager.order_id_to_order_ref:
+            elif req_id in self._order_id_to_order_ref:
                 self._handle_order_error(req_id, error_code, error_string)
             else:
                 self._log.warning(f"Unhandled error: {error_code} for req_id {req_id}")
         elif error_code in self.CLIENT_ERRORS or error_code in self.CONNECTIVITY_LOST_CODES:
             self._log.warning(f"Client or Connectivity Lost Error: {error_string}")
-            if self._client.is_ib_ready.is_set():
-                self._client.is_ib_ready.clear()
+            if self._is_ib_ready.is_set():
+                self._is_ib_ready.clear()
         elif error_code in self.CONNECTIVITY_RESTORED_CODES:
-            if not self._client.is_ib_ready.is_set():
-                self._client.is_ib_ready.set()
+            if not self._is_ib_ready.is_set():
+                self._is_ib_ready.set()
 
     def _handle_subscription_error(self, req_id: int, error_code: int, error_string: str) -> None:
         """
@@ -140,7 +130,7 @@ class InteractiveBrokersErrorHandler:
         None
 
         """
-        subscription = self._client.subscriptions.get(req_id=req_id)
+        subscription = self._subscriptions.get(req_id=req_id)
         if not subscription:
             return
         if error_code in [10189, 366, 102]:
@@ -148,15 +138,15 @@ class InteractiveBrokersErrorHandler:
             self._log.warning(f"{error_code}: {error_string}")
             subscription.cancel()
             if iscoroutinefunction(subscription.handle):
-                self._client.create_task(subscription.handle())
+                self._create_task(subscription.handle())
             else:
                 subscription.handle()
         elif error_code == 10182:
             # Handle disconnection error
             self._log.warning(f"{error_code}: {error_string}")
-            if self._client.is_ib_ready.is_set():
+            if self._is_ib_ready.is_set():
                 self._log.info(f"`is_ib_ready` cleared by {subscription.name}")
-                self._client.is_ib_ready.clear()
+                self._is_ib_ready.clear()
         else:
             # Log unknown subscription errors
             self._log.warning(
@@ -182,9 +172,9 @@ class InteractiveBrokersErrorHandler:
         None
 
         """
-        request = self._client.requests.get(req_id=req_id)
+        request = self._requests.get(req_id=req_id)
         self._log.warning(f"{error_code}: {error_string}, {request}")
-        self._client.end_request(req_id, success=False)
+        self._end_request(req_id, success=False)
 
     def _handle_order_error(self, req_id: int, error_code: int, error_string: str) -> None:
         """
@@ -205,13 +195,13 @@ class InteractiveBrokersErrorHandler:
         None
 
         """
-        order_ref = self._client.order_manager.order_id_to_order_ref.get(req_id, None)
+        order_ref = self._order_id_to_order_ref.get(req_id, None)
         if not order_ref:
             self._log.warning(f"Order reference not found for req_id {req_id}")
             return
 
         name = f"orderStatus-{order_ref.account_id}"
-        handler = self._client.event_subscriptions.get(name, None)
+        handler = self._event_subscriptions.get(name, None)
 
         if error_code in self.ORDER_REJECTION_CODES:
             # Handle various order rejections

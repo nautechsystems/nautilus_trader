@@ -14,22 +14,19 @@
 # -------------------------------------------------------------------------------------------------
 
 import functools
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from ibapi.common import SetOfFloat
 from ibapi.common import SetOfString
 from ibapi.contract import ContractDetails
 from ibapi.utils import current_fn_name
 
+from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 
 
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-
-
-class InteractiveBrokersContractManager:
+class InteractiveBrokersClientContractMixin(BaseMixin):
     """
     Handles contracts (instruments) for the InteractiveBrokersClient.
 
@@ -38,11 +35,6 @@ class InteractiveBrokersContractManager:
     in this class to request the data it needs.
 
     """
-
-    def __init__(self, client: "InteractiveBrokersClient"):
-        self._client = client
-        self._eclient = client._eclient
-        self._log = client._log
 
     async def get_contract_details(self, contract: IBContract) -> list[IBContractDetails] | None:
         """
@@ -59,9 +51,9 @@ class InteractiveBrokersContractManager:
 
         """
         name = str(contract)
-        if not (request := self._client.requests.get(name=name)):
-            req_id = self._client.next_req_id()
-            request = self._client.requests.add(
+        if not (request := self._requests.get(name=name)):
+            req_id = self._next_req_id()
+            request = self._requests.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
@@ -73,9 +65,9 @@ class InteractiveBrokersContractManager:
             if not request:
                 return None
             request.handle()
-            return await self._client.await_request(request, 10)
+            return await self._await_request(request, 10)
         else:
-            return await self._client.await_request(request, 10)
+            return await self._await_request(request, 10)
 
     async def get_matching_contracts(self, pattern: str) -> list[IBContract] | None:
         """
@@ -92,9 +84,9 @@ class InteractiveBrokersContractManager:
 
         """
         name = f"MatchingSymbols-{pattern}"
-        if not (request := self._client.requests.get(name=name)):
-            req_id = self._client.next_req_id()
-            request = self._client.requests.add(
+        if not (request := self._requests.get(name=name)):
+            req_id = self._next_req_id()
+            request = self._requests.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
@@ -106,7 +98,7 @@ class InteractiveBrokersContractManager:
             if not request:
                 return None
             request.handle()
-            return await self._client.await_request(request, 20)
+            return await self._await_request(request, 20)
         else:
             self._log.info(f"Request already exist for {request}")
             return None
@@ -126,9 +118,9 @@ class InteractiveBrokersContractManager:
 
         """
         name = f"OptionChains-{underlying!s}"
-        if not (request := self._client.requests.get(name=name)):
-            req_id = self._client.next_req_id()
-            request = self._client.requests.add(
+        if not (request := self._requests.get(name=name)):
+            req_id = self._next_req_id()
+            request = self._requests.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
@@ -143,7 +135,7 @@ class InteractiveBrokersContractManager:
             if not request:
                 return None
             request.handle()
-            return await self._client.await_request(request, 20)
+            return await self._await_request(request, 20)
         else:
             self._log.info(f"Request already exist for {request}")
             return None
@@ -159,8 +151,8 @@ class InteractiveBrokersContractManager:
         contracts matching the requested via EClientSocket::reqContractDetails.
         For example, one can obtain the whole option chain with it.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if not (request := self._client.requests.get(req_id=req_id)):
+        self.logAnswer(current_fn_name(), vars())
+        if not (request := self._requests.get(req_id=req_id)):
             return
         request.result.append(contract_details)
 
@@ -169,8 +161,8 @@ class InteractiveBrokersContractManager:
         After all contracts matching the request were returned, this method will mark
         the end of their reception.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        self._client.end_request(req_id)
+        self.logAnswer(current_fn_name(), vars())
+        self._end_request(req_id)
 
     def securityDefinitionOptionParameter(
         self,
@@ -188,16 +180,16 @@ class InteractiveBrokersContractManager:
         securityDefinitionOptionParameter if multiple exchanges are specified in
         reqSecDefOptParams.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if request := self._client.requests.get(req_id=req_id):
+        self.logAnswer(current_fn_name(), vars())
+        if request := self._requests.get(req_id=req_id):
             request.result.append((exchange, expirations))
 
     def securityDefinitionOptionParameterEnd(self, req_id: int) -> None:
         """
         Call when all callbacks to securityDefinitionOptionParameter are complete.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        self._client.end_request(req_id)
+        self.logAnswer(current_fn_name(), vars())
+        self._end_request(req_id)
 
     def symbolSamples(
         self,
@@ -207,9 +199,9 @@ class InteractiveBrokersContractManager:
         """
         Return an array of sample contract descriptions.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
 
-        if request := self._client.requests.get(req_id=req_id):
+        if request := self._requests.get(req_id=req_id):
             for contract_description in contract_descriptions:
                 request.result.append(IBContract(**contract_description.contract.__dict__))
-            self._client.end_request(req_id)
+            self._end_request(req_id)

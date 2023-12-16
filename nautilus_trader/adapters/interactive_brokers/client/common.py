@@ -21,14 +21,18 @@ from decimal import Decimal
 from typing import Annotated, Any, NamedTuple
 
 import msgspec
+from ibapi.client import EClient
+from ibapi.commission_report import CommissionReport
+from ibapi.common import BarData
+from ibapi.execution import Execution
 
-# fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.logging import Logger
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.identifiers import InstrumentId
-
-
-# fmt: on
 
 
 class AccountOrderRef(NamedTuple):
@@ -495,3 +499,35 @@ class Requests(Base):
             future=self._req_id_to_future[req_id],
             result=self._req_id_to_result[req_id],
         )
+
+
+class BaseMixin:
+    _loop: asyncio.AbstractEventLoop
+    _eclient: EClient
+    _log: Logger
+    _requests: Requests
+    _subscriptions: Subscriptions
+    _event_subscriptions: dict[str, Callable]
+    _end_request: Callable
+    _await_request: Callable
+    _next_req_id: Callable
+    logAnswer: Callable
+    _is_ib_ready: asyncio.Event
+    _next_valid_order_id: int
+    _host: str
+    _port: int
+    _client_id: int
+    _connection_attempt_counter: int
+    _setup_client: Callable
+    _cache: Cache
+    _clock: LiveClock
+    _msgbus: MessageBus
+    _bar_type_to_last_bar: dict[str, BarData | None]
+    _exec_id_details: dict[
+        str,
+        dict[str, Execution | (CommissionReport | str)],
+    ]
+    _order_id_to_order_ref: dict[int, AccountOrderRef]
+    _reset: Callable
+    _create_task: Callable
+    _accounts: Callable

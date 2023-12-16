@@ -74,7 +74,7 @@ class HistoricInteractiveBrokersClient:
         self._client.registered_nautilus_clients.add(1)
 
         # Set Market Data Type
-        await self._client.market_data_manager.set_market_data_type(self.market_data_type)
+        await self._client.set_market_data_type(self.market_data_type)
 
     async def request_instruments(
         self,
@@ -248,7 +248,7 @@ class HistoricInteractiveBrokersClient:
                         f"with duration '{segment_duration}'",
                     )
 
-                    bars = await self._client.market_data_manager.get_historical_bars(
+                    bars = await self._client.get_historical_bars(
                         bar_type,
                         contract,
                         use_rth,
@@ -347,9 +347,7 @@ class HistoricInteractiveBrokersClient:
                     f"{instrument_id}: Requesting {tick_type} ticks from {current_start_date_time}",
                 )
 
-                ticks: list[
-                    TradeTick | QuoteTick
-                ] = await self._client.market_data_manager.get_historical_ticks(
+                ticks: list[TradeTick | QuoteTick] = await self._client.get_historical_ticks(
                     contract=contract,
                     tick_type=tick_type,
                     start_date_time=current_start_date_time,
@@ -437,7 +435,7 @@ class HistoricInteractiveBrokersClient:
         """
         for contract in contracts:
             instrument_id = ib_contract_to_instrument_id(contract)
-            if not self._client.cache.instrument(instrument_id):
+            if not self._client._cache.instrument(instrument_id):
                 self.log.info(f"Fetching Instrument for: {instrument_id}")
                 await self.request_instruments(contracts=[contract])
 

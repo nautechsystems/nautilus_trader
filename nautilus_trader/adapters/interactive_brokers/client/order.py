@@ -14,9 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
 
-# fmt: off
 from ibapi.commission_report import CommissionReport
 from ibapi.execution import Execution
 from ibapi.order import Order as IBOrder
@@ -24,14 +22,12 @@ from ibapi.order_state import OrderState as IBOrderState
 from ibapi.utils import current_fn_name
 
 from nautilus_trader.adapters.interactive_brokers.client.common import AccountOrderRef
+from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.common.enums import LogColor
 
 
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
-
-class InteractiveBrokersOrderManager:
+class InteractiveBrokersClientOrderMixin(BaseMixin):
     """
     Manages orders for the InteractiveBrokersClient.
 
@@ -41,18 +37,6 @@ class InteractiveBrokersOrderManager:
     reflected in both systems.
 
     """
-
-    def __init__(self, client: "InteractiveBrokersClient"):
-        self._client = client
-        self._eclient = client._eclient
-        self._log = client._log
-        self.order_id_to_order_ref: dict[int, AccountOrderRef] = {}
-        self.next_valid_order_id: int = -1
-        # Temporary cache
-        self._exec_id_details: dict[
-            str,
-            dict[str, Execution | (CommissionReport | str)],
-        ] = {}
 
     def place_order(self, order: IBOrder) -> None:
         """
@@ -69,7 +53,7 @@ class InteractiveBrokersOrderManager:
         None
 
         """
-        self.order_id_to_order_ref[order.orderId] = AccountOrderRef(
+        self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
             account_id=order.account,
             order_id=order.orderRef.rsplit(":", 1)[0],
         )
@@ -143,18 +127,18 @@ class InteractiveBrokersOrderManager:
         self._log.debug(f"Requesting open orders for {account_id}")
         name = "OpenOrders"
         orders: list[IBOrder] = []
-        if not (request := self._client.requests.get(name=name)):
-            request = self._client.requests.add(
-                req_id=self._client.next_req_id(),
+        if not (request := self._requests.get(name=name)):
+            request = self._requests.add(
+                req_id=self._next_req_id(),
                 name=name,
                 handle=self._eclient.reqOpenOrders,
             )
             if not request:
                 return orders
             request.handle()
-            all_orders: list[IBOrder] | None = await self._client.await_request(request, 30)
+            all_orders: list[IBOrder] | None = await self._await_request(request, 30)
         else:
-            all_orders = await self._client.await_request(request, 30)
+            all_orders = await self._await_request(request, 30)
         if all_orders:
             for order in all_orders:
                 if order.account_id == account_id:
@@ -170,8 +154,8 @@ class InteractiveBrokersOrderManager:
         int
 
         """
-        order_id: int = self.next_valid_order_id
-        self.next_valid_order_id += 1
+        order_id: int = self._next_valid_order_id
+        self._next_valid_order_id += 1
         self._eclient.reqIds(-1)
         return order_id
 
@@ -185,11 +169,11 @@ class InteractiveBrokersOrderManager:
         Important: the next valid order ID is only valid at the time it is received.
 
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        self.next_valid_order_id = max(self.next_valid_order_id, order_id, 101)
-        if self._client.account_manager.accounts() and not self._client.is_ib_ready.is_set():
+        self.logAnswer(current_fn_name(), vars())
+        self._next_valid_order_id = max(self._next_valid_order_id, order_id, 101)
+        if self._accounts() and not self._is_ib_ready.is_set():
             self._log.info("`is_ib_ready` set by nextValidId", LogColor.BLUE)
-            self._client.is_ib_ready.set()
+            self._is_ib_ready.set()
 
     def openOrder(
         self,
@@ -201,24 +185,25 @@ class InteractiveBrokersOrderManager:
         """
         Feed in currently open orders.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         # Handle response to on-demand request
-        if request := self._client.requests.get(name="OpenOrders"):
+        if request := self._requests.get(name="OpenOrders"):
             order.contract = IBContract(**contract.__dict__)
             order.order_state = order_state
             order.orderRef = order.orderRef.rsplit(":", 1)[0]
             request.result.append(order)
             # Validate and add reverse mapping, if not exists
-            if order_ref := self.order_id_to_order_ref.get(order.orderId):
+            if order_ref := self._order_id_to_order_ref.get(order.orderId):
                 if not (
-                    order_ref.account_id == order.account_id and order_ref.order_id == order.orderRef
+                    order_ref.account_id == order.account_id
+                    and order_ref.order_id == order.orderRef
                 ):
                     self._log.warning(
                         f"Discrepancy found in order, expected {order_ref}, "
                         f"was (account={order.account}, order_id={order.orderRef}",
                     )
             else:
-                self.order_id_to_order_ref[order.orderId] = AccountOrderRef(
+                self._order_id_to_order_ref[order.orderId] = AccountOrderRef(
                     account_id=order.account_id,
                     order_id=order.orderRef,
                 )
@@ -226,7 +211,7 @@ class InteractiveBrokersOrderManager:
 
         # Handle event based response
         name = f"openOrder-{order.account}"
-        if handler := self._client.event_subscriptions.get(name, None):
+        if handler := self._event_subscriptions.get(name, None):
             handler(
                 order_ref=order.orderRef.rsplit(":", 1)[0],
                 order=order,
@@ -237,9 +222,9 @@ class InteractiveBrokersOrderManager:
         """
         Notifies the end of the open orders' reception.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if request := self._client.requests.get(name="OpenOrders"):
-            self._client.end_request(request.req_id)
+        self.logAnswer(current_fn_name(), vars())
+        if request := self._requests.get(name="OpenOrders"):
+            self._end_request(request.req_id)
 
     def orderStatus(
         self,
@@ -261,13 +246,13 @@ class InteractiveBrokersOrderManager:
         Note: Often there are duplicate orderStatus messages.
 
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        order_ref = self.order_id_to_order_ref.get(order_id, None)
+        self.logAnswer(current_fn_name(), vars())
+        order_ref = self._order_id_to_order_ref.get(order_id, None)
         if order_ref:
             name = f"orderStatus-{order_ref.account_id}"
-            if handler := self._client.event_subscriptions.get(name, None):
+            if handler := self._event_subscriptions.get(name, None):
                 handler(
-                    order_ref=self.order_id_to_order_ref[order_id].order_id,
+                    order_ref=self._order_id_to_order_ref[order_id].order_id,
                     order_status=status,
                 )
 
@@ -280,7 +265,7 @@ class InteractiveBrokersOrderManager:
         """
         Provide the executions that happened in the prior 24 hours.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         if not (cache := self._exec_id_details.get(execution.execId, None)):
             self._exec_id_details[execution.execId] = {}
             cache = self._exec_id_details[execution.execId]
@@ -288,7 +273,7 @@ class InteractiveBrokersOrderManager:
         cache["order_ref"] = execution.orderRef.rsplit(":", 1)[0]
 
         name = f"execDetails-{execution.acctNumber}"
-        if (handler := self._client.event_subscriptions.get(name, None)) and cache.get(
+        if (handler := self._event_subscriptions.get(name, None)) and cache.get(
             "commission_report",
         ):
             handler(
@@ -305,7 +290,7 @@ class InteractiveBrokersOrderManager:
         """
         Provide the CommissionReport of an Execution.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         if not (cache := self._exec_id_details.get(commission_report.execId, None)):
             self._exec_id_details[commission_report.execId] = {}
             cache = self._exec_id_details[commission_report.execId]
@@ -313,7 +298,7 @@ class InteractiveBrokersOrderManager:
 
         if cache.get("execution") and (account := getattr(cache["execution"], "acctNumber", None)):
             name = f"execDetails-{account}"
-            if handler := self._client.event_subscriptions.get(name, None):
+            if handler := self._event_subscriptions.get(name, None):
                 handler(
                     order_ref=cache["order_ref"],
                     execution=cache["execution"],

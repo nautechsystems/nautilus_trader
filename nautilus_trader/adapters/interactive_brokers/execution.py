@@ -177,7 +177,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         await self.instrument_provider.initialize()
 
         # Validate if connected to expected TWS/Gateway using Account
-        if self.account_id.get_id() in self._client.account_manager.accounts():
+        if self.account_id.get_id() in self._client.accounts():
             self._log.info(
                 f"Account `{self.account_id.get_id()}` found in the connected TWS/Gateway.",
                 LogColor.GREEN,
@@ -186,7 +186,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             self.fault()
             raise ValueError(
                 f"Account `{self.account_id.get_id()}` not found in the connected TWS/Gateway. "
-                f"Available accounts are {self._client.account_manager.accounts()}",
+                f"Available accounts are {self._client.accounts()}",
             )
 
         # Event hooks
@@ -198,7 +198,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         self._client.subscribe_event(f"execDetails-{account}", self._on_exec_details)
 
         # Load account balance
-        self._client.account_manager.subscribe_account_summary()
+        self._client.subscribe_account_summary()
         await self._account_summary_loaded.wait()
 
         self._set_connected(True)
@@ -245,7 +245,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return None
 
         report = None
-        ib_orders = await self._client.order_manager.get_open_orders(self.account_id.get_id())
+        ib_orders = await self._client.get_open_orders(self.account_id.get_id())
         for ib_order in ib_orders:
             if (client_order_id and client_order_id.value == ib_order.orderRef) or (
                 venue_order_id
@@ -353,7 +353,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         """
         report = []
         # Create the Filled OrderStatusReport from Open Positions
-        positions: list[IBPosition] = await self._client.account_manager.get_positions(
+        positions: list[IBPosition] = await self._client.get_positions(
             self.account_id.get_id(),
         )
         if not positions:
@@ -398,7 +398,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             report.append(order_status)
 
         # Create the Open OrderStatusReport from Open Orders
-        ib_orders: list[IBOrder] = await self._client.order_manager.get_open_orders(
+        ib_orders: list[IBOrder] = await self._client.get_open_orders(
             self.account_id.get_id(),
         )
         for ib_order in ib_orders:
@@ -462,7 +462,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         """
         report = []
-        positions: list[IBPosition] | None = await self._client.account_manager.get_positions(
+        positions: list[IBPosition] | None = await self._client.get_positions(
             self.account_id.get_id(),
         )
         if not positions:
@@ -568,8 +568,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
 
         ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
-        ib_order.orderId = self._client.order_manager.next_order_id()
-        self._client.order_manager.place_order(ib_order)
+        ib_order.orderId = self._client.next_order_id()
+        self._client.place_order(ib_order)
         self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -581,7 +581,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         # Translate orders
         for order in command.order_list.orders:
-            order_id_map[order.client_order_id.value] = self._client.order_manager.next_order_id()
+            order_id_map[order.client_order_id.value] = self._client.next_order_id()
             client_id_to_orders[order.client_order_id.value] = order
 
             ib_order = self._transform_order_to_ib_order(order)
@@ -598,7 +598,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 ib_order.parentId = parent_id
             # Place orders
             order_ref = ib_order.orderRef
-            self._client.order_manager.place_order(ib_order)
+            self._client.place_order(ib_order)
             self._handle_order_event(
                 status=OrderStatus.SUBMITTED,
                 order=client_id_to_orders[order_ref],
@@ -630,14 +630,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         ):
             ib_order.auxPrice = command.trigger_price.as_double()
         self._log.info(f"Placing {ib_order!r}")
-        self._client.order_manager.place_order(ib_order)
+        self._client.place_order(ib_order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         PyCondition.not_none(command, "command")
 
         venue_order_id = command.venue_order_id
         if venue_order_id:
-            self._client.order_manager.cancel_order(int(venue_order_id.value))
+            self._client.cancel_order(int(venue_order_id.value))
         else:
             self._log.error(f"VenueOrderId not found for {command.client_order_id}")
 
@@ -647,7 +647,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         ):
             venue_order_id = order.venue_order_id
             if venue_order_id:
-                self._client.order_manager.cancel_order(int(venue_order_id.value))
+                self._client.cancel_order(int(venue_order_id.value))
             else:
                 self._log.error(f"VenueOrderId not found for {order.client_order_id}")
 

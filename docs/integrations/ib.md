@@ -73,13 +73,13 @@ The adapter includes several major components:
 
 The `InteractiveBrokersClient` serves as the central component of the IB adapter, overseeing a range of critical functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
 
-To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized classes. This modular approach enhances manageability and clarity. The key subcomponents are:
-- `InteractiveBrokersConnectionManager`: This class is dedicated to managing the connection with TWS/Gateway.
-- `InteractiveBrokersErrorHandler`: It focuses on addressing all encountered errors and warnings.
-- `InteractiveBrokersAccountManager`: Responsible for handling requests related to account information and positions.
-- `InteractiveBrokersContractManager`: Handles retrieving contracts (instruments) data
-- `InteractiveBrokersMarketDataManager`: Handles market data requests, subscriptions and data processing
-- `InteractiveBrokersOrderManager`: Oversees all aspects of order placement and management.
+To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized mixin classes. This modular approach enhances manageability and clarity. The key subcomponents are:
+- `InteractiveBrokersClientConnectionMixin`: This class is dedicated to managing the connection with TWS/Gateway.
+- `InteractiveBrokersClientErrorMixin`: It focuses on addressing all encountered errors and warnings.
+- `InteractiveBrokersClientAccountMixin`: Responsible for handling requests related to account information and positions.
+- `InteractiveBrokersClientContractMixin`: Handles retrieving contracts (instruments) data
+- `InteractiveBrokersClientMarketDataMixin`: Handles market data requests, subscriptions and data processing
+- `InteractiveBrokersClientOrderMixin`: Oversees all aspects of order placement and management.
 
 ```{tip}
 To troubleshoot TWS API incoming message issues, consider starting at the `InteractiveBrokersClient._process_message` method, which acts as the primary gateway for processing all messages received from the API.

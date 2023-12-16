@@ -16,7 +16,7 @@
 import functools
 from collections.abc import Callable
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import pandas as pd
 import pytz
@@ -27,6 +27,7 @@ from ibapi.common import TickAttribLast
 from ibapi.utils import current_fn_name
 
 # fmt: off
+from nautilus_trader.adapters.interactive_brokers.client.common import BaseMixin
 from nautilus_trader.adapters.interactive_brokers.client.common import Subscription
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
@@ -45,11 +46,9 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 # fmt: on
-if TYPE_CHECKING:
-    from nautilus_trader.adapters.interactive_brokers.client import InteractiveBrokersClient
 
 
-class InteractiveBrokersMarketDataManager:
+class InteractiveBrokersClientMarketDataMixin(BaseMixin):
     """
     Handles market data requests, subscriptions and data processing for the
     InteractiveBrokersClient.
@@ -60,14 +59,6 @@ class InteractiveBrokersMarketDataManager:
     Trader.
 
     """
-
-    def __init__(self, client: "InteractiveBrokersClient"):
-        self._client = client
-        self._eclient = client._eclient
-        self._log = client._log
-
-        # Hot cache
-        self._bar_type_to_last_bar: dict[str, BarData | None] = {}
 
     async def set_market_data_type(self, market_data_type: MarketDataTypeEnum) -> None:
         """
@@ -119,9 +110,9 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        if not (subscription := self._client.subscriptions.get(name=name)):
-            req_id = self._client.next_req_id()
-            subscription = self._client.subscriptions.add(
+        if not (subscription := self._subscriptions.get(name=name)):
+            req_id = self._next_req_id()
+            subscription = self._subscriptions.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(subscription_method, req_id, *args, **kwargs),
@@ -158,8 +149,8 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        if subscription := self._client.subscriptions.get(name=name):
-            self._client.subscriptions.remove(subscription.req_id)
+        if subscription := self._subscriptions.get(name=name):
+            self._subscriptions.remove(subscription.req_id)
             cancellation_method(reqId=subscription.req_id)
             self._log.debug(f"Unsubscribed from {subscription}")
         else:
@@ -311,11 +302,11 @@ class InteractiveBrokersMarketDataManager:
             return
 
         # Check and download the gaps or approx 300 bars whichever is less
-        last_bar: Bar = self._client.cache.bar(bar_type)
+        last_bar: Bar = self._cache.bar(bar_type)
         if last_bar is None:
             duration = pd.Timedelta(bar_type.spec.timedelta.total_seconds() * 300, "sec")
         else:
-            duration = pd.Timedelta(self._client.clock.timestamp_ns() - last_bar.ts_event, "ns")
+            duration = pd.Timedelta(self._clock.timestamp_ns() - last_bar.ts_event, "ns")
         bar_size_setting: str = bar_spec_to_bar_size(bar_type.spec)
         self._eclient.reqHistoricalData(
             reqId=subscription.req_id,
@@ -380,10 +371,10 @@ class InteractiveBrokersMarketDataManager:
 
         """
         name = str(bar_type)
-        if not (request := self._client.requests.get(name=name)):
-            req_id = self._client.next_req_id()
+        if not (request := self._requests.get(name=name)):
+            req_id = self._next_req_id()
             bar_size_setting = bar_spec_to_bar_size(bar_type.spec)
-            request = self._client.requests.add(
+            request = self._requests.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
@@ -405,7 +396,7 @@ class InteractiveBrokersMarketDataManager:
                 return None
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._client.await_request(request, timeout)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
             return None
@@ -450,9 +441,9 @@ class InteractiveBrokersMarketDataManager:
             end_date_time = end_date_time.strftime("%Y%m%d %H:%M:%S %Z")
 
         name = (str(ib_contract_to_instrument_id(contract)), tick_type)
-        if not (request := self._client.requests.get(name=name)):
-            req_id = self._client.next_req_id()
-            request = self._client.requests.add(
+        if not (request := self._requests.get(name=name)):
+            req_id = self._next_req_id()
+            request = self._requests.add(
                 req_id=req_id,
                 name=name,
                 handle=functools.partial(
@@ -472,7 +463,7 @@ class InteractiveBrokersMarketDataManager:
             if not request:
                 return None
             request.handle()
-            return await self._client.await_request(request, timeout)
+            return await self._await_request(request, timeout)
         else:
             self._log.info(f"Request already exist for {request}")
             return None
@@ -518,7 +509,7 @@ class InteractiveBrokersMarketDataManager:
 
         self._bar_type_to_last_bar[bar_type_str] = bar
         bar_type: BarType = BarType.from_str(bar_type_str)
-        ts_init = self._client.clock.timestamp_ns()
+        ts_init = self._clock.timestamp_ns()
         if not handle_revised_bars:
             if previous_bar and is_new_bar:
                 bar = previous_bar
@@ -527,7 +518,7 @@ class InteractiveBrokersMarketDataManager:
 
             if historical:
                 ts_init = self._ib_bar_to_ts_init(bar, bar_type)
-                if ts_init >= self._client.clock.timestamp_ns():
+                if ts_init >= self._clock.timestamp_ns():
                     return None  # The bar is incomplete
 
         # Process the bar
@@ -615,7 +606,7 @@ class InteractiveBrokersMarketDataManager:
         Bar
 
         """
-        instrument = self._client.cache.instrument(bar_type.instrument_id)
+        instrument = self._cache.instrument(bar_type.instrument_id)
 
         ts_event = self._convert_ib_bar_date_to_unix_nanos(bar, bar_type)
 
@@ -648,9 +639,9 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        if request := self._client.requests.get(req_id=req_id):
+        if request := self._requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
-            instrument = self._client.cache.instrument(instrument_id)
+            instrument = self._cache.instrument(instrument_id)
 
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
@@ -665,7 +656,7 @@ class InteractiveBrokersMarketDataManager:
                 )
                 request.result.append(trade_tick)
 
-            self._client.end_request(req_id)
+            self._end_request(req_id)
 
     def _handle_data(self, data: Data) -> None:
         """
@@ -683,7 +674,7 @@ class InteractiveBrokersMarketDataManager:
         None
 
         """
-        self._client.msgbus.send(endpoint="DataEngine.process", msg=data)
+        self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
     # -- EWrapper overrides -----------------------------------------------------------------------
     def marketDataType(self, req_id: int, market_data_type: int) -> None:
@@ -692,7 +683,7 @@ class InteractiveBrokersMarketDataManager:
         of ticker sent by EClientSocket::reqMktData when TWS switches from real-time
         to frozen and back and from delayed to delayed-frozen and back.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         if market_data_type == MarketDataTypeEnum.REALTIME:
             self._log.debug(f"Market DataType is {MarketDataTypeEnum.to_str(market_data_type)}")
         else:
@@ -711,12 +702,12 @@ class InteractiveBrokersMarketDataManager:
         """
         Return "BidAsk" tick-by-tick real-time tick data.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if not (subscription := self._client.subscriptions.get(req_id=req_id)):
+        self.logAnswer(current_fn_name(), vars())
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
 
         instrument_id = InstrumentId.from_str(subscription.name[0])
-        instrument = self._client.cache.instrument(instrument_id)
+        instrument = self._cache.instrument(instrument_id)
         ts_event = pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value
 
         quote_tick = QuoteTick(
@@ -726,7 +717,7 @@ class InteractiveBrokersMarketDataManager:
             bid_size=instrument.make_qty(bid_size),
             ask_size=instrument.make_qty(ask_size),
             ts_event=ts_event,
-            ts_init=max(self._client.clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
+            ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
         )
 
         self._handle_data(quote_tick)
@@ -745,8 +736,8 @@ class InteractiveBrokersMarketDataManager:
         """
         Return "Last" or "AllLast" (trades) tick-by-tick real-time tick.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if not (subscription := self._client.subscriptions.get(req_id=req_id)):
+        self.logAnswer(current_fn_name(), vars())
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
 
         # Halted tick
@@ -754,7 +745,7 @@ class InteractiveBrokersMarketDataManager:
             return
 
         instrument_id = InstrumentId.from_str(subscription.name[0])
-        instrument = self._client.cache.instrument(instrument_id)
+        instrument = self._cache.instrument(instrument_id)
         ts_event = pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value
 
         trade_tick = TradeTick(
@@ -764,7 +755,7 @@ class InteractiveBrokersMarketDataManager:
             aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=generate_trade_id(ts_event=ts_event, price=price, size=size),
             ts_event=ts_event,
-            ts_init=max(self._client.clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
+            ts_init=max(self._clock.timestamp_ns(), ts_event),  # `ts_event` <= `ts_init`
         )
 
         self._handle_data(trade_tick)
@@ -784,11 +775,11 @@ class InteractiveBrokersMarketDataManager:
         """
         Update real-time 5 second bars.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if not (subscription := self._client.subscriptions.get(req_id=req_id)):
+        self.logAnswer(current_fn_name(), vars())
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
         bar_type = BarType.from_str(subscription.name)
-        instrument = self._client.cache.instrument(bar_type.instrument_id)
+        instrument = self._cache.instrument(bar_type.instrument_id)
 
         bar = Bar(
             bar_type=bar_type,
@@ -798,7 +789,7 @@ class InteractiveBrokersMarketDataManager:
             close=instrument.make_price(close),
             volume=instrument.make_qty(0 if volume == -1 else volume),
             ts_event=pd.Timestamp.fromtimestamp(time, tz=pytz.utc).value,
-            ts_init=self._client.clock.timestamp_ns(),
+            ts_init=self._clock.timestamp_ns(),
             is_revision=False,
         )
 
@@ -808,8 +799,8 @@ class InteractiveBrokersMarketDataManager:
         """
         Return the requested historical data bars.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if request := self._client.requests.get(req_id=req_id):
+        self.logAnswer(current_fn_name(), vars())
+        if request := self._requests.get(req_id=req_id):
             bar_type = BarType.from_str(request.name)
             bar = self._ib_bar_to_nautilus_bar(
                 bar_type=bar_type,
@@ -818,7 +809,7 @@ class InteractiveBrokersMarketDataManager:
             )
             if bar:
                 request.result.append(bar)
-        elif subscription := self._client.subscriptions.get(req_id=req_id):
+        elif subscription := self._subscriptions.get(req_id=req_id):
             bar = self._process_bar_data(
                 bar_type_str=str(subscription.name),
                 bar=bar,
@@ -835,11 +826,11 @@ class InteractiveBrokersMarketDataManager:
         """
         Mark the end of receiving historical bars.
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        self._client.end_request(req_id)
-        if req_id == 1 and not self._client.is_ib_ready.is_set():  # probe successful
+        self.logAnswer(current_fn_name(), vars())
+        self._end_request(req_id)
+        if req_id == 1 and not self._is_ib_ready.is_set():  # probe successful
             self._log.info(f"`is_ib_ready` set by historicalDataEnd {req_id=}", LogColor.BLUE)
-            self._client.is_ib_ready.set()
+            self._is_ib_ready.set()
 
     def historicalDataUpdate(self, req_id: int, bar: BarData) -> None:
         """
@@ -851,8 +842,8 @@ class InteractiveBrokersMarketDataManager:
         time data.
 
         """
-        self._client.logAnswer(current_fn_name(), vars())
-        if not (subscription := self._client.subscriptions.get(req_id=req_id)):
+        self.logAnswer(current_fn_name(), vars())
+        if not (subscription := self._subscriptions.get(req_id=req_id)):
             return
         if bar := self._process_bar_data(
             bar_type_str=str(subscription.name),
@@ -873,12 +864,12 @@ class InteractiveBrokersMarketDataManager:
         """
         Return the requested historic bid/ask ticks.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         if not done:
             return
-        if request := self._client.requests.get(req_id=req_id):
+        if request := self._requests.get(req_id=req_id):
             instrument_id = InstrumentId.from_str(request.name[0])
-            instrument = self._client.cache.instrument(instrument_id)
+            instrument = self._cache.instrument(instrument_id)
 
             for tick in ticks:
                 ts_event = pd.Timestamp.fromtimestamp(tick.time, tz=pytz.utc).value
@@ -893,13 +884,13 @@ class InteractiveBrokersMarketDataManager:
                 )
                 request.result.append(quote_tick)
 
-            self._client.end_request(req_id)
+            self._end_request(req_id)
 
     def historicalTicksLast(self, req_id: int, ticks: list, done: bool) -> None:
         """
         Return the requested historic trade ticks.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         if not done:
             return
         self._process_trade_ticks(req_id, ticks)
@@ -908,7 +899,7 @@ class InteractiveBrokersMarketDataManager:
         """
         Return the requested historic ticks.
         """
-        self._client.logAnswer(current_fn_name(), vars())
+        self.logAnswer(current_fn_name(), vars())
         if not done:
             return
         self._process_trade_ticks(req_id, ticks)
