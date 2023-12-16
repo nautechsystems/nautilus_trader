@@ -137,6 +137,10 @@ class DataSubscriber(Strategy):
             )
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.request_quote_ticks(instrument_id)
+            # self.request_trade_ticks(instrument_id)
+            # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+            # self.request_instruments(instrument_id.venue)
 
     def on_stop(self) -> None:
         """

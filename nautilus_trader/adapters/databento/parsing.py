@@ -409,7 +409,7 @@ def parse_instrument_def(
         case DatabentoInstrumentClass.FX_SPOT.value:
             raise ValueError("`instrument_class` FX_SPOT not currently supported")
         case DatabentoInstrumentClass.OPTION_SPREAD.value:
-            raise ValueError("`instrument_class` OPTION_SPREAD not currently supported")
+            return parse_options_contract(record, instrument_id)
         case DatabentoInstrumentClass.MIXED_SPREAD.value:
             raise ValueError("`instrument_class` MIXED_SPREAD not currently supported")
         case _:

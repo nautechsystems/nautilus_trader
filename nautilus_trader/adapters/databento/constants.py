@@ -20,3 +20,5 @@ from nautilus_trader.model.identifiers import ClientId
 
 DATABENTO: Final[str] = "DATABENTO"
 DATABENTO_CLIENT_ID: Final[ClientId] = ClientId(DATABENTO)
+
+ALL_SYMBOLS = "ALL_SYMBOLS"
