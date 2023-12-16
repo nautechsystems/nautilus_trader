@@ -23,8 +23,8 @@ from nautilus_trader.backtest.modules import FXRolloverInterestConfig
 from nautilus_trader.backtest.modules import FXRolloverInterestModule
 from nautilus_trader.config.common import LoggingConfig
 from nautilus_trader.config.common import RiskEngineConfig
-from nautilus_trader.examples.strategies.talib_exemplar_strategy import TALibExemplarStrategy
-from nautilus_trader.examples.strategies.talib_exemplar_strategy import TALibExemplarStrategyConfig
+from nautilus_trader.examples.strategies.talib_strategy import TALibStrategy
+from nautilus_trader.examples.strategies.talib_strategy import TALibStrategyConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import AccountType
@@ -90,11 +90,12 @@ if __name__ == "__main__":
     engine.add_data(ticks)
 
     # Configure your strategy
-    config = TALibExemplarStrategyConfig(
+    config = TALibStrategyConfig(
         bar_type=BarType.from_str("GBP/USD.SIM-5-MINUTE-BID-INTERNAL"),
     )
+
     # Instantiate and add your strategy
-    strategy = TALibExemplarStrategy(config=config)
+    strategy = TALibStrategy(config=config)
     engine.add_strategy(strategy=strategy)
 
     time.sleep(0.1)

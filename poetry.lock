@@ -2422,6 +2422,19 @@ lint = ["docutils-stubs", "flake8", "mypy"]
 test = ["pytest"]
 
 [[package]]
+name = "ta-lib"
+version = "0.4.28"
+description = "Python wrapper for TA-Lib"
+optional = true
+python-versions = "*"
+files = [
+    {file = "TA-Lib-0.4.28.tar.gz", hash = "sha256:3f03847162e003e0d92a8a89d9e8b7192dfe1235507e2f7d1d0e66cd5af7a48e"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[[package]]
 name = "tabulate"
 version = "0.9.0"
 description = "Pretty-print tabular data"
@@ -2875,8 +2888,9 @@ betfair = ["betfair_parser"]
 databento = ["databento"]
 docker = ["docker"]
 ib = ["async-timeout", "nautilus_ibapi"]
+talib = ["ta-lib"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "7715a4963fa451a74c3968a09bdc19d37d95e75bb0756120736967ea3692a7fb"
+content-hash = "51a6525e1a7ee8bae596188757b04423ce3dfc1a8029347dca2879c2c501d7dc"
