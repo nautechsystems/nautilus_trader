@@ -71,14 +71,12 @@ betfair_parser = {version = "==0.9.1", optional = true}  # Pinned for stability
 databento = {version = "^0.24.1", optional = true}
 docker = {version = "^6.1.3", optional = true}
 nautilus_ibapi = {version = "==10.19.2", optional = true}  # Pinned for stability
-ta-lib = {version = "^0.4.28", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
 databento = ["databento"]
 docker = ["docker"]
 ib = ["nautilus_ibapi", "async-timeout"]
-talib = ["ta-lib"]
 
 [tool.poetry.group.dev]
 optional = true

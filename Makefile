@@ -130,6 +130,10 @@ pytest-coverage:
 test-examples:
 	bash scripts/test-examples.sh
 
+.PHONY: install-talib
+install-talib:
+	bash scripts/install-talib.sh
+
 .PHONY: init-db
 init-db:
 	(cd nautilus_core && cargo run --bin init-db)
