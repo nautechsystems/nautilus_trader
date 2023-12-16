@@ -18,6 +18,7 @@ from asyncio.futures import Future
 from collections.abc import Coroutine
 
 import databento
+import pandas as pd
 
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
@@ -31,12 +32,15 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
 
 
 class DatabentoDataClient(LiveMarketDataClient):
@@ -182,7 +186,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 schema=databento.Schema.DEFINITION,
                 symbols=[i.symbol.value for i in instrument_ids],
                 stype_in=databento.SType.RAW_SYMBOL,
-                start=0,  # From start of current session (latest definition)
+                start=0,
             )
             for record in live_client:
                 if isinstance(record, databento.InstrumentDefMsg):
@@ -224,12 +228,27 @@ class DatabentoDataClient(LiveMarketDataClient):
         kwargs: dict | None = None,
     ) -> None:
         await self._ensure_subscribed_for_instrument(instrument_id)
+
+        # Determine subscription start time
+        date_now_utc = self._clock.utc_now().date()
+        weekday_now_utc = date_now_utc.weekday()
+        match weekday_now_utc:
+            case 6:  # Sunday
+                start = 0  # Use start of current session
+            case _:
+                start = last_weekday_nanos(  # Use midnight (UTC) of last weekday
+                    year=date_now_utc.year,
+                    month=date_now_utc.month,
+                    day=date_now_utc.day,
+                )
+
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
             schema=databento.Schema.MBO,
             symbols=[instrument_id.symbol.value],
+            start=start,
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -259,6 +278,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             dataset=dataset,
             schema=schema,
             symbols=[instrument_id.symbol.value],
+            start=0,
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -386,9 +406,67 @@ class DatabentoDataClient(LiveMarketDataClient):
             "unsubscribing not supported by Databento.",
         )
 
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        raise NotImplementedError(
+            "method `_request` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+        raise NotImplementedError(
+            "method `_request_instrument` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
+        raise NotImplementedError(
+            "method `_request_instruments` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        raise NotImplementedError(
+            "method `_request_quote_tick` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        raise NotImplementedError(
+            "method `_request_trade_ticks` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_bars(
+        self,
+        bar_type: BarType,
+        limit: int,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        raise NotImplementedError(
+            "method `_request_bars` must be implemented in the subclass",
+        )  # pragma: no cover
+
     def _handle_record(self, record: databento.DBNRecord) -> None:
         try:
             self._log.debug(f"Received {record}", LogColor.MAGENTA)
+            if isinstance(record, databento.ErrorMsg):
+                self._log.error(f"ErrorMsg: {record.err}")
+                return
+            elif isinstance(record, databento.SystemMsg):
+                self._log.info(f"SystemMsg: {record.msg}")
+                return
+
             instrument_map = self._instrument_maps.get(0)  # Hardcode publisher ID for now
             if not instrument_map:
                 instrument_map = databento.InstrumentMap()
