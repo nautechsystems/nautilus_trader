@@ -329,7 +329,7 @@ class TestDataEngine:
             venue=BINANCE,
             data_type=DataType(
                 Data,
-                metadata={  # str data type is invalid
+                metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "start": None,
                     "end": None,
@@ -360,7 +360,7 @@ class TestDataEngine:
             venue=BINANCE,
             data_type=DataType(
                 QuoteTick,
-                metadata={  # str data type is invalid
+                metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "start": None,
                     "end": None,
@@ -377,7 +377,7 @@ class TestDataEngine:
             venue=BINANCE,
             data_type=DataType(
                 QuoteTick,
-                metadata={  # str data type is invalid
+                metadata={
                     "instrument_id": InstrumentId(Symbol("SOMETHING"), Venue("RANDOM")),
                     "start": None,
                     "end": None,
@@ -480,7 +480,7 @@ class TestDataEngine:
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
-            data_type=DataType(Data),  # str data type is invalid
+            data_type=DataType(Data),
             command_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
@@ -2003,7 +2003,7 @@ class TestDataEngine:
             venue=BINANCE,
             data_type=DataType(
                 Instrument,
-                metadata={  # str data type is invalid
+                metadata={
                     "instrument_id": ETHUSDT_BINANCE.id,
                 },
             ),
@@ -2030,7 +2030,7 @@ class TestDataEngine:
             venue=BINANCE,
             data_type=DataType(
                 Instrument,
-                metadata={  # str data type is invalid
+                metadata={
                     "venue": BINANCE,
                 },
             ),
