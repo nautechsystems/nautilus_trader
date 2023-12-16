@@ -43,6 +43,7 @@ env/
 log/
 logs/
 secrets/
+ta-lib/
 *temp/
 *target/
 venv*/
