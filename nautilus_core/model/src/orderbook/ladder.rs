@@ -148,10 +148,11 @@ impl Ladder {
 
     pub fn remove(&mut self, order_id: OrderId) {
         if let Some(price) = self.cache.remove(&order_id) {
-            let level = self.levels.get_mut(&price).unwrap();
-            level.remove_by_id(order_id);
-            if level.is_empty() {
-                self.levels.remove(&price);
+            if let Some(level) = self.levels.get_mut(&price) {
+                level.remove_by_id(order_id);
+                if level.is_empty() {
+                    self.levels.remove(&price);
+                }
             }
         }
     }
