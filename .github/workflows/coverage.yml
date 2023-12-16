@@ -30,7 +30,6 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Set up Rust tool-chain (Linux, Windows) stable
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
         uses: actions-rust-lang/setup-rust-toolchain@v1.5
         with:
           toolchain: ${{ env.RUST_VERSION }}
@@ -53,6 +52,11 @@ jobs:
 
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+
+      - name: Install TA-Lib (Linux)
+        run: |
+          make install-talib
+          pip install ta-lib
 
       - name: Setup cached pre-commit
         id: cached-pre-commit
