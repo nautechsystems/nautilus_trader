@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.correctness import PyCondition
@@ -29,9 +28,9 @@ from nautilus_trader.trading.strategy import Strategy
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 
-class TALibExemplarStrategyConfig(StrategyConfig, frozen=True):
+class TALibStrategyConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``TALibExampleStrategyConfig`` instances.
+    Configuration for ``TALibStrategy`` instances.
 
     Parameters
     ----------
@@ -43,7 +42,7 @@ class TALibExemplarStrategyConfig(StrategyConfig, frozen=True):
     bar_type: BarType
 
 
-class TALibExemplarStrategy(Strategy):
+class TALibStrategy(Strategy):
     """
     A trading strategy demonstration using TA-Lib (Technical Analysis Library) for
     generating trading signals based on technical indicators. This strategy is intended
@@ -61,7 +60,7 @@ class TALibExemplarStrategy(Strategy):
 
     Args
     ----
-    config : TALibExemplarStrategyConfig
+    config : TALibStrategyConfig
         The configuration object for the strategy, which includes the `bar_type` specifying the
         market data type (like minute bars, tick bars, etc.) to be used in the strategy.
 
@@ -77,7 +76,7 @@ class TALibExemplarStrategy(Strategy):
 
     """
 
-    def __init__(self, config: TALibExemplarStrategyConfig) -> None:
+    def __init__(self, config: TALibStrategyConfig) -> None:
         PyCondition.type(config.bar_type, BarType, "config.bar_type")
         super().__init__(config)
 
