@@ -358,6 +358,7 @@ impl OrderBook {
             return Ok(());
         }
 
+        // SAFETY: Levels were already checked for None
         let best_bid = top_bid_level.unwrap().price;
         let best_ask = top_ask_level.unwrap().price;
 

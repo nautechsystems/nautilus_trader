@@ -37,10 +37,17 @@ from nautilus_trader.model.identifiers import Identifier
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 CUSTOM_ENCODINGS: dict[type, Callable] = {
     pd.DataFrame: lambda x: x.to_json(),
+}
+
+
+CUSTOM_DECODINGS: dict[type, Callable] = {
+    pd.DataFrame: lambda x: pd.read_json(x),
 }
 
 
@@ -52,7 +59,7 @@ def resolve_path(path: str) -> type:
 
 
 def msgspec_encoding_hook(obj: Any) -> Any:
-    if isinstance(obj, str | Decimal):
+    if isinstance(obj, Decimal):
         return str(obj)
     if isinstance(obj, UUID4):
         return obj.value
@@ -60,15 +67,21 @@ def msgspec_encoding_hook(obj: Any) -> Any:
         return obj.value
     if isinstance(obj, BarType):
         return str(obj)
+    if isinstance(obj, (Price | Quantity)):
+        return str(obj)
+    if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
+        return obj.isoformat()
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
         return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
         func = CUSTOM_ENCODINGS[type(obj)]
         return func(obj)
 
+    raise TypeError(f"Encoding objects of type {obj.__class__} is unsupported")
+
 
 def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
-    if obj_type == UUID4:
+    if obj_type in (Decimal, UUID4, pd.Timestamp, pd.Timedelta):
         return obj_type(obj)
     if obj_type == InstrumentId:
         return InstrumentId.from_str(obj)
@@ -76,11 +89,25 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return obj_type(obj)
     if obj_type == BarType:
         return BarType.from_str(obj)
+    if obj_type == Price:
+        return Price.from_str(obj)
+    if obj_type == Quantity:
+        return Quantity.from_str(obj)
+    if obj_type in CUSTOM_DECODINGS:
+        func = CUSTOM_DECODINGS[obj_type]
+        return func(obj)
+
+    raise TypeError(f"Decoding objects of type {obj_type} is unsupported")
 
 
-def register_json_encoding(type_: type, encoder: Callable) -> None:
+def register_config_encoding(type_: type, encoder: Callable) -> None:
     global CUSTOM_ENCODINGS
     CUSTOM_ENCODINGS[type_] = encoder
+
+
+def register_config_decoding(type_: type, decoder: Callable) -> None:
+    global CUSTOM_DECODINGS
+    CUSTOM_DECODINGS[type_] = decoder
 
 
 class NautilusConfig(msgspec.Struct, kw_only=True, frozen=True):
@@ -552,7 +579,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     oms_type : OmsType, optional
         The order management system type for the strategy. This will determine
         how the `ExecutionEngine` handles position IDs (see docs).
-    external_order_claims : list[InstrumentId | str], optional
+    external_order_claims : list[InstrumentId], optional
         The external order claim instrument IDs.
         External orders for matching instrument IDs will be associated with (claimed by) the strategy.
     manage_contingent_orders : bool, default False
@@ -567,7 +594,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
     strategy_id: StrategyId | None = None
     order_id_tag: str | None = None
     oms_type: str | None = None
-    external_order_claims: list[InstrumentId | str] | None = None
+    external_order_claims: list[InstrumentId] | None = None
     manage_contingent_orders: bool = False
     manage_gtd_expiry: bool = False
 

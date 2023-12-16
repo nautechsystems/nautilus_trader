@@ -274,8 +274,6 @@ class LiveMarketDataClient(MarketDataClient):
         The client ID.
     venue : Venue, optional with no default so ``None`` must be passed explicitly
         The client venue. If multi-venue then can be ``None``.
-    instrument_provider : InstrumentProvider
-        The instrument provider for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -284,6 +282,8 @@ class LiveMarketDataClient(MarketDataClient):
         The clock for the client.
     logger : Logger
         The logger for the client.
+    instrument_provider : InstrumentProvider, optional
+        The instrument provider for the client.
     config : dict[str, object], optional
         The configuration for the instance.
 
@@ -298,14 +298,14 @@ class LiveMarketDataClient(MarketDataClient):
         loop: asyncio.AbstractEventLoop,
         client_id: ClientId,
         venue: Venue | None,
-        instrument_provider: InstrumentProvider,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
         logger: Logger,
+        instrument_provider: InstrumentProvider | None = None,
         config: dict[str, Any] | None = None,
     ) -> None:
-        PyCondition.type(instrument_provider, InstrumentProvider, "instrument_provider")
+        PyCondition.type_or_none(instrument_provider, InstrumentProvider, "instrument_provider")
 
         super().__init__(
             client_id=client_id,
@@ -435,6 +435,11 @@ class LiveMarketDataClient(MarketDataClient):
         )
 
     def subscribe_instruments(self) -> None:
+        if self._instrument_provider is None:
+            raise NotImplementedError(  # pragma: no cover
+                "Override the `subscribe_instruments` method (there was no instrument provider)",  # pragma: no cover
+            )
+
         instrument_ids = list(self._instrument_provider.get_all().keys())
         self.create_task(
             self._subscribe_instruments(),
@@ -537,6 +542,11 @@ class LiveMarketDataClient(MarketDataClient):
         )
 
     def unsubscribe_instruments(self) -> None:
+        if self._instrument_provider is None:
+            raise NotImplementedError(  # pragma: no cover
+                "Override the `unsubscribe_instruments` method (there was no instrument provider)",  # pragma: no cover
+            )
+
         instrument_ids = list(self._instrument_provider.get_all().keys())
         self.create_task(
             self._unsubscribe_instruments(),

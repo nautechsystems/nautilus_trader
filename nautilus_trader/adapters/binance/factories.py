@@ -277,7 +277,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceSpotDataClient(
                 loop=loop,
                 client=client,
@@ -300,7 +299,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceFuturesDataClient(
                 loop=loop,
                 client=client,
@@ -390,7 +388,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceSpotExecutionClient(
                 loop=loop,
                 client=client,
@@ -413,7 +410,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceFuturesExecutionClient(
                 loop=loop,
                 client=client,

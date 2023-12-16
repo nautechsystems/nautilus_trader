@@ -23,13 +23,7 @@ from nautilus_trader.core.data import Data
 
 class UUID4:
     def __init__(self, value: str) -> None: ...
-class LogGuard: ...
 
-def set_global_log_collector(
-    stdout_level: str | None,
-    stderr_level: str | None,
-    file_level: tuple[str, str, str] | None,
-) -> LogGuard: ...
 def secs_to_nanos(secs: float) -> int:
     """
     Return round nanoseconds (ns) converted from the given seconds.
@@ -135,6 +129,25 @@ def nanos_to_micros(nanos: int) -> int:
 
     """
 
+def last_weekday_nanos(year: int, month: int, day: int) -> int:
+    """
+    Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).
+
+    Parameters
+    ----------
+    year : int
+        The year from the datum date.
+    month : int
+        The month from the datum date.
+    day : int
+        The day from the datum date.
+
+    Returns
+    -------
+    int
+
+    """
+
 def convert_to_snake_case(s: str) -> str:
     """
     Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
@@ -152,6 +165,18 @@ def convert_to_snake_case(s: str) -> str:
     str
 
     """
+
+###################################################################################################
+# Common
+###################################################################################################
+
+class LogGuard: ...
+
+def set_global_log_collector(
+    stdout_level: str | None,
+    stderr_level: str | None,
+    file_level: tuple[str, str, str] | None,
+) -> LogGuard: ...
 
 ###################################################################################################
 # Model
@@ -468,6 +493,7 @@ class StrategyId:
 
 class Symbol:
     def __init__(self, value: str) -> None: ...
+    @property
     def value(self) -> str: ...
 
 class TradeId:
@@ -1007,6 +1033,81 @@ class OrderModifyRejected:
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> OrderModifyRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderAccepted:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderAccepted: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
+class OrderCancelRejected:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    )-> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderCancelRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderCanceled:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderCanceled: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderExpired:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderExpired: ...
     def to_dict(self) -> dict[str, str]: ...
 
 ###################################################################################################

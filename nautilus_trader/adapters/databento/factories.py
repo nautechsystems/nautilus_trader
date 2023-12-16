@@ -13,11 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from functools import lru_cache
 
 import databento
 
+from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
+from nautilus_trader.adapters.databento.data import DatabentoDataClient
 from nautilus_trader.adapters.env import get_env_key
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.clock import LiveClock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.logging import Logger
+from nautilus_trader.live.factories import LiveDataClientFactory
 
 
 DATABENTO_HTTP_CLIENTS: dict[str, databento.Historical] = {}
@@ -55,3 +63,60 @@ def get_cached_databento_http_client(
         client = databento.Historical(key=key, gateway=gateway or databento.HistoricalGateway.BO1)
         DATABENTO_HTTP_CLIENTS[client_key] = client
     return DATABENTO_HTTP_CLIENTS[client_key]
+
+
+class DatabentoLiveDataClientFactory(LiveDataClientFactory):
+    """
+    Provides a `Binance` live data client factory.
+    """
+
+    @staticmethod
+    def create(  # type: ignore
+        loop: asyncio.AbstractEventLoop,
+        name: str,
+        config: DatabentoDataClientConfig,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: LiveClock,
+        logger: Logger,
+    ) -> DatabentoDataClient:
+        """
+        Create a new Databento data client.
+
+        Parameters
+        ----------
+        loop : asyncio.AbstractEventLoop
+            The event loop for the client.
+        name : str
+            The custom client name.
+        config : DatabentoDataClientConfig
+            The client configuration.
+        msgbus : MessageBus
+            The message bus for the client.
+        cache : Cache
+            The cache for the client.
+        clock : LiveClock
+            The clock for the client.
+        logger : Logger
+            The logger for the client.
+
+        Returns
+        -------
+        DatabentoDataClient
+
+        """
+        # Get HTTP client singleton
+        http_client: databento.Historical = get_cached_databento_http_client(
+            key=config.api_key,
+            gateway=config.http_gateway,
+        )
+
+        return DatabentoDataClient(
+            loop=loop,
+            http_client=http_client,
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+            logger=logger,
+            config=config,
+        )

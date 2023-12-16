@@ -19,8 +19,12 @@ from nautilus_trader.core.nautilus_pyo3 import ContingencyType
 from nautilus_trader.core.nautilus_pyo3 import Currency
 from nautilus_trader.core.nautilus_pyo3 import LiquiditySide
 from nautilus_trader.core.nautilus_pyo3 import Money
+from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
+from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
+from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
 from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
+from nautilus_trader.core.nautilus_pyo3 import OrderExpired
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
 from nautilus_trader.core.nautilus_pyo3 import OrderListId
@@ -43,10 +47,12 @@ from nautilus_trader.core.nautilus_pyo3 import TriggerType
 from nautilus_trader.test_kit.rust.identifiers_pyo3 import TestIdProviderPyo3
 
 
+uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
+
+
 class TestEventsProviderPyo3:
     @staticmethod
     def order_denied_max_submit_rate() -> OrderDenied:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderDenied(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -60,7 +66,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_rejected_insufficient_margin() -> OrderRejected:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderRejected(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -76,7 +81,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_filled_buy_limit() -> OrderFilled:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderFilled(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -101,7 +105,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_initialized() -> OrderInitialized:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderInitialized(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -133,7 +136,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_triggered() -> OrderTriggered:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderTriggered(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -149,7 +151,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_submitted() -> OrderSubmitted:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderSubmitted(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -163,7 +164,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_emulated() -> OrderEmulated:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderEmulated(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -176,7 +176,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_released() -> OrderReleased:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderReleased(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -190,7 +189,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_updated() -> OrderUpdated:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderUpdated(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -209,7 +207,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_pending_update() -> OrderPendingUpdate:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderPendingUpdate(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -225,7 +222,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_pending_cancel() -> OrderPendingCancel:
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderPendingCancel(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -241,7 +237,6 @@ class TestEventsProviderPyo3:
 
     @staticmethod
     def order_modified_rejected():
-        uuid = "91762096-b188-49ea-8562-8d8a4cc22ff2"
         return OrderModifyRejected(
             trader_id=TestIdProviderPyo3.trader_id(),
             strategy_id=TestIdProviderPyo3.strategy_id(),
@@ -251,6 +246,67 @@ class TestEventsProviderPyo3:
             venue_order_id=TestIdProviderPyo3.venue_order_id(),
             event_id=UUID4(uuid),
             reason="ORDER_DOES_NOT_EXIST",
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_accepted() -> OrderAccepted:
+        return OrderAccepted(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_cancel_rejected() -> OrderCancelRejected:
+        return OrderCancelRejected(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            reason="ORDER_DOES_NOT_EXIST",
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_canceled() -> OrderCanceled:
+        return OrderCanceled(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            event_id=UUID4(uuid),
+            ts_init=0,
+            ts_event=0,
+            reconciliation=False,
+        )
+
+    @staticmethod
+    def order_expired() -> OrderExpired:
+        return OrderExpired(
+            trader_id=TestIdProviderPyo3.trader_id(),
+            strategy_id=TestIdProviderPyo3.strategy_id(),
+            instrument_id=TestIdProviderPyo3.ethusdt_binance_id(),
+            client_order_id=TestIdProviderPyo3.client_order_id(),
+            account_id=TestIdProviderPyo3.account_id(),
+            venue_order_id=TestIdProviderPyo3.venue_order_id(),
+            event_id=UUID4(uuid),
             ts_init=0,
             ts_event=0,
             reconciliation=False,

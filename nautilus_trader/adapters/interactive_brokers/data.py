@@ -94,11 +94,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(f"{IB_VENUE.value}-{ibg_client_id:03d}"),
             venue=None,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
             config={
                 "name": f"{type(self).__name__}-{ibg_client_id:03d}",
                 "client_id": ibg_client_id,

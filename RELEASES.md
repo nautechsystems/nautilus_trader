@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
 - Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
+- Added TA-Lib integration, thanks @rsmb7z
 - Improved `Actor` and `Strategy` usability to be more lenient to mistaken calls to `clock` and `logger` from the constructor (warnings also added to docs)
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
@@ -18,6 +19,8 @@ Released on TBD (UTC).
 - Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
 - Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
 - Changed `Actor` state loading to now use the standard `Serializer`
+- Renamed `register_json_encoding` to `register_config_encoding`
+- Renamed `register_json_decoding` to `register_config_decoding`
 - Removed `CacheDatabaseConfig` (due above config change)
 - Removed `infrastructure` subpackage (now redundant with new Rust implementation)
 

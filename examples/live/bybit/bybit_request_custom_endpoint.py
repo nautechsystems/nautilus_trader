@@ -14,52 +14,105 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import os
+from datetime import timedelta
+
 from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.common import Environment
-from nautilus_trader.config import CacheConfig
+from nautilus_trader.common.clock import TimeEvent
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
-from nautilus_trader.config.common import DatabaseConfig
-from nautilus_trader.examples.strategies.grid import GridConfig
-from nautilus_trader.examples.strategies.grid import GridStrategy
+from nautilus_trader.core.data import Data
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.identifiers import TraderId
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.trading import Strategy
 
+
+# *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
+# *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
+
+# *** THIS INTEGRATION IS STILL UNDER CONSTRUCTION. ***
+# *** CONSIDER IT TO BE IN AN UNSTABLE BETA PHASE AND EXERCISE CAUTION. ***
+
+
+class RequestDemoStrategyConfig(StrategyConfig, frozen=True):
+    instrument_id: str
+    interval: int
+
+
+class RequestDemoStrategy(Strategy):
+    """
+    Strategy showcases how to request custom data from bybit adapter. BybitTickerData is
+    specific to Bybit adapter and you can request it with `request_data` method.
+
+    Also this strategy demonstrate:
+    - how to request BybitTickerData
+    - how to use clock to schedule this request periodically by time interval in seconds.
+
+    """
+
+    def __init__(self, config: RequestDemoStrategyConfig):
+        super().__init__()
+        self.interval = config.interval
+        self.instrument_id = InstrumentId.from_str(config.instrument_id)
+
+    def on_start(self):
+        seconds_delta = timedelta(seconds=self.interval)
+        self.clock.set_timer(
+            name="fetch_ticker",
+            interval=seconds_delta,
+            callback=self.send_tickers_request,
+        )
+
+    def send_tickers_request(self, time_event: TimeEvent):
+        data_type = DataType(
+            BybitTickerData,
+            metadata={"symbol": self.instrument_id.symbol},
+        )
+        self.request_data(data_type, ClientId("BYBIT"))
+
+    def on_historical_data(self, data: Data):
+        if isinstance(data, BybitTickerData):
+            self.log.info(f"{data}")
+
+
+api_key = os.getenv("BYBIT_TESTNET_API_KEY")
+api_secret = os.getenv("BYBIT_TESTNET_API_SECRET")
 
 config_node = TradingNodeConfig(
-    trader_id=TraderId("TESTER-001"),
+    trader_id="TESTER-001",
     environment=Environment.LIVE,
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    cache=CacheConfig(
-        database=DatabaseConfig(),
-        buffer_interval_ms=100,
-    ),
     data_clients={
         "BYBIT": BybitDataClientConfig(
-            api_key=None,  # 'BYBIT_API_KEY' env var
-            api_secret=None,  # 'BYBIT_API_SECRET' env var
+            api_key=api_key,
+            api_secret=api_secret,
             instrument_types=[BybitInstrumentType.LINEAR],
-            testnet=True,
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            testnet=True,
         ),
     },
     exec_clients={
         "BYBIT": BybitExecClientConfig(
-            api_key=None,  # 'BYBIT_API_KEY' env var
-            api_secret=None,  # 'BYBIT_API_SECRET' env var
+            api_key=api_key,
+            api_secret=api_secret,
             instrument_types=[BybitInstrumentType.LINEAR],
-            testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            testnet=True,
         ),
     },
     timeout_connection=20.0,
@@ -72,13 +125,13 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 instrument_id = "ETHUSDT-LINEAR.BYBIT"
-grid_config = GridConfig(
+strategy_config = RequestDemoStrategyConfig(
     instrument_id=instrument_id,
-    value="test",
+    interval=10,
 )
-grid_strategy = GridStrategy(config=grid_config)
+strategy_config = RequestDemoStrategy(config=strategy_config)
 
-node.trader.add_strategy(grid_strategy)
+node.trader.add_strategy(strategy_config)
 node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
 node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
 node.build()

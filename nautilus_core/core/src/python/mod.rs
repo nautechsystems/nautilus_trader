@@ -58,5 +58,6 @@ pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(datetime::py_nanos_to_millis, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_nanos_to_micros, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_unix_nanos_to_iso8601, m)?)?;
+    m.add_function(wrap_pyfunction!(datetime::py_last_weekday_nanos, m)?)?;
     Ok(())
 }

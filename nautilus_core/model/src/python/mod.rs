@@ -305,5 +305,9 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::pending_update::OrderPendingUpdate>()?;
     m.add_class::<crate::events::order::pending_cancel::OrderPendingCancel>()?;
     m.add_class::<crate::events::order::modify_rejected::OrderModifyRejected>()?;
+    m.add_class::<crate::events::order::accepted::OrderAccepted>()?;
+    m.add_class::<crate::events::order::cancel_rejected::OrderCancelRejected>()?;
+    m.add_class::<crate::events::order::canceled::OrderCanceled>()?;
+    m.add_class::<crate::events::order::expired::OrderExpired>()?;
     Ok(())
 }

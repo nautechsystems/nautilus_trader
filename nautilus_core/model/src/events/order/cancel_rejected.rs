@@ -13,8 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
+use anyhow::Result;
 use derive_builder::{self, Builder};
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
@@ -27,16 +31,90 @@ use crate::identifiers::{
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct OrderCancelRejected {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
-    pub venue_order_id: Option<VenueOrderId>,
-    pub account_id: Option<AccountId>,
     pub reason: Ustr,
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
+    pub venue_order_id: Option<VenueOrderId>,
+    pub account_id: Option<AccountId>,
+}
+
+impl OrderCancelRejected {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: Ustr,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        reconciliation: bool,
+        venue_order_id: Option<VenueOrderId>,
+        account_id: Option<AccountId>,
+    ) -> Result<OrderCancelRejected> {
+        Ok(OrderCancelRejected {
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation: reconciliation as u8,
+            venue_order_id,
+            account_id,
+        })
+    }
+}
+
+impl Display for OrderCancelRejected {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OrderCancelRejected(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={}, reason={}, ts_event={})",
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id
+                .map(|venue_order_id| format!("{}", venue_order_id))
+                .unwrap_or_else(|| "None".to_string()),
+            self.account_id
+                .map(|account_id| format!("{}", account_id))
+                .unwrap_or_else(|| "None".to_string()),
+            self.reason,
+            self.ts_event
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+
+    use rstest::rstest;
+
+    use crate::events::order::{cancel_rejected::OrderCancelRejected, stubs::*};
+
+    #[rstest]
+    fn test_order_cancel_rejected(order_cancel_rejected: OrderCancelRejected) {
+        let display = format!("{}", order_cancel_rejected);
+        assert_eq!(
+            display,
+            "OrderCancelRejected(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001, reason=ORDER_DOES_NOT_EXISTS, ts_event=0)"
+        );
+    }
 }

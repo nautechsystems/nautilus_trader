@@ -24,6 +24,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitInstrumentType
 from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
+from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.adapters.bybit.schemas.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_ticker
@@ -37,14 +38,21 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.datetime import secs_to_millis
+from nautilus_trader.core.message import Request
+from nautilus_trader.core.nautilus_pyo3 import Symbol
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.messages import DataResponse
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import GenericData
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments import Instrument
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -67,11 +75,11 @@ class BybitDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(BYBIT_VENUE.value),
             venue=BYBIT_VENUE,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
         )
 
         # Hot cache
@@ -104,6 +112,51 @@ class BybitDataClient(LiveMarketDataClient):
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
         self._update_instruments_task: asyncio.Task | None = None
+
+        # Register custom endpoint for fetching tickers
+        self._msgbus.register(
+            endpoint="bybit.data.tickers",
+            handler=self.complete_fetch_tickers_task,
+        )
+
+    async def fetch_send_tickers(
+        self,
+        id: UUID4,
+        instrument_type: BybitInstrumentType,
+        symbol: str,
+    ):
+        tickers = await self._http_market.fetch_tickers(
+            instrument_type=instrument_type,
+            symbol=symbol,
+        )
+        data = DataResponse(
+            client_id=ClientId(BYBIT_VENUE.value),
+            venue=BYBIT_VENUE,
+            data_type=DataType(GenericData),
+            data=tickers,
+            correlation_id=id,
+            response_id=UUID4(),
+            ts_init=self._clock.timestamp_ns(),
+        )
+        self._msgbus.response(data)
+
+    def complete_fetch_tickers_task(self, request: Request):
+        # extract symbol from metadat
+        if "symbol" not in request.metadata:
+            raise ValueError("Symbol not in request metadata")
+        symbol = request.metadata["symbol"]
+        if not isinstance(symbol, Symbol):
+            raise ValueError(
+                f"Parameter symbol in request metadata object is not of type Symbol, got {type(symbol)}",
+            )
+        bybit_symbol = BybitSymbol(symbol.value)
+        self._loop.create_task(
+            self.fetch_send_tickers(
+                request.id,
+                bybit_symbol.instrument_type,
+                bybit_symbol.raw_symbol,
+            ),
+        )
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
@@ -197,6 +250,37 @@ class BybitDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
+    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+        instrument: Instrument | None = self._instrument_provider.find(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot find instrument for {instrument_id}.")
+            return
+        data_type = DataType(
+            type=Instrument,
+            metadata={"instrument_id": instrument_id},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=instrument,
+            correlation_id=correlation_id,
+        )
+
+    async def _request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
+        all_instruments = self._instrument_provider.get_all()
+        target_instruments = []
+        for instrument in all_instruments.values():
+            if instrument.venue == venue:
+                target_instruments.append(instrument)
+        data_type = DataType(
+            type=Instrument,
+            metadata={"venue": venue},
+        )
+        self._handle_data_response(
+            data_type=data_type,
+            data=target_instruments,
+            correlation_id=correlation_id,
+        )
+
     async def _request_bars(
         self,
         bar_type: BarType,
@@ -256,3 +340,39 @@ class BybitDataClient(LiveMarketDataClient):
             self._update_instruments_task = None
         for instrument_type, ws_client in self._ws_clients.items():
             await ws_client.disconnect()
+
+    async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
+        bybit_symbol = BybitSymbol(symbol.value)
+        bybit_tickers = await self._http_market.fetch_tickers(
+            instrument_type=bybit_symbol.instrument_type,
+            symbol=bybit_symbol.raw_symbol,
+        )
+        data_type = DataType(
+            type=BybitTickerData,
+            metadata={"symbol": symbol},
+        )
+        result = []
+        for ticker in bybit_tickers:
+            ticker_data: BybitTickerData = BybitTickerData(
+                symbol=ticker.symbol,
+                bid1Price=ticker.bid1Price,
+                bid1Size=ticker.bid1Size,
+                ask1Price=ticker.ask1Price,
+                ask1Size=ticker.ask1Size,
+                lastPrice=ticker.lastPrice,
+                highPrice24h=ticker.highPrice24h,
+                lowPrice24h=ticker.lowPrice24h,
+                turnover24h=ticker.turnover24h,
+                volume24h=ticker.volume24h,
+            )
+            result.append(ticker_data)
+        self._handle_data_response(
+            data_type,
+            result,
+            correlation_id,
+        )
+
+    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        if data_type.type == BybitTickerData:
+            symbol = data_type.metadata["symbol"]
+            await self._handle_ticker_data_request(symbol, correlation_id)

@@ -80,15 +80,11 @@ class TradingNode:
             log=self.kernel.log,
         )
 
-        # Configuration
-        cache_db = config.cache.database if config.cache is not None else None
-        msgbus_db = config.message_bus.database if config.message_bus is not None else None
-
         # Operation flags
         self._is_built = False
         self._is_running = False
-        self._has_cache_backing = cache_db and cache_db.type != "in-memory"
-        self._has_msgbus_backing = msgbus_db is not None
+        self._has_cache_backing = config.cache and config.cache.database
+        self._has_msgbus_backing = config.message_bus and config.message_bus.database
 
         self.kernel.log.info(f"{self._has_cache_backing=}", LogColor.BLUE)
         self.kernel.log.info(f"{self._has_msgbus_backing=}", LogColor.BLUE)

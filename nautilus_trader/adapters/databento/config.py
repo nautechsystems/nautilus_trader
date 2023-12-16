@@ -13,8 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.config import LiveDataClientConfig
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -25,12 +25,24 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     ----------
     api_key : str, optional
         The Databento API secret key.
-        If ``None`` then will source the `DATABENTO_API_KEY` or
-        `DATABENTO_API_KEY` environment variables.
+        If ``None`` then will source the `DATABENTO_API_KEY` environment variable.
     http_gateway : str, optional
         The historical HTTP client gateway override.
+    live_gateway : str, optional
+        The live client gateway override.
+    datasets : list[str], optional
+        The datasets to prepare operations for.
+    instrument_ids : list[InstrumentId], optional
+        The instrument IDs to request definitions for on start.
+    initial_load_timeout : float, default 5.0
+        The timeout (seconds) to wait for instruments to load (per dataset).
+        Instruments will be requested concurrently per dataset.
 
     """
 
     api_key: str | None = None
     http_gateway: str | None = None
+    live_gateway: str | None = None
+    datasets: list[str] | None = None
+    instrument_ids: list[InstrumentId] | None = None
+    initial_load_timeout: float | None = 5.0

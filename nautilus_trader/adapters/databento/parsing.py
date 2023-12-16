@@ -227,10 +227,25 @@ def parse_mbo_msg(
     record: databento.MBOMsg,
     instrument_id: InstrumentId,
 ) -> OrderBookDelta:
+    action: BookAction = parse_book_action(record.action)
+    side: OrderSide = parse_order_side(record.side)
+    if side == OrderSide.NO_ORDER_SIDE:
+        return TradeTick.from_raw(
+            instrument_id=instrument_id,
+            price_raw=record.price,
+            price_prec=USD.precision,  # TODO(per instrument precision)
+            size_raw=int(record.size * FIXED_SCALAR),
+            size_prec=0,  # No fractional units
+            aggressor_side=AggressorSide.NO_AGGRESSOR,
+            trade_id=TradeId(str(record.sequence)),
+            ts_event=record.ts_event,
+            ts_init=record.ts_recv,
+        )
+
     return OrderBookDelta.from_raw(
         instrument_id=instrument_id,
-        action=parse_book_action(record.action),
-        side=parse_order_side(record.side),
+        action=action,
+        side=side,
         price_raw=record.price,
         price_prec=USD.precision,  # TODO(per instrument precision)
         size_raw=int(record.size * FIXED_SCALAR),
@@ -394,7 +409,7 @@ def parse_instrument_def(
         case DatabentoInstrumentClass.FX_SPOT.value:
             raise ValueError("`instrument_class` FX_SPOT not currently supported")
         case DatabentoInstrumentClass.OPTION_SPREAD.value:
-            raise ValueError("`instrument_class` OPTION_SPREAD not currently supported")
+            return parse_options_contract(record, instrument_id)
         case DatabentoInstrumentClass.MIXED_SPREAD.value:
             raise ValueError("`instrument_class` MIXED_SPREAD not currently supported")
         case _:
