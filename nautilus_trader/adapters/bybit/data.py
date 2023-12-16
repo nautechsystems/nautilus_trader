@@ -187,7 +187,7 @@ class BybitDataClient(LiveMarketDataClient):
                 await self._instrument_provider.load_all_async()
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("`update_instruments` task was canceled.")
+            self._log.debug("Canceled `update_instruments`.")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         symbol = BybitSymbol(instrument_id.symbol.value)
