@@ -209,12 +209,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
+
+        assert self._instrument_provider is not None  # type checking
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
 
     async def _update_instruments(self) -> None:
+        assert self._instrument_provider is not None  # type checking
+
         while True:
             retries = 0
             while True:
@@ -472,6 +476,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+        assert self._instrument_provider is not None  # type checking
+
         instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}.")
@@ -626,6 +632,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end_time_ms: int | None,
         limit: int | None,
     ) -> list[Bar]:
+        assert self._instrument_provider is not None  # type checking
+
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -771,6 +779,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end_time_ms: int | None,
         limit: int | None,
     ) -> list[Bar]:
+        assert self._instrument_provider is not None  # type checking
+
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -830,6 +840,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         return bars
 
     def _send_all_instruments_to_data_engine(self) -> None:
+        assert self._instrument_provider is not None  # type checking
+
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 
