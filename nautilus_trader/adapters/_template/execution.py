@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pandas as pd
 
 from nautilus_trader.execution.messages import CancelAllOrders
