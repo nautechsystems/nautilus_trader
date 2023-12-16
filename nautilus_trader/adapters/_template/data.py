@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pandas as pd
 
 from nautilus_trader.core.uuid import UUID4
@@ -293,17 +292,29 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+    ) -> None:
         raise NotImplementedError(
             "method `_request` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    async def _request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+    ) -> None:
         raise NotImplementedError(
             "method `_request_instrument` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
+    async def _request_instruments(
+        self,
+        venue: Venue,
+        correlation_id: UUID4,
+    ) -> None:
         raise NotImplementedError(
             "method `_request_instruments` must be implemented in the subclass",
         )  # pragma: no cover
