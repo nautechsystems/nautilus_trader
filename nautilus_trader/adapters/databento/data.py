@@ -15,11 +15,14 @@
 
 import asyncio
 from asyncio.futures import Future
+from collections import defaultdict
 from collections.abc import Coroutine
+from typing import Any
 
 import databento
 import pandas as pd
 
+from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
@@ -32,7 +35,6 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
-from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -41,9 +43,7 @@ from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
@@ -100,65 +100,107 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
         self._datasets: list[Dataset] = config.datasets or []
-        self._instrument_ids: dict[Dataset, set[InstrumentId]] = {}
+        self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
         self._instrument_maps: dict[PublisherId, databento.InstrumentMap] = {}
-        self._initial_load_timeout: float | None = config.initial_load_timeout
+        self._timeout_initial_load: float | None = config.timeout_initial_load
+        self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
         # Clients
         self._http_client: databento.Historical = http_client
         self._live_clients: dict[Dataset, databento.Live] = {}
+        self._live_clients_mbo: dict[Dataset, databento.Live] = {}
         self._has_subscribed: dict[Dataset, bool] = {}
         self._loader = DatabentoDataLoader()
 
         # Cache instrument index
         for instrument_id in config.instrument_ids or []:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-            if dataset not in self._instrument_ids:
-                self._instrument_ids[dataset] = set()
             self._instrument_ids[dataset].add(instrument_id)
+
+        # MBO/L3 subscription buffering
+        self._is_buffering_mbo_subscriptions: bool = bool(config.mbo_subscriptions_delay)
+        self._buffered_mbo_subscriptions: dict[Dataset, list[InstrumentId]] = defaultdict(list)
+        self._buffer_mbo_subscriptions_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
         if not self._instrument_ids:
             return  # Nothing else to do yet
 
+        if self._is_buffering_mbo_subscriptions:
+            self._buffer_mbo_subscriptions_task = self.create_task(self._buffer_mbo_subscriptions())
+
         self._log.info("Initializing instruments...")
 
-        tasks: list[Future] = []
+        futures: list[Future] = []
         for dataset, instrument_ids in self._instrument_ids.items():
-            task = self._loop.run_in_executor(
+            future = self._loop.run_in_executor(
                 None,
                 self._load_instrument_ids,
                 dataset,
                 sorted(instrument_ids),
             )
-            tasks.append(task)
+            futures.append(future)
 
         try:
-            if self._initial_load_timeout:
-                await asyncio.wait_for(asyncio.gather(*tasks), timeout=self._initial_load_timeout)
+            if self._timeout_initial_load:
+                await asyncio.wait_for(asyncio.gather(*futures), timeout=self._timeout_initial_load)
             else:
-                await asyncio.gather(*tasks)
+                await asyncio.gather(*futures)
         except asyncio.TimeoutError:
             self._log.warning("Timeout waiting for instruments...")
 
     async def _disconnect(self) -> None:
-        tasks: list[Coroutine] = []
+        coros: list[Coroutine] = []
         for dataset, client in self._live_clients.items():
             self._log.info(f"Stopping {dataset} live feed...", LogColor.BLUE)
-            task = client.wait_for_close(timeout=2.0)
-            tasks.append(task)
+            coro = client.wait_for_close(timeout=2.0)
+            coros.append(coro)
 
-        await asyncio.gather(*tasks)
+        if self._buffer_mbo_subscriptions_task:
+            self._log.debug("Canceling `buffer_mbo_subscriptions` task...")
+            self._buffer_mbo_subscriptions_task.cancel()
+            self._buffer_mbo_subscriptions_task = None
+
+        await asyncio.gather(*coros)
+
+    async def _buffer_mbo_subscriptions(self) -> None:
+        try:
+            self._log.info("Buffering MBO/L3 subscriptions...")
+
+            await asyncio.sleep(self._mbo_subscriptions_delay or 0.0)
+            self._is_buffering_mbo_subscriptions = False
+
+            coros: list[Coroutine] = []
+            for dataset, instrument_ids in self._buffered_mbo_subscriptions.items():
+                self._log.info(f"Starting {dataset} MBO/L3 live feeds...")
+                coro = self._subscribe_order_book_deltas_batch(instrument_ids)
+                coros.append(coro)
+
+            await asyncio.gather(*coros)
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `buffer_mbo_subscriptions` task.")
 
     def _get_live_client(self, dataset: Dataset) -> databento.Live:
-        client = self._live_clients.get(dataset)
+        # Retrieve or initialize the 'general' live client for the specified dataset
+        live_client = self._live_clients.get(dataset)
 
-        if client is None:
-            client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-            client.add_callback(self._handle_record)
-            self._live_clients[dataset] = client
+        if live_client is None:
+            live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
+            live_client.add_callback(self._handle_record)
+            self._live_clients[dataset] = live_client
 
-        return client
+        return live_client
+
+    def _get_live_client_mbo(self, dataset: Dataset) -> databento.Live:
+        # Retrieve or initialize the 'MBO/L3' live client for the specified dataset
+        live_client = self._live_clients_mbo.get(dataset)
+
+        if live_client is None:
+            live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
+            live_client.add_callback(self._handle_record)
+            self._live_clients_mbo[dataset] = live_client
+
+        return live_client
 
     def _check_live_client_started(self, dataset: Dataset, live_client: databento.Live) -> None:
         if not self._has_subscribed.get(dataset):
@@ -170,9 +212,6 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         subscribed_instruments = self._instrument_ids.get(dataset)
-        if not subscribed_instruments:
-            subscribed_instruments = set()
-            self._instrument_ids[dataset] = subscribed_instruments
 
         if instrument_id in subscribed_instruments:
             return
@@ -206,6 +245,29 @@ class DatabentoDataClient(LiveMarketDataClient):
             # Close the connection (we will still process all received data)
             live_client.stop()
 
+    # -- OVERRIDES ----------------------------------------------------------------------------
+
+    def subscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: int | None = None,
+        kwargs: dict[str, Any] | None = None,
+    ) -> None:
+        if book_type != BookType.L3_MBO:
+            raise NotImplementedError
+
+        self.create_task(
+            self._subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                book_type=book_type,
+                depth=depth,
+                kwargs=kwargs,
+            ),
+            log_msg=f"subscribe: order_book_deltas {instrument_id}",
+            actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
+        )
+
     # -- SUBSCRIPTIONS ----------------------------------------------------------------------------
 
     async def _subscribe(self, data_type: DataType) -> None:
@@ -233,30 +295,64 @@ class DatabentoDataClient(LiveMarketDataClient):
         depth: int | None = None,
         kwargs: dict | None = None,
     ) -> None:
-        await self._ensure_subscribed_for_instrument(instrument_id)
+        if book_type != BookType.L3_MBO:
+            raise NotImplementedError
 
-        # Determine subscription start time
-        date_now_utc = self._clock.utc_now().date()
-        weekday_now_utc = date_now_utc.weekday()
-        match weekday_now_utc:
-            case 6:  # Sunday
-                start = 0  # Use start of current session
-            case _:
-                start = last_weekday_nanos(  # Use midnight (UTC) of last weekday
-                    year=date_now_utc.year,
-                    month=date_now_utc.month,
-                    day=date_now_utc.day,
-                )
+        if depth:  # Can be None or 0 (full depth)
+            self._log.error(
+                f"Cannot subscribe to order book deltas with specific depth of {depth} "
+                "(do not specify depth when subscribing, must be full depth).",
+            )
+            return
 
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        live_client = self._get_live_client(dataset)
+
+        if self._is_buffering_mbo_subscriptions:
+            self._log.debug(f"Buffering MBO/L3 subscription for {instrument_id}.", LogColor.MAGENTA)
+            self._buffered_mbo_subscriptions[dataset].append(instrument_id)
+            return
+
+        if self._get_live_client_mbo(dataset) is not None:
+            self._log.error(
+                f"Cannot subscribe to order book deltas for {instrument_id}, "
+                "MBO/L3 feed already started.",
+            )
+            return
+
+        await self._subscribe_order_book_deltas_batch([instrument_id])
+
+    async def _subscribe_order_book_deltas_batch(
+        self,
+        instrument_ids: list[InstrumentId],
+    ) -> None:
+        if not instrument_ids:
+            self._log.warning(
+                "No subscriptions for order book deltas (`instrument_ids` was empty).",
+            )
+            return
+
+        for instrument_id in instrument_ids:
+            if not self._cache.instrument(instrument_id):
+                self._log.error(
+                    f"Cannot subscribe to order book deltas for {instrument_id}, "
+                    "instrument must be pre-loaded via the `DatabentoDataClientConfig` "
+                    "or a specific subscription on start.",
+                )
+                instrument_ids.remove(instrument_id)
+                continue
+
+        if not instrument_ids:
+            return  # No subscribing instrument IDs were loaded in the cache
+
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
+        live_client = self._get_live_client_mbo(dataset)
         live_client.subscribe(
             dataset=dataset,
             schema=databento.Schema.MBO,
-            symbols=[instrument_id.symbol.value],
-            start=start,
+            symbols=[i.symbol.value for i in instrument_ids],
+            start=0,  # Must subscribe from start of week to get 'Sunday snapshot' for now
         )
-        self._check_live_client_started(dataset, live_client)
+        live_client.start()
 
     async def _subscribe_order_book_snapshots(
         self,
@@ -274,7 +370,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 schema = databento.Schema.MBP_10
             case _:
                 self._log.error(
-                    f"Cannot subscribe for snapshots of depth {depth}, use either 1 or 10.",
+                    f"Cannot subscribe for order book snapshots of depth {depth}, use either 1 or 10.",
                 )
                 return
 
@@ -284,7 +380,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             dataset=dataset,
             schema=schema,
             symbols=[instrument_id.symbol.value],
-            start=0,
         )
         self._check_live_client_started(dataset, live_client)
 
@@ -321,44 +416,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._check_live_client_started(dataset, live_client)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
-
-        if not bar_type.spec.is_time_aggregated():
-            self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Databento.",
-            )
-            return
-
-        if bar_type.spec.price_type != PriceType.LAST:
-            self._log.error(
-                f"Cannot subscribe to {bar_type}: only `LAST` price bars are aggregated by Databento.",
-            )
-            return
-
-        if bar_type.spec.step != 1:
-            self._log.error(
-                f"Cannot subscribe to {bar_type}: only a step of 1 is supported.",
-            )
-
-        await self._ensure_subscribed_for_instrument(bar_type.instrument_id)
-
-        match bar_type.spec.bar_aggregation:
-            case BarAggregation.SECOND:
-                schema = databento.Schema.OHLCV_1S
-            case BarAggregation.MINUTE:
-                schema = databento.Schema.OHLCV_1M
-            case BarAggregation.HOUR:
-                schema = databento.Schema.OHLCV_1H
-            case BarAggregation.DAY:
-                schema = databento.Schema.OHLCV_1D
-            case _:
-                self._log.error(
-                    f"Cannot subscribe to {bar_type}: "
-                    "use either 'SECOND', 'MINTUE', 'HOUR' or 'DAY' aggregations.",
-                )
-                return
-
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+
+        try:
+            schema = databento_schema_from_nautilus_bar_type(bar_type)
+        except ValueError as e:
+            self._log.error(f"Cannot subscribe: {e}")
+            return
+
         live_client = self._get_live_client(dataset)
         live_client.subscribe(
             dataset=dataset,
@@ -585,42 +650,13 @@ class DatabentoDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
-
-        if not bar_type.spec.is_time_aggregated():
-            self._log.error(
-                f"Cannot subscribe to {bar_type}: only time bars are aggregated by Databento.",
-            )
-            return
-
-        if bar_type.spec.price_type != PriceType.LAST:
-            self._log.error(
-                f"Cannot subscribe to {bar_type}: only `LAST` price bars are aggregated by Databento.",
-            )
-            return
-
-        if bar_type.spec.step != 1:
-            self._log.error(
-                f"Cannot subscribe to {bar_type}: only a step of 1 is supported.",
-            )
-
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
 
-        match bar_type.spec.aggregation:
-            case BarAggregation.SECOND:
-                schema = databento.Schema.OHLCV_1S
-            case BarAggregation.MINUTE:
-                schema = databento.Schema.OHLCV_1M
-            case BarAggregation.HOUR:
-                schema = databento.Schema.OHLCV_1H
-            case BarAggregation.DAY:
-                schema = databento.Schema.OHLCV_1D
-            case _:
-                self._log.error(
-                    f"Cannot subscribe to {bar_type}: "
-                    "use either 'SECOND', 'MINTUE', 'HOUR' or 'DAY' aggregations.",
-                )
-                return
+        try:
+            schema = databento_schema_from_nautilus_bar_type(bar_type)
+        except ValueError as e:
+            self._log.error(f"Cannot request: {e}")
+            return
 
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
@@ -662,7 +698,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.info(f"SystemMsg: {record.msg}")
                 return
 
-            instrument_map = self._instrument_maps.get(record.publisher_id)
+            instrument_map = self._instrument_maps.get(0)  # Still hard coded for now
             if not instrument_map:
                 instrument_map = databento.InstrumentMap()
                 self._instrument_maps[record.publisher_id] = instrument_map
