@@ -277,15 +277,14 @@ def _strip_unneeded_symbols() -> None:
         print("Stripping unneeded symbols from binaries...")
         for so in itertools.chain(Path("nautilus_trader").rglob("*.so")):
             if platform.system() == "Linux":
-                strip_cmd = f"strip --strip-unneeded {so}"
+                strip_cmd = ["strip", "--strip-unneeded", so]
             elif platform.system() == "Darwin":
-                strip_cmd = f"strip -x {so}"
+                strip_cmd = ["strip", "-x", so]
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
-                strip_cmd,
+                strip_cmd,  # type: ignore [arg-type] # noqa
                 check=True,
-                shell=True,  # noqa
                 capture_output=True,
             )
     except subprocess.CalledProcessError as e:
