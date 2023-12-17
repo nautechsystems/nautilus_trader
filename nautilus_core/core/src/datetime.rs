@@ -21,6 +21,8 @@ use chrono::{
     Datelike, NaiveDate, SecondsFormat, Weekday,
 };
 
+use crate::time::UnixNanos;
+
 pub const MILLISECONDS_IN_SECOND: u64 = 1_000;
 pub const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
@@ -91,7 +93,7 @@ pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
 }
 
-pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<u64> {
+pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> {
     let date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow!("Invalid date"))?;
     let current_weekday = date.weekday().number_from_monday();
 
@@ -112,7 +114,17 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<u64> {
 
     Ok(unix_timestamp_ns
         .timestamp_nanos_opt()
-        .ok_or_else(|| anyhow!("Failed `timestamp_nanos_opt`"))? as u64)
+        .ok_or_else(|| anyhow!("Failed `timestamp_nanos_opt`"))? as UnixNanos)
+}
+
+pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> Result<bool> {
+    let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;
+    let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
+    let timestamp = DateTime::from_timestamp(seconds as i64, nanoseconds)
+        .ok_or_else(|| anyhow!("Invalid timestamp {timestamp_ns}"))?;
+    let now = Utc::now();
+
+    Ok(now.signed_duration_since(timestamp) <= chrono::Duration::days(1))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -239,5 +251,19 @@ mod tests {
     fn test_last_closest_weekday_nanos_with_invalid_conversion() {
         let result = last_weekday_nanos(9999, 12, 31);
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_is_within_last_24_hours_when_now() {
+        let now_ns = Utc::now().timestamp_nanos_opt().unwrap();
+        assert!(is_within_last_24_hours(now_ns as UnixNanos).unwrap());
+    }
+
+    #[rstest]
+    fn test_is_within_last_24_hours_when_two_days_ago() {
+        let past_ns = (Utc::now() - chrono::Duration::days(2))
+            .timestamp_nanos_opt()
+            .unwrap();
+        assert!(!is_within_last_24_hours(past_ns as UnixNanos).unwrap());
     }
 }

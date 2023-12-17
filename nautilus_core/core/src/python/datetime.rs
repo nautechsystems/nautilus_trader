@@ -17,8 +17,8 @@ use pyo3::prelude::*;
 
 use super::to_pyvalue_err;
 use crate::datetime::{
-    last_weekday_nanos, micros_to_nanos, millis_to_nanos, nanos_to_micros, nanos_to_millis,
-    nanos_to_secs, secs_to_millis, secs_to_nanos, unix_nanos_to_iso8601,
+    is_within_last_24_hours, last_weekday_nanos, micros_to_nanos, millis_to_nanos, nanos_to_micros,
+    nanos_to_millis, nanos_to_secs, secs_to_millis, secs_to_nanos, unix_nanos_to_iso8601,
 };
 
 #[must_use]
@@ -72,4 +72,9 @@ pub fn py_unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
 #[pyfunction(name = "last_weekday_nanos")]
 pub fn py_last_weekday_nanos(year: i32, month: u32, day: u32) -> PyResult<u64> {
     last_weekday_nanos(year, month, day).map_err(to_pyvalue_err)
+}
+
+#[pyfunction(name = "is_within_last_24_hours")]
+pub fn py_is_within_last_24_hours(timestamp_ns: u64) -> PyResult<bool> {
+    is_within_last_24_hours(timestamp_ns).map_err(to_pyvalue_err)
 }
