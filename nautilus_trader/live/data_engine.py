@@ -300,6 +300,7 @@ class LiveDataEngine(DataEngine):
 
         """
         PyCondition.not_none(response, "response")
+        # Do not allow None through (None is a sentinel value which stops the queue)
 
         try:
             self._loop.call_soon_threadsafe(self._res_queue.put_nowait, response)
