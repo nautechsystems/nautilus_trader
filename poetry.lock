@@ -524,7 +524,7 @@ name = "css-html-js-minify"
 version = "2.5.5"
 description = "CSS HTML JS Minifier"
 optional = false
-python-versions = ">=3.6"
+python-versions = "*"
 files = [
     {file = "css-html-js-minify-2.5.5.zip", hash = "sha256:4a9f11f7e0496f5284d12111f3ba4ff5ff2023d12f15d195c9c48bd97013746c"},
     {file = "css_html_js_minify-2.5.5-py2.py3-none-any.whl", hash = "sha256:3da9d35ac0db8ca648c1b543e0e801d7ca0bab9e6bfd8418fee59d5ae001727a"},
@@ -664,6 +664,17 @@ files = [
     {file = "databento_dbn-0.14.2-cp39-cp39-musllinux_1_2_aarch64.whl", hash = "sha256:f677d0bd8b8a26f1807818b633de2ebbee06641250c8fd356514def8a0c636ec"},
     {file = "databento_dbn-0.14.2-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:320c33a3195547b62d9e66515c9eab6ad052993beb4308f6b0f485d2c2a2d8d9"},
     {file = "databento_dbn-0.14.2-cp39-none-win_amd64.whl", hash = "sha256:98e18d968af91d941826cd961157318c2916b0d868fe4e6ae7b30597df86e9e4"},
+]
+
+[[package]]
+name = "defusedxml"
+version = "0.7.1"
+description = "XML bomb protection for Python stdlib modules"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+files = [
+    {file = "defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61"},
+    {file = "defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69"},
 ]
 
 [[package]]
@@ -1817,7 +1828,7 @@ name = "pycparser"
 version = "2.21"
 description = "C parser in Python"
 optional = true
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+python-versions = "*"
 files = [
     {file = "pycparser-2.21-py2.py3-none-any.whl", hash = "sha256:8ee45429555515e1f6b185e78100aea234072576aa43ab53aefcae078162fca9"},
     {file = "pycparser-2.21.tar.gz", hash = "sha256:e644fdec12f7872f86c58ff790da456218b10f863970249516d60a5eaca77206"},
@@ -2879,4 +2890,4 @@ ib = ["async-timeout", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "7715a4963fa451a74c3968a09bdc19d37d95e75bb0756120736967ea3692a7fb"
+content-hash = "db64327ad035c4bc11b4842fc0c013f7f5eb12c9200ab452380dbdc9d1345a87"
