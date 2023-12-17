@@ -127,11 +127,15 @@ class DatabentoDataLoader:
 
         Raises
         ------
-        KeyError
+        ValueError
             If `venue` is not in the map of publishers.
 
         """
-        return self._venue_dataset[venue]
+        dataset = self._venue_dataset.get(venue)
+        if dataset is None:
+            raise ValueError(f"No Databento dataset for venue '{venue}'")
+
+        return dataset
 
     def load_publishers(self, path: PathLike[str] | str) -> None:
         """
