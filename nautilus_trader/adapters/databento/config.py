@@ -30,10 +30,8 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The historical HTTP client gateway override.
     live_gateway : str, optional
         The live client gateway override.
-    datasets : list[str], optional
-        The datasets to prepare operations for.
     instrument_ids : list[InstrumentId], optional
-        The instrument IDs to request definitions for on start.
+        The instrument IDs to request instrument definitions for on start.
     timeout_initial_load : float, default 5.0
         The timeout (seconds) to wait for instruments to load (concurrently per dataset).
     mbo_subscriptions_delay : float, default 2.0
@@ -46,7 +44,6 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key: str | None = None
     http_gateway: str | None = None
     live_gateway: str | None = None
-    datasets: list[str] | None = None
     instrument_ids: list[InstrumentId] | None = None
     timeout_initial_load: float | None = 5.0
     mbo_subscriptions_delay: float | None = 3.0

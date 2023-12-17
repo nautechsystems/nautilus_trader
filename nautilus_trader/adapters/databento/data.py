@@ -99,7 +99,6 @@ class DatabentoDataClient(LiveMarketDataClient):
         # Configuration
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
-        self._datasets: list[Dataset] = config.datasets or []
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
         self._instrument_maps: dict[PublisherId, databento.InstrumentMap] = {}
         self._timeout_initial_load: float | None = config.timeout_initial_load
