@@ -351,7 +351,7 @@ def parse_ohlcv_msg(
     )
 
 
-def parse_record(
+def parse_record_with_metadata(
     record: databento.DBNRecord,
     publishers: dict[int, DatabentoPublisher],
     instrument_map: databento.InstrumentMap | None = None,
@@ -375,6 +375,16 @@ def parse_record(
         publisher=publisher,
     )
 
+    return parse_record(
+        record=record,
+        instrument_id=instrument_id,
+    )
+
+
+def parse_record(
+    record: databento.DBNRecord,
+    instrument_id: InstrumentId,
+) -> Data:
     if isinstance(record, databento.MBOMsg):
         return parse_mbo_msg(record, instrument_id)
     elif isinstance(record, databento.MBP1Msg | databento.MBP10Msg):

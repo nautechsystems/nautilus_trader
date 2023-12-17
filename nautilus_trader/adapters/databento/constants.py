@@ -15,10 +15,14 @@
 
 from typing import Final
 
+import pandas as pd
+
 from nautilus_trader.model.identifiers import ClientId
 
 
 DATABENTO: Final[str] = "DATABENTO"
 DATABENTO_CLIENT_ID: Final[ClientId] = ClientId(DATABENTO)
 
-ALL_SYMBOLS = "ALL_SYMBOLS"
+ALL_SYMBOLS: Final[str] = "ALL_SYMBOLS"
+
+ONE_DAY: Final[pd.Timedelta] = pd.Timedelta(days=1)

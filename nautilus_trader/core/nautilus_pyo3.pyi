@@ -146,7 +146,34 @@ def last_weekday_nanos(year: int, month: int, day: int) -> int:
     -------
     int
 
+    Raises
+    ------
+    ValueError
+        If given an invalid date.
+
     """
+
+
+def is_within_last_24_hours(timestamp_ns: int) -> bool:
+    """
+    Return whether the given UNIX nanoseconds timestamp is within the last 24 hours.
+
+    Parameters
+    ----------
+    timestamp_ns : int
+        The UNIX nanoseconds timestamp datum.
+
+    Returns
+    -------
+    bool
+
+    Raises
+    ------
+    ValueError
+        If `timestamp` is invalid.
+
+    """
+
 
 def convert_to_snake_case(s: str) -> str:
     """

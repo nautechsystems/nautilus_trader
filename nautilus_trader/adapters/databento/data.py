@@ -21,13 +21,16 @@ from typing import Any
 
 import databento
 import pandas as pd
+import pytz
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO_CLIENT_ID
+from nautilus_trader.adapters.databento.constants import ONE_DAY
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record
+from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.types import Dataset
 from nautilus_trader.adapters.databento.types import PublisherId
 from nautilus_trader.cache.cache import Cache
@@ -35,6 +38,7 @@ from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.logging import Logger
+from nautilus_trader.core.nautilus_pyo3 import is_within_last_24_hours
 from nautilus_trader.core.nautilus_pyo3 import last_weekday_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
@@ -210,7 +214,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _ensure_subscribed_for_instrument(self, instrument_id: InstrumentId) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
-        subscribed_instruments = self._instrument_ids.get(dataset)
+        subscribed_instruments = self._instrument_ids[dataset]
 
         if instrument_id in subscribed_instruments:
             return
@@ -234,7 +238,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             for record in live_client:
                 if isinstance(record, databento.InstrumentDefMsg):
-                    instrument = parse_record(record, self._loader.publishers())
+                    instrument = parse_record_with_metadata(record, self._loader.publishers())
                     self._handle_data(instrument)
 
                     instrument_ids_to_decode.discard(instrument.id)
@@ -494,7 +498,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         date_now_utc = self._clock.utc_now().date()
-        start = last_weekday_nanos(  # Use midnight (UTC) of last weekday
+        start = last_weekday_nanos(
             year=date_now_utc.year,
             month=date_now_utc.month,
             day=date_now_utc.day,
@@ -510,7 +514,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         for record in data:
             instrument = parse_record(
                 record=record,
-                publishers=self._loader.publishers(),
+                instrument_id=instrument_id,
             )
 
             self._handle_instrument(
@@ -524,19 +528,23 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
+
         date_now_utc = self._clock.utc_now().date()
-        start = (
-            last_weekday_nanos(  # Use midnight (UTC) of last weekday
+        default_start = pd.Timestamp(
+            last_weekday_nanos(
                 year=date_now_utc.year,
                 month=date_now_utc.month,
                 day=date_now_utc.day,
-            )
-            - pd.Timedelta(days=1).value
+            ),
+            tz=pytz.utc,
         )
+
+        if is_within_last_24_hours(default_start.value):
+            default_start -= ONE_DAY
 
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
-            start=pd.Timestamp(start).date().isoformat(),
+            start=default_start.date().isoformat(),
             symbols=ALL_SYMBOLS,
             schema=databento.Schema.DEFINITION,
         )
@@ -545,7 +553,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         for record in data:
             try:
-                instrument = parse_record(
+                instrument = parse_record_with_metadata(
                     record=record,
                     publishers=self._loader.publishers(),
                 )
@@ -570,25 +578,35 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+
+        date_now_utc = self._clock.utc_now().date()
+        default_start = pd.Timestamp(
+            last_weekday_nanos(
+                year=date_now_utc.year,
+                month=date_now_utc.month,
+                day=date_now_utc.day,
+            ),
+            tz=pytz.utc,
+        )
+
+        if is_within_last_24_hours(default_start.value):
+            default_start -= ONE_DAY
+
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
-            start=start or (self._clock.utc_now().date() - pd.Timedelta(days=1)).isoformat(),
+            start=start or default_start.date().isoformat(),
             end=end,
             symbols=instrument_id.symbol.value,
             schema=databento.Schema.MBP_1,
             limit=limit,
         )
 
-        instrument_map = databento.InstrumentMap()
-        instrument_map.insert_metadata(metadata=data.metadata)
-
         ticks: list[QuoteTick] = []
 
         for record in data:
             tick = parse_record(
                 record=record,
-                publishers=self._loader.publishers(),
-                instrument_map=instrument_map,
+                instrument_id=instrument_id,
             )
 
             if not isinstance(tick, QuoteTick):
@@ -612,25 +630,35 @@ class DatabentoDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+
+        date_now_utc = self._clock.utc_now().date()
+        default_start = pd.Timestamp(
+            last_weekday_nanos(
+                year=date_now_utc.year,
+                month=date_now_utc.month,
+                day=date_now_utc.day,
+            ),
+            tz=pytz.utc,
+        )
+
+        if is_within_last_24_hours(default_start.value):
+            default_start -= ONE_DAY
+
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
-            start=start or (self._clock.utc_now().date() - pd.Timedelta(days=1)).isoformat(),
+            start=start or default_start.date().isoformat(),
             end=end,
             symbols=instrument_id.symbol.value,
             schema=databento.Schema.TRADES,
             limit=limit,
         )
 
-        instrument_map = databento.InstrumentMap()
-        instrument_map.insert_metadata(metadata=data.metadata)
-
         ticks: list[TradeTick] = []
 
         for record in data:
             tick = parse_record(
                 record=record,
-                publishers=self._loader.publishers(),
-                instrument_map=instrument_map,
+                instrument_id=instrument_id,
             )
 
             ticks.append(tick)
@@ -649,33 +677,42 @@ class DatabentoDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
-
         try:
             schema = databento_schema_from_nautilus_bar_type(bar_type)
         except ValueError as e:
             self._log.error(f"Cannot request: {e}")
             return
 
+        dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
+
+        date_now_utc = self._clock.utc_now().date()
+        default_start = pd.Timestamp(
+            last_weekday_nanos(
+                year=date_now_utc.year,
+                month=date_now_utc.month,
+                day=date_now_utc.day,
+            ),
+            tz=pytz.utc,
+        )
+
+        if is_within_last_24_hours(default_start.value):
+            default_start -= ONE_DAY
+
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
-            start=start or (self._clock.utc_now().date() - pd.Timedelta(days=1)).isoformat(),
+            start=start or default_start.date().isoformat(),
             end=end,
             symbols=bar_type.instrument_id.symbol.value,
             schema=schema,
             limit=limit,
         )
 
-        instrument_map = databento.InstrumentMap()
-        instrument_map.insert_metadata(metadata=data.metadata)
-
         bars: list[Bar] = []
 
         for record in data:
             bar = parse_record(
                 record=record,
-                publishers=self._loader.publishers(),
-                instrument_map=instrument_map,
+                instrument_id=bar_type.instrument_id,
             )
 
             bars.append(bar)
@@ -697,7 +734,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.info(f"SystemMsg: {record.msg}")
                 return
 
-            instrument_map = self._instrument_maps.get(0)  # Still hard coded for now
+            instrument_map = self._instrument_maps.get(record.publisher_id)
             if not instrument_map:
                 instrument_map = databento.InstrumentMap()
                 self._instrument_maps[record.publisher_id] = instrument_map
@@ -706,7 +743,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 instrument_map.insert_symbol_mapping_msg(record)
                 return
 
-            data = parse_record(record, self._loader.publishers(), instrument_map)
+            data = parse_record_with_metadata(record, self._loader.publishers(), instrument_map)
         except ValueError as e:
             self._log.error(f"{e!r}")
             return
