@@ -127,7 +127,7 @@ cdef class OrderEvent(Event):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         raise NotImplementedError("abstract property must be implemented")
@@ -139,7 +139,7 @@ cdef class OrderEvent(Event):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         raise NotImplementedError("abstract property must be implemented")
@@ -454,7 +454,7 @@ cdef class OrderInitialized(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return None  # Pending assignment by venue
@@ -466,7 +466,7 @@ cdef class OrderInitialized(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return None  # Pending assignment by system
@@ -757,7 +757,7 @@ cdef class OrderDenied(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return None  # No assignment from venue
@@ -769,7 +769,7 @@ cdef class OrderDenied(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return None  # No assignment
@@ -1014,7 +1014,7 @@ cdef class OrderEmulated(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return None  # No assignment from venue
@@ -1026,7 +1026,7 @@ cdef class OrderEmulated(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return None  # No assignment
@@ -1263,7 +1263,7 @@ cdef class OrderReleased(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return None  # No assignment from venue
@@ -1275,7 +1275,7 @@ cdef class OrderReleased(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return None  # No assignment
@@ -1531,7 +1531,7 @@ cdef class OrderSubmitted(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return None  # Pending assignment by venue
@@ -1543,7 +1543,7 @@ cdef class OrderSubmitted(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return AccountId.from_mem_c(self._mem.account_id)
@@ -1804,7 +1804,7 @@ cdef class OrderAccepted(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return VenueOrderId.from_mem_c(self._mem.venue_order_id)
@@ -1816,7 +1816,7 @@ cdef class OrderAccepted(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return AccountId.from_mem_c(self._mem.account_id)
@@ -2081,7 +2081,7 @@ cdef class OrderRejected(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return None  # Not assigned
@@ -2093,7 +2093,7 @@ cdef class OrderRejected(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return AccountId.from_mem_c(self._mem.account_id)
@@ -2361,7 +2361,7 @@ cdef class OrderCanceled(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -2373,7 +2373,7 @@ cdef class OrderCanceled(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -2631,7 +2631,7 @@ cdef class OrderExpired(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -2643,7 +2643,7 @@ cdef class OrderExpired(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -2903,7 +2903,7 @@ cdef class OrderTriggered(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -2915,7 +2915,7 @@ cdef class OrderTriggered(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -3174,7 +3174,7 @@ cdef class OrderPendingUpdate(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -3186,7 +3186,7 @@ cdef class OrderPendingUpdate(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -3445,7 +3445,7 @@ cdef class OrderPendingCancel(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -3457,7 +3457,7 @@ cdef class OrderPendingCancel(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -3729,7 +3729,7 @@ cdef class OrderModifyRejected(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -3741,7 +3741,7 @@ cdef class OrderModifyRejected(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -4027,7 +4027,7 @@ cdef class OrderCancelRejected(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -4039,7 +4039,7 @@ cdef class OrderCancelRejected(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -4337,7 +4337,7 @@ cdef class OrderUpdated(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -4349,7 +4349,7 @@ cdef class OrderUpdated(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
@@ -4685,7 +4685,7 @@ cdef class OrderFilled(OrderEvent):
 
         Returns
         -------
-        VenueOrderId or `None`
+        VenueOrderId or ``None``
 
         """
         return self._venue_order_id
@@ -4697,7 +4697,7 @@ cdef class OrderFilled(OrderEvent):
 
         Returns
         -------
-        AccountId or `None`
+        AccountId or ``None``
 
         """
         return self._account_id
