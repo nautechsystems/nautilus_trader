@@ -17,7 +17,7 @@ import enum
 from typing import Any, NamedTuple
 
 import requests
-from lxml.html import fromstring
+from defusedxml.cElementTree import fromstring
 
 
 class ProductClass(enum.Enum):
