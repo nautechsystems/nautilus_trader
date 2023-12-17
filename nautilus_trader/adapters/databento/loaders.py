@@ -20,7 +20,7 @@ import databento
 import msgspec
 
 from nautilus_trader.adapters.databento.common import check_file_path
-from nautilus_trader.adapters.databento.parsing import parse_record
+from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
@@ -227,7 +227,7 @@ class DatabentoDataLoader:
         output: list[Data] = []
 
         for record in store:
-            data = parse_record(
+            data = parse_record_with_metadata(
                 record=record,
                 publishers=self._publishers,
                 instrument_map=instrument_map,

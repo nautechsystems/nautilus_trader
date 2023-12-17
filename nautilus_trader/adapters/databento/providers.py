@@ -19,7 +19,7 @@ import databento
 import pandas as pd
 
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
-from nautilus_trader.adapters.databento.parsing import parse_record
+from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
 from nautilus_trader.common.providers import InstrumentProvider
@@ -127,7 +127,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
         for record in live_client:
             if isinstance(record, databento.InstrumentDefMsg):
-                instrument = parse_record(record, self._loader.publishers())
+                instrument = parse_record_with_metadata(record, self._loader.publishers())
                 self.add(instrument=instrument)
                 self._log.debug(f"Added instrument {instrument.id}.")
 
@@ -208,7 +208,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         instruments: list[Instrument] = []
 
         for record in data:
-            instrument = parse_record(record, self._loader.publishers())
+            instrument = parse_record_with_metadata(record, self._loader.publishers())
             instruments.append(instrument)
 
         instruments = sorted(instruments, key=lambda x: x.ts_init)
