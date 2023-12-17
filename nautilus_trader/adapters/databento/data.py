@@ -557,8 +557,8 @@ class DatabentoDataClient(LiveMarketDataClient):
                     record=record,
                     publishers=self._loader.publishers(),
                 )
-            except ValueError as ex:
-                self._log.error(repr(ex))
+            except ValueError as e:
+                self._log.error(repr(e))
                 continue
 
             instruments.append(instrument)
