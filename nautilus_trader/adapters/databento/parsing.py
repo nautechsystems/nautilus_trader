@@ -27,6 +27,7 @@ from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggregationSource
@@ -234,7 +235,7 @@ def parse_mbo_msg(
             instrument_id=instrument_id,
             price_raw=record.price,
             price_prec=USD.precision,  # TODO(per instrument precision)
-            size_raw=int(record.size * FIXED_SCALAR),
+            size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
             size_prec=0,  # No fractional units
             aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId(str(record.sequence)),
@@ -248,7 +249,7 @@ def parse_mbo_msg(
         side=side,
         price_raw=record.price,
         price_prec=USD.precision,  # TODO(per instrument precision)
-        size_raw=int(record.size * FIXED_SCALAR),
+        size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
         size_prec=0,  # No fractional units
         order_id=record.order_id,
         flags=record.flags,
@@ -258,8 +259,8 @@ def parse_mbo_msg(
     )
 
 
-def parse_mbp_or_tbbo_msg(
-    record: databento.MBP1Msg | databento.MBP10Msg,
+def parse_mbp1_msg(
+    record: databento.MBP1Msg,
     instrument_id: InstrumentId,
 ) -> QuoteTick | tuple[QuoteTick | TradeTick]:
     top_level = record.levels[0]
@@ -269,9 +270,9 @@ def parse_mbp_or_tbbo_msg(
         bid_price_prec=USD.precision,  # TODO(per instrument precision)
         ask_price_raw=top_level.ask_px,
         ask_price_prec=USD.precision,  # TODO(per instrument precision)
-        bid_size_raw=int(top_level.bid_sz * FIXED_SCALAR),
+        bid_size_raw=int(top_level.bid_sz * FIXED_SCALAR),  # No fractional sizes
         bid_size_prec=0,  # No fractional units
-        ask_size_raw=int(top_level.ask_sz * FIXED_SCALAR),
+        ask_size_raw=int(top_level.ask_sz * FIXED_SCALAR),  # No fractional sizes
         ask_size_prec=0,  # No fractional units
         ts_event=record.ts_event,
         ts_init=record.ts_recv,
@@ -283,7 +284,7 @@ def parse_mbp_or_tbbo_msg(
                 instrument_id=instrument_id,
                 price_raw=record.price,
                 price_prec=USD.precision,  # TODO(per instrument precision)
-                size_raw=int(record.size * FIXED_SCALAR),
+                size_raw=int(record.size * FIXED_SCALAR),  # No fractional sizes
                 size_prec=0,  # No fractional units
                 aggressor_side=parse_aggressor_side(record.side),
                 trade_id=TradeId(str(record.sequence)),
@@ -293,6 +294,50 @@ def parse_mbp_or_tbbo_msg(
             return quote, trade
         case _:
             return quote
+
+
+def parse_mbp10_msg(
+    record: databento.MBP10Msg,
+    instrument_id: InstrumentId,
+) -> OrderBookDeltas:
+    bids: list[OrderBookDelta] = []
+    asks: list[OrderBookDelta] = []
+
+    for level in record.levels:
+        bid = OrderBookDelta.from_raw(
+            instrument_id=instrument_id,
+            action=BookAction.ADD,
+            side=OrderSide.BUY,
+            price_raw=level.bid_px,
+            price_prec=USD.precision,  # TODO(per instrument precision)
+            size_raw=int(level.bid_sz * FIXED_SCALAR),  # No fractional sizes
+            size_prec=0,  # No fractional units
+            order_id=0,  # No order ID for MBP level
+            flags=record.flags,
+            sequence=record.sequence,
+            ts_event=record.ts_event,
+            ts_init=record.ts_recv,
+        )
+        bids.append(bid)
+
+        ask = OrderBookDelta.from_raw(
+            instrument_id=instrument_id,
+            action=BookAction.ADD,
+            side=OrderSide.SELL,
+            price_raw=level.ask_px,
+            price_prec=USD.precision,  # TODO(per instrument precision)
+            size_raw=int(level.ask_sz * FIXED_SCALAR),  # No fractional sizes
+            size_prec=0,  # No fractional units
+            order_id=0,  # No order ID for MBP level
+            flags=record.flags,
+            sequence=record.sequence,
+            ts_event=record.ts_event,
+            ts_init=record.ts_recv,
+        )
+        asks.append(ask)
+
+    clear = [OrderBookDelta.clear(instrument_id, record.ts_recv, record.ts_recv, record.sequence)]
+    return OrderBookDeltas(instrument_id=instrument_id, deltas=clear + bids + asks)
 
 
 def parse_trade_msg(
@@ -387,8 +432,10 @@ def parse_record(
 ) -> Data:
     if isinstance(record, databento.MBOMsg):
         return parse_mbo_msg(record, instrument_id)
-    elif isinstance(record, databento.MBP1Msg | databento.MBP10Msg):
-        return parse_mbp_or_tbbo_msg(record, instrument_id)
+    elif isinstance(record, databento.MBP1Msg):  # Also TBBO
+        return parse_mbp1_msg(record, instrument_id)
+    elif isinstance(record, databento.MBP10Msg):
+        return parse_mbp10_msg(record, instrument_id)
     elif isinstance(record, databento.TradeMsg):
         return parse_trade_msg(record, instrument_id)
     elif isinstance(record, databento.OHLCVMsg):
