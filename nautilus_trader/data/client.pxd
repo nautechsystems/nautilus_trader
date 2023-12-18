@@ -132,8 +132,20 @@ cdef class MarketDataClient(DataClient):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id)
-    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id)
+    cpdef void request_instrument(
+        self,
+        InstrumentId instrument_id,
+        UUID4 correlation_id,
+        datetime start=*,
+        datetime end=*,
+    )
+    cpdef void request_instruments(
+        self,
+        Venue venue,
+        UUID4 correlation_id,
+        datetime start=*,
+        datetime end=*,
+    )
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,

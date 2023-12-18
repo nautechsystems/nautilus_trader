@@ -294,7 +294,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Pinging WebSocket listen key {self._listen_key}...")
                     await self._http_user.keepalive_listen_key(listen_key=self._listen_key)
         except asyncio.CancelledError:
-            self._log.debug("`ping_listen_keys` task was canceled.")
+            self._log.debug("Canceled `ping_listen_keys` task.")
 
     async def _disconnect(self) -> None:
         # Cancel tasks

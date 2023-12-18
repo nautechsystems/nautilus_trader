@@ -524,7 +524,7 @@ name = "css-html-js-minify"
 version = "2.5.5"
 description = "CSS HTML JS Minifier"
 optional = false
-python-versions = ">=3.6"
+python-versions = "*"
 files = [
     {file = "css-html-js-minify-2.5.5.zip", hash = "sha256:4a9f11f7e0496f5284d12111f3ba4ff5ff2023d12f15d195c9c48bd97013746c"},
     {file = "css_html_js_minify-2.5.5-py2.py3-none-any.whl", hash = "sha256:3da9d35ac0db8ca648c1b543e0e801d7ca0bab9e6bfd8418fee59d5ae001727a"},
@@ -664,6 +664,17 @@ files = [
     {file = "databento_dbn-0.14.2-cp39-cp39-musllinux_1_2_aarch64.whl", hash = "sha256:f677d0bd8b8a26f1807818b633de2ebbee06641250c8fd356514def8a0c636ec"},
     {file = "databento_dbn-0.14.2-cp39-cp39-musllinux_1_2_x86_64.whl", hash = "sha256:320c33a3195547b62d9e66515c9eab6ad052993beb4308f6b0f485d2c2a2d8d9"},
     {file = "databento_dbn-0.14.2-cp39-none-win_amd64.whl", hash = "sha256:98e18d968af91d941826cd961157318c2916b0d868fe4e6ae7b30597df86e9e4"},
+]
+
+[[package]]
+name = "defusedxml"
+version = "0.7.1"
+description = "XML bomb protection for Python stdlib modules"
+optional = true
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+files = [
+    {file = "defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61"},
+    {file = "defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69"},
 ]
 
 [[package]]
@@ -1727,27 +1738,23 @@ virtualenv = ">=20.10.0"
 
 [[package]]
 name = "psutil"
-version = "5.9.6"
+version = "5.9.7"
 description = "Cross-platform lib for process and system monitoring in Python."
 optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*"
 files = [
-    {file = "psutil-5.9.6-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:fb8a697f11b0f5994550555fcfe3e69799e5b060c8ecf9e2f75c69302cc35c0d"},
-    {file = "psutil-5.9.6-cp27-cp27m-manylinux2010_i686.whl", hash = "sha256:91ecd2d9c00db9817a4b4192107cf6954addb5d9d67a969a4f436dbc9200f88c"},
-    {file = "psutil-5.9.6-cp27-cp27m-manylinux2010_x86_64.whl", hash = "sha256:10e8c17b4f898d64b121149afb136c53ea8b68c7531155147867b7b1ac9e7e28"},
-    {file = "psutil-5.9.6-cp27-cp27mu-manylinux2010_i686.whl", hash = "sha256:18cd22c5db486f33998f37e2bb054cc62fd06646995285e02a51b1e08da97017"},
-    {file = "psutil-5.9.6-cp27-cp27mu-manylinux2010_x86_64.whl", hash = "sha256:ca2780f5e038379e520281e4c032dddd086906ddff9ef0d1b9dcf00710e5071c"},
-    {file = "psutil-5.9.6-cp27-none-win32.whl", hash = "sha256:70cb3beb98bc3fd5ac9ac617a327af7e7f826373ee64c80efd4eb2856e5051e9"},
-    {file = "psutil-5.9.6-cp27-none-win_amd64.whl", hash = "sha256:51dc3d54607c73148f63732c727856f5febec1c7c336f8f41fcbd6315cce76ac"},
-    {file = "psutil-5.9.6-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:c69596f9fc2f8acd574a12d5f8b7b1ba3765a641ea5d60fb4736bf3c08a8214a"},
-    {file = "psutil-5.9.6-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:92e0cc43c524834af53e9d3369245e6cc3b130e78e26100d1f63cdb0abeb3d3c"},
-    {file = "psutil-5.9.6-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:748c9dd2583ed86347ed65d0035f45fa8c851e8d90354c122ab72319b5f366f4"},
-    {file = "psutil-5.9.6-cp36-cp36m-win32.whl", hash = "sha256:3ebf2158c16cc69db777e3c7decb3c0f43a7af94a60d72e87b2823aebac3d602"},
-    {file = "psutil-5.9.6-cp36-cp36m-win_amd64.whl", hash = "sha256:ff18b8d1a784b810df0b0fff3bcb50ab941c3b8e2c8de5726f9c71c601c611aa"},
-    {file = "psutil-5.9.6-cp37-abi3-win32.whl", hash = "sha256:a6f01f03bf1843280f4ad16f4bde26b817847b4c1a0db59bf6419807bc5ce05c"},
-    {file = "psutil-5.9.6-cp37-abi3-win_amd64.whl", hash = "sha256:6e5fb8dc711a514da83098bc5234264e551ad980cec5f85dabf4d38ed6f15e9a"},
-    {file = "psutil-5.9.6-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:daecbcbd29b289aac14ece28eca6a3e60aa361754cf6da3dfb20d4d32b6c7f57"},
-    {file = "psutil-5.9.6.tar.gz", hash = "sha256:e4b92ddcd7dd4cdd3f900180ea1e104932c7bce234fb88976e2a3b296441225a"},
+    {file = "psutil-5.9.7-cp27-cp27m-macosx_10_9_x86_64.whl", hash = "sha256:0bd41bf2d1463dfa535942b2a8f0e958acf6607ac0be52265ab31f7923bcd5e6"},
+    {file = "psutil-5.9.7-cp27-cp27m-manylinux2010_i686.whl", hash = "sha256:5794944462509e49d4d458f4dbfb92c47539e7d8d15c796f141f474010084056"},
+    {file = "psutil-5.9.7-cp27-cp27m-manylinux2010_x86_64.whl", hash = "sha256:fe361f743cb3389b8efda21980d93eb55c1f1e3898269bc9a2a1d0bb7b1f6508"},
+    {file = "psutil-5.9.7-cp27-cp27mu-manylinux2010_i686.whl", hash = "sha256:e469990e28f1ad738f65a42dcfc17adaed9d0f325d55047593cb9033a0ab63df"},
+    {file = "psutil-5.9.7-cp27-cp27mu-manylinux2010_x86_64.whl", hash = "sha256:3c4747a3e2ead1589e647e64aad601981f01b68f9398ddf94d01e3dc0d1e57c7"},
+    {file = "psutil-5.9.7-cp27-none-win32.whl", hash = "sha256:1d4bc4a0148fdd7fd8f38e0498639ae128e64538faa507df25a20f8f7fb2341c"},
+    {file = "psutil-5.9.7-cp27-none-win_amd64.whl", hash = "sha256:4c03362e280d06bbbfcd52f29acd79c733e0af33d707c54255d21029b8b32ba6"},
+    {file = "psutil-5.9.7-cp36-abi3-macosx_10_9_x86_64.whl", hash = "sha256:ea36cc62e69a13ec52b2f625c27527f6e4479bca2b340b7a452af55b34fcbe2e"},
+    {file = "psutil-5.9.7-cp36-abi3-manylinux_2_12_i686.manylinux2010_i686.manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:1132704b876e58d277168cd729d64750633d5ff0183acf5b3c986b8466cd0284"},
+    {file = "psutil-5.9.7-cp36-abi3-manylinux_2_12_x86_64.manylinux2010_x86_64.manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:fe8b7f07948f1304497ce4f4684881250cd859b16d06a1dc4d7941eeb6233bfe"},
+    {file = "psutil-5.9.7-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:032f4f2c909818c86cea4fe2cc407f1c0f0cde8e6c6d702b28b8ce0c0d143340"},
+    {file = "psutil-5.9.7.tar.gz", hash = "sha256:3f02134e82cfb5d089fddf20bb2e03fd5cd52395321d1c8458a9e58500ff417c"},
 ]
 
 [package.extras]
@@ -1817,7 +1824,7 @@ name = "pycparser"
 version = "2.21"
 description = "C parser in Python"
 optional = true
-python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*"
+python-versions = "*"
 files = [
     {file = "pycparser-2.21-py2.py3-none-any.whl", hash = "sha256:8ee45429555515e1f6b185e78100aea234072576aa43ab53aefcae078162fca9"},
     {file = "pycparser-2.21.tar.gz", hash = "sha256:e644fdec12f7872f86c58ff790da456218b10f863970249516d60a5eaca77206"},
@@ -2874,9 +2881,9 @@ cffi = ["cffi (>=1.11)"]
 betfair = ["betfair_parser"]
 databento = ["databento"]
 docker = ["docker"]
-ib = ["async-timeout", "nautilus_ibapi"]
+ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "7715a4963fa451a74c3968a09bdc19d37d95e75bb0756120736967ea3692a7fb"
+content-hash = "c39f1df2d1fb298a4117be2d9fe1e18e1d01ffda3540313888ff25348934a3fa"

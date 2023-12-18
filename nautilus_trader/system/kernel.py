@@ -243,7 +243,7 @@ class NautilusKernel:
             and config.message_bus.database.type != "redis"
         ):
             raise ValueError(
-                f"Unrecognized `config.message_bus.type, was '{config.message_bus.database.type}'. "
+                f"Unrecognized `config.message_bus.type`, was '{config.message_bus.database.type}'. "
                 "The only database type currently supported is 'redis', if you don't want a message bus database backing "
                 "then you can pass `None` for the `message_bus.database`.",
             )

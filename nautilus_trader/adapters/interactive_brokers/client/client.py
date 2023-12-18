@@ -60,13 +60,13 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class InteractiveBrokersClient(
     Component,
-    EWrapper,
     InteractiveBrokersClientConnectionMixin,
     InteractiveBrokersClientAccountMixin,
     InteractiveBrokersClientMarketDataMixin,
     InteractiveBrokersClientOrderMixin,
     InteractiveBrokersClientContractMixin,
     InteractiveBrokersClientErrorMixin,
+    EWrapper,
 ):
     """
     A client component that interfaces with the Interactive Brokers TWS or Gateway.
@@ -146,8 +146,6 @@ class InteractiveBrokersClient(
         )
         self._order_id_to_order_ref: dict[int, AccountOrderRef] = {}
         self._next_valid_order_id: int = -1
-
-        self._eclient.error = self.error
 
     def _setup_client(self) -> None:
         """

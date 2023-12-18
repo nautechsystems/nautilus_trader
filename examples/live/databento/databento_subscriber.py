@@ -25,6 +25,7 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.config.common import StrategyConfig
 from nautilus_trader.live.node import TradingNode
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -41,13 +42,15 @@ from nautilus_trader.trading.strategy import Strategy
 # subscribed for as part of the data client configuration
 instrument_ids = [
     # InstrumentId.from_str("AAPL.XCHI"),
-    InstrumentId.from_str("ESZ3.GLBX"),
+    InstrumentId.from_str("ESF4.GLBX"),
+    InstrumentId.from_str("ESG4.GLBX"),
+    InstrumentId.from_str("ESH4.GLBX"),
 ]
 
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO"),
+    logging=LoggingConfig(log_level="DEBUG"),
     exec_engine=LiveExecEngineConfig(
         reconciliation=False,  # Not applicable
         inflight_check_interval_ms=0,  # Not applicable
@@ -74,7 +77,7 @@ config_node = TradingNodeConfig(
     # snapshot_positions_interval=5.0,
     data_clients={
         DATABENTO: DatabentoDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_key=None,  # 'DATABENTO_API_KEY' env var
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
@@ -130,17 +133,27 @@ class DataSubscriber(Strategy):
 
         """
         for instrument_id in self.instrument_ids:
-            self.subscribe_order_book_deltas(
+            # self.subscribe_order_book_deltas(
+            #     instrument_id=instrument_id,
+            #     book_type=BookType.L3_MBO,
+            #     client_id=DATABENTO_CLIENT_ID,
+            # )
+            self.subscribe_order_book_snapshots(
                 instrument_id=instrument_id,
-                book_type=BookType.L3_MBO,
+                book_type=BookType.L2_MBP,
+                depth=10,
                 client_id=DATABENTO_CLIENT_ID,
             )
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            # self.request_quote_ticks(instrument_id)
-            # self.request_trade_ticks(instrument_id)
-            # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
-            # self.request_instruments(instrument_id.venue)
+            self.request_quote_ticks(instrument_id)
+            self.request_trade_ticks(instrument_id)
+            self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+
+        # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
+        # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
+        # self.request_instruments(venue=Venue("XCHI"), client_id=DATABENTO_CLIENT_ID)
+        # self.request_instruments(venue=Venue("XNAS"), client_id=DATABENTO_CLIENT_ID)
 
     def on_stop(self) -> None:
         """

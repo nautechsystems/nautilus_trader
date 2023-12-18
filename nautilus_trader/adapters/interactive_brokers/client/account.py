@@ -37,7 +37,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
 
     """
 
-    def _accounts(self) -> set[str]:
+    def accounts(self) -> set[str]:
         """
         Return a set of account identifiers managed by this instance.
 

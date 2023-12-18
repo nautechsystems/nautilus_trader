@@ -530,4 +530,4 @@ class BaseMixin:
     _order_id_to_order_ref: dict[int, AccountOrderRef]
     _reset: Callable
     _create_task: Callable
-    _accounts: Callable
+    accounts: Callable

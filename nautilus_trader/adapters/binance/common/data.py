@@ -245,7 +245,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     )
                     await asyncio.sleep(self._retry_delay)
                 except asyncio.CancelledError:
-                    self._log.debug("`update_instruments` task was canceled.")
+                    self._log.debug("Canceled `update_instruments` task.")
                     return
 
     async def _disconnect(self) -> None:
@@ -475,8 +475,24 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+    async def _request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
         assert self._instrument_provider is not None  # type checking
+
+        if start is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+            )
+
+        if end is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+            )
 
         instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:

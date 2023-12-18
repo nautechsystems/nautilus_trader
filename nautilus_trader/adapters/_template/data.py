@@ -305,6 +305,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_instrument` must be implemented in the subclass",
@@ -314,6 +316,8 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         self,
         venue: Venue,
         correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_instruments` must be implemented in the subclass",
