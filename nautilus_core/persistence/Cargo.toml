@@ -30,7 +30,7 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "33.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
+datafusion = { version = "34.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
 dotenv = "0.15.0"
 sqlx = { version = "0.7.3", features = ["sqlite","postgres","any","runtime-tokio"] }
 
