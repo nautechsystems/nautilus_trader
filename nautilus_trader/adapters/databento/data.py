@@ -572,7 +572,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             tz=pytz.utc,
         )
 
-        default_start = min(default_start, available_end - ONE_DAY)
+        default_start = min(default_start, available_end - ONE_DAY * 2)
 
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
