@@ -1271,7 +1271,7 @@ cdef class Actor(Component):
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
-            The order book snapshot interval in milliseconds.
+            The order book snapshot interval in milliseconds (not less than 20 milliseconds).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
         client_id : ClientId, optional
@@ -1283,12 +1283,16 @@ cdef class Actor(Component):
         ValueError
             If `depth` is negative (< 0).
         ValueError
-            If `interval_ms` is not positive (> 0).
+            If `interval_ms` is less than the minimum of 20.
+
+        Warnings
+        --------
+        Consider subscribing to order book deltas if you need intervals less than 20 milliseconds.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
-        Condition.not_negative(interval_ms, "interval_ms")
+        Condition.true(interval_ms >= 20, f"`interval_ms` {interval_ms} was less than minimum 20")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if book_type == BookType.L1_MBP and depth > 1:

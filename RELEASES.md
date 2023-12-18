@@ -29,6 +29,7 @@ Released on TBD (UTC).
 - Fixed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization to retain JSON serializable dicts (rather than double encoding and losing information)
 - Fixed Binance Futures `good_till_date` value when `time_in_force` not GTD, such as when strategy is managing the GTD (was incorrectly passing through UNIX milliseconds)
 - Fixed `Executor` handling of queued task IDs (was not discarding from queued tasks on completion)
+- Fixed `DataEngine` handling of order book snapshots with very small intervals (now handles as short as 20 milliseconds)
 
 ---
 
