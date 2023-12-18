@@ -224,8 +224,8 @@ class TALibIndicatorManager(Indicator):
 
         PyCondition().type(bar_type, BarType, "bar_type")
         PyCondition().positive_int(period, "period")
-        if buffer_size:
-            PyCondition().positive_int(period, "buffer_size")
+        if buffer_size is not None:
+            PyCondition().positive_int(buffer_size, "buffer_size")
 
         # Initialize variables
         self._bar_type = bar_type
