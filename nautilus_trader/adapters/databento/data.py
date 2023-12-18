@@ -247,6 +247,14 @@ class DatabentoDataClient(LiveMarketDataClient):
                 start=0,
             )
             for record in live_client:
+                if isinstance(record, databento.SymbolMappingMsg):
+                    instrument_map = self._instrument_maps.get(record.publisher_id)
+                    if not instrument_map:
+                        instrument_map = databento.InstrumentMap()
+                    self._instrument_maps[record.publisher_id] = instrument_map
+                    instrument_map.insert_symbol_mapping_msg(record)
+                    self._log.debug(f"Loaded {record}.", LogColor.MAGENTA)
+                    continue
                 if isinstance(record, databento.InstrumentDefMsg):
                     instrument = parse_record_with_metadata(record, self._loader.publishers())
                     self._handle_data(instrument)
@@ -751,7 +759,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     def _handle_record(self, record: databento.DBNRecord) -> None:
         try:
-            self._log.debug(f"Received {record}", LogColor.MAGENTA)
+            # self._log.debug(f"Received {record}", LogColor.MAGENTA)
             if isinstance(record, databento.ErrorMsg):
                 self._log.error(f"ErrorMsg: {record.err}")
                 return
@@ -759,7 +767,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 self._log.info(f"SystemMsg: {record.msg}")
                 return
 
-            instrument_map = self._instrument_maps.get(record.publisher_id)
+            instrument_map = self._instrument_maps.get(0)  # Hardcoded for now
             if not instrument_map:
                 instrument_map = databento.InstrumentMap()
                 self._instrument_maps[record.publisher_id] = instrument_map

@@ -20,6 +20,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
@@ -302,16 +303,11 @@ def test_loader_with_mbp_10() -> None:
 
     # Assert
     assert len(data) == 2
-    assert isinstance(data[0], QuoteTick)
-    assert isinstance(data[1], QuoteTick)
-    quote = data[0]
-    assert quote.instrument_id == InstrumentId.from_str("ESH1.GLBX")
-    assert quote.bid_price == Price.from_str("3720.25")
-    assert quote.ask_price == Price.from_str("3720.50")
-    assert quote.bid_size == Quantity.from_int(24)
-    assert quote.ask_size == Quantity.from_int(10)
-    assert quote.ts_event == 1609160400000429831
-    assert quote.ts_init == 1609160400000704060
+    assert isinstance(data[0], OrderBookDeltas)
+    assert isinstance(data[1], OrderBookDeltas)
+    deltas = data[0]
+    assert deltas.instrument_id == InstrumentId.from_str("ESH1.GLBX")
+    assert len(deltas.deltas) == 21
 
 
 def test_loader_with_tbbo() -> None:

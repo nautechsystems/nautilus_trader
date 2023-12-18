@@ -34,16 +34,16 @@ class DatabentoDataLoader:
     Provides a data loader for Databento Binary Encoding (DBN) format data.
 
     Supported schemas:
-     - MBO
-     - MBP_1
-     - MBP_10 (decodes top-level only)
-     - TBBO
-     - TRADES
-     - OHLCV_1S
-     - OHLCV_1M
-     - OHLCV_1H
-     - OHLCV_1D
-     - DEFINITION
+     - MBO -> OrderBookDelta
+     - MBP_1 -> QuoteTick | TradeTick
+     - MBP_10 -> OrderBookDeltas (as snapshots)
+     - TBBO -> QuoteTick | TradeTick
+     - TRADES -> TradeTick
+     - OHLCV_1S -> Bar
+     - OHLCV_1M -> Bar
+     - OHLCV_1H -> Bar
+     - OHLCV_1D -> Bar
+     - DEFINITION -> Instrument
 
     For the loader to work correctly, you must first either:
      - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
