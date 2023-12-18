@@ -168,8 +168,6 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _buffer_mbo_subscriptions(self) -> None:
         try:
-            self._log.info("Buffering MBO/L3 subscriptions...")
-
             await asyncio.sleep(self._mbo_subscriptions_delay or 0.0)
             self._is_buffering_mbo_subscriptions = False
 
@@ -221,6 +219,18 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         self._instrument_ids[dataset].add(instrument_id)
         await self._subscribe_instrument(instrument_id)
+
+    async def _get_dataset_range(self, dataset: Dataset) -> tuple[pd.Timestamp, pd.Timestamp]:
+        response = await self._loop.run_in_executor(
+            None,
+            self._http_client.metadata.get_dataset_range,
+            dataset,
+        )
+
+        start = pd.Timestamp(response["start_date"], tz=pytz.utc)
+        end = pd.Timestamp(response["end_date"], tz=pytz.utc)
+
+        return start, end
 
     def _load_instrument_ids(self, dataset: Dataset, instrument_ids: list[InstrumentId]) -> None:
         instrument_ids_to_decode = set(instrument_ids)
@@ -495,18 +505,29 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         instrument_id: InstrumentId,
         correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+
+        _, available_end = await self._get_dataset_range(dataset)
+
         date_now_utc = self._clock.utc_now().date()
-        start = last_weekday_nanos(
-            year=date_now_utc.year,
-            month=date_now_utc.month,
-            day=date_now_utc.day,
+        default_start = pd.Timestamp(
+            last_weekday_nanos(
+                year=date_now_utc.year,
+                month=date_now_utc.month,
+                day=date_now_utc.day,
+            ),
+            tz=pytz.utc,
         )
+
+        default_start = min(default_start, available_end - ONE_DAY)
 
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
-            start=start,
+            start=start or default_start.date().isoformat(),
+            end=end,
             symbols=instrument_id.symbol.value,
             schema=databento.Schema.DEFINITION,
         )
@@ -526,8 +547,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         self,
         venue: Venue,
         correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
+
+        _, available_end = await self._get_dataset_range(dataset)
 
         date_now_utc = self._clock.utc_now().date()
         default_start = pd.Timestamp(
@@ -539,12 +564,12 @@ class DatabentoDataClient(LiveMarketDataClient):
             tz=pytz.utc,
         )
 
-        if is_within_last_24_hours(default_start.value):
-            default_start -= ONE_DAY
+        default_start = min(default_start, available_end - ONE_DAY)
 
         data = await self._http_client.timeseries.get_range_async(
             dataset=dataset,
-            start=default_start.date().isoformat(),
+            start=start or default_start.date().isoformat(),
+            end=end,
             symbols=ALL_SYMBOLS,
             schema=databento.Schema.DEFINITION,
         )

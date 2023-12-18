@@ -879,7 +879,13 @@ cdef class MarketDataClient(DataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id):
+    cpdef void request_instrument(
+        self,
+        InstrumentId instrument_id,
+        UUID4 correlation_id,
+        datetime start = None,
+        datetime end = None,
+    ):
         """
         Request `Instrument` data for the given instrument ID.
 
@@ -889,6 +895,11 @@ cdef class MarketDataClient(DataClient):
             The instrument ID for the request.
         correlation_id : UUID4
             The correlation ID for the request.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
 
         """
         self._log.error(  # pragma: no cover
@@ -896,7 +907,13 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_instrument` method for this client.",  # pragma: no cover  # noqa
         )
 
-    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id):
+    cpdef void request_instruments(
+        self,
+        Venue venue,
+        UUID4 correlation_id,
+        datetime start = None,
+        datetime end = None,
+    ):
         """
         Request all `Instrument` data for the given venue.
 
@@ -906,6 +923,11 @@ cdef class MarketDataClient(DataClient):
             The venue for the request.
         correlation_id : UUID4
             The correlation ID for the request.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
 
         """
         self._log.error(  # pragma: no cover
@@ -933,10 +955,10 @@ cdef class MarketDataClient(DataClient):
         correlation_id : UUID4
             The correlation ID for the request.
         start : datetime, optional
-            The specified from datetime for the data.
+            The start datetime (UTC) of request time range (inclusive).
         end : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
 
         """
         self._log.error(  # pragma: no cover
@@ -964,10 +986,10 @@ cdef class MarketDataClient(DataClient):
         correlation_id : UUID4
             The correlation ID for the request.
         start : datetime, optional
-            The specified from datetime for the data.
+            The start datetime (UTC) of request time range (inclusive).
         end : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
 
         """
         self._log.error(  # pragma: no cover
@@ -995,10 +1017,10 @@ cdef class MarketDataClient(DataClient):
         correlation_id : UUID4
             The correlation ID for the request.
         start : datetime, optional
-            The specified from datetime for the data.
+            The start datetime (UTC) of request time range (inclusive).
         end : datetime, optional
-            The specified to datetime for the data. If ``None`` then will default
-            to the current datetime.
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
 
         """
         self._log.error(  # pragma: no cover

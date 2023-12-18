@@ -41,9 +41,10 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("AAPL.XCHI"),
-    # InstrumentId.from_str("ESZ3.GLBX"),
-    # InstrumentId.from_str("ESM4.GLBX"),
+    # InstrumentId.from_str("AAPL.XCHI"),
+    InstrumentId.from_str("ESF4.GLBX"),
+    InstrumentId.from_str("ESG4.GLBX"),
+    InstrumentId.from_str("ESH4.GLBX"),
 ]
 
 # Configure the trading node
@@ -76,7 +77,7 @@ config_node = TradingNodeConfig(
     # snapshot_positions_interval=5.0,
     data_clients={
         DATABENTO: DatabentoDataClientConfig(
-            api_key=None,  # 'BINANCE_API_KEY' env var
+            api_key=None,  # 'DATABENTO_API_KEY' env var
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
@@ -149,7 +150,8 @@ class DataSubscriber(Strategy):
             self.request_trade_ticks(instrument_id)
             self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
 
-        # self.request_instruments(venue=Venue("OPRA"), client_id=DATABENTO_CLIENT_ID)
+        # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
+        # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XCHI"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XNAS"), client_id=DATABENTO_CLIENT_ID)
 

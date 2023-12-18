@@ -176,9 +176,28 @@ cdef class Actor(Component):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef UUID4 request_data(self, DataType data_type, ClientId client_id, callback=*)
-    cpdef UUID4 request_instrument(self, InstrumentId instrument_id, ClientId client_id=*, callback=*)
-    cpdef UUID4 request_instruments(self, Venue venue, ClientId client_id=*, callback=*)
+    cpdef UUID4 request_data(
+        self,
+        DataType data_type,
+        ClientId client_id,
+        callback=*,
+    )
+    cpdef UUID4 request_instrument(
+        self,
+        InstrumentId instrument_id,
+        datetime start=*,
+        datetime end=*,
+        ClientId client_id=*,
+        callback=*,
+    )
+    cpdef UUID4 request_instruments(
+        self,
+        Venue venue,
+        datetime start=*,
+        datetime end=*,
+        ClientId client_id=*,
+        callback=*,
+    )
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,

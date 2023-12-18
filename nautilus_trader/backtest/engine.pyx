@@ -884,11 +884,11 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : Union[datetime, str, int], optional
-            The start datetime (UTC) for the backtest run. If ``None`` engine runs
-            from the start of the data.
+            The start datetime (UTC) for the backtest run.
+            If ``None`` engine runs from the start of the data.
         end : Union[datetime, str, int], optional
-            The end datetime (UTC) for the backtest run. If ``None`` engine runs
-            to the end of the data.
+            The end datetime (UTC) for the backtest run.
+            If ``None`` engine runs to the end of the data.
         run_config_id : str, optional
             The tokenized `BacktestRunConfig` ID.
         streaming : bool, default False
