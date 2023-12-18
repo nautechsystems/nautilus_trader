@@ -34,20 +34,28 @@ class DatabentoDataLoader:
     Provides a data loader for Databento Binary Encoding (DBN) format data.
 
     Supported schemas:
-     - MBO -> OrderBookDelta
-     - MBP_1 -> QuoteTick | TradeTick
-     - MBP_10 -> OrderBookDeltas (as snapshots)
-     - TBBO -> QuoteTick | TradeTick
-     - TRADES -> TradeTick
-     - OHLCV_1S -> Bar
-     - OHLCV_1M -> Bar
-     - OHLCV_1H -> Bar
-     - OHLCV_1D -> Bar
-     - DEFINITION -> Instrument
+     - MBO -> `OrderBookDelta`
+     - MBP_1 -> `QuoteTick` | `TradeTick`
+     - MBP_10 -> `OrderBookDeltas` (as snapshots)
+     - TBBO -> `QuoteTick` | `TradeTick`
+     - TRADES -> `TradeTick`
+     - OHLCV_1S -> `Bar`
+     - OHLCV_1M -> `Bar`
+     - OHLCV_1H -> `Bar`
+     - OHLCV_1D -> `Bar`
+     - DEFINITION -> `Instrument`
 
     For the loader to work correctly, you must first either:
      - Load Databento instrument definitions from a DBN file using `load_instruments(...)`
      - Manually add Nautilus instrument objects through `add_instruments(...)`
+
+    Warnings
+    --------
+    The following Databento instrument classes are not supported:
+     - ``FUTURE_SPREAD``
+     - ``OPTION_SPEAD``
+     - ``MIXED_SPREAD``
+     - ``FX_SPOT``
 
     References
     ----------

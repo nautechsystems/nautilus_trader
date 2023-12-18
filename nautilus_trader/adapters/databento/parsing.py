@@ -463,11 +463,13 @@ def parse_instrument_def(
             return parse_futures_contract(record, instrument_id)
         case DatabentoInstrumentClass.CALL.value | DatabentoInstrumentClass.PUT.value:
             return parse_options_contract(record, instrument_id)
-        case DatabentoInstrumentClass.FX_SPOT.value:
-            raise ValueError("`instrument_class` FX_SPOT not currently supported")
+        case DatabentoInstrumentClass.FUTURE_SPREAD.value:
+            raise ValueError("`instrument_class` FUTURE_SPREAD not currently supported")
         case DatabentoInstrumentClass.OPTION_SPREAD.value:
-            return parse_options_contract(record, instrument_id)
+            raise ValueError("`instrument_class` OPTION_SPREAD not currently supported")
         case DatabentoInstrumentClass.MIXED_SPREAD.value:
             raise ValueError("`instrument_class` MIXED_SPREAD not currently supported")
+        case DatabentoInstrumentClass.FX_SPOT.value:
+            raise ValueError("`instrument_class` FX_SPOT not currently supported")
         case _:
             raise ValueError(f"Invalid `instrument_class`, was {record.instrument_class}")
