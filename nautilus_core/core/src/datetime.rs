@@ -98,11 +98,11 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> 
     let current_weekday = date.weekday().number_from_monday();
 
     // Calculate the offset in days for closest weekday (Mon-Fri)
-    let offset = match current_weekday {
+    let offset = i64::from(match current_weekday {
         1..=5 => 0, // Monday to Friday, no adjustment needed
         6 => 1,     // Saturday, adjust to previous Friday
         _ => 2,     // Sunday, adjust to previous Friday
-    } as i64;
+    });
 
     // Calculate last closest weekday
     let last_closest = date - chrono::Duration::days(offset);
