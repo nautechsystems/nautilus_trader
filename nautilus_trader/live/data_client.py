@@ -619,21 +619,46 @@ class LiveMarketDataClient(MarketDataClient):
     # -- REQUESTS ---------------------------------------------------------------------------------
 
     def request(self, data_type: DataType, correlation_id: UUID4) -> None:
+        self._log.debug(f"Request data {data_type}.")
         self.create_task(
             self._request(data_type, correlation_id),
             log_msg=f"request: {data_type}",
         )
 
-    def request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+    def request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        self._log.debug(f"Request instrument {instrument_id}.")
         self.create_task(
-            self._request_instrument(instrument_id, correlation_id),
+            self._request_instrument(
+                instrument_id=instrument_id,
+                correlation_id=correlation_id,
+                start=start,
+                end=end,
+            ),
             log_msg=f"request: instrument {instrument_id}",
         )
 
-    def request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
+    def request_instruments(
+        self,
+        venue: Venue,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
         self._log.debug(f"Request instruments for {venue} {correlation_id}.")
         self.create_task(
-            self._request_instruments(venue, correlation_id),
+            self._request_instruments(
+                venue=venue,
+                correlation_id=correlation_id,
+                start=start,
+                end=end,
+            ),
+            log_msg=f"request: instruments for {venue}",
         )
 
     def request_quote_ticks(
@@ -653,6 +678,7 @@ class LiveMarketDataClient(MarketDataClient):
                 start=start,
                 end=end,
             ),
+            log_msg=f"request: quote ticks {instrument_id}",
         )
 
     def request_trade_ticks(
@@ -672,6 +698,7 @@ class LiveMarketDataClient(MarketDataClient):
                 start=start,
                 end=end,
             ),
+            log_msg=f"request: trade ticks {instrument_id}",
         )
 
     def request_bars(
@@ -691,6 +718,7 @@ class LiveMarketDataClient(MarketDataClient):
                 start=start,
                 end=end,
             ),
+            log_msg=f"request: bars {bar_type}",
         )
 
     ############################################################################
@@ -833,12 +861,24 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+    async def _request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
+    async def _request_instruments(
+        self,
+        venue: Venue,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
         )

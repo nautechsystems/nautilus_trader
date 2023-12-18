@@ -1245,9 +1245,19 @@ cdef class DataEngine(Component):
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
-                client.request_instruments(request.data_type.metadata.get("venue"), request.id)
+                client.request_instruments(
+                    request.data_type.metadata.get("venue"),
+                    request.id,
+                    request.data_type.metadata.get("start"),
+                    request.data_type.metadata.get("end"),
+                )
             else:
-                client.request_instrument(instrument_id, request.id)
+                client.request_instrument(
+                    instrument_id,
+                    request.id,
+                    request.data_type.metadata.get("start"),
+                    request.data_type.metadata.get("end"),
+                )
         elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(

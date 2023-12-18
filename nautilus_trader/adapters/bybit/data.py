@@ -250,7 +250,23 @@ class BybitDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
         return nautilus_instrument_id
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+    async def _request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        if start is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+            )
+
+        if end is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+            )
+
         instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}.")
@@ -265,7 +281,23 @@ class BybitDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
-    async def _request_instruments(self, venue: Venue, correlation_id: UUID4) -> None:
+    async def _request_instruments(
+        self,
+        venue: Venue,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        if start is not None:
+            self._log.warning(
+                f"Requesting instruments for {venue} with specified `start` which has no effect.",
+            )
+
+        if end is not None:
+            self._log.warning(
+                f"Requesting instruments for {venue} with specified `end` which has no effect.",
+            )
+
         all_instruments = self._instrument_provider.get_all()
         target_instruments = []
         for instrument in all_instruments.values():

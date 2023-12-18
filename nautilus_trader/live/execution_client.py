@@ -334,9 +334,9 @@ class LiveExecutionClient(ExecutionClient):
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
         start : pd.Timestamp, optional
-            The start datetime query filter.
+            The start datetime (UTC) query filter.
         end : pd.Timestamp, optional
-            The end datetime query filter.
+            The end datetime (UTC) query filter.
         open_only : bool, default False
             If the query is for open orders only.
 
@@ -368,9 +368,9 @@ class LiveExecutionClient(ExecutionClient):
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
         start : pd.Timestamp, optional
-            The start datetime query filter.
+            The start datetime (UTC) query filter.
         end : pd.Timestamp, optional
-            The end datetime query filter.
+            The end datetime (UTC) query filter.
 
         Returns
         -------
@@ -397,9 +397,9 @@ class LiveExecutionClient(ExecutionClient):
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
         start : pd.Timestamp, optional
-            The start datetime query filter.
+            The start datetime (UTC) query filter.
         end : pd.Timestamp, optional
-            The end datetime query filter.
+            The end datetime (UTC) query filter.
 
         Returns
         -------
