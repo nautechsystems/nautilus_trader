@@ -392,7 +392,7 @@ impl SocketClient {
                     (true, true) => {
                         debug!("Shutting down inner client");
                         match inner.shutdown().await {
-                            Ok(_) => debug!("Closed connection"),
+                            Ok(()) => debug!("Closed connection"),
                             Err(e) => error!("Error on `shutdown`: {e}"),
                         }
 

@@ -34,17 +34,17 @@ fn test_quote_tick_python_interface() {
         .add_file::<QuoteTick>("quote_005", file_path, None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
-    let mut query_result = DataQueryResult::new(query_result, catalog.chunk_size);
+    let query_result = DataQueryResult::new(query_result, catalog.chunk_size);
     let mut count = 0;
-    while let Some(chunk) = query_result.next() {
-        if chunk.len() == 0 {
+    for chunk in query_result {
+        if chunk.is_empty() {
             break;
         }
         let chunk: CVec = chunk.into();
         let ticks: &[Data] =
             unsafe { std::slice::from_raw_parts(chunk.ptr as *const Data, chunk.len) };
         count += ticks.len();
-        assert!(is_monotonically_increasing_by_init(&ticks));
+        assert!(is_monotonically_increasing_by_init(ticks));
     }
 
     assert_eq!(expected_length, count);
