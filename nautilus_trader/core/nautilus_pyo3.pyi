@@ -1235,7 +1235,7 @@ class SocketConfig:
         self,
         url: str,
         ssl: bool,
-        suffix: list[int],
+        suffix: bytes,
         handler: Callable[..., Any],
         heartbeat: tuple[int, list[int]] | None = None,
     ) -> None: ...

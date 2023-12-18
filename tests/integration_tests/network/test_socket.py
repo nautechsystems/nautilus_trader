@@ -22,16 +22,13 @@ from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
-pytestmark = pytest.mark.skip(reason="WIP")
-
-
 def _config(socket_server, handler):
     host, port = socket_server
     server_url = f"{host}:{port}"
     return SocketConfig(
         url=server_url,
-        handler=handler,
         ssl=False,
+        handler=handler,
         suffix=b"\r\n",
     )
 
@@ -46,8 +43,8 @@ async def test_connect_and_disconnect(socket_server):
 
     # Act, Assert
     await eventually(lambda: client.is_alive)
-    await client.disconnect()
-    # await eventually(lambda: not client.is_alive)
+    client.disconnect()
+    # await eventually(lambda: not client.is_alive)  # Investigate why client is staying alive?
 
 
 @pytest.mark.asyncio()
@@ -64,7 +61,9 @@ async def test_client_send_recv(socket_server):
     for _ in range(num_messages):
         await client.send(b"Hello")
     await asyncio.sleep(0.1)
-    await client.disconnect()
+
+    client.disconnect()
+    # await eventually(lambda: not client.is_alive)  # Investigate why client is staying alive?
 
     # Assert
     await eventually(lambda: store == [b"connected"] + [b"hello"] * 2)
