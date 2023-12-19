@@ -14,12 +14,11 @@ if importlib.util.find_spec("talib") is None:
         )
         raise ImportError(error_message)
     pytestmark = pytest.mark.skip(reason="talib is not installed")
+else:
+    import talib
+    from talib import abstract
 
-
-import talib
-from talib import abstract
-
-from nautilus_trader.indicators.ta_lib.manager import TAFunctionWrapper
+    from nautilus_trader.indicators.ta_lib.manager import TAFunctionWrapper
 
 
 def test_init_with_valid_name_and_no_params():

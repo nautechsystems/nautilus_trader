@@ -15,10 +15,10 @@ if importlib.util.find_spec("talib") is None:
         )
         raise ImportError(error_message)
     pytestmark = pytest.mark.skip(reason="talib is not installed")
-
-from nautilus_trader.indicators.ta_lib.manager import TAFunctionWrapper
-from nautilus_trader.indicators.ta_lib.manager import TALibIndicatorManager
-from nautilus_trader.model.data import BarType
+else:
+    from nautilus_trader.indicators.ta_lib.manager import TAFunctionWrapper
+    from nautilus_trader.indicators.ta_lib.manager import TALibIndicatorManager
+    from nautilus_trader.model.data import BarType
 
 
 @pytest.fixture(scope="session")
