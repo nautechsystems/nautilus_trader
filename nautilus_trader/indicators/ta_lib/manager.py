@@ -13,13 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+try:
+    import talib
+    from talib import abstract
+except ImportError as e:
+    error_message = (
+        "Failed to import TA-Lib. This module requires TA-Lib to be installed. "
+        "Please visit https://github.com/TA-Lib/ta-lib-python for installation instructions. "
+        "If TA-Lib is already installed, ensure it is correctly added to your Python environment."
+    )
+    raise ImportError(error_message) from e
+
+
 import os
 from collections import deque
 
 import numpy as np
 import pandas as pd
-import talib
-from talib import abstract
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger
@@ -54,12 +64,6 @@ class TAFunctionWrapper:
     - output_names (list[str]): A list of formatted output names for the technical indicator,
       generated based on the `name` and `params`.
 
-    Methods:
-    -------
-    - __init__(self, name: str, params: dict[str, Union[int, float]] = {}): Initializes the
-      TAFunctionWrapper instance with a given name and optional parameters for the TA-Lib
-      function.
-
     Note:
     ----
     - The class utilizes TA-Lib, a popular technical analysis library, to handle the underlying
@@ -76,10 +80,10 @@ class TAFunctionWrapper:
 
     """
 
-    def __init__(self, name: str, params: dict[str, int | float] = {}):
+    def __init__(self, name: str, params: dict[str, int | float] | None = None):
         self.name = name
         self.fn = abstract.Function(name)
-        self.fn.set_parameters(params)
+        self.fn.set_parameters(params or {})
         self.output_names = self._get_outputs_names(self.name, self.fn)
 
     def __repr__(self):
@@ -223,17 +227,21 @@ class TALibIndicatorManager(Indicator):
         bar_type: BarType,
         period: int = 1,
         buffer_size: int | None = None,
+        skip_uniform_price_bar: bool = True,
+        skip_zero_close_bar: bool = True,
     ):
         super().__init__([])
 
         PyCondition().type(bar_type, BarType, "bar_type")
         PyCondition().positive_int(period, "period")
-        if buffer_size:
-            PyCondition().positive_int(period, "buffer_size")
+        if buffer_size is not None:
+            PyCondition().positive_int(buffer_size, "buffer_size")
 
         # Initialize variables
         self._bar_type = bar_type
         self._period = period
+        self._skip_uniform_price_bar = skip_uniform_price_bar
+        self._skip_zero_close_bar = skip_zero_close_bar
         self._output_array: np.recarray | None = None
         self._last_ts_event: int = 0
         self._data_error_counter: int = 0
@@ -306,7 +314,7 @@ class TALibIndicatorManager(Indicator):
 
         # Initialize the output dtypes
         self._output_dtypes = [
-            (col, np.dtype("uint64") if col == "ts_event" else np.dtype("float64"))
+            (col, np.dtype("uint64") if col in ["ts_event", "ts_init"] else np.dtype("float64"))
             for col in self.output_names
         ]
 
@@ -375,6 +383,7 @@ class TALibIndicatorManager(Indicator):
 
         combined_output = np.zeros(1, dtype=self._output_dtypes)
         combined_output["ts_event"] = self._input_deque[-1]["ts_event"].item()
+        combined_output["ts_init"] = self._input_deque[-1]["ts_init"].item()
         combined_output["open"] = self._input_deque[-1]["open"].item()
         combined_output["high"] = self._input_deque[-1]["high"].item()
         combined_output["low"] = self._input_deque[-1]["low"].item()
@@ -672,7 +681,11 @@ class TALibIndicatorManager(Indicator):
 
         self._log.debug(f"Handling bar: {bar!r}")
 
-        if bar.is_single_price() and bar.open.as_double() == 0:
+        if self._skip_uniform_price_bar and bar.is_single_price():
+            self._log.warning(f"Skipping uniform_price bar: {bar!r}")
+            return
+        if self._skip_zero_close_bar and bar.close.raw == 0:
+            self._log.warning(f"Skipping zero close bar: {bar!r}")
             return
 
         bar_data = np.array(
