@@ -4,6 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from nautilus_trader.model.data import BarType
+
 
 if importlib.util.find_spec("talib") is None:
     if sys.platform == "linux":
@@ -18,7 +20,6 @@ if importlib.util.find_spec("talib") is None:
 else:
     from nautilus_trader.indicators.ta_lib.manager import TAFunctionWrapper
     from nautilus_trader.indicators.ta_lib.manager import TALibIndicatorManager
-    from nautilus_trader.model.data import BarType
 
 
 @pytest.fixture(scope="session")
