@@ -56,7 +56,7 @@ jobs:
       - name: Install TA-Lib (Linux)
         run: |
           make install-talib
-          pip install ta-lib
+          poetry run pip install ta-lib
 
       - name: Setup cached pre-commit
         id: cached-pre-commit
