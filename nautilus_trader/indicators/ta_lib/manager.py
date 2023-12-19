@@ -13,13 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+try:
+    import talib
+    from talib import abstract
+except ImportError as e:
+    error_message = (
+        "Failed to import TA-Lib. This module requires TA-Lib to be installed. "
+        "Please visit https://github.com/TA-Lib/ta-lib-python for installation instructions. "
+        "If TA-Lib is already installed, ensure it is correctly added to your Python environment."
+    )
+    raise ImportError(error_message) from e
+
+
 import os
 from collections import deque
 
 import numpy as np
 import pandas as pd
-import talib
-from talib import abstract
 
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.logging import Logger

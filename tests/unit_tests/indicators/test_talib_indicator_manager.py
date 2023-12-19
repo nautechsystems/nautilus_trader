@@ -1,6 +1,20 @@
+import importlib.util
+import sys
 from unittest.mock import Mock
 
 import pytest
+
+
+if importlib.util.find_spec("talib") is None:
+    if sys.platform == "linux":
+        # Raise the exception (expecting talib to be available on Linux)
+        error_message = (
+            "Failed to import TA-Lib. This module requires TA-Lib to be installed. "
+            "Please visit https://github.com/TA-Lib/ta-lib-python for installation instructions. "
+            "If TA-Lib is already installed, ensure it is correctly added to your Python environment."
+        )
+        raise ImportError(error_message)
+    pytestmark = pytest.mark.skip(reason="talib is not installed")
 
 from nautilus_trader.indicators.ta_lib.manager import TAFunctionWrapper
 from nautilus_trader.indicators.ta_lib.manager import TALibIndicatorManager
