@@ -28,7 +28,7 @@ def bar_type() -> BarType:
 
 
 @pytest.fixture()
-def indicator_manager() -> TALibIndicatorManager:
+def indicator_manager() -> "TALibIndicatorManager":
     return TALibIndicatorManager(
         bar_type=BarType.from_str("EUR/USD.IDEALPRO-1-HOUR-MID-EXTERNAL"),
         period=10,
