@@ -832,21 +832,21 @@ cdef class BacktestEngine:
         Clear all actors from the engines internal trader.
 
         """
-        self._trader.clear_actors()
+        self._kernel.trader.clear_actors()
 
     def clear_strategies(self) -> None:
         """
         Clear all trading strategies from the engines internal trader.
 
         """
-        self._trader.clear_strategies()
+        self._kernel.trader.clear_strategies()
 
-    def clear_exec_algorthms(self) -> None:
+    def clear_exec_algorithms(self) -> None:
         """
         Clear all execution algorithms from the engines internal trader.
 
         """
-        self._trader.clear_exec_algorthms()
+        self._kernel.trader.clear_exec_algorithms()
 
     def dispose(self) -> None:
         """
