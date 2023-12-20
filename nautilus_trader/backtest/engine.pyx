@@ -797,6 +797,11 @@ cdef class BacktestEngine:
             self.kernel.risk_engine.stop()
         self.kernel.risk_engine.reset()
 
+        # Reset Emulator
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
+        self.kernel.emulator.reset()
+
         self.kernel.trader.reset()
 
         for exchange in self._venues.values():
