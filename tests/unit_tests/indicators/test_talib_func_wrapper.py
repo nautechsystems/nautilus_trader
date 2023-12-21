@@ -73,6 +73,11 @@ def test_from_str_invalid():
         TAFunctionWrapper.from_str("INVALID_5")
 
 
+def test_from_str_invalid_params():
+    with pytest.raises(ValueError):
+        TAFunctionWrapper.from_str("SMA_20_10")
+
+
 def test_from_list_of_str():
     indicators = ["SMA_5", "EMA_10"]
     wrappers = TAFunctionWrapper.from_list_of_str(indicators)
