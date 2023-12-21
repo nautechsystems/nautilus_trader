@@ -17,6 +17,7 @@ import asyncio
 from asyncio.futures import Future
 from collections import defaultdict
 from collections.abc import Coroutine
+from functools import partial
 from typing import Any
 
 import databento
@@ -32,7 +33,6 @@ from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.parsing import parse_record
 from nautilus_trader.adapters.databento.parsing import parse_record_with_metadata
 from nautilus_trader.adapters.databento.types import Dataset
-from nautilus_trader.adapters.databento.types import PublisherId
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -104,7 +104,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         self._live_api_key: str = config.api_key or http_client.key
         self._live_gateway: str | None = config.live_gateway
         self._instrument_ids: dict[Dataset, set[InstrumentId]] = defaultdict(set)
-        self._instrument_maps: dict[PublisherId, databento.InstrumentMap] = {}
+        self._instrument_maps: dict[Dataset, databento.InstrumentMap] = {}
         self._timeout_initial_load: float | None = config.timeout_initial_load
         self._mbo_subscriptions_delay: float | None = config.mbo_subscriptions_delay
 
@@ -187,7 +187,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if live_client is None:
             live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-            live_client.add_callback(self._handle_record)
+
+            # Wrap the callback with partial to include the dataset
+            callback_with_dataset = partial(self._handle_record, dataset)
+            live_client.add_callback(callback_with_dataset)
             self._live_clients[dataset] = live_client
 
         return live_client
@@ -198,7 +201,10 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         if live_client is None:
             live_client = databento.Live(key=self._live_api_key, gateway=self._live_gateway)
-            live_client.add_callback(self._handle_record)
+
+            # Wrap the callback with partial to include the dataset
+            callback_with_dataset = partial(self._handle_record, dataset)
+            live_client.add_callback(callback_with_dataset)
             self._live_clients_mbo[dataset] = live_client
 
         return live_client
@@ -248,10 +254,10 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             for record in live_client:
                 if isinstance(record, databento.SymbolMappingMsg):
-                    instrument_map = self._instrument_maps.get(record.publisher_id)
+                    instrument_map = self._instrument_maps.get(dataset)
                     if not instrument_map:
                         instrument_map = databento.InstrumentMap()
-                    self._instrument_maps[record.publisher_id] = instrument_map
+                    self._instrument_maps[dataset] = instrument_map
                     instrument_map.insert_symbol_mapping_msg(record)
                     self._log.debug(f"Loaded {record}.", LogColor.MAGENTA)
                     continue
@@ -757,20 +763,20 @@ class DatabentoDataClient(LiveMarketDataClient):
             correlation_id=correlation_id,
         )
 
-    def _handle_record(self, record: databento.DBNRecord) -> None:
-        try:
-            # self._log.debug(f"Received {record}", LogColor.MAGENTA)
-            if isinstance(record, databento.ErrorMsg):
-                self._log.error(f"ErrorMsg: {record.err}")
-                return
-            elif isinstance(record, databento.SystemMsg):
-                self._log.info(f"SystemMsg: {record.msg}")
-                return
+    def _handle_record(self, dataset: Dataset, record: databento.DBNRecord) -> None:
+        # self._log.debug(f"Received {record}", LogColor.MAGENTA)
+        if isinstance(record, databento.ErrorMsg):
+            self._log.error(f"ErrorMsg: {record.err}")
+            return
+        elif isinstance(record, databento.SystemMsg):
+            self._log.info(f"SystemMsg: {record.msg}")
+            return
 
-            instrument_map = self._instrument_maps.get(0)  # Hardcoded for now
+        try:
+            instrument_map = self._instrument_maps.get(dataset)
             if not instrument_map:
                 instrument_map = databento.InstrumentMap()
-                self._instrument_maps[record.publisher_id] = instrument_map
+                self._instrument_maps[dataset] = instrument_map
 
             if isinstance(record, databento.SymbolMappingMsg):
                 instrument_map.insert_symbol_mapping_msg(record)
