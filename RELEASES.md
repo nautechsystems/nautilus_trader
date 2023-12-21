@@ -31,6 +31,7 @@ Released on TBD (UTC).
 - Fixed `Executor` handling of queued task IDs (was not discarding from queued tasks on completion)
 - Fixed `DataEngine` handling of order book snapshots with very small intervals (now handles as short as 20 milliseconds)
 - Fixed `BacktestEngine.clear_actors()`, `BacktestEngine.clear_strategies()` and `BacktestEngine.clear_exec_algorithms()`, thanks for reporting @davidsblom
+- Fixed `BacktestEngine` OrderEmulator reset, thanks @davidsblom
 
 ---
 
