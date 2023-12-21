@@ -29,6 +29,8 @@ from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
+from nautilus_trader.model.data cimport OrderBookDelta
+from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport Ticker
 from nautilus_trader.model.data cimport TradeTick
@@ -101,6 +103,8 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     CurrencyPair.__name__: CurrencyPair.to_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
     CryptoFuture.__name__: CryptoFuture.to_dict_c,
+    OrderBookDelta.__name__: OrderBookDelta.to_dict_c,
+    OrderBookDeltas.__name__: OrderBookDeltas.to_dict_c,
     TradeTick.__name__: TradeTick.to_dict_c,
     Ticker.__name__: Ticker.to_dict_c,
     QuoteTick.__name__: QuoteTick.to_dict_c,
@@ -150,6 +154,8 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     CurrencyPair.__name__: CurrencyPair.from_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,
     CryptoFuture.__name__: CryptoFuture.from_dict_c,
+    OrderBookDelta.__name__: OrderBookDelta.from_dict_c,
+    OrderBookDeltas.__name__: OrderBookDeltas.from_dict_c,
     TradeTick.__name__: TradeTick.from_dict_c,
     Ticker.__name__: Ticker.from_dict_c,
     QuoteTick.__name__: QuoteTick.from_dict_c,
@@ -202,6 +208,8 @@ EXTERNAL_PUBLISHING_TYPES = (
     CurrencyPair,
     CryptoPerpetual,
     CryptoFuture,
+    OrderBookDelta,
+    OrderBookDeltas,
     TradeTick,
     Ticker,
     QuoteTick,
