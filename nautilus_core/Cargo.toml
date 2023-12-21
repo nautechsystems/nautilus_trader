@@ -22,7 +22,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://docs.nautilustrader.io"
 
 [workspace.dependencies]
-anyhow = "1.0.75"
+anyhow = "1.0.76"
 chrono = "0.4.31"
 futures = "0.3.29"
 indexmap = "2.1.0"
