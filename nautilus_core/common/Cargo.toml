@@ -38,8 +38,8 @@ extension-module = [
 ]
 ffi = ["cbindgen"]
 python = ["pyo3"]
-redis-msgbus = ["redis"]
-default = ["ffi", "python", "redis-msgbus"]
+redis = ["dep:redis"]
+default = ["ffi", "python", "redis"]
 
 
 [build-dependencies]
