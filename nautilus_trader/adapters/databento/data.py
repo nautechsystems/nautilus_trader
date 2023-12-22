@@ -64,7 +64,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
     http_client : databento.Historical
-        The binance HTTP client.
+        The Databento historical HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
