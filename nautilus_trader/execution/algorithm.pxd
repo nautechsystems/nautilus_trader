@@ -71,9 +71,6 @@ cdef class ExecAlgorithm(Actor):
     cdef dict _exec_spawn_ids
     cdef set _subscribed_strategies
 
-    cdef readonly PortfolioFacade portfolio
-    """The read-only portfolio for the strategy.\n\n:returns: `PortfolioFacade`"""
-
 # -- REGISTRATION ---------------------------------------------------------------------------------
 
     cpdef void register(

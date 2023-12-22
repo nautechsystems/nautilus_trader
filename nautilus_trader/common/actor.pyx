@@ -77,6 +77,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Actor(Component):
@@ -546,6 +547,7 @@ cdef class Actor(Component):
 
     cpdef void register_base(
         self,
+        PortfolioFacade portfolio,
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
@@ -556,6 +558,8 @@ cdef class Actor(Component):
 
         Parameters
         ----------
+        portfolio : PortfolioFacade
+            The read-only portfolio for the actor.
         msgbus : MessageBus
             The message bus for the actor.
         cache : CacheFacade
@@ -570,6 +574,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        Condition.not_none(portfolio, "portfolio")
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
@@ -580,6 +585,7 @@ cdef class Actor(Component):
         self._change_logger(logger)
         self._change_msgbus(msgbus)  # The trader ID is assigned here
 
+        self.portfolio = portfolio  # Assigned as PortfolioFacade
         self.msgbus = msgbus
         self.cache = cache
         self.clock = self._clock

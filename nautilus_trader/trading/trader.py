@@ -319,6 +319,7 @@ class Trader(Component):
 
         # Wire component into trader
         actor.register_base(
+            portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=clock,  # Clock per component

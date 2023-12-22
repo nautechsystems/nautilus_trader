@@ -50,6 +50,7 @@ from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
+from nautilus_trader.portfolio.base import PortfolioFacade
 
 
 class SandboxExecutionClient(LiveExecutionClient):
@@ -60,6 +61,8 @@ class SandboxExecutionClient(LiveExecutionClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
+    portfolio : PortfolioFacade
+        The read-only portfolio for the client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -76,6 +79,7 @@ class SandboxExecutionClient(LiveExecutionClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
+        portfolio: PortfolioFacade,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -116,6 +120,7 @@ class SandboxExecutionClient(LiveExecutionClient):
             leverages={},
             instruments=self.INSTRUMENTS,
             modules=[],
+            portfolio=portfolio,
             msgbus=self._msgbus,
             cache=cache,
             fill_model=FillModel(),

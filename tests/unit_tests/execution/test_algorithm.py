@@ -131,7 +131,7 @@ class TestExecAlgorithm:
         )
 
         self.emulator = OrderEmulator(
-            trader_id=self.trader_id,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -150,6 +150,7 @@ class TestExecAlgorithm:
             instruments=[ETHUSDT_PERP_BINANCE],
             modules=[],
             fill_model=FillModel(),
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

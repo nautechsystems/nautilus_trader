@@ -58,6 +58,7 @@ from nautilus_trader.model.objects cimport AccountBalance
 from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.orders.base cimport Order
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class SimulatedExchange:
@@ -80,6 +81,8 @@ cdef class SimulatedExchange:
         The account default leverage (for margin accounts).
     leverages : dict[InstrumentId, Decimal]
         The instrument specific leverage configuration (for margin accounts).
+    portfolio : PortfolioFacade
+        The read-only portfolio for the exchange.
     msgbus : MessageBus
         The message bus for the exchange.
     cache : CacheFacade
@@ -139,6 +142,7 @@ cdef class SimulatedExchange:
         leverages not None: dict[InstrumentId, Decimal],
         list instruments not None,
         list modules not None,
+        PortfolioFacade portfolio not None,
         MessageBus msgbus not None,
         CacheFacade cache not None,
         TestClock clock not None,
@@ -204,6 +208,7 @@ cdef class SimulatedExchange:
             Condition.not_in(module, self.modules, "module", "modules")
             module.register_venue(self)
             module.register_base(
+                portfolio=portfolio,
                 msgbus=msgbus,
                 cache=cache,
                 clock=clock,

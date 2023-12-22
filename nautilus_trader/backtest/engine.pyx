@@ -447,6 +447,7 @@ cdef class BacktestEngine:
             leverages=leverages or {},
             instruments=[],
             modules=modules,
+            portfolio=self.kernel.portfolio,
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             fill_model=fill_model,
