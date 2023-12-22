@@ -438,10 +438,10 @@ def parse_statistics_msg(
         stat_type=DatabentoStatisticType(record.stat_type),
         update_action=DatabentoStatisticUpdateAction(record.update_action),
         price=Price.from_raw(record.price, USD.precision)
-        if record.price is not (2 * 63 - 1)  # TODO: Define a constant for this
+        if record.price is not (2**63 - 1)  # TODO: Define a constant for this
         else None,
         quantity=Quantity.from_raw(record.quantity, USD.precision)
-        if record.quantity is not (2 * 31 - 1)  # TODO: Define a constant for this
+        if record.quantity is not (2**31 - 1)  # TODO: Define a constant for this
         else None,
         channel_id=record.channel_id,
         stat_flags=record.stat_flags,
