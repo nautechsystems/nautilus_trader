@@ -183,6 +183,7 @@ cdef class Throttler:
     cdef readonly int sent_count
     """If count of messages sent from the throttler.\n\n:returns: `int`"""
 
+    cpdef void reset(self)
     cpdef double used(self)
     cpdef void send(self, msg)
     cdef int64_t _delta_next(self)
