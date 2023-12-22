@@ -1,12 +1,13 @@
 # NautilusTrader 1.182.0 Beta
 
-Released on TBD (UTC).
+Released on 23rd December 2023 (UTC).
 
 ### Enhancements
 - Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
 - Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
 - Added TA-Lib integration, thanks @rsmb7z
 - Added `OrderBookDelta` and `OrderBookDeltas` to serializable and publishable types
+- Moved `PortfolioFacade` to `Actor`
 - Improved `Actor` and `Strategy` usability to be more lenient to mistaken calls to `clock` and `logger` from the constructor (warnings also added to docs)
 - Removed `redis` and `hiredis` dependencies from Python codebase
 
