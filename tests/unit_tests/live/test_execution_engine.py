@@ -144,7 +144,7 @@ class TestLiveExecutionEngine:
         )
 
         self.emulator = OrderEmulator(
-            trader_id=self.trader_id,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

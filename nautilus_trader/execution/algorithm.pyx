@@ -184,13 +184,12 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(logger, "logger")
 
         self.register_base(
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
-
-        self.portfolio = portfolio
 
         # Register endpoints
         self._msgbus.register(endpoint=f"{self.id}.execute", handler=self.execute)

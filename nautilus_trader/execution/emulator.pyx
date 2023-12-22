@@ -72,6 +72,7 @@ from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.limit cimport LimitOrder
 from nautilus_trader.model.orders.market cimport MarketOrder
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef set SUPPORTED_TRIGGERS = {TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE}
@@ -83,8 +84,8 @@ cdef class OrderEmulator(Actor):
 
     Parameters
     ----------
-    trader_id : TraderId
-        The trader ID for the order emulator.
+    portfolio : PortfolioFacade
+        The read-only portfolio for the order emulator.
     msgbus : MessageBus
         The message bus for the order emulator.
     cache : Cache
@@ -100,7 +101,7 @@ cdef class OrderEmulator(Actor):
 
     def __init__(
         self,
-        TraderId trader_id not None,
+        PortfolioFacade portfolio,
         MessageBus msgbus not None,
         Cache cache not None,
         Clock clock not None,
@@ -113,6 +114,7 @@ cdef class OrderEmulator(Actor):
         super().__init__()
 
         self.register_base(
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
