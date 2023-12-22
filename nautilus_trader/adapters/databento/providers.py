@@ -127,7 +127,11 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
         for record in live_client:
             if isinstance(record, databento.InstrumentDefMsg):
-                instrument = parse_record_with_metadata(record, self._loader.publishers())
+                instrument = parse_record_with_metadata(
+                    record,
+                    publishers=self._loader.publishers,
+                    ts_init=self._clock.timestamp_ns(),
+                )
                 self.add(instrument=instrument)
                 self._log.debug(f"Added instrument {instrument.id}.")
 
@@ -208,7 +212,11 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         instruments: list[Instrument] = []
 
         for record in data:
-            instrument = parse_record_with_metadata(record, self._loader.publishers())
+            instrument = parse_record_with_metadata(
+                record,
+                publishers=self._loader.publishers,
+                ts_init=self._clock.ts_init(),
+            )
             instruments.append(instrument)
 
         instruments = sorted(instruments, key=lambda x: x.ts_init)

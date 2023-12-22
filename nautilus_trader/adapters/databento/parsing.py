@@ -149,6 +149,7 @@ def parse_min_price_increment(value: int, currency: Currency) -> Price:
 def parse_equity(
     record: databento.InstrumentDefMsg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> Equity:
     # Use USD for all US equities venues for now
     currency = USD
@@ -162,14 +163,15 @@ def parse_equity(
         multiplier=Quantity(1, precision=0),
         lot_size=Quantity(record.min_lot_size_round_lot, precision=0),
         isin=None,  # TODO
-        ts_event=record.ts_event,
-        ts_init=record.ts_recv,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
     )
 
 
 def parse_futures_contract(
     record: databento.InstrumentDefMsg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> FuturesContract:
     currency = Currency.from_str(record.currency)
     asset_class, _ = parse_cfi_iso10926(record.cfi)
@@ -186,14 +188,15 @@ def parse_futures_contract(
         underlying=record.asset,
         activation_ns=record.activation,
         expiration_ns=record.expiration,
-        ts_event=record.ts_event,
-        ts_init=record.ts_recv,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
     )
 
 
 def parse_options_contract(
     record: databento.InstrumentDefMsg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> OptionsContract:
     currency = Currency.from_str(record.currency)
 
@@ -219,14 +222,15 @@ def parse_options_contract(
         activation_ns=record.activation,
         expiration_ns=record.expiration,
         strike_price=Price.from_raw(record.strike_price, currency.precision),
-        ts_event=record.ts_event,
-        ts_init=record.ts_recv,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
     )
 
 
 def parse_mbo_msg(
     record: databento.MBOMsg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> OrderBookDelta:
     action: BookAction = parse_book_action(record.action)
     side: OrderSide = parse_order_side(record.side)
@@ -239,8 +243,8 @@ def parse_mbo_msg(
             size_prec=0,  # No fractional units
             aggressor_side=AggressorSide.NO_AGGRESSOR,
             trade_id=TradeId(str(record.sequence)),
-            ts_event=record.ts_event,
-            ts_init=record.ts_recv,
+            ts_event=record.ts_recv,  # More accurate and reliable timestamp
+            ts_init=ts_init,
         )
 
     return OrderBookDelta.from_raw(
@@ -254,14 +258,15 @@ def parse_mbo_msg(
         order_id=record.order_id,
         flags=record.flags,
         sequence=record.sequence,
-        ts_event=record.ts_event,
-        ts_init=record.ts_recv,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
     )
 
 
 def parse_mbp1_msg(
     record: databento.MBP1Msg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> QuoteTick | tuple[QuoteTick | TradeTick]:
     top_level = record.levels[0]
     quote = QuoteTick.from_raw(
@@ -274,8 +279,8 @@ def parse_mbp1_msg(
         bid_size_prec=0,  # No fractional units
         ask_size_raw=int(top_level.ask_sz * FIXED_SCALAR),  # No fractional sizes
         ask_size_prec=0,  # No fractional units
-        ts_event=record.ts_event,
-        ts_init=record.ts_recv,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
     )
 
     match record.action:
@@ -288,8 +293,8 @@ def parse_mbp1_msg(
                 size_prec=0,  # No fractional units
                 aggressor_side=parse_aggressor_side(record.side),
                 trade_id=TradeId(str(record.sequence)),
-                ts_event=record.ts_event,
-                ts_init=record.ts_recv,
+                ts_event=record.ts_recv,  # More accurate and reliable timestamp
+                ts_init=ts_init,
             )
             return quote, trade
         case _:
@@ -299,6 +304,7 @@ def parse_mbp1_msg(
 def parse_mbp10_msg(
     record: databento.MBP10Msg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> OrderBookDeltas:
     bids: list[OrderBookDelta] = []
     asks: list[OrderBookDelta] = []
@@ -315,8 +321,8 @@ def parse_mbp10_msg(
             order_id=0,  # No order ID for MBP level
             flags=record.flags,
             sequence=record.sequence,
-            ts_event=record.ts_event,
-            ts_init=record.ts_recv,
+            ts_event=record.ts_recv,  # More accurate and reliable timestamp
+            ts_init=ts_init,
         )
         bids.append(bid)
 
@@ -331,8 +337,8 @@ def parse_mbp10_msg(
             order_id=0,  # No order ID for MBP level
             flags=record.flags,
             sequence=record.sequence,
-            ts_event=record.ts_event,
-            ts_init=record.ts_recv,
+            ts_event=record.ts_recv,  # More accurate and reliable timestamp
+            ts_init=ts_init,
         )
         asks.append(ask)
 
@@ -343,6 +349,7 @@ def parse_mbp10_msg(
 def parse_trade_msg(
     record: databento.TradeMsg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> TradeTick:
     return TradeTick.from_raw(
         instrument_id=instrument_id,
@@ -352,14 +359,15 @@ def parse_trade_msg(
         size_prec=0,  # No fractional units
         aggressor_side=parse_aggressor_side(record.side),
         trade_id=TradeId(str(record.sequence)),
-        ts_event=record.ts_event,
-        ts_init=record.ts_recv,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
     )
 
 
 def parse_ohlcv_msg(
     record: databento.OHLCVMsg,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> Bar:
     match record.rtype:
         case 32:  # ohlcv-1s
@@ -383,6 +391,7 @@ def parse_ohlcv_msg(
 
     # Adjust `ts_event` from open to close of bar
     ts_event = record.ts_event + ts_event_adjustment
+    ts_init = max(ts_init, ts_event)
 
     return Bar(
         bar_type=bar_type,
@@ -392,17 +401,18 @@ def parse_ohlcv_msg(
         close=Price.from_raw(record.close / 100, 2),  # TODO(adjust for display factor)
         volume=Quantity.from_raw(record.volume, 2),  # TODO(adjust for display factor)
         ts_event=ts_event,
-        ts_init=ts_event,
+        ts_init=ts_init,
     )
 
 
 def parse_record_with_metadata(
     record: databento.DBNRecord,
     publishers: dict[int, DatabentoPublisher],
+    ts_init: int,
     instrument_map: databento.InstrumentMap | None = None,
 ) -> Data:
     if isinstance(record, databento.InstrumentDefMsg):
-        return parse_instrument_def(record, publishers)
+        return parse_instrument_def(record, publishers, ts_init)
 
     if instrument_map is None:
         raise ValueError("`instrument_map` was `None` when a value was expected")
@@ -423,23 +433,25 @@ def parse_record_with_metadata(
     return parse_record(
         record=record,
         instrument_id=instrument_id,
+        ts_init=ts_init,
     )
 
 
 def parse_record(
     record: databento.DBNRecord,
     instrument_id: InstrumentId,
+    ts_init: int,
 ) -> Data:
     if isinstance(record, databento.MBOMsg):
-        return parse_mbo_msg(record, instrument_id)
+        return parse_mbo_msg(record, instrument_id, ts_init)
     elif isinstance(record, databento.MBP1Msg):  # Also TBBO
-        return parse_mbp1_msg(record, instrument_id)
+        return parse_mbp1_msg(record, instrument_id, ts_init)
     elif isinstance(record, databento.MBP10Msg):
-        return parse_mbp10_msg(record, instrument_id)
+        return parse_mbp10_msg(record, instrument_id, ts_init)
     elif isinstance(record, databento.TradeMsg):
-        return parse_trade_msg(record, instrument_id)
+        return parse_trade_msg(record, instrument_id, ts_init)
     elif isinstance(record, databento.OHLCVMsg):
-        return parse_ohlcv_msg(record, instrument_id)
+        return parse_ohlcv_msg(record, instrument_id, ts_init)
     else:
         raise ValueError(
             f"Schema {type(record).__name__} is currently unsupported by NautilusTrader",
@@ -449,6 +461,7 @@ def parse_record(
 def parse_instrument_def(
     record: databento.InstrumentDefMsg,
     publishers: dict[int, DatabentoPublisher],
+    ts_init: int,
 ) -> Instrument:
     publisher: DatabentoPublisher = publishers[record.publisher_id]
     instrument_id: InstrumentId = nautilus_instrument_id_from_databento(
@@ -458,11 +471,11 @@ def parse_instrument_def(
 
     match record.instrument_class:
         case DatabentoInstrumentClass.STOCK.value:
-            return parse_equity(record, instrument_id)
+            return parse_equity(record, instrument_id, ts_init)
         case DatabentoInstrumentClass.FUTURE.value | DatabentoInstrumentClass.FUTURE_SPREAD.value:
-            return parse_futures_contract(record, instrument_id)
+            return parse_futures_contract(record, instrument_id, ts_init)
         case DatabentoInstrumentClass.CALL.value | DatabentoInstrumentClass.PUT.value:
-            return parse_options_contract(record, instrument_id)
+            return parse_options_contract(record, instrument_id, ts_init)
         case DatabentoInstrumentClass.FUTURE_SPREAD.value:
             raise ValueError("`instrument_class` FUTURE_SPREAD not currently supported")
         case DatabentoInstrumentClass.OPTION_SPREAD.value:
