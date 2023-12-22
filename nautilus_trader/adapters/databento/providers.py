@@ -215,7 +215,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             instrument = parse_record_with_metadata(
                 record,
                 publishers=self._loader.publishers,
-                ts_init=self._clock.ts_init(),
+                ts_init=self._clock.timestamp_ns(),
             )
             instruments.append(instrument)
 
