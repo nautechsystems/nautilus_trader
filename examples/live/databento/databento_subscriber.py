@@ -153,7 +153,6 @@ class DataSubscriber(Strategy):
             # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
 
         # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
-        # self.request_instruments(venue=Venue("GLBX"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XCHI"), client_id=DATABENTO_CLIENT_ID)
         # self.request_instruments(venue=Venue("XNAS"), client_id=DATABENTO_CLIENT_ID)
 
