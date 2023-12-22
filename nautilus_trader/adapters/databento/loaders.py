@@ -45,6 +45,8 @@ class DatabentoDataLoader:
      - OHLCV_1H -> `Bar`
      - OHLCV_1D -> `Bar`
      - DEFINITION -> `Instrument`
+     - IMBALANCE -> `DatabentoImbalance`
+     - STATISTICS -> `DatabentoStatistics`
 
     For the loader to work correctly, you must first either:
      - Load Databento instrument definitions from a DBN file using `load_instruments(...)`

@@ -16,6 +16,8 @@
 import pytest
 
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
+from nautilus_trader.adapters.databento.types import DatabentoImbalance
+from nautilus_trader.adapters.databento.types import DatabentoStatistics
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
@@ -435,3 +437,29 @@ def test_loader_with_ohlcv_1d() -> None:
 
     # Assert
     assert len(data) == 0  # ??
+
+
+def test_loader_with_imbalance() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "imbalance.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], DatabentoImbalance)
+
+
+def test_loader_with_statistics() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "statistics.dbn.zst"
+
+    # Act
+    data = loader.from_dbn(path)
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], DatabentoStatistics)

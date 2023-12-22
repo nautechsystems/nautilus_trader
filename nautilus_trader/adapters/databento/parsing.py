@@ -19,7 +19,11 @@ import pytz
 
 from nautilus_trader.adapters.databento.common import nautilus_instrument_id_from_databento
 from nautilus_trader.adapters.databento.enums import DatabentoInstrumentClass
+from nautilus_trader.adapters.databento.enums import DatabentoStatisticType
+from nautilus_trader.adapters.databento.enums import DatabentoStatisticUpdateAction
+from nautilus_trader.adapters.databento.types import DatabentoImbalance
 from nautilus_trader.adapters.databento.types import DatabentoPublisher
+from nautilus_trader.adapters.databento.types import DatabentoStatistics
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.model.currencies import USD
@@ -405,6 +409,50 @@ def parse_ohlcv_msg(
     )
 
 
+def parse_imbalance_msg(
+    record: databento.ImbalanceMsg,
+    instrument_id: InstrumentId,
+    ts_init: int,
+) -> TradeTick:
+    return DatabentoImbalance(
+        instrument_id=instrument_id,
+        ref_price=Price.from_raw(record.ref_price, USD.precision),
+        cont_book_clr_price=Price.from_raw(record.cont_book_clr_price, USD.precision),
+        auct_interest_clr_price=Price.from_raw(record.auct_interest_clr_price, USD.precision),
+        paired_qty=Quantity.from_int(record.paired_qty),  # Always ints for now
+        total_imbalance_qty=Quantity.from_int(record.total_imbalance_qty),  # Always ints for now
+        side=parse_order_side(record.side),
+        significant_imbalance=record.significant_imbalance,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
+    )
+
+
+def parse_statistics_msg(
+    record: databento.StatMsg,
+    instrument_id: InstrumentId,
+    ts_init: int,
+) -> TradeTick:
+    return DatabentoStatistics(
+        instrument_id=instrument_id,
+        stat_type=DatabentoStatisticType(record.stat_type),
+        update_action=DatabentoStatisticUpdateAction(record.update_action),
+        price=Price.from_raw(record.price, USD.precision)
+        if record.price is not (2 * 63 - 1)  # TODO: Define a constant for this
+        else None,
+        quantity=Quantity.from_raw(record.quantity, USD.precision)
+        if record.quantity is not (2 * 31 - 1)  # TODO: Define a constant for this
+        else None,
+        channel_id=record.channel_id,
+        stat_flags=record.stat_flags,
+        sequence=record.sequence,
+        ts_ref=record.ts_ref,
+        ts_in_delta=record.ts_in_delta,
+        ts_event=record.ts_recv,  # More accurate and reliable timestamp
+        ts_init=ts_init,
+    )
+
+
 def parse_record_with_metadata(
     record: databento.DBNRecord,
     publishers: dict[int, DatabentoPublisher],
@@ -452,6 +500,10 @@ def parse_record(
         return parse_trade_msg(record, instrument_id, ts_init)
     elif isinstance(record, databento.OHLCVMsg):
         return parse_ohlcv_msg(record, instrument_id, ts_init)
+    elif isinstance(record, databento.ImbalanceMsg):
+        return parse_imbalance_msg(record, instrument_id, ts_init)
+    elif isinstance(record, databento.StatMsg):
+        return parse_statistics_msg(record, instrument_id, ts_init)
     else:
         raise ValueError(
             f"Schema {type(record).__name__} is currently unsupported by NautilusTrader",

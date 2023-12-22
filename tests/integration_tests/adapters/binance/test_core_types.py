@@ -133,7 +133,7 @@ def test_binance_ticker_to_from_dict():
     values = ticker.to_dict(ticker)
 
     # Assert
-    BinanceTicker.from_dict(values)
+    assert BinanceTicker.from_dict(values) == ticker
     assert values == {
         "type": "BinanceTicker",
         "instrument_id": "BTCUSDT.BINANCE",
@@ -213,7 +213,7 @@ def test_binance_bar_to_from_dict():
     values = bar.to_dict(bar)
 
     # Assert
-    BinanceBar.from_dict(values)
+    assert BinanceBar.from_dict(values) == bar
     assert values == {
         "type": "BinanceBar",
         "bar_type": "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL",
