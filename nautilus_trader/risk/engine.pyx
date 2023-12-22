@@ -386,6 +386,8 @@ cdef class RiskEngine(Component):
     cpdef void _reset(self):
         self.command_count = 0
         self.event_count = 0
+        self._order_submit_throttler.reset()
+        self._order_modify_throttler.reset()
 
     cpdef void _dispose(self):
         pass
