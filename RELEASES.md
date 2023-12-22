@@ -34,6 +34,7 @@ Released on 23rd December 2023 (UTC).
 - Fixed `DataEngine` handling of order book snapshots with very small intervals (now handles as short as 20 milliseconds)
 - Fixed `BacktestEngine.clear_actors()`, `BacktestEngine.clear_strategies()` and `BacktestEngine.clear_exec_algorithms()`, thanks for reporting @davidsblom
 - Fixed `BacktestEngine` OrderEmulator reset, thanks @davidsblom
+- Fixed `Throttler.reset` and reset of `RiskEngine` throttlers, thanks @davidsblom
 
 ---
 
