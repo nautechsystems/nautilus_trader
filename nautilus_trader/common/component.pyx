@@ -1436,6 +1436,16 @@ cdef class Throttler:
         """
         return len(self._buffer)
 
+    cpdef void reset(self):
+        """
+        Reset the state of the throttler.
+        """
+        self._buffer.clear()
+        self._warm = False
+        self.recv_count = 0
+        self.sent_count = 0
+        self.is_limiting = False
+
     cpdef double used(self):
         """
         Return the percentage of maximum rate currently used.
