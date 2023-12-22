@@ -85,10 +85,10 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "^23.12.0"
 docformatter = "^1.7.5"
-mypy = "^1.7.1"
+mypy = "^1.8.0"
 pandas-stubs = "^2.1.4"
 pre-commit = "^3.6.0"
-ruff = "^0.1.8"
+ruff = "^0.1.9"
 types-pytz = "^2023.3"
 types-requests = "^2.31"
 types-toml = "^0.10.2"
