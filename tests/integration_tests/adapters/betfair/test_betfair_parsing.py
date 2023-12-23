@@ -34,6 +34,7 @@ from betfair_parser.spec.betting.type_definitions import MarketOnCloseOrder
 from betfair_parser.spec.betting.type_definitions import PlaceInstruction
 from betfair_parser.spec.betting.type_definitions import PriceSize
 from betfair_parser.spec.betting.type_definitions import ReplaceInstruction
+from betfair_parser.spec.betting.type_definitions import TimeInForce as BP_TimeInForce
 from betfair_parser.spec.common import OrderStatus
 from betfair_parser.spec.common import OrderType
 from betfair_parser.spec.common import decode
@@ -47,6 +48,7 @@ from betfair_parser.spec.streaming import stream_decode
 
 # fmt: off
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
+from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.data_types import BetfairStartingPrice
 from nautilus_trader.adapters.betfair.data_types import BetfairTicker
 from nautilus_trader.adapters.betfair.data_types import BSPOrderBookDelta
@@ -61,6 +63,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_on_
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_limit_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_on_close_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import nautilus_market_to_place_instructions
+from nautilus_trader.adapters.betfair.parsing.requests import nautilus_order_to_place_instructions
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
@@ -336,11 +339,25 @@ class TestBetfairParsing:
         self.uuid = UUID4()
         self.parser = BetfairParser(currency="GBP")
 
+    def test_order_side_parser_to_betfair(self):
+        assert OrderSideParser.to_betfair(OrderSide.BUY) == Side.LAY
+        assert OrderSideParser.to_betfair(OrderSide.SELL) == Side.BACK
+
+    def test_order_side_parser_round_trip(self):
+        assert (
+            OrderSideParser.to_nautilus(OrderSideParser.to_betfair(OrderSide.BUY)) == OrderSide.BUY
+        )
+        assert (
+            OrderSideParser.to_nautilus(OrderSideParser.to_betfair(OrderSide.SELL))
+            == OrderSide.SELL
+        )
+
     def test_order_submit_to_betfair(self):
         command = TestCommandStubs.submit_order_command(
             order=TestExecStubs.limit_order(
                 price=betfair_float_to_price(2.5),
                 quantity=betfair_float_to_quantity(10),
+                order_side=OrderSide.SELL,
             ),
         )
         result = order_submit_to_place_order_params(command=command, instrument=self.instrument)
@@ -481,6 +498,7 @@ class TestBetfairParsing:
         order = TestExecStubs.limit_order(
             price=betfair_float_to_price(3.05),
             quantity=betfair_float_to_quantity(10),
+            order_side=OrderSide.SELL,
         )
         command = TestCommandStubs.submit_order_command(order)
 
@@ -515,6 +533,7 @@ class TestBetfairParsing:
             quantity=betfair_float_to_quantity(10),
             instrument_id=TestIdStubs.betting_instrument_id(),
             time_in_force=TimeInForce.AT_THE_OPEN,
+            order_side=OrderSide.SELL,
         )
         command = TestCommandStubs.submit_order_command(order)
         result = nautilus_limit_on_close_to_place_instructions(command, instrument=self.instrument)
@@ -539,7 +558,7 @@ class TestBetfairParsing:
             order_type=OrderType.LIMIT,
             selection_id=50214,
             handicap=None,
-            side=Side.BACK,
+            side=Side.LAY,
             limit_order=LimitOrder(
                 size=100.0,
                 price=1.01,
@@ -564,7 +583,7 @@ class TestBetfairParsing:
             order_type=OrderType.LIMIT,
             selection_id=50214,
             handicap=None,
-            side=Side.LAY,
+            side=Side.BACK,
             limit_order=LimitOrder(
                 size=100.0,
                 price=1000,
@@ -680,6 +699,49 @@ class TestBetfairParsing:
             and upd.instrument_id == InstrumentId.from_str("1.205880280-49892033-None-BSP.BETFAIR")
         ]
         assert len(single_instrument_bsp_updates) == 1
+
+    @pytest.mark.parametrize(
+        ("time_in_force", "expected_time_in_force", "expected_persistence_type"),
+        [
+            (TimeInForce.GTC, None, PersistenceType.PERSIST),
+            (TimeInForce.DAY, None, PersistenceType.LAPSE),
+            (TimeInForce.FOK, BP_TimeInForce.FILL_OR_KILL, PersistenceType.LAPSE),
+        ],
+    )
+    def test_persistence_types(
+        self,
+        time_in_force,
+        expected_time_in_force,
+        expected_persistence_type,
+    ):
+        # Arrange
+        order = TestExecStubs.limit_order(time_in_force=time_in_force)
+        command = TestCommandStubs.submit_order_command(order)
+
+        # Act
+        place_instruction = nautilus_order_to_place_instructions(command, self.instrument)
+        place_time_in_force = place_instruction.limit_order.time_in_force
+        place_persistence_type = place_instruction.limit_order.persistence_type
+
+        # Assert
+        assert place_time_in_force == expected_time_in_force
+        assert place_persistence_type == expected_persistence_type
+
+    def test_persistence_encoding(self):
+        # Arrange
+        order = TestExecStubs.limit_order(time_in_force=TimeInForce.DAY)
+        command = TestCommandStubs.submit_order_command(order)
+
+        # Act
+        place_instruction = nautilus_order_to_place_instructions(command, self.instrument)
+        result = msgspec.json.decode(msgspec.json.encode(place_instruction))["limitOrder"]
+
+        expected = {
+            "size": 100.0,
+            "price": 55.0,
+            "persistenceType": "LAPSE",
+        }
+        assert result == expected
 
 
 def request_id() -> int:

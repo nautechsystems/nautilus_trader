@@ -171,7 +171,7 @@ async def test_place_orders(betfair_client):
     instrument = betting_instrument()
     limit_order = TestExecStubs.limit_order(
         instrument_id=instrument.id,
-        order_side=OrderSide.BUY,
+        order_side=OrderSide.SELL,
         price=betfair_float_to_price(2.0),
         quantity=betfair_float_to_quantity(10),
     )
@@ -235,7 +235,7 @@ async def test_place_orders_handicap(betfair_client):
                     order_type=OrderType.LIMIT,
                     selection_id=5304641,
                     handicap=-5.5,
-                    side=Side.BACK,
+                    side=Side.LAY,
                     limit_order=LimitOrder(
                         price=2.0,
                         size=10.0,
@@ -290,7 +290,7 @@ async def test_place_orders_market_on_close(betfair_client):
                     order_type=OrderType.MARKET_ON_CLOSE,
                     selection_id=50214,
                     handicap=None,
-                    side=Side.BACK,
+                    side=Side.LAY,
                     limit_order=None,
                     limit_on_close_order=None,
                     market_on_close_order=MarketOnCloseOrder(liability=10.0),

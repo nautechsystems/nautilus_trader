@@ -37,7 +37,7 @@ from betfair_parser.spec.streaming import stream_decode
 
 from nautilus_trader.accounting.factory import AccountFactory
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
-from nautilus_trader.adapters.betfair.common import B2N_ORDER_SIDE
+from nautilus_trader.adapters.betfair.common import OrderSideParser
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_price
 from nautilus_trader.adapters.betfair.orderbook import betfair_float_to_quantity
@@ -545,7 +545,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         """
         Handle an update from the order stream socket.
         """
-        self._log.debug(f"raw_exec: {raw.decode()}")
+        self._log.debug(f"[RECV]: {raw.decode()}")
         update = stream_decode(raw)
 
         if isinstance(update, OCM):
@@ -675,7 +675,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
                     trade_id=trade_id,
-                    order_side=B2N_ORDER_SIDE[unmatched_order.side],
+                    order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
                     last_qty=betfair_float_to_quantity(fill_qty),
                     last_px=betfair_float_to_price(fill_price),
@@ -745,7 +745,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                     venue_order_id=venue_order_id,
                     venue_position_id=None,  # Can be None
                     trade_id=trade_id,
-                    order_side=B2N_ORDER_SIDE[unmatched_order.side],
+                    order_side=OrderSideParser.to_nautilus(unmatched_order.side),
                     order_type=OrderType.LIMIT,
                     last_qty=betfair_float_to_quantity(fill_qty),
                     last_px=betfair_float_to_price(fill_price),
