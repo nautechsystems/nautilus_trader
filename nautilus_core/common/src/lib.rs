@@ -32,5 +32,5 @@ pub mod ffi;
 #[cfg(feature = "python")]
 pub mod python;
 
-#[cfg(feature = "redis-msgbus")]
+#[cfg(feature = "redis")]
 pub mod redis;

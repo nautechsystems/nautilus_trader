@@ -29,6 +29,7 @@ from typing import Optional
 
 import cython
 
+from nautilus_trader.cache.cache import Cache
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 
@@ -103,6 +104,7 @@ from nautilus_trader.model.orders.base cimport Order
 from nautilus_trader.model.orders.list cimport OrderList
 from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.model.position cimport Position
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Strategy(Actor):
@@ -133,7 +135,8 @@ cdef class Strategy(Actor):
 
     Warnings
     --------
-    This class should not be used directly, but through a concrete subclass.
+    - This class should not be used directly, but through a concrete subclass.
+    - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
     def __init__(self, config: Optional[StrategyConfig] = None):
@@ -156,7 +159,7 @@ cdef class Strategy(Actor):
 
         # Public components
         self.clock = self._clock
-        self.cache = None          # Initialized when registered
+        self.cache: Cache = None          # Initialized when registered
         self.portfolio = None      # Initialized when registered
         self.order_factory = None  # Initialized when registered
 
@@ -176,7 +179,13 @@ cdef class Strategy(Actor):
         if config_claims is None:
             return []
 
-        return [InstrumentId.from_str(i) for i in config_claims]
+        order_claims: list[InstrumentId] = []
+        for instrument_id in config_claims:
+            if isinstance(instrument_id, str):
+                instrument_id = InstrumentId.from_str(instrument_id)
+            order_claims.append(instrument_id)
+
+        return order_claims
 
     def to_importable_config(self) -> ImportableStrategyConfig:
         """
@@ -269,13 +278,12 @@ cdef class Strategy(Actor):
         Condition.not_none(logger, "logger")
 
         self.register_base(
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
-
-        self.portfolio = portfolio  # Assigned as PortfolioFacade
 
         self.order_factory = OrderFactory(
             trader_id=self.trader_id,

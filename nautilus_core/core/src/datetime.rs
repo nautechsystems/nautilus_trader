@@ -15,15 +15,26 @@
 
 use std::time::{Duration, UNIX_EPOCH};
 
+use anyhow::{anyhow, Result};
 use chrono::{
     prelude::{DateTime, Utc},
-    SecondsFormat,
+    Datelike, NaiveDate, SecondsFormat, Weekday,
 };
+
+use crate::time::UnixNanos;
 
 pub const MILLISECONDS_IN_SECOND: u64 = 1_000;
 pub const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
 pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
 pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
+
+pub const WEEKDAYS: [Weekday; 5] = [
+    Weekday::Mon,
+    Weekday::Tue,
+    Weekday::Wed,
+    Weekday::Thu,
+    Weekday::Fri,
+];
 
 /// Converts seconds to nanoseconds (ns).
 #[inline]
@@ -80,6 +91,40 @@ pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
 pub fn unix_nanos_to_iso8601(timestamp_ns: u64) -> String {
     let dt = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_nanos(timestamp_ns));
     dt.to_rfc3339_opts(SecondsFormat::Nanos, true)
+}
+
+pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> Result<UnixNanos> {
+    let date = NaiveDate::from_ymd_opt(year, month, day).ok_or_else(|| anyhow!("Invalid date"))?;
+    let current_weekday = date.weekday().number_from_monday();
+
+    // Calculate the offset in days for closest weekday (Mon-Fri)
+    let offset = i64::from(match current_weekday {
+        1..=5 => 0, // Monday to Friday, no adjustment needed
+        6 => 1,     // Saturday, adjust to previous Friday
+        _ => 2,     // Sunday, adjust to previous Friday
+    });
+
+    // Calculate last closest weekday
+    let last_closest = date - chrono::Duration::days(offset);
+
+    // Convert to UNIX nanoseconds
+    let unix_timestamp_ns = last_closest
+        .and_hms_nano_opt(0, 0, 0, 0)
+        .ok_or_else(|| anyhow!("Failed `and_hms_nano_opt`"))?;
+
+    Ok(unix_timestamp_ns
+        .timestamp_nanos_opt()
+        .ok_or_else(|| anyhow!("Failed `timestamp_nanos_opt`"))? as UnixNanos)
+}
+
+pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> Result<bool> {
+    let seconds = timestamp_ns / NANOSECONDS_IN_SECOND;
+    let nanoseconds = (timestamp_ns % NANOSECONDS_IN_SECOND) as u32;
+    let timestamp = DateTime::from_timestamp(seconds as i64, nanoseconds)
+        .ok_or_else(|| anyhow!("Invalid timestamp {timestamp_ns}"))?;
+    let now = Utc::now();
+
+    Ok(now.signed_duration_since(timestamp) <= chrono::Duration::days(1))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -173,5 +218,52 @@ mod tests {
     fn test_nanos_to_micros(#[case] value: u64, #[case] expected: u64) {
         let result = nanos_to_micros(value);
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(2023, 12, 15, 1702598400000000000)] // Fri
+    #[case(2023, 12, 16, 1702598400000000000)] // Sat
+    #[case(2023, 12, 17, 1702598400000000000)] // Sun
+    #[case(2023, 12, 18, 1702857600000000000)] // Mon
+    fn test_last_closest_weekday_nanos_with_valid_date(
+        #[case] year: i32,
+        #[case] month: u32,
+        #[case] day: u32,
+        #[case] expected: u64,
+    ) {
+        let result = last_weekday_nanos(year, month, day).unwrap();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    fn test_last_closest_weekday_nanos_with_invalid_date() {
+        let result = last_weekday_nanos(2023, 4, 31);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_last_closest_weekday_nanos_with_nonexistent_date() {
+        let result = last_weekday_nanos(2023, 2, 30);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_last_closest_weekday_nanos_with_invalid_conversion() {
+        let result = last_weekday_nanos(9999, 12, 31);
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_is_within_last_24_hours_when_now() {
+        let now_ns = Utc::now().timestamp_nanos_opt().unwrap();
+        assert!(is_within_last_24_hours(now_ns as UnixNanos).unwrap());
+    }
+
+    #[rstest]
+    fn test_is_within_last_24_hours_when_two_days_ago() {
+        let past_ns = (Utc::now() - chrono::Duration::days(2))
+            .timestamp_nanos_opt()
+            .unwrap();
+        assert!(!is_within_last_24_hours(past_ns as UnixNanos).unwrap());
     }
 }

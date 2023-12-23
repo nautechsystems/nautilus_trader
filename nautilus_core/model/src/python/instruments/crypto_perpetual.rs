@@ -38,6 +38,7 @@ impl CryptoPerpetual {
         base_currency: Currency,
         quote_currency: Currency,
         settlement_currency: Currency,
+        is_inverse: bool,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
@@ -60,6 +61,7 @@ impl CryptoPerpetual {
             base_currency,
             quote_currency,
             settlement_currency,
+            is_inverse,
             price_precision,
             size_precision,
             price_increment,
@@ -110,6 +112,7 @@ impl CryptoPerpetual {
             "settlement_currency",
             self.settlement_currency.code.to_string(),
         )?;
+        dict.set_item("is_inverse", self.is_inverse)?;
         dict.set_item("price_precision", self.price_precision)?;
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;

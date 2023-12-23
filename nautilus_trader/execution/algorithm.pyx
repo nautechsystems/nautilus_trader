@@ -113,8 +113,10 @@ cdef class ExecAlgorithm(Actor):
 
         super().__init__()
         # Assign Execution Algorithm ID after base class initialized
-        component_id = type(self).__name__ if config.exec_algorithm_id is None else config.exec_algorithm_id
-        self.id = ExecAlgorithmId(component_id)
+        if isinstance(config.exec_algorithm_id, str):
+            self.id = ExecAlgorithmId(config.exec_algorithm_id)
+        else:
+            self.id = config.exec_algorithm_id or ExecAlgorithmId(type(self).__name__)
 
         # Configuration
         self.config = config
@@ -182,13 +184,12 @@ cdef class ExecAlgorithm(Actor):
         Condition.not_none(logger, "logger")
 
         self.register_base(
+            portfolio=portfolio,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
         )
-
-        self.portfolio = portfolio
 
         # Register endpoints
         self._msgbus.register(endpoint=f"{self.id}.execute", handler=self.execute)

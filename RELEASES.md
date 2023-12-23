@@ -1,3 +1,43 @@
+# NautilusTrader 1.182.0 Beta
+
+Released on 23rd December 2023 (UTC).
+
+### Enhancements
+- Added `CacheDatabaseFacade` and `CacheDatabaseAdapter` to abstract backing technology from Python codebase
+- Added `RedisCacheDatabase` implemented in Rust with separate MPSC channel thread for insert, update and delete operations
+- Added TA-Lib integration, thanks @rsmb7z
+- Added `OrderBookDelta` and `OrderBookDeltas` to serializable and publishable types
+- Moved `PortfolioFacade` to `Actor`
+- Improved `Actor` and `Strategy` usability to be more lenient to mistaken calls to `clock` and `logger` from the constructor (warnings also added to docs)
+- Removed `redis` and `hiredis` dependencies from Python codebase
+
+### Breaking Changes
+- Changed configuration objects to take stronger types as these are now serializable when registered (rather than primitives)
+- Changed `NautilusKernelConfig.trader_id` to type `TraderId`
+- Changed `BacktestDataConfig.instrument_id` to type `InstrumentId`
+- Changed `ActorConfig.component_id` to type `ComponentId | None`
+- Changed `StrategyConfig.strategy_id` to type `StrategyId | None`
+- Changed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization due below fix (you'll need to flush your cache)
+- Changed `CacheConfig` to take a `DatabaseConfig` (better symmetry with `MessageBusConfig`)
+- Changed `RedisCacheDatabase` data structure for currencies from hashset to simpler key-value (you'll need to clear cache or delete all curreny keys)
+- Changed `Actor` state loading to now use the standard `Serializer`
+- Renamed `register_json_encoding` to `register_config_encoding`
+- Renamed `register_json_decoding` to `register_config_decoding`
+- Removed `CacheDatabaseConfig` (due above config change)
+- Removed `infrastructure` subpackage (now redundant with new Rust implementation)
+
+### Fixes
+- Fixed `json` encoding for `CacheDatabaseAdapter` from `info` field serialization fix below
+- Fixed `Instrument`, `OrderFilled` and `AccountState` `info` field serialization to retain JSON serializable dicts (rather than double encoding and losing information)
+- Fixed Binance Futures `good_till_date` value when `time_in_force` not GTD, such as when strategy is managing the GTD (was incorrectly passing through UNIX milliseconds)
+- Fixed `Executor` handling of queued task IDs (was not discarding from queued tasks on completion)
+- Fixed `DataEngine` handling of order book snapshots with very small intervals (now handles as short as 20 milliseconds)
+- Fixed `BacktestEngine.clear_actors()`, `BacktestEngine.clear_strategies()` and `BacktestEngine.clear_exec_algorithms()`, thanks for reporting @davidsblom
+- Fixed `BacktestEngine` OrderEmulator reset, thanks @davidsblom
+- Fixed `Throttler.reset` and reset of `RiskEngine` throttlers, thanks @davidsblom
+
+---
+
 # NautilusTrader 1.181.0 Beta
 
 Released on 2nd December (UTC).

@@ -27,6 +27,7 @@ import msgspec
 
 from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.cache.cache import Cache
+from nautilus_trader.cache.database import CacheDatabaseAdapter
 from nautilus_trader.common import Environment
 from nautilus_trader.common.actor import Actor
 from nautilus_trader.common.clock import Clock
@@ -63,7 +64,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.execution.emulator import OrderEmulator
 from nautilus_trader.execution.engine import ExecutionEngine
-from nautilus_trader.infrastructure.cache import RedisCacheDatabase
 from nautilus_trader.live.data_engine import LiveDataEngine
 from nautilus_trader.live.execution_engine import LiveExecutionEngine
 from nautilus_trader.live.risk_engine import LiveRiskEngine
@@ -132,12 +132,14 @@ class NautilusKernel:
         self._save_state: bool = config.save_state
 
         # Identifiers
+        trader_id = config.trader_id
+        if isinstance(trader_id, str):
+            trader_id = TraderId(trader_id)
+
         self._name: str = name
-        self._trader_id: TraderId = TraderId(config.trader_id)
+        self._trader_id: TraderId = trader_id
         self._machine_id: str = socket.gethostname()
-        self._instance_id: UUID4 = (
-            UUID4(config.instance_id) if config.instance_id is not None else UUID4()
-        )
+        self._instance_id: UUID4 = config.instance_id or UUID4()
         self._ts_created: int = time.time_ns()
 
         # Components
@@ -187,6 +189,13 @@ class NautilusKernel:
             logger=self._logger,
         )
 
+        if isinstance(config.trader_id, str):
+            self._log.warning(
+                "The configurations 'trader_id' must be of type `TraderId`. "
+                "You can import `TraderId` from `nautilus_trader.model.identifiers`. "
+                "This warning will be removed in a future version, and become a hard requirement.",
+            )
+
         nautilus_header(self._log)
         self.log.info("Building system kernel...")
 
@@ -204,29 +213,41 @@ class NautilusKernel:
                     # https://stackoverflow.com/questions/45987985/asyncio-loops-add-signal-handler-in-windows
                     self._setup_loop()
 
-        if config.cache_database is None or config.cache_database.type == "in-memory":
+        if not config.cache or not config.cache.database:
             cache_db = None
-        elif config.cache_database.type == "redis":
-            encoding = config.cache_database.encoding.lower()
-            cache_db = RedisCacheDatabase(
+        elif config.cache.database.type == "redis":
+            encoding = config.cache.encoding.lower()
+            cache_db = CacheDatabaseAdapter(
                 trader_id=self._trader_id,
                 logger=self._logger,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                     timestamps_as_str=True,  # Hardcoded for now
-                    timestamps_as_iso8601=config.cache_database.timestamps_as_iso8601,
+                    timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
-                config=config.cache_database,
+                config=config.cache,
             )
         else:
             raise ValueError(
-                "The `cache_db_config.type` is unrecognized. "
-                "Use one of {{'in-memory', 'redis'}}.",
+                f"Unrecognized `config.cache.database.type`, was '{config.cache.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a cache database backing "
+                "then you can pass `None` for the `cache.database` ('in-memory' is no longer valid).",
             )
 
         ########################################################################
         # Core components
         ########################################################################
+        if (
+            config.message_bus
+            and config.message_bus.database
+            and config.message_bus.database.type != "redis"
+        ):
+            raise ValueError(
+                f"Unrecognized `config.message_bus.type`, was '{config.message_bus.database.type}'. "
+                "The only database type currently supported is 'redis', if you don't want a message bus database backing "
+                "then you can pass `None` for the `message_bus.database`.",
+            )
+
         msgbus_serializer = None
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
@@ -360,7 +381,7 @@ class NautilusKernel:
             self.exec_engine.load_cache()
 
         self._emulator = OrderEmulator(
-            trader_id=self._trader_id,
+            portfolio=self._portfolio,
             msgbus=self._msgbus,
             cache=self._cache,
             clock=self._clock,
@@ -398,8 +419,9 @@ class NautilusKernel:
                 trader=self._trader,
             )
             self._controller.register_base(
-                cache=self._cache,
+                portfolio=self._portfolio,
                 msgbus=self._msgbus,
+                cache=self._cache,
                 clock=self._clock,
                 logger=self._logger,
             )
@@ -480,7 +502,7 @@ class NautilusKernel:
         # Save a copy of the config for this kernel to the streaming folder.
         full_path = f"{self._writer.path}/config.json"
         with self._writer.fs.open(full_path, "wb") as f:
-            f.write(msgspec.json.encode(self._config))
+            f.write(self._config.json())
 
     @property
     def environment(self) -> Environment:
@@ -957,7 +979,7 @@ class NautilusKernel:
             exec_algorithm.register_executor(self._loop, self._executor)
 
     def _start_engines(self) -> None:
-        if self._config.cache_database is not None and self._config.cache_database.flush_on_start:
+        if self._config.cache is not None and self._config.cache.flush_on_start:
             self._cache.flush_db()
 
         self._data_engine.start()

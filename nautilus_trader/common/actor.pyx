@@ -77,6 +77,7 @@ from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
+from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
 cdef class Actor(Component):
@@ -95,7 +96,8 @@ cdef class Actor(Component):
 
     Warnings
     --------
-    This class should not be used directly, but through a concrete subclass.
+    - This class should not be used directly, but through a concrete subclass.
+    - Do not call components such as `clock` and `logger` in the `__init__` prior to registration.
     """
 
     def __init__(self, config: Optional[ActorConfig] = None):
@@ -103,14 +105,14 @@ cdef class Actor(Component):
             config = ActorConfig()
         Condition.type(config, ActorConfig, "config")
 
-        if config.component_id is not None:
+        if isinstance(config.component_id, str):
             component_id = ComponentId(config.component_id)
         else:
-            component_id = None
+            component_id = config.component_id
 
         super().__init__(
-            clock=Clock(),  # Use placeholder abstract clock until registered
-            logger=Logger(clock=Clock(), dummy=True),  # Use dummy logger until registered
+            clock=LiveClock(),  # Use placeholder live clock until registered
+            logger=Logger(clock=LiveClock(), dummy=True),  # Use dummy logger until registered
             component_id=component_id,
             config=config.dict(),
         )
@@ -545,6 +547,7 @@ cdef class Actor(Component):
 
     cpdef void register_base(
         self,
+        PortfolioFacade portfolio,
         MessageBus msgbus,
         CacheFacade cache,
         Clock clock,
@@ -555,6 +558,8 @@ cdef class Actor(Component):
 
         Parameters
         ----------
+        portfolio : PortfolioFacade
+            The read-only portfolio for the actor.
         msgbus : MessageBus
             The message bus for the actor.
         cache : CacheFacade
@@ -569,6 +574,7 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         """
+        Condition.not_none(portfolio, "portfolio")
         Condition.not_none(msgbus, "msgbus")
         Condition.not_none(cache, "cache")
         Condition.not_none(clock, "clock")
@@ -579,6 +585,7 @@ cdef class Actor(Component):
         self._change_logger(logger)
         self._change_msgbus(msgbus)  # The trader ID is assigned here
 
+        self.portfolio = portfolio  # Assigned as PortfolioFacade
         self.msgbus = msgbus
         self.cache = cache
         self.clock = self._clock
@@ -1270,7 +1277,7 @@ cdef class Actor(Component):
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
         interval_ms : int
-            The order book snapshot interval in milliseconds.
+            The order book snapshot interval in milliseconds (not less than 20 milliseconds).
         kwargs : dict, optional
             The keyword arguments for exchange specific parameters.
         client_id : ClientId, optional
@@ -1282,12 +1289,16 @@ cdef class Actor(Component):
         ValueError
             If `depth` is negative (< 0).
         ValueError
-            If `interval_ms` is not positive (> 0).
+            If `interval_ms` is less than the minimum of 20.
+
+        Warnings
+        --------
+        Consider subscribing to order book deltas if you need intervals less than 20 milliseconds.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
-        Condition.not_negative(interval_ms, "interval_ms")
+        Condition.true(interval_ms >= 20, f"`interval_ms` {interval_ms} was less than minimum 20")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         if book_type == BookType.L1_MBP and depth > 1:
@@ -2013,9 +2024,9 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2036,16 +2047,25 @@ cdef class Actor(Component):
     cpdef UUID4 request_instrument(
         self,
         InstrumentId instrument_id,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
     ):
         """
         Request `Instrument` data for the given instrument ID.
 
+        If `end` is ``None`` then will request up to the most recent data.
+
         Parameters
         ----------
         instrument_id : InstrumentId
             The instrument ID for the request.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2060,11 +2080,16 @@ cdef class Actor(Component):
 
         Raises
         ------
+        ValueError
+            If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2073,6 +2098,8 @@ cdef class Actor(Component):
             venue=instrument_id.venue,
             data_type=DataType(Instrument, metadata={
                 "instrument_id": instrument_id,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_instrument_response,
             request_id=request_id,
@@ -2087,16 +2114,25 @@ cdef class Actor(Component):
     cpdef UUID4 request_instruments(
         self,
         Venue venue,
+        datetime start = None,
+        datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
     ):
         """
         Request all `Instrument` data for the given venue.
 
+        If `end` is ``None`` then will request up to the most recent data.
+
         Parameters
         ----------
         venue : Venue
             The venue for the request.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2111,11 +2147,16 @@ cdef class Actor(Component):
 
         Raises
         ------
+        ValueError
+            If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(venue, "venue")
+        if start is not None and end is not None:
+            Condition.true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2124,6 +2165,8 @@ cdef class Actor(Component):
             venue=venue,
             data_type=DataType(Instrument, metadata={
                 "venue": venue,
+                "start": start,
+                "end": end,
             }),
             callback=self._handle_instruments_response,
             request_id=request_id,
@@ -2155,8 +2198,8 @@ cdef class Actor(Component):
         start : datetime, optional
             The start datetime (UTC) of request time range (inclusive).
         end : datetime, optional
-            The end datetime (UTC) of request time range (inclusive).
-            If ``None`` then will default to the current datetime (UTC).
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2172,15 +2215,15 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `start` is not less than `end`.
+            If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         if start is not None and end is not None:
             Condition.true(start < end, "start was >= end")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2222,8 +2265,8 @@ cdef class Actor(Component):
         start : datetime, optional
             The start datetime (UTC) of request time range (inclusive).
         end : datetime, optional
-            The end datetime (UTC) of request time range (inclusive).
-            If ``None`` then will default to the current datetime (UTC).
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2239,15 +2282,15 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `start` is not less than `end`.
+            If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         if start is not None and end is not None:
             Condition.true(start < end, "start was >= end")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2289,8 +2332,8 @@ cdef class Actor(Component):
         start : datetime, optional
             The start datetime (UTC) of request time range (inclusive).
         end : datetime, optional
-            The end datetime (UTC) of request time range (inclusive).
-            If ``None`` then will default to the current datetime (UTC).
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
@@ -2306,15 +2349,15 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
-            If `start` is not less than `end`.
+            If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
 
         """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
         if start is not None and end is not None:
             Condition.true(start < end, "start was >= end")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()

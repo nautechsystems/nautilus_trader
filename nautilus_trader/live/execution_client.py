@@ -313,7 +313,9 @@ class LiveExecutionClient(ExecutionClient):
             If both the `client_order_id` and `venue_order_id` are ``None``.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_order_status_report` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_order_status_reports(
         self,
@@ -332,9 +334,9 @@ class LiveExecutionClient(ExecutionClient):
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
         start : pd.Timestamp, optional
-            The start datetime query filter.
+            The start datetime (UTC) query filter.
         end : pd.Timestamp, optional
-            The end datetime query filter.
+            The end datetime (UTC) query filter.
         open_only : bool, default False
             If the query is for open orders only.
 
@@ -343,7 +345,9 @@ class LiveExecutionClient(ExecutionClient):
         list[OrderStatusReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_order_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_trade_reports(
         self,
@@ -364,16 +368,18 @@ class LiveExecutionClient(ExecutionClient):
         venue_order_id : VenueOrderId, optional
             The venue order ID (assigned by the venue) query filter.
         start : pd.Timestamp, optional
-            The start datetime query filter.
+            The start datetime (UTC) query filter.
         end : pd.Timestamp, optional
-            The end datetime query filter.
+            The end datetime (UTC) query filter.
 
         Returns
         -------
         list[TradeReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_trade_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_position_status_reports(
         self,
@@ -391,16 +397,18 @@ class LiveExecutionClient(ExecutionClient):
         instrument_id : InstrumentId, optional
             The instrument ID query filter.
         start : pd.Timestamp, optional
-            The start datetime query filter.
+            The start datetime (UTC) query filter.
         end : pd.Timestamp, optional
-            The end datetime query filter.
+            The end datetime (UTC) query filter.
 
         Returns
         -------
         list[PositionStatusReport]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_position_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_mass_status(
         self,

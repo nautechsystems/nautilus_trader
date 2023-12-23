@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import msgspec
 import pyarrow as pa
 
 from nautilus_trader.model.instruments import BettingInstrument
@@ -196,8 +197,10 @@ SCHEMAS = {
 }
 
 
-def serialize(obj) -> pa.RecordBatch:
+def serialize(obj: Instrument) -> pa.RecordBatch:
     data = obj.to_dict(obj)
+    if "info" in data:
+        data["info"] = msgspec.json.encode(data["info"])
     schema = SCHEMAS[obj.__class__].with_metadata({"class": obj.__class__.__name__})
     return pa.RecordBatch.from_pylist([data], schema)
 
@@ -213,4 +216,13 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
         b"FuturesContract": FuturesContract,
         b"OptionsContract": OptionsContract,
     }[ins_type]
-    return [Cls.from_dict(data) for data in batch.to_pylist()]
+
+    maps = batch.to_pylist()
+    for m in maps:
+        info = m.get("info")
+        if info is not None:
+            m["info"] = msgspec.json.decode(info)
+        else:
+            m["info"] = None
+
+    return [Cls.from_dict(data) for data in maps]

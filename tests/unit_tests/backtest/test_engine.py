@@ -23,6 +23,7 @@ import pytest
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.common.actor import Actor
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StreamingConfig
 from nautilus_trader.config.common import ImportableControllerConfig
@@ -32,6 +33,7 @@ from nautilus_trader.examples.strategies.ema_cross import EMACross
 from nautilus_trader.examples.strategies.ema_cross import EMACrossConfig
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategy
 from nautilus_trader.examples.strategies.signal_strategy import SignalStrategyConfig
+from nautilus_trader.execution.algorithm import ExecAlgorithm
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import BarSpecification
@@ -136,6 +138,48 @@ class TestBacktestEngine:
         assert self.engine.backtest_end is None
         assert self.engine.iteration == 0  # No exceptions raised
 
+    def test_clear_actors_with_no_actors(self):
+        # Arrange, Act, Assert
+        self.engine.clear_actors()
+
+    def test_clear_actors(self):
+        # Arrange
+        self.engine.add_actor(Actor())
+
+        # Act
+        self.engine.clear_actors()
+
+        # Assert
+        assert self.engine.trader.actors() == []
+
+    def test_clear_strategies_with_no_strategies(self):
+        # Arrange, Act, Assert
+        self.engine.clear_strategies()
+
+    def test_clear_strategies(self):
+        # Arrange
+        self.engine.add_strategy(Strategy())
+
+        # Act
+        self.engine.clear_strategies()
+
+        # Assert
+        assert self.engine.trader.strategies() == []
+
+    def test_clear_exec_algorithms_no_exec_algorithms(self):
+        # Arrange, Act, Assert
+        self.engine.clear_exec_algorithms()
+
+    def test_clear_exec_algorithms(self):
+        # Arrange
+        self.engine.add_exec_algorithm(ExecAlgorithm())
+
+        # Act
+        self.engine.clear_exec_algorithms()
+
+        # Assert
+        assert self.engine.trader.exec_algorithms() == []
+
     def test_run_with_no_strategies(self):
         # Arrange, Act
         self.engine.run()
@@ -191,7 +235,7 @@ class TestBacktestEngine:
 
     def test_backtest_engine_multiple_runs(self):
         for _ in range(2):
-            config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+            config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id)
             strategy = SignalStrategy(config)
             engine = self.create_engine(
                 config=BacktestEngineConfig(
@@ -205,7 +249,7 @@ class TestBacktestEngine:
 
     def test_backtest_engine_strategy_timestamps(self):
         # Arrange
-        config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id.value)
+        config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id)
         strategy = SignalStrategy(config)
         engine = self.create_engine(
             config=BacktestEngineConfig(
@@ -228,7 +272,7 @@ class TestBacktestEngine:
 
     def test_set_instance_id(self):
         # Arrange
-        instance_id = UUID4().value
+        instance_id = UUID4()
 
         # Act
         engine1 = self.create_engine(
@@ -244,8 +288,8 @@ class TestBacktestEngine:
         )  # Engine sets instance id
 
         # Assert
-        assert engine1.kernel.instance_id.value == instance_id
-        assert engine2.kernel.instance_id.value != instance_id
+        assert engine1.kernel.instance_id == instance_id
+        assert engine2.kernel.instance_id != instance_id
 
     def test_controller(self):
         # Arrange - Controller class
@@ -640,8 +684,8 @@ class TestBacktestWithAddedBars:
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
-            instrument_id=str(GBPUSD_SIM.id),
-            bar_type=str(bar_type),
+            instrument_id=GBPUSD_SIM.id,
+            bar_type=bar_type,
             trade_size=Decimal(100_000),
             fast_ema_period=10,
             slow_ema_period=20,
@@ -661,7 +705,7 @@ class TestBacktestWithAddedBars:
         )
 
     def test_dump_pickled_data(self):
-        # Arrange, # Act, # Assert
+        # Arrange, Act, Assert
         pickled = self.engine.dump_pickled_data()
         assert 5_060_606 <= len(pickled) <= 5_060_654
 
@@ -673,8 +717,8 @@ class TestBacktestWithAddedBars:
             aggregation_source=AggregationSource.EXTERNAL,  # <-- important
         )
         config = EMACrossConfig(
-            instrument_id=str(GBPUSD_SIM.id),
-            bar_type=str(bar_type),
+            instrument_id=GBPUSD_SIM.id,
+            bar_type=bar_type,
             trade_size=Decimal(100_000),
             fast_ema_period=10,
             slow_ema_period=20,

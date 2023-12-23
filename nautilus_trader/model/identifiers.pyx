@@ -61,10 +61,10 @@ cdef class Identifier:
     """
 
     def __getstate__(self):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `__getstate__` must be implemented in the subclass")  # pragma: no cover
 
     def __setstate__(self, state):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `__setstate__` must be implemented in the subclass")  # pragma: no cover
 
     def __lt__(self, Identifier other) -> bool:
         return self.to_str() < other.to_str()
@@ -85,7 +85,7 @@ cdef class Identifier:
         return f"{type(self).__name__}('{self.to_str()}')"
 
     cdef str to_str(self):
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `to_str` must be implemented in the subclass")  # pragma: no cover
 
     @property
     def value(self) -> str:

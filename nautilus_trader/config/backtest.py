@@ -13,15 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
-import importlib
-import sys
-from collections.abc import Callable
-from decimal import Decimal
-from typing import Any
+from __future__ import annotations
 
-import msgspec
-import pandas as pd
+import sys
+from typing import Any
 
 from nautilus_trader.common import Environment
 from nautilus_trader.config.common import DataEngineConfig
@@ -30,11 +25,11 @@ from nautilus_trader.config.common import ImportableConfig
 from nautilus_trader.config.common import NautilusConfig
 from nautilus_trader.config.common import NautilusKernelConfig
 from nautilus_trader.config.common import RiskEngineConfig
+from nautilus_trader.config.common import resolve_path
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar
-from nautilus_trader.model.identifiers import ClientId
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.catalog.types import CatalogDataResult
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import TraderId
 
 
 class BacktestVenueConfig(NautilusConfig, frozen=True):
@@ -72,7 +67,7 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
     data_cls: str
     catalog_fs_protocol: str | None = None
     catalog_fs_storage_options: dict | None = None
-    instrument_id: str | None = None
+    instrument_id: InstrumentId | None = None
     start_time: str | int | None = None
     end_time: str | int | None = None
     filter_expr: str | None = None
@@ -83,15 +78,29 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
 
     @property
     def data_type(self) -> type:
+        """
+        Return a `type` for the specified `data_cls` for the configuration.
+
+        Returns
+        -------
+        type
+
+        """
         if isinstance(self.data_cls, str):
-            mod_path, cls_name = self.data_cls.rsplit(":", maxsplit=1)
-            mod = importlib.import_module(mod_path)
-            return getattr(mod, cls_name)
+            return resolve_path(self.data_cls)
         else:
             return self.data_cls
 
     @property
     def query(self) -> dict[str, Any]:
+        """
+        Return a catalog query object for the configuration.
+
+        Returns
+        -------
+        dict[str, Any]
+
+        """
         if self.data_cls is Bar and self.bar_spec:
             bar_type = f"{self.instrument_id}-{self.bar_spec}-EXTERNAL"
             filter_expr: str | None = f'field("bar_type") == "{bar_type}"'
@@ -109,51 +118,35 @@ class BacktestDataConfig(NautilusConfig, frozen=True):
 
     @property
     def start_time_nanos(self) -> int:
+        """
+        Return the data configuration start time in UNIX nanoseconds.
+
+        Will be zero if no `start_time` was specified.
+
+        Returns
+        -------
+        int
+
+        """
         if self.start_time is None:
             return 0
         return dt_to_unix_nanos(self.start_time)
 
     @property
     def end_time_nanos(self) -> int:
+        """
+        Return the data configuration end time in UNIX nanoseconds.
+
+        Will be sys.maxsize if no `end_time` was specified.
+
+        Returns
+        -------
+        int
+
+        """
         if self.end_time is None:
             return sys.maxsize
         return dt_to_unix_nanos(self.end_time)
-
-    def catalog(self) -> ParquetDataCatalog:
-        from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-
-        return ParquetDataCatalog(
-            path=self.catalog_path,
-            fs_protocol=self.catalog_fs_protocol,
-            fs_storage_options=self.catalog_fs_storage_options,
-        )
-
-    def load(
-        self,
-        start_time: pd.Timestamp | None = None,
-        end_time: pd.Timestamp | None = None,
-    ) -> CatalogDataResult:
-        query = self.query
-        query.update(
-            {
-                "start": start_time or query["start"],
-                "end": end_time or query["end"],
-            },
-        )
-
-        catalog = self.catalog()
-        instruments = (
-            catalog.instruments(instrument_ids=[self.instrument_id]) if self.instrument_id else None
-        )
-        if self.instrument_id and not instruments:
-            return CatalogDataResult(data_cls=self.data_type, data=[])
-
-        return CatalogDataResult(
-            data_cls=self.data_type,
-            data=catalog.query(**query),
-            instrument=instruments[0] if instruments else None,
-            client_id=ClientId(self.client_id) if self.client_id else None,
-        )
 
 
 class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
@@ -162,7 +155,7 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
 
     Parameters
     ----------
-    trader_id : str
+    trader_id : TraderId
         The trader ID for the node (must be a name and ID tag separated by a hyphen).
     log_level : str, default "INFO"
         The stdout log level for the node.
@@ -170,8 +163,6 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     cache : CacheConfig, optional
         The cache configuration.
-    cache_database : CacheDatabaseConfig, optional
-        The cache database configuration.
     data_engine : DataEngineConfig, optional
         The live data engine configuration.
     risk_engine : RiskEngineConfig, optional
@@ -200,7 +191,7 @@ class BacktestEngineConfig(NautilusKernelConfig, frozen=True):
     """
 
     environment: Environment = Environment.BACKTEST
-    trader_id: str = "BACKTESTER-001"
+    trader_id: TraderId = TraderId("BACKTESTER-001")
     data_engine: DataEngineConfig = DataEngineConfig()
     risk_engine: RiskEngineConfig = RiskEngineConfig()
     exec_engine: ExecEngineConfig = ExecEngineConfig()
@@ -234,10 +225,6 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     engine: BacktestEngineConfig | None = None
     batch_size_bytes: int | None = None
 
-    @property
-    def id(self):
-        return tokenize_config(self.dict())
-
 
 def parse_filters_expr(s: str | None):
     # TODO (bm) - could we do this better, probably requires writing our own parser?
@@ -268,29 +255,3 @@ def parse_filters_expr(s: str | None):
         return eval(code, {}, allowed_names)  # noqa
 
     return safer_eval(s)  # Only allow use of the field object
-
-
-CUSTOM_ENCODINGS: dict[type, Callable] = {
-    pd.DataFrame: lambda x: x.to_json(),
-}
-
-
-def json_encoder(x):
-    if isinstance(x, str | Decimal):
-        return str(x)
-    elif isinstance(x, type) and hasattr(x, "fully_qualified_name"):
-        return x.fully_qualified_name()
-    elif type(x) in CUSTOM_ENCODINGS:
-        func = CUSTOM_ENCODINGS[type(x)]
-        return func(x)
-    raise TypeError(f"Objects of type {type(x)} are not supported")
-
-
-def register_json_encoding(type_: type, encoder: Callable) -> None:
-    global CUSTOM_ENCODINGS
-    CUSTOM_ENCODINGS[type_] = encoder
-
-
-def tokenize_config(obj: dict) -> str:
-    value: bytes = msgspec.json.encode(obj, enc_hook=json_encoder)
-    return hashlib.sha256(value).hexdigest()

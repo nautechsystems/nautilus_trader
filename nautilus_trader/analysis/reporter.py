@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import msgspec
 import pandas as pd
 
 from nautilus_trader.accounting.accounts.base import Account
@@ -175,7 +174,7 @@ class ReportProvider:
         balances = [
             {**balance, **state}
             for state in account_states
-            for balance in msgspec.json.decode(state.pop("balances", "[]"))
+            for balance in state.pop("balances", [])
         ]
 
         if not account_states:

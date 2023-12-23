@@ -23,13 +23,7 @@ from nautilus_trader.core.data import Data
 
 class UUID4:
     def __init__(self, value: str) -> None: ...
-class LogGuard: ...
 
-def set_global_log_collector(
-    stdout_level: str | None,
-    stderr_level: str | None,
-    file_level: tuple[str, str, str] | None,
-) -> LogGuard: ...
 def secs_to_nanos(secs: float) -> int:
     """
     Return round nanoseconds (ns) converted from the given seconds.
@@ -135,6 +129,52 @@ def nanos_to_micros(nanos: int) -> int:
 
     """
 
+def last_weekday_nanos(year: int, month: int, day: int) -> int:
+    """
+    Return UNIX nanoseconds at midnight (UTC) of the last weekday (Mon-Fri).
+
+    Parameters
+    ----------
+    year : int
+        The year from the datum date.
+    month : int
+        The month from the datum date.
+    day : int
+        The day from the datum date.
+
+    Returns
+    -------
+    int
+
+    Raises
+    ------
+    ValueError
+        If given an invalid date.
+
+    """
+
+
+def is_within_last_24_hours(timestamp_ns: int) -> bool:
+    """
+    Return whether the given UNIX nanoseconds timestamp is within the last 24 hours.
+
+    Parameters
+    ----------
+    timestamp_ns : int
+        The UNIX nanoseconds timestamp datum.
+
+    Returns
+    -------
+    bool
+
+    Raises
+    ------
+    ValueError
+        If `timestamp` is invalid.
+
+    """
+
+
 def convert_to_snake_case(s: str) -> str:
     """
     Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
@@ -152,6 +192,18 @@ def convert_to_snake_case(s: str) -> str:
     str
 
     """
+
+###################################################################################################
+# Common
+###################################################################################################
+
+class LogGuard: ...
+
+def set_global_log_collector(
+    stdout_level: str | None,
+    stderr_level: str | None,
+    file_level: tuple[str, str, str] | None,
+) -> LogGuard: ...
 
 ###################################################################################################
 # Model
@@ -468,6 +520,7 @@ class StrategyId:
 
 class Symbol:
     def __init__(self, value: str) -> None: ...
+    @property
     def value(self) -> str: ...
 
 class TradeId:
@@ -620,12 +673,145 @@ class Quantity:
 
 ### Instruments
 
-class CryptoFuture: ...
-class CryptoPerpetual: ...
-class CurrencyPair: ...
-class Equity: ...
-class FuturesContract: ...
-class OptionsContract: ...
+class CryptoFuture:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        activation_ns: int,
+        expiration_ns: int,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class CryptoPerpetual:
+    def __init__(
+        self,
+        id: InstrumentId,
+        symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class CurrencyPair:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        base_currency: Currency,
+        quote_currency: Currency,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class Equity:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        isin: str,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        multiplier: Quantity,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class FuturesContract:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        activation_ns: int,
+        expiration_ns: int,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        multiplier: Quantity,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+class OptionsContract:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        underlying: str,
+        option_kind: OptionKind,
+        activation_ns: int,
+        expiration_ns: int,
+        strike_price: Price,
+        currency: Currency,
+        price_precision: int,
+        price_increment: Price,
+        margin_init: float,
+        margin_maint: float,
+        maker_fee: float,
+        taker_fee: float,
+        lot_size: Quantity | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None : ...
 class SyntheticInstrument: ...
 
 ### Events
@@ -769,6 +955,187 @@ class OrderSubmitted:
     def from_dict(cls, values: dict[str, str]) -> OrderSubmitted: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class OrderEmulated:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None : ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderEmulated: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderReleased:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        released_price: Price,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderReleased: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderUpdated:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        quantity: Quantity,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+        price: Price | None = None,
+        trigger_price: Price | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderUpdated: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderPendingUpdate:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderPendingUpdate: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderPendingCancel:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderPendingCancel: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderModifyRejected:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderModifyRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderAccepted:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        account_id: AccountId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderAccepted: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+
+class OrderCancelRejected:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: str,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    )-> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderCancelRejected: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderCanceled:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderCanceled: ...
+    def to_dict(self) -> dict[str, str]: ...
+
+class OrderExpired:
+    def __init__(
+        self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        event_id: UUID4,
+        ts_event: int,
+        ts_init: int,
+        reconciliation: bool,
+        venue_order_id: VenueOrderId | None = None,
+        account_id: AccountId | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> OrderExpired: ...
+    def to_dict(self) -> dict[str, str]: ...
 
 ###################################################################################################
 # Infrastructure
@@ -868,7 +1235,7 @@ class SocketConfig:
         self,
         url: str,
         ssl: bool,
-        suffix: list[int],
+        suffix: bytes,
         handler: Callable[..., Any],
         heartbeat: tuple[int, list[int]] | None = None,
     ) -> None: ...

@@ -24,30 +24,32 @@ pub struct SqlCacheDatabase {
 }
 
 impl SqlCacheDatabase {
+    #[must_use]
     pub fn new(trader_id: TraderId, database: Database) -> Self {
         Self {
             trader_id,
             db: database,
         }
     }
+    #[must_use]
     pub fn key_trader(&self) -> String {
         format!("trader-{}", self.trader_id)
     }
 
+    #[must_use]
     pub fn key_general(&self) -> String {
         format!("{}:general:", self.key_trader())
     }
 
     pub async fn add(&self, key: String, value: String) -> Result<u64, Error> {
         let query = format!(
-            "INSERT INTO general (key, value) VALUES ('{}', '{}') ON CONFLICT (key) DO NOTHING;",
-            key, value
+            "INSERT INTO general (key, value) VALUES ('{key}', '{value}') ON CONFLICT (key) DO NOTHING;"
         );
         self.db.execute(query.as_str()).await
     }
 
     pub async fn get(&self, key: String) -> Vec<GeneralItem> {
-        let query = format!("SELECT * FROM general WHERE key = '{}'", key);
+        let query = format!("SELECT * FROM general WHERE key = '{key}'");
         self.db
             .fetch_all::<GeneralItem>(query.as_str())
             .await
@@ -93,7 +95,7 @@ mod tests {
             .expect("Failed to add key");
         let value = cache.get(String::from("key1")).await;
         assert_eq!(value.len(), 1);
-        let item = value.get(0).unwrap();
+        let item = value.first().unwrap();
         assert_eq!(item.key, "key1");
         assert_eq!(item.value, "value1");
     }

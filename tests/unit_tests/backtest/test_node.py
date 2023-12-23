@@ -25,7 +25,9 @@ from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
 from nautilus_trader.test_kit.mocks.data import data_catalog_setup
@@ -46,7 +48,7 @@ class TestBacktestNode:
             catalog_path=self.catalog.path,
             catalog_fs_protocol=self.catalog.fs_protocol,
             data_cls=QuoteTick,
-            instrument_id="AUD/USD.SIM",
+            instrument_id=InstrumentId.from_str("AUD/USD.SIM"),
             start_time=1580398089820000000,
             end_time=1580504394501000000,
         )
@@ -55,8 +57,8 @@ class TestBacktestNode:
                 strategy_path="nautilus_trader.examples.strategies.ema_cross:EMACross",
                 config_path="nautilus_trader.examples.strategies.ema_cross:EMACrossConfig",
                 config={
-                    "instrument_id": "AUD/USD.SIM",
-                    "bar_type": "AUD/USD.SIM-100-TICK-MID-INTERNAL",
+                    "instrument_id": InstrumentId.from_str("AUD/USD.SIM"),
+                    "bar_type": BarType.from_str("AUD/USD.SIM-100-TICK-MID-INTERNAL"),
                     "fast_ema_period": 10,
                     "slow_ema_period": 20,
                     "trade_size": Decimal(1_000_000),
@@ -143,7 +145,7 @@ class TestBacktestNode:
                 "data": [
                     {
                         "catalog_path": "data_catalog",
-                        "data_cls": QuoteTick.fully_qualified_name(),
+                        "data_cls": "nautilus_trader.model.data:QuoteTick",
                         "instrument_id": "AUD/USD.SIM",
                         "start_time": 1580398089820000000,
                         "end_time": 1580504394501000000,

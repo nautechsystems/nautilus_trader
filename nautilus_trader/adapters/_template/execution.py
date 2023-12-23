@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pandas as pd
 
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -68,16 +67,24 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     """
 
     async def _connect(self) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_connect` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def _disconnect(self) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_disconnect` must be implemented in the subclass",
+        )  # pragma: no cover
 
     def reset(self) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `reset` must be implemented in the subclass",
+        )  # pragma: no cover
 
     def dispose(self) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `dispose` must be implemented in the subclass",
+        )  # pragma: no cover
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
@@ -87,7 +94,9 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> OrderStatusReport | None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_order_status_report` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_order_status_reports(
         self,
@@ -96,7 +105,9 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_order_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_trade_reports(
         self,
@@ -105,7 +116,9 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[TradeReport]:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_trade_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def generate_position_status_reports(
         self,
@@ -113,24 +126,38 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `generate_position_status_reports` must be implemented in the subclass",
+        )  # pragma: no cover
 
     # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_submit_order` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_submit_order_list` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def _modify_order(self, command: ModifyOrder) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_modify_order` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_cancel_order` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_cancel_all_orders` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def _query_order(self, command: QueryOrder) -> None:
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `_query_order` must be implemented in the subclass",
+        )  # pragma: no cover

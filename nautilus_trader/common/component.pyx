@@ -730,12 +730,6 @@ cdef class MessageBus:
             config = MessageBusConfig()
         Condition.type(config, MessageBusConfig, "config")
 
-        if (snapshot_orders or snapshot_positions) and not config.stream:
-            raise InvalidConfiguration(
-                "Invalid `MessageBusConfig`: Cannot configure snapshots without providing a `stream` name. "
-                "This is because currently the message bus will write to the same snapshot keys as the cache.",
-            )
-
         self.trader_id = trader_id
         self.serializer = serializer
         self.has_backing = config.database is not None
@@ -745,14 +739,28 @@ cdef class MessageBus:
         self._clock = clock
         self._log = LoggerAdapter(component_name=name, logger=logger)
 
+        # Validate configuration
+        if config.buffer_interval_ms and config.buffer_interval_ms > 1000:
+            self._log.warning(
+                f"High `buffer_interval_ms` at {config.buffer_interval_ms}, "
+                "recommended range is [10, 1000] milliseconds.",
+            )
+
+        if (snapshot_orders or snapshot_positions) and not config.stream:
+            raise InvalidConfiguration(
+                "Invalid `MessageBusConfig`: Cannot configure snapshots without providing a `stream` name. "
+                "This is because currently the message bus will write to the same snapshot keys as the cache.",
+            )
+
         # Configuration
         self._log.info(f"{config.database=}", LogColor.BLUE)
-        self._log.info(f"{config.stream=}", LogColor.BLUE)
-        self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
         self._log.info(f"{config.encoding=}", LogColor.BLUE)
         self._log.info(f"{config.timestamps_as_iso8601=}", LogColor.BLUE)
-        self._log.info(f"{config.types_filter=}", LogColor.BLUE)
+        self._log.info(f"{config.buffer_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.autotrim_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.stream=}", LogColor.BLUE)
+        self._log.info(f"{config.use_instance_id=}", LogColor.BLUE)
+        self._log.info(f"{config.types_filter=}", LogColor.BLUE)
 
         # Copy and clear `types_filter` before passing down to the core MessageBus
         cdef list types_filter = copy.copy(config.types_filter)
@@ -1427,6 +1435,16 @@ cdef class Throttler:
 
         """
         return len(self._buffer)
+
+    cpdef void reset(self):
+        """
+        Reset the state of the throttler.
+        """
+        self._buffer.clear()
+        self._warm = False
+        self.recv_count = 0
+        self.sent_count = 0
+        self.is_limiting = False
 
     cpdef double used(self):
         """

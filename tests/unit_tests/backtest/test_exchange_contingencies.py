@@ -109,6 +109,7 @@ class TestSimulatedExchangeContingencyAdvancedOrders:
             instruments=[ETHUSDT_PERP_BINANCE],
             modules=[],
             fill_model=FillModel(),
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,

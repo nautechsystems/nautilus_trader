@@ -29,7 +29,7 @@ use crate::{
     events::order::{
         accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
         denied::OrderDenied, emulated::OrderEmulated, event::OrderEvent, expired::OrderExpired,
-        filled::OrderFilled, initialized::OrderInitialized, modified_rejected::OrderModifyRejected,
+        filled::OrderFilled, initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
         pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
         rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
         triggered::OrderTriggered, updated::OrderUpdated,

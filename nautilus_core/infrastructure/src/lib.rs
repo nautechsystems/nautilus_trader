@@ -18,5 +18,5 @@ pub mod cache;
 #[cfg(feature = "python")]
 pub mod python;
 
-#[cfg(feature = "redis-cache")]
+#[cfg(feature = "redis")]
 pub mod redis;

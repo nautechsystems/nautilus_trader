@@ -88,11 +88,11 @@ class BetfairDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
             venue=BETFAIR_VENUE,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
         )
 
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider

@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
 
 import msgspec
 import pandas as pd
@@ -25,11 +26,20 @@ from nautilus_trader.model.objects import Currency
 
 
 def serialize(state: AccountState) -> RecordBatch:
-    result: dict[tuple[Currency, InstrumentId | None], dict] = {}
+    result: dict[tuple[Currency, InstrumentId | None], dict[str, Any]] = {}
 
     base = state.to_dict(state)
+
+    # Ensure 'info' is encoded as bytes
+    if "info" in base and isinstance(base["info"], dict):
+        base["info"] = msgspec.json.encode(base["info"])
+
+    encoded_balances = msgspec.json.encode(base["balances"])
+    encoded_margins = msgspec.json.encode(base["margins"])
+
     del base["balances"]
     del base["margins"]
+
     base.update(
         {
             "balance_total": None,
@@ -40,6 +50,8 @@ def serialize(state: AccountState) -> RecordBatch:
             "margin_maintenance": None,
             "margin_currency": None,
             "margin_instrument_id": None,
+            "balances": encoded_balances,
+            "margins": encoded_margins,
         },
     )
 
@@ -72,47 +84,50 @@ def serialize(state: AccountState) -> RecordBatch:
     return pa.RecordBatch.from_pylist(result.values(), schema=SCHEMA)
 
 
-def _deserialize(values) -> AccountState:
-    balances = []
-    for v in values:
-        total = v.get("balance_total")
-        if total is None:
-            continue
-        balances.append(
-            {
-                "total": total,
-                "locked": v["balance_locked"],
-                "free": v["balance_free"],
-                "currency": v["balance_currency"],
-            },
-        )
+def _deserialize(values: list[Any]) -> AccountState:
+    # Reconstruct balances
+    balances = [
+        {
+            "total": v["balance_total"],
+            "locked": v["balance_locked"],
+            "free": v["balance_free"],
+            "currency": v["balance_currency"],
+        }
+        for v in values
+        if v.get("balance_total") is not None
+    ]
 
-    margins = []
-    for v in values:
-        initial = v.get("margin_initial")
-        if pd.isna(initial):
-            continue
-        margins.append(
-            {
-                "initial": initial,
-                "maintenance": v["margin_maintenance"],
-                "currency": v["margin_currency"],
-                "instrument_id": v["margin_instrument_id"],
-            },
-        )
+    # Reconstruct margins
+    margins = [
+        {
+            "initial": v["margin_initial"],
+            "maintenance": v["margin_maintenance"],
+            "currency": v["margin_currency"],
+            "instrument_id": v["margin_instrument_id"],
+        }
+        for v in values
+        if not pd.isna(v.get("margin_initial"))
+    ]
 
     state = {
         k: v
         for k, v in values[0].items()
         if not k.startswith("balance_") and not k.startswith("margin_")
     }
-    state["balances"] = msgspec.json.encode(balances)
-    state["margins"] = msgspec.json.encode(margins)
+
+    state["balances"] = balances
+    state["margins"] = margins
+
+    # Ensure 'info' is decoded to a dict
+    if "info" in state:
+        state["info"] = msgspec.json.decode(state["info"])
+    else:
+        state["info"] = []
 
     return AccountState.from_dict(state)
 
 
-def deserialize(data: pa.RecordBatch):
+def deserialize(data: pa.RecordBatch) -> list[AccountState]:
     account_states = []
     for event_id in data.column("event_id").unique().to_pylist():
         event = data.filter(pa.compute.equal(data["event_id"], event_id))

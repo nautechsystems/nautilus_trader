@@ -17,6 +17,7 @@ nautilus-model = { path = "../model" }
 anyhow = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
+rmp-serde = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
@@ -32,5 +33,5 @@ extension-module = [
     "nautilus-model/extension-module",
 ]
 python = ["pyo3"]
-redis-cache = ["redis"]
-default = ["python", "redis-cache"]
+redis = ["dep:redis"]
+default = ["python", "redis"]

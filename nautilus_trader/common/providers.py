@@ -64,6 +64,8 @@ class InstrumentProvider:
         self._loaded = False
         self._loading = False
 
+        self._log.info("READY.")
+
     @property
     def count(self) -> int:
         """
@@ -81,7 +83,9 @@ class InstrumentProvider:
         Load the latest instruments into the provider asynchronously, optionally
         applying the given filters.
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `load_all_async` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def load_ids_async(
         self,
@@ -105,7 +109,9 @@ class InstrumentProvider:
             If any `instrument_id.venue` is not equal to `self.venue`.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `load_ids_async` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def load_async(
         self,
@@ -129,7 +135,9 @@ class InstrumentProvider:
             If `instrument_id.venue` is not equal to `self.venue`.
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError(
+            "method `load_async` must be implemented in the subclass",
+        )  # pragma: no cover
 
     async def initialize(self) -> None:
         """

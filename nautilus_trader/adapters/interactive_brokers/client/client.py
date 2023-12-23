@@ -450,7 +450,7 @@ class InteractiveBrokersClient(Component, EWrapper):
                 else:
                     await self._handle_socket_connectivity()
         except asyncio.CancelledError:
-            self._log.debug("`watch_dog` task was canceled.")
+            self._log.debug("Canceled `watch_dog` task.")
 
     async def _handle_ib_is_ready(self):
         if self.is_degraded:
@@ -623,7 +623,7 @@ class InteractiveBrokersClient(Component, EWrapper):
             except Exception as e:
                 self._log.exception("unhandled exception in EReader worker ", e)
         except asyncio.CancelledError:
-            self._log.debug("Message reader was canceled.")
+            self._log.debug("Canceled message reader task.")
 
     async def _run_incoming_msg_queue(self):
         """

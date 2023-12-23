@@ -20,7 +20,7 @@ use nautilus_core::{
     uuid::UUID4,
 };
 use nautilus_model::identifiers::trader_id::TraderId;
-use pyo3::{prelude::*, PyResult};
+use pyo3::{prelude::*, types::PyBytes, PyResult};
 use serde_json::Value;
 
 use crate::{cache::CacheDatabase, redis::RedisCacheDatabase};
@@ -38,17 +38,39 @@ impl RedisCacheDatabase {
         }
     }
 
+    #[pyo3(name = "flushdb")]
+    fn py_flushdb(&mut self) -> PyResult<()> {
+        match self.flushdb() {
+            Ok(_) => Ok(()),
+            Err(e) => Err(to_pyruntime_err(e)),
+        }
+    }
+
+    #[pyo3(name = "keys")]
+    fn py_keys(&mut self, pattern: &str) -> PyResult<Vec<String>> {
+        match self.keys(pattern) {
+            Ok(keys) => Ok(keys),
+            Err(e) => Err(to_pyruntime_err(e)),
+        }
+    }
+
     #[pyo3(name = "read")]
-    fn py_read(&mut self, op_type: String) -> PyResult<Vec<Vec<u8>>> {
-        match self.read(op_type) {
-            Ok(payload) => Ok(payload),
+    fn py_read(&mut self, py: Python, key: &str) -> PyResult<Vec<PyObject>> {
+        match self.read(key) {
+            Ok(result) => {
+                let vec_py_bytes = result
+                    .into_iter()
+                    .map(|r| PyBytes::new(py, &r).into())
+                    .collect::<Vec<PyObject>>();
+                Ok(vec_py_bytes)
+            }
             Err(e) => Err(to_pyruntime_err(e)),
         }
     }
 
     #[pyo3(name = "insert")]
     fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
-        match self.insert(key, payload) {
+        match self.insert(key, Some(payload)) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }
@@ -56,15 +78,15 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "update")]
     fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
-        match self.insert(key, payload) {
+        match self.insert(key, Some(payload)) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }
     }
 
     #[pyo3(name = "delete")]
-    fn py_delete(&mut self, key: String) -> PyResult<()> {
-        match self.delete(key) {
+    fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
+        match self.delete(key, payload) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
         }

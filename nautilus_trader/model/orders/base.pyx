@@ -286,7 +286,7 @@ cdef class Order:
         str
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `info` must be implemented in the subclass")  # pragma: no cover
 
     cpdef dict to_dict(self):
         """
@@ -297,7 +297,7 @@ cdef class Order:
         dict[str, object]
 
         """
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `to_dict` must be implemented in the subclass")  # pragma: no cover
 
     cdef void set_triggered_price_c(self, Price triggered_price):
         Condition.not_none(triggered_price, "triggered_price")
@@ -340,10 +340,10 @@ cdef class Order:
         return time_in_force_to_str(self.time_in_force)
 
     cdef bint has_price_c(self):
-        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
+        raise NotImplementedError("method `has_price_c` must be implemented in subclass")  # pragma: no cover
 
     cdef bint has_trigger_price_c(self):
-        raise NotImplementedError("method must be implemented in subclass")  # pragma: no cover
+        raise NotImplementedError("method `has_trigger_price_c` must be implemented in subclass")  # pragma: no cover
 
     cdef bint is_buy_c(self):
         return self.side == OrderSide.BUY
@@ -1034,11 +1034,11 @@ cdef class Order:
 
     cdef void _updated(self, OrderUpdated event):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_updated` must be implemented in the subclass")  # pragma: no cover
 
     cdef void _triggered(self, OrderTriggered event):
         """Abstract method (implement in subclass)."""
-        raise NotImplementedError("method must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_triggered` must be implemented in the subclass")  # pragma: no cover
 
     cdef void _canceled(self, OrderCanceled event):
         pass  # Do nothing else

@@ -28,14 +28,15 @@ from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
 from nautilus_trader.config import ImportableActorConfig
-from nautilus_trader.config.backtest import json_encoder
-from nautilus_trader.config.backtest import tokenize_config
 from nautilus_trader.config.common import NautilusConfig
+from nautilus_trader.config.common import msgspec_encoding_hook
+from nautilus_trader.config.common import tokenize_config
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.mocks.data import aud_usd_data_loader
@@ -67,20 +68,24 @@ class TestBacktestConfig:
         pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301
 
     def test_backtest_data_config_load(self):
+        # Arrange
         instrument = TestInstrumentProvider.default_fx_ccy("AUD/USD")
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=QuoteTick,
-            instrument_id=instrument.id.value,
+            instrument_id=instrument.id,
             start_time=1580398089820000000,
             end_time=1580504394501000000,
         )
 
-        result = c.query
+        # Act
+        result = config.query
+
+        # Assert
         assert result == {
             "data_cls": QuoteTick,
-            "instrument_ids": ["AUD/USD.SIM"],
+            "instrument_ids": [InstrumentId.from_str("AUD/USD.SIM")],
             "filter_expr": None,
             "start": 1580398089820000000,
             "end": 1580504394501000000,
@@ -93,7 +98,7 @@ class TestBacktestConfig:
         data = TestPersistenceStubs.news_events()
         self.catalog.write_data(data)
 
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
@@ -101,7 +106,10 @@ class TestBacktestConfig:
             metadata={"kind": "news"},
         )
 
-        result = c.load()
+        # Act
+        result = BacktestNode.load_data_config(config)
+
+        # Assert
         assert len(result.data) == 86985
         assert result.instrument is None
         assert result.client_id == ClientId("NewsClient")
@@ -113,8 +121,7 @@ class TestBacktestConfig:
         data = TestPersistenceStubs.news_events()
         self.catalog.write_data(data)
 
-        # Act
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=NewsEventData,
@@ -122,20 +129,28 @@ class TestBacktestConfig:
             client_id="NewsClient",
         )
 
-        result = c.load()
+        # Act
+        result = BacktestNode.load_data_config(config)
+
+        # Assert
         assert len(result.data) == 2745
 
     def test_backtest_data_config_status_updates(self):
+        # Arrange
         from tests.integration_tests.adapters.betfair.test_kit import load_betfair_data
 
         load_betfair_data(self.catalog)
 
-        c = BacktestDataConfig(
+        config = BacktestDataConfig(
             catalog_path=self.catalog.path,
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             data_cls=InstrumentStatus,
         )
-        result = c.load()
+
+        # Act
+        result = BacktestNode.load_data_config(config)
+
+        # Assert
         assert len(result.data) == 2
         assert result.instrument is None
         assert result.client_id is None
@@ -146,7 +161,7 @@ class TestBacktestConfig:
             data_cls="nautilus_trader.model.data:QuoteTick",
             catalog_fs_protocol=str(self.catalog.fs.protocol),
             catalog_fs_storage_options={},
-            instrument_id="AUD/USD.IDEALPRO",
+            instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
             start_time=1580398089820000,
             end_time=1580504394501000,
         )
@@ -160,7 +175,7 @@ class TestBacktestConfig:
                 data_cls=QuoteTick.fully_qualified_name(),
                 catalog_fs_protocol="memory",
                 catalog_fs_storage_options={},
-                instrument_id="AUD/USD.IDEALPRO",
+                instrument_id=InstrumentId.from_str("AUD/USD.IDEALPRO"),
                 start_time=1580398089820000,
                 end_time=1580504394501000,
             ),
@@ -214,7 +229,7 @@ class TestBacktestConfigParsing:
             ],
         )
         raw = msgspec.json.encode(run_config)
-        config = msgspec.json.decode(raw, type=BacktestRunConfig)
+        config = BacktestRunConfig.parse(raw)
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
@@ -245,7 +260,10 @@ class TestBacktestConfigParsing:
     def test_backtest_run_config_id(self) -> None:
         token = self.backtest_config.id
         print("token:", token)
-        value: bytes = msgspec.json.encode(self.backtest_config.dict(), enc_hook=json_encoder)
+        value: bytes = msgspec.json.encode(
+            self.backtest_config.dict(),
+            enc_hook=msgspec_encoding_hook,
+        )
         print("token_value:", value.decode())
         assert token == "1d758e23defb5a69e2449ed03216ef7727c50e12c23730cc0309087ee7e71994"  # UNIX
 
@@ -325,6 +343,7 @@ class TestBacktestConfigParsing:
                     data=[],
                 ),
             ],
+            enc_hook=msgspec_encoding_hook,
         ).decode()
 
         # Act
@@ -340,7 +359,7 @@ class TestBacktestConfigParsing:
         interest_rate_data = TestDataProvider().read_csv("short-term-interest.csv")
         run_config = TestConfigStubs.backtest_run_config(
             catalog=self.catalog,
-            instrument_ids=[self.instrument.id.value],
+            instrument_ids=[self.instrument.id],
             venues=[
                 BacktestVenueConfig(
                     name="SIM",

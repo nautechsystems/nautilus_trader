@@ -131,7 +131,7 @@ class TestExecAlgorithm:
         )
 
         self.emulator = OrderEmulator(
-            trader_id=self.trader_id,
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -150,6 +150,7 @@ class TestExecAlgorithm:
             instruments=[ETHUSDT_PERP_BINANCE],
             modules=[],
             fill_model=FillModel(),
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -219,7 +220,7 @@ class TestExecAlgorithm:
         assert config.dict() == {
             "exec_algorithm_path": "nautilus_trader.examples.algorithms.twap:TWAPExecAlgorithm",
             "config_path": "nautilus_trader.examples.algorithms.twap:TWAPExecAlgorithmConfig",
-            "config": {"exec_algorithm_id": "TWAP"},
+            "config": {"exec_algorithm_id": ExecAlgorithmId("TWAP")},
         }
 
     def test_exec_algorithm_spawn_market_order_with_quantity_too_high(self) -> None:

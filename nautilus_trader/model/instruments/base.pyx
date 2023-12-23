@@ -16,8 +16,6 @@
 from decimal import Decimal
 from typing import Optional
 
-import msgspec
-
 from libc.math cimport pow
 from libc.stdint cimport uint64_t
 
@@ -262,7 +260,6 @@ cdef class Instrument(Data):
         cdef str min_n = values["min_notional"]
         cdef str max_p = values["max_price"]
         cdef str min_p = values["min_price"]
-        cdef bytes info = values["info"]
         return Instrument(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -288,7 +285,7 @@ cdef class Instrument(Data):
             taker_fee=Decimal(values["taker_fee"]),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
-            info=msgspec.json.decode(info) if info is not None else None,
+            info=values["info"],
         )
 
     @staticmethod
@@ -319,7 +316,7 @@ cdef class Instrument(Data):
             "taker_fee": str(obj.taker_fee),
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
-            "info": msgspec.json.encode(obj.info) if obj.info is not None else None,
+            "info": obj.info,
         }
 
     @staticmethod

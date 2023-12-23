@@ -14,12 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 
+from nautilus_trader.core.nautilus_pyo3 import OrderAccepted
+from nautilus_trader.core.nautilus_pyo3 import OrderCanceled
+from nautilus_trader.core.nautilus_pyo3 import OrderCancelRejected
 from nautilus_trader.core.nautilus_pyo3 import OrderDenied
+from nautilus_trader.core.nautilus_pyo3 import OrderEmulated
+from nautilus_trader.core.nautilus_pyo3 import OrderExpired
 from nautilus_trader.core.nautilus_pyo3 import OrderFilled
 from nautilus_trader.core.nautilus_pyo3 import OrderInitialized
+from nautilus_trader.core.nautilus_pyo3 import OrderModifyRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderPendingCancel
+from nautilus_trader.core.nautilus_pyo3 import OrderPendingUpdate
 from nautilus_trader.core.nautilus_pyo3 import OrderRejected
+from nautilus_trader.core.nautilus_pyo3 import OrderReleased
 from nautilus_trader.core.nautilus_pyo3 import OrderSubmitted
 from nautilus_trader.core.nautilus_pyo3 import OrderTriggered
+from nautilus_trader.core.nautilus_pyo3 import OrderUpdated
 from nautilus_trader.test_kit.rust.events_pyo3 import TestEventsProviderPyo3
 
 
@@ -138,4 +148,177 @@ def test_order_submitted():
         == "OrderSubmitted(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
         + "client_order_id=O-20210410-022422-001-001-1, account_id=SIM-000, "
         + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_emulated():
+    event = TestEventsProviderPyo3.order_emulated()
+    result_dict = OrderEmulated.to_dict(event)
+    order_emulated = OrderEmulated.from_dict(result_dict)
+    assert order_emulated == event
+    assert (
+        str(event)
+        == "OrderEmulated(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1)"
+    )
+    assert (
+        repr(event)
+        == "OrderEmulated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )
+
+
+def test_order_released():
+    event = TestEventsProviderPyo3.order_released()
+    result_dict = OrderReleased.to_dict(event)
+    order_released = OrderReleased.from_dict(result_dict)
+    assert order_released == event
+    assert (
+        str(event)
+        == "OrderReleased(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, released_price=22000.0)"
+    )
+    assert (
+        repr(event)
+        == "OrderReleased(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, released_price=22000.0, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_init=0)"
+    )
+
+
+def test_order_updated():
+    event = TestEventsProviderPyo3.order_updated()
+    result_dict = OrderUpdated.to_dict(event)
+    order_updated = OrderUpdated.from_dict(result_dict)
+    assert order_updated == event
+    assert (
+        str(event)
+        == "OrderUpdated(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
+        + "account_id=SIM-000, quantity=1.5, price=1500.0, trigger_price=None, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderUpdated(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, quantity=1.5, price=1500.0, trigger_price=None, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_pending_update():
+    event = TestEventsProviderPyo3.order_pending_update()
+    result_dict = OrderPendingUpdate.to_dict(event)
+    order_pending_update = OrderPendingUpdate.from_dict(result_dict)
+    assert order_pending_update == event
+    assert (
+        str(event)
+        == "OrderPendingUpdate(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderPendingUpdate(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_pending_cancel():
+    event = TestEventsProviderPyo3.order_pending_cancel()
+    result_dict = OrderPendingCancel.to_dict(event)
+    order_pending_update = OrderPendingCancel.from_dict(result_dict)
+    assert order_pending_update == event
+    assert (
+        str(event)
+        == "OrderPendingCancel(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderPendingCancel(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_modified_rejected():
+    event = TestEventsProviderPyo3.order_modified_rejected()
+    result_dict = OrderModifyRejected.to_dict(event)
+    order_modified_rejected = OrderModifyRejected.from_dict(result_dict)
+    assert order_modified_rejected == event
+    assert (
+        str(event)
+        == "OrderModifyRejected(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
+        + "account_id=SIM-000, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderModifyRejected(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "reason=ORDER_DOES_NOT_EXIST, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_accepted():
+    event = TestEventsProviderPyo3.order_accepted()
+    result_dict = OrderAccepted.to_dict(event)
+    order_accepted = OrderAccepted.from_dict(result_dict)
+    assert order_accepted == event
+    assert (
+        str(event)
+        == "OrderAccepted(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderAccepted(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_cancel_rejected():
+    event = TestEventsProviderPyo3.order_cancel_rejected()
+    result_dict = OrderCancelRejected.to_dict(event)
+    order_cancel_rejected = OrderCancelRejected.from_dict(result_dict)
+    assert order_cancel_rejected == event
+    assert (
+        str(event)
+        == "OrderCancelRejected(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
+        + "account_id=SIM-000, reason=ORDER_DOES_NOT_EXIST, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderCancelRejected(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "reason=ORDER_DOES_NOT_EXIST, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_canceled():
+    event = TestEventsProviderPyo3.order_canceled()
+    result_dict = OrderCanceled.to_dict(event)
+    order_canceled = OrderCanceled.from_dict(result_dict)
+    assert order_canceled == event
+    assert (
+        str(event)
+        == "OrderCanceled(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, "
+        + "account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderCanceled(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, "
+        + "client_order_id=O-20210410-022422-001-001-1, venue_order_id=123456, account_id=SIM-000, "
+        + "event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
+    )
+
+
+def test_order_expired():
+    event = TestEventsProviderPyo3.order_expired()
+    result_dict = OrderExpired.to_dict(event)
+    order_expired = OrderExpired.from_dict(result_dict)
+    assert order_expired == event
+    assert (
+        str(event)
+        == "OrderExpired(instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, ts_event=0)"
+    )
+    assert (
+        repr(event)
+        == "OrderExpired(trader_id=TESTER-001, strategy_id=S-001, instrument_id=ETHUSDT.BINANCE, client_order_id=O-20210410-022422-001-001-1, "
+        + "venue_order_id=123456, account_id=SIM-000, event_id=91762096-b188-49ea-8562-8d8a4cc22ff2, ts_event=0, ts_init=0)"
     )

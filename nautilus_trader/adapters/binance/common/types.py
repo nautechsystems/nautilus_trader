@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from decimal import Decimal
 from typing import Any
 
@@ -78,7 +80,7 @@ class BinanceBar(Bar):
         taker_buy_quote_volume: Decimal,
         ts_event: int,
         ts_init: int,
-    ):
+    ) -> None:
         super().__init__(
             bar_type=bar_type,
             open=open,
@@ -137,7 +139,7 @@ class BinanceBar(Bar):
         )
 
     @staticmethod
-    def from_dict(values: dict[str, Any]) -> "BinanceBar":
+    def from_dict(values: dict[str, Any]) -> BinanceBar:
         """
         Return a `Binance` bar parsed from the given values.
 
@@ -167,7 +169,7 @@ class BinanceBar(Bar):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceBar") -> dict[str, Any]:
+    def to_dict(obj: BinanceBar) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 
@@ -280,7 +282,7 @@ class BinanceTicker(Ticker):
         bid_qty: Decimal | None = None,
         ask_price: Decimal | None = None,
         ask_qty: Decimal | None = None,
-    ):
+    ) -> None:
         super().__init__(
             instrument_id=instrument_id,
             ts_event=ts_event,
@@ -337,7 +339,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def from_dict(values: dict[str, Any]) -> "BinanceTicker":
+    def from_dict(values: dict[str, Any]) -> BinanceTicker:
         """
         Return a `Binance Spot/Margin` ticker parsed from the given values.
 
@@ -383,7 +385,7 @@ class BinanceTicker(Ticker):
         )
 
     @staticmethod
-    def to_dict(obj: "BinanceTicker") -> dict[str, Any]:
+    def to_dict(obj: BinanceTicker) -> dict[str, Any]:
         """
         Return a dictionary representation of this object.
 

@@ -350,7 +350,13 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 
-    cpdef void request_instrument(self, InstrumentId instrument_id, UUID4 correlation_id):
+    cpdef void request_instrument(
+        self,
+        InstrumentId instrument_id,
+        UUID4 correlation_id,
+        datetime start: Optional[datetime] = None,
+        datetime end: Optional[datetime] = None,
+    ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -369,7 +375,13 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             correlation_id=correlation_id,
         )
 
-    cpdef void request_instruments(self, Venue venue, UUID4 correlation_id):
+    cpdef void request_instruments(
+        self,
+        Venue venue,
+        UUID4 correlation_id,
+        datetime start: Optional[datetime] = None,
+        datetime end: Optional[datetime] = None,
+    ):
         Condition.not_none(correlation_id, "correlation_id")
 
         cdef list instruments = self._cache.instruments(venue)

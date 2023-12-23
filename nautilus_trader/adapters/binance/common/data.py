@@ -130,11 +130,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(BINANCE_VENUE.value),
             venue=BINANCE_VENUE,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
         )
 
         # Configuration
@@ -209,12 +209,16 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
+
+        assert self._instrument_provider is not None  # type checking
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
 
     async def _update_instruments(self) -> None:
+        assert self._instrument_provider is not None  # type checking
+
         while True:
             retries = 0
             while True:
@@ -241,7 +245,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     )
                     await asyncio.sleep(self._retry_delay)
                 except asyncio.CancelledError:
-                    self._log.debug("`update_instruments` task was canceled.")
+                    self._log.debug("Canceled `update_instruments` task.")
                     return
 
     async def _disconnect(self) -> None:
@@ -471,7 +475,25 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     # -- REQUESTS ---------------------------------------------------------------------------------
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4) -> None:
+    async def _request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ) -> None:
+        assert self._instrument_provider is not None  # type checking
+
+        if start is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+            )
+
+        if end is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+            )
+
         instrument: Instrument | None = self._instrument_provider.find(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}.")
@@ -626,6 +648,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end_time_ms: int | None,
         limit: int | None,
     ) -> list[Bar]:
+        assert self._instrument_provider is not None  # type checking
+
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -771,6 +795,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end_time_ms: int | None,
         limit: int | None,
     ) -> list[Bar]:
+        assert self._instrument_provider is not None  # type checking
+
         instrument = self._instrument_provider.find(bar_type.instrument_id)
         if instrument is None:
             self._log.error(
@@ -830,6 +856,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         return bars
 
     def _send_all_instruments_to_data_engine(self) -> None:
+        assert self._instrument_provider is not None  # type checking
+
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
 

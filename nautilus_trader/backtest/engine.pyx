@@ -25,7 +25,6 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common import Environment
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import CacheConfig
-from nautilus_trader.config import CacheDatabaseConfig
 from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ExecEngineConfig
 from nautilus_trader.config import RiskEngineConfig
@@ -448,6 +447,7 @@ cdef class BacktestEngine:
             leverages=leverages or {},
             instruments=[],
             modules=modules,
+            portfolio=self.kernel.portfolio,
             msgbus=self.kernel.msgbus,
             cache=self.kernel.cache,
             fill_model=fill_model,
@@ -798,6 +798,11 @@ cdef class BacktestEngine:
             self.kernel.risk_engine.stop()
         self.kernel.risk_engine.reset()
 
+        # Reset Emulator
+        if self.kernel.emulator.is_running:
+            self.kernel.emulator.stop()
+        self.kernel.emulator.reset()
+
         self.kernel.trader.reset()
 
         for exchange in self._venues.values():
@@ -833,21 +838,21 @@ cdef class BacktestEngine:
         Clear all actors from the engines internal trader.
 
         """
-        self._trader.clear_actors()
+        self._kernel.trader.clear_actors()
 
     def clear_strategies(self) -> None:
         """
         Clear all trading strategies from the engines internal trader.
 
         """
-        self._trader.clear_strategies()
+        self._kernel.trader.clear_strategies()
 
-    def clear_exec_algorthms(self) -> None:
+    def clear_exec_algorithms(self) -> None:
         """
         Clear all execution algorithms from the engines internal trader.
 
         """
-        self._trader.clear_exec_algorthms()
+        self._kernel.trader.clear_exec_algorithms()
 
     def dispose(self) -> None:
         """
@@ -885,11 +890,11 @@ cdef class BacktestEngine:
         Parameters
         ----------
         start : Union[datetime, str, int], optional
-            The start datetime (UTC) for the backtest run. If ``None`` engine runs
-            from the start of the data.
+            The start datetime (UTC) for the backtest run.
+            If ``None`` engine runs from the start of the data.
         end : Union[datetime, str, int], optional
-            The end datetime (UTC) for the backtest run. If ``None`` engine runs
-            to the end of the data.
+            The end datetime (UTC) for the backtest run.
+            If ``None`` engine runs to the end of the data.
         run_config_id : str, optional
             The tokenized `BacktestRunConfig` ID.
         streaming : bool, default False

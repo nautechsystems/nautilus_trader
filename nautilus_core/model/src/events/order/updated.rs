@@ -13,8 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::{Display, Formatter};
+
+use anyhow::Result;
 use derive_builder::{self, Builder};
 use nautilus_core::{time::UnixNanos, uuid::UUID4};
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -29,6 +33,10 @@ use crate::{
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
 #[builder(default)]
 #[serde(tag = "type")]
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct OrderUpdated {
     pub trader_id: TraderId,
     pub strategy_id: StrategyId,
@@ -42,5 +50,84 @@ pub struct OrderUpdated {
     pub event_id: UUID4,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
-    pub reconciliation: bool,
+    pub reconciliation: u8,
+}
+
+impl OrderUpdated {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        quantity: Quantity,
+        event_id: UUID4,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        reconciliation: bool,
+        venue_order_id: Option<VenueOrderId>,
+        account_id: Option<AccountId>,
+        price: Option<Price>,
+        trigger_price: Option<Price>,
+    ) -> Result<OrderUpdated> {
+        Ok(OrderUpdated {
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            quantity,
+            event_id,
+            ts_event,
+            ts_init,
+            reconciliation: reconciliation as u8,
+            venue_order_id,
+            account_id,
+            price,
+            trigger_price,
+        })
+    }
+}
+
+impl Display for OrderUpdated {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "OrderUpdated(instrument_id={}, client_order_id={}, venue_order_id={}, account_id={},quantity={}, price={}, trigger_price={}, ts_event={})",
+            self.instrument_id,
+            self.client_order_id,
+            self.venue_order_id
+                .map(|venue_order_id| format!("{}", venue_order_id))
+                .unwrap_or_else(|| "None".to_string()),
+            self.account_id
+                .map(|account_id| format!("{}", account_id))
+                .unwrap_or_else(|| "None".to_string()),
+            self.quantity,
+            self.price
+                .map(|price| format!("{}", price))
+                .unwrap_or_else(|| "None".to_string()),
+            self.trigger_price
+                .map(|trigger_price| format!("{}", trigger_price))
+                .unwrap_or_else(|| "None".to_string()),
+            self.ts_event
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use crate::events::order::{stubs::*, updated::OrderUpdated};
+
+    #[rstest]
+    fn test_order_updated_display(order_updated: OrderUpdated) {
+        let display = format!("{}", order_updated);
+        assert_eq!(
+            display,
+            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-20200814-102234-001-001-1, venue_order_id=001, account_id=SIM-001,quantity=100, price=22000, trigger_price=None, ts_event=0)"
+        )
+    }
 }

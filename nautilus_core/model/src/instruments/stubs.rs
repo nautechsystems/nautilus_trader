@@ -31,6 +31,10 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+////////////////////////////////////////////////////////////////////////////////
+// CryptoFuture
+////////////////////////////////////////////////////////////////////////////////
+
 #[fixture]
 pub fn crypto_future_btcusdt() -> CryptoFuture {
     let activation = Utc.with_ymd_and_hms(2014, 4, 8, 0, 0, 0).unwrap();
@@ -62,6 +66,10 @@ pub fn crypto_future_btcusdt() -> CryptoFuture {
     .unwrap()
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// CryptoPerpetual
+////////////////////////////////////////////////////////////////////////////////
+
 #[fixture]
 pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
     CryptoPerpetual::new(
@@ -70,6 +78,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         Currency::from("ETH"),
         Currency::from("USDT"),
         Currency::from("USDT"),
+        false,
         2,
         0,
         Price::from("0.01"),
@@ -88,6 +97,38 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
     )
     .unwrap()
 }
+
+#[fixture]
+pub fn xbtusd_bitmex() -> CryptoPerpetual {
+    return CryptoPerpetual::new(
+        InstrumentId::from("BTCUSDT.BITMEX"),
+        Symbol::from("XBTUSD"),
+        Currency::BTC(),
+        Currency::USD(),
+        Currency::BTC(),
+        true,
+        1,
+        0,
+        Price::from("0.5"),
+        Quantity::from("1"),
+        Decimal::from_str("0.01").unwrap(),
+        Decimal::from_str("0.0035").unwrap(),
+        Decimal::from_str("-0.00025").unwrap(),
+        Decimal::from_str("0.00075").unwrap(),
+        None,
+        None,
+        None,
+        Some(Money::from("10000000 USD")),
+        Some(Money::from("1 USD")),
+        Some(Price::from("10000000")),
+        Some(Price::from("0.01")),
+    )
+    .unwrap();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// CurrencyPair
+////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn currency_pair_btcusdt() -> CurrencyPair {
@@ -112,6 +153,10 @@ pub fn currency_pair_btcusdt() -> CurrencyPair {
     )
     .unwrap()
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Equity
+////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn equity_aapl() -> Equity {
@@ -163,6 +208,10 @@ pub fn futures_contract_es() -> FuturesContract {
     )
     .unwrap()
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// OptionsContract
+////////////////////////////////////////////////////////////////////////////////
 
 #[fixture]
 pub fn options_contract_appl() -> OptionsContract {

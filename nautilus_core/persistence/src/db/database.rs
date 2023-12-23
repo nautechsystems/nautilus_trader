@@ -113,9 +113,9 @@ pub async fn init_db_schema(db: &Database, schema_dir: &str) -> Result<()> {
     let mut sql_files =
         std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
 
-    for file in sql_files.iter_mut() {
+    for file in &mut sql_files {
         let file_name = file.file_name();
-        println!("Executing SQL file: {:?}", file_name);
+        println!("Executing SQL file: {file_name:?}");
         let file_path = file.path();
         let sql_content = std::fs::read_to_string(file_path.clone())?;
         for sql_statement in sql_content.split(';').filter(|s| !s.trim().is_empty()) {

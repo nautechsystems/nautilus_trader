@@ -59,7 +59,7 @@ jobs:
 
       - name: Get branch name
         id: branch-name
-        uses: tj-actions/branch-names@v6
+        uses: tj-actions/branch-names@v7.0.7
 
       - name: Build Python docs
         run: make docs-python

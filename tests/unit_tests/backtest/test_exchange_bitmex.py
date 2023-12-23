@@ -105,6 +105,7 @@ class TestBitmexExchange:
             starting_balances=[Money(20, BTC)],
             default_leverage=Decimal(50),
             leverages={},
+            portfolio=self.portfolio,
             msgbus=self.msgbus,
             cache=self.cache,
             instruments=[XBTUSD_BITMEX],

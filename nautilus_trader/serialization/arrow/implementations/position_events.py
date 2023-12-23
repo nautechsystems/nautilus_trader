@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import pyarrow as pa
 
 from nautilus_trader.model.events import PositionChanged

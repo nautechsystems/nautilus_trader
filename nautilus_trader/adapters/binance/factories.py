@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import os
 from functools import lru_cache
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -27,6 +26,7 @@ from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.data import BinanceSpotDataClient
 from nautilus_trader.adapters.binance.spot.execution import BinanceSpotExecutionClient
 from nautilus_trader.adapters.binance.spot.providers import BinanceSpotInstrumentProvider
+from nautilus_trader.adapters.env import get_env_key
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.clock import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -277,7 +277,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceSpotDataClient(
                 loop=loop,
                 client=client,
@@ -300,7 +299,6 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceFuturesDataClient(
                 loop=loop,
                 client=client,
@@ -390,7 +388,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceSpotExecutionClient(
                 loop=loop,
                 client=client,
@@ -413,7 +410,6 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 config=config.instrument_provider,
             )
 
-            # Create client
             return BinanceFuturesExecutionClient(
                 loop=loop,
                 client=client,
@@ -431,27 +427,27 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
 def _get_api_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
     if is_testnet:
         if account_type.is_spot_or_margin:
-            return os.environ["BINANCE_TESTNET_API_KEY"]
+            get_env_key("BINANCE_TESTNET_API_KEY")
         else:
-            return os.environ["BINANCE_FUTURES_TESTNET_API_KEY"]
+            get_env_key("BINANCE_FUTURES_TESTNET_API_KEY")
 
     if account_type.is_spot_or_margin:
-        return os.environ["BINANCE_API_KEY"]
+        return get_env_key("BINANCE_API_KEY")
     else:
-        return os.environ["BINANCE_FUTURES_API_KEY"]
+        return get_env_key("BINANCE_FUTURES_API_KEY")
 
 
 def _get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
     if is_testnet:
         if account_type.is_spot_or_margin:
-            return os.environ["BINANCE_TESTNET_API_SECRET"]
+            return get_env_key("BINANCE_TESTNET_API_SECRET")
         else:
-            return os.environ["BINANCE_FUTURES_TESTNET_API_SECRET"]
+            return get_env_key("BINANCE_FUTURES_TESTNET_API_SECRET")
 
     if account_type.is_spot_or_margin:
-        return os.environ["BINANCE_API_SECRET"]
+        return get_env_key("BINANCE_API_SECRET")
     else:
-        return os.environ["BINANCE_FUTURES_API_SECRET"]
+        return get_env_key("BINANCE_FUTURES_API_SECRET")
 
 
 def _get_http_base_url(account_type: BinanceAccountType, is_testnet: bool, is_us: bool) -> str:

@@ -94,11 +94,11 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             loop=loop,
             client_id=ClientId(f"{IB_VENUE.value}-{ibg_client_id:03d}"),
             venue=None,
-            instrument_provider=instrument_provider,
             msgbus=msgbus,
             cache=cache,
             clock=clock,
             logger=logger,
+            instrument_provider=instrument_provider,
             config={
                 "name": f"{type(self).__name__}-{ibg_client_id:03d}",
                 "client_id": ibg_client_id,
@@ -283,7 +283,23 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             "implement the `_request` coroutine",  # pragma: no cover
         )
 
-    async def _request_instrument(self, instrument_id: InstrumentId, correlation_id: UUID4):
+    async def _request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ):
+        if start is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+            )
+
+        if end is not None:
+            self._log.warning(
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+            )
+
         await self.instrument_provider.load_async(instrument_id)
         if instrument := self.instrument_provider.find(instrument_id):
             self._handle_data(instrument)
@@ -292,7 +308,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             return
         self._handle_instrument(instrument, correlation_id)
 
-    async def _request_instruments(self, venue: Venue, correlation_id: UUID4):
+    async def _request_instruments(
+        self,
+        venue: Venue,
+        correlation_id: UUID4,
+        start: pd.Timestamp | None = None,
+        end: pd.Timestamp | None = None,
+    ):
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
         )

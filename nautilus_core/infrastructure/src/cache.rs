@@ -20,6 +20,7 @@ use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::trader_id::TraderId;
 use serde_json::Value;
 
+/// A type of database operation.
 #[derive(Clone, Debug)]
 pub enum DatabaseOperation {
     Insert,
@@ -27,10 +28,14 @@ pub enum DatabaseOperation {
     Delete,
 }
 
+/// Represents a database command to be performed which may be executed 'remotely' across a thread.
 #[derive(Clone, Debug)]
 pub struct DatabaseCommand {
+    /// The database operation type.
     pub op_type: DatabaseOperation,
+    /// The primary key for the operation.
     pub key: String,
+    /// The data payload for the operation.
     pub payload: Option<Vec<Vec<u8>>>,
 }
 
@@ -44,6 +49,12 @@ impl DatabaseCommand {
     }
 }
 
+/// Provides a generic cache database facade.
+///
+/// The main operations take a consistent `key` and `payload` which should provide enough
+/// information to implement the cache database in many different technologies.
+///
+/// Delete operations may need a `payload` to target specific values.
 pub trait CacheDatabase {
     type DatabaseType;
 
@@ -52,14 +63,15 @@ pub trait CacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, Value>,
     ) -> Result<Self::DatabaseType>;
-    fn read(&mut self, key: String) -> Result<Vec<Vec<u8>>>;
-    fn insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
-    fn update(&mut self, key: String, payload: Vec<Vec<u8>>) -> Result<(), String>;
-    fn delete(&mut self, key: String) -> Result<(), String>;
-    fn handle_ops(
+    fn flushdb(&mut self) -> Result<()>;
+    fn keys(&mut self, pattern: &str) -> Result<Vec<String>>;
+    fn read(&mut self, key: &str) -> Result<Vec<Vec<u8>>>;
+    fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
+    fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
+    fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> Result<()>;
+    fn handle_messages(
         rx: Receiver<DatabaseCommand>,
-        trader_id: TraderId,
-        instance_id: UUID4,
+        trader_key: String,
         config: HashMap<String, Value>,
     );
 }
