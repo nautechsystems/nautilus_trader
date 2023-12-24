@@ -95,6 +95,7 @@ class BetfairHttpClient:
         body = request.body()
         if isinstance(body, str):
             body = body.encode()
+        self._log.debug(f"[REQ] {method} {url} {body.decode()} ")
         response: HttpResponse = await self._client.request(
             method,
             url,

@@ -30,10 +30,29 @@ from nautilus_trader.model.tick_scheme.implementations.tiered import TieredTickS
 #     N2B = {NAUTILUS: BETFAIR}
 #     B2N = {BETFAIR: NAUTILUS}
 
-N2B_SIDE = {
-    OrderSide.BUY: Side.BACK,
-    OrderSide.SELL: Side.LAY,
-}
+
+class OrderSideParser:
+    BACKS = (Side.BACK, "B")
+    LAYS = (Side.LAY, "L")
+
+    @classmethod
+    def to_nautilus(cls, side: Side | str) -> OrderSide:
+        if side in cls.BACKS:
+            return OrderSide.SELL
+        elif side in cls.LAYS:
+            return OrderSide.BUY
+        else:
+            raise ValueError(f"Unknown side: {side}")
+
+    @staticmethod
+    def to_betfair(order_side: OrderSide) -> Side:
+        if order_side == OrderSide.BUY:
+            return Side.LAY
+        elif order_side == OrderSide.SELL:
+            return Side.BACK
+        else:
+            raise ValueError(f"Unknown order_side: {order_side}")
+
 
 N2B_TIME_IN_FORCE = {
     TimeInForce.FOK: BetfairTimeInForce.FILL_OR_KILL,
@@ -41,7 +60,7 @@ N2B_TIME_IN_FORCE = {
 
 N2B_PERSISTENCE = {
     TimeInForce.GTC: PersistenceType.PERSIST,
-    TimeInForce.DAY: PersistenceType.MARKET_ON_CLOSE,
+    TimeInForce.DAY: PersistenceType.LAPSE,
 }
 
 B2N_MARKET_SIDE = {
@@ -55,12 +74,6 @@ B2N_MARKET_SIDE = {
     "spl": OrderSide.BUY,  # Starting Price LAY
 }
 
-B2N_ORDER_SIDE = {
-    Side.BACK: OrderSide.BUY,
-    Side.LAY: OrderSide.SELL,
-    "B": OrderSide.BUY,
-    "L": OrderSide.BUY,
-}
 
 B2N_TIME_IN_FORCE = {
     PersistenceType.LAPSE: TimeInForce.DAY,
